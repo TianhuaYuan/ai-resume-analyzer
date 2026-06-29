@@ -1,0 +1,29 @@
+# ===== Web 框架 =====
+fastapi[standard]           # 异步 Web 框架 + uvicorn + 静态文件支持
+python-multipart            # FastAPI 文件上传依赖
+
+# ===== 数据库 =====
+sqlalchemy[asyncio]        # ORM + 异步扩展
+aiomysql                   # MySQL 异步驱动
+pymysql                    # MySQL 同步驱动（Chroma 等组件偶有需要）
+
+# ===== 鉴权 =====
+python-jose[cryptography]  # JWT 编解码
+bcrypt                     # 密码 bcrypt 哈希
+
+# ===== 配置与校验 =====
+pydantic[email]            # 数据校验 + 邮箱校验器
+pydantic-settings          # 环境变量管理
+
+# ===== 文件解析 =====
+pypdf                      # PDF 文本提取
+python-docx                # Word(docx) 文本提取
+
+# ===== RAG / 向量库 =====
+chromadb                   # 嵌入式向量数据库
+langchain                  # RAG 编排（RecursiveCharacterTextSplitter）
+langchain-openai           # 通过 OpenAI 兼容接口调 DeepSeek/百炼
+openai                     # 底层 SDK（DeepSeek + 百炼都走 OpenAI 兼容协议）
+
+# ===== 工具 =====
+python-dotenv              # 读 .env（pydantic-settings 兜底）
