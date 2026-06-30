@@ -14,6 +14,7 @@ class Resume(Base):
         index=True,
     )
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    file_path: Mapped[str] = mapped_column(String(512), nullable=False)
     parsed_text: Mapped[str] = mapped_column(Text, nullable=False)
     chunk_count: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(

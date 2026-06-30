@@ -37,7 +37,7 @@ async def authenticate_user(db: AsyncSession, email: str, password: str) -> User
 
 def create_tokens(user: User) -> TokenResponse:
     """为一个用户生成 access + refresh token 对。"""
-    data = {"sub": user.id}
+    data = {"sub": str(user.id)}
     return TokenResponse(
         access_token=create_access_token(data),
         refresh_token=create_refresh_token(data),
@@ -50,9 +50,10 @@ async def refresh_token(db: AsyncSession, token_str: str) -> TokenResponse:
     if payload is None or payload.get("type") != "refresh":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="无效或过期的刷新凭证")
 
-    user_id: int | None = payload.get("sub")
-    if user_id is None:
+    user_id_str = payload.get("sub")
+    if user_id_str is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="凭证内容无效")
+    user_id = int(user_id_str)
 
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
