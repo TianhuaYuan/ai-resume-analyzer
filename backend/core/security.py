@@ -13,7 +13,6 @@ def hash_password(plain: str) -> str:
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    """验证明文是否匹配哈希"""
     return bcrypt.checkpw(plain.encode(), hashed.encode())
 
 
@@ -26,7 +25,6 @@ def create_access_token(data: dict) -> str:
 
 
 def create_refresh_token(data: dict) -> str:
-    """生成 refresh token（长期）"""
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
     to_encode.update({"exp": expire, "type": "refresh"})

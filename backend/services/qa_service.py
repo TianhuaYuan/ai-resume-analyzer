@@ -12,7 +12,6 @@ async def save_qa(
     answer: str,
     sources: list[dict],
 ) -> QAHistory:
-    """保存一次问答记录"""
     record = QAHistory(
         user_id=user_id,
         resume_id=resume_id,

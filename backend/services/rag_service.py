@@ -62,6 +62,7 @@ def _tokenize(text: str) -> list[str]:
 
 
 def _split_by_sections(text: str) -> list[tuple[str, str]]:
+    """按简历节段标题切分，无标题则整体返回"""
     if not SECTION_PATTERN.search(text):
         return [("正文", text)]
 
@@ -83,7 +84,7 @@ def _find_split(text: str, chunk_size: int, separators: list[str]) -> int:
 
 
 def _recursive_split(text: str, chunk_size: int, overlap: int) -> list[str]:
-    separators = ["\n\n", "\n", "。", "，", " "]
+    separators = ["\n\n", "\n", "。", "，", " "]  # 按优先级切分
     result = []
     current = text
     while len(current) > chunk_size:
@@ -216,6 +217,7 @@ async def hybrid_search(resume_id: int, question: str, top_k: int = 5) -> list[d
 
 
 async def _vector_search(resume_id: int, question: str, top_k: int) -> list[dict]:
+    """稠密向量检索：问题转向量 → Chroma 余弦相似度查询，collection 不存在时返回空"""
     embedding = (await get_embeddings([question]))[0]
     name = _collection_name(resume_id)
     try:
@@ -234,7 +236,7 @@ async def _vector_search(resume_id: int, question: str, top_k: int) -> list[dict
         meta = results["metadatas"][0][i]
         chunks.append({
             "text": results["documents"][0][i],
-            "score": 1.0 - results["distances"][0][i],
+            "score": 1.0 - results["distances"][0][i],  # Chroma 默认 cosine distance，转相似度
             "chunk_index": meta["chunk_index"],
             "section": meta["section"],
             "source": "dense",
@@ -266,6 +268,7 @@ def _load_bm25_index(resume_id: int) -> bool:
 
 
 async def _keyword_search(resume_id: int, question: str, top_k: int) -> list[dict]:
+    """BM25 关键词检索：懒加载索引 → 分词算分 → 返回 top_k，过滤零分结果"""
     if resume_id not in _bm25_indexes:
         if not _load_bm25_index(resume_id):
             return []
@@ -288,7 +291,8 @@ async def _keyword_search(resume_id: int, question: str, top_k: int) -> list[dic
     ]
 
 
-def _merge_results(dense: list[dict], sparse: list[dict], top_k: int, k: int = 60) -> list[dict]:
+def _merge_results(dense: list[dict], sparse: list[dict], top_k: int, k: int = 60) -> list[dict]:  # k: RRF 平滑常数，论文常用 60
+    """RRF 融合：按排名而非分数合并两路结果，同一 chunk 两路都中则累加得分"""
     scores: dict[int, dict] = {}
     for rank, item in enumerate(dense):
         key = item["chunk_index"]
@@ -320,8 +324,7 @@ async def ask_question(resume_id: int, question: str) -> tuple[str, list[dict]]:
         temperature=0.3,
     )
     answer = (response.choices[0].message.content or "").strip()
-    return answer, chunks
-
+    return answer, chunks    
 
 def build_prompt(context_chunks: list[str], question: str) -> dict:
     """组装 System Prompt + 来源上下文"""
