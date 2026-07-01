@@ -1,3 +1,4 @@
+import json
 import logging
 import re
 
@@ -6,7 +7,10 @@ import jieba
 from openai import AsyncOpenAI
 from rank_bm25 import BM25Okapi
 
+from core import cache as embedding_cache
 from core.config import settings
+from core.retry import FALLBACK_MESSAGE, with_retry
+from core.trace import StepTimer
 
 logger = logging.getLogger(__name__)
 
@@ -142,13 +146,28 @@ def fixed_chunk(text: str, chunk_size: int, overlap: int = 50) -> list[dict]:
 
 
 async def get_embeddings(texts: list[str]) -> list[list[float]]:
-    """批量调百炼 Embedding API"""
-    client = get_embedding_client()
-    response = await client.embeddings.create(
-        model=settings.EMBEDDING_MODEL,
-        input=texts,
-    )
-    return [item.embedding for item in response.data]
+    """批量调百炼 Embedding API，缓存命中跳过 API 调用"""
+    vectors: list[list[float]] = []; uncached_idx: list[int] = []; uncached: list[str] = []
+
+    for i, t in enumerate(texts):
+        vec = embedding_cache.get_embedding(t)
+        if vec is not None:
+            vectors.append(vec)
+        else:
+            vectors.append([])  # placeholder，下面批量填
+            uncached_idx.append(i)
+            uncached.append(t)
+
+    if uncached:
+        client = get_embedding_client()
+        response = await client.embeddings.create(
+            model=settings.EMBEDDING_MODEL, input=uncached,
+        )
+        for j, item in enumerate(response.data):
+            idx = uncached_idx[j]; vectors[idx] = item.embedding
+            embedding_cache.set_embedding(uncached[j], item.embedding)
+
+    return vectors
 
 
 async def process_resume(resume_id: int, text: str) -> int:
@@ -189,23 +208,17 @@ async def process_resume(resume_id: int, text: str) -> int:
 
 
 async def rewrite_query(question: str) -> str:
-    prompt = (
+    """LLM 改写问题做指代消解，失败时返回原问题兜底"""
+    system = "你是一个问题改写助手。"
+    user = (
         "把用户的问题改写成完整、具体、适合向量检索的问题。保留所有关键实体。"
         "如果问题已经完整，直接返回原句。\n"
         f"用户问题：{question}\n"
         "改写后的问题："
     )
-    client = get_chat_client()
-    response = await client.chat.completions.create(
-        model=settings.CHAT_MODEL,
-        messages=[
-            {"role": "system", "content": "你是一个问题改写助手。"},
-            {"role": "user", "content": prompt},
-        ],
-        temperature=0.1,
-        max_tokens=200,
+    rewritten = await with_retry(
+        _llm_generate, system, user, temperature=0.1, max_tokens=200, fallback=question,
     )
-    rewritten = (response.choices[0].message.content or "").strip()
     return rewritten or question
 
 
@@ -308,23 +321,106 @@ def _merge_results(dense: list[dict], sparse: list[dict], top_k: int, k: int = 6
     return [x["item"] for x in ranked[:top_k]]
 
 
-async def ask_question(resume_id: int, question: str) -> tuple[str, list[dict]]:
-    """RAG 全链路：改写 → 混合检索 → Prompt → LLM → 返回答案+来源"""
-    rewritten = await rewrite_query(question)
-    chunks = await hybrid_search(resume_id, rewritten, top_k=5)
-    prompt = build_prompt([c["text"] for c in chunks], rewritten)
-
+async def _llm_generate(
+    system: str, user: str, temperature: float = 0.3, max_tokens: int | None = None,
+) -> str:
+    """调 DeepSeek Chat 生成回答，抽出来方便加不同的 temperature 和重试"""
     client = get_chat_client()
-    response = await client.chat.completions.create(
-        model=settings.CHAT_MODEL,
-        messages=[
-            {"role": "system", "content": prompt["system"]},
-            {"role": "user", "content": prompt["user"]},
+    kwargs = {
+        "model": settings.CHAT_MODEL,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
         ],
-        temperature=0.3,
+        "temperature": temperature,
+    }
+    if max_tokens is not None:
+        kwargs["max_tokens"] = max_tokens
+    response = await client.chat.completions.create(**kwargs)
+    return (response.choices[0].message.content or "").strip()
+
+
+async def rerank(question: str, chunks: list[dict], top_k: int = 5) -> list[dict]:
+    """LLM Cross-Encoder 精排：把问题和所有段落一起送给模型联合打分，截断 top_k"""
+    if len(chunks) <= top_k:
+        for c in chunks:
+            c["rerank_score"] = 1.0
+        return chunks
+
+    passages = "\n".join(
+        f"[{i}] {c['text'][:400]}" for i, c in enumerate(chunks)
     )
-    answer = (response.choices[0].message.content or "").strip()
-    return answer, chunks    
+    prompt = (
+        f"问题：{question}\n\n"
+        f"候选段落：\n{passages}\n\n"
+        f"对每个候选段落与问题的相关性打分（0-1，1=完全相关，0=无关）。"
+        f"只返回 JSON：{{\"scores\": [0.8, 0.3, ...]}}，数组长度必须为 {len(chunks)}。"
+    )
+    # rerank 用低温度保证打分稳定
+    response = await with_retry(
+        _llm_generate,
+        "你是一个精确的文本相关性评估助手。只输出 JSON，不输出其他内容。",
+        prompt,
+        fallback="",
+    )
+
+    scores: list[float] = []
+    try:
+        text = response.strip()
+        if "```" in text:  # 去掉可能的 markdown 代码块包裹
+            text = text.split("```")[1]
+            if text.startswith("json"):
+                text = text[4:]
+        data = json.loads(text)
+        scores = data.get("scores", [])
+    except (json.JSONDecodeError, KeyError, IndexError):
+        logger.warning("Rerank JSON parse failed, falling back to original order")
+
+    if not scores or len(scores) != len(chunks):
+        for c in chunks:
+            c["rerank_score"] = 0.5
+        return chunks[:top_k]
+
+    for i, c in enumerate(chunks):
+        c["rerank_score"] = float(scores[i]) if i < len(scores) else 0.0
+
+    chunks.sort(key=lambda c: c.get("rerank_score", 0), reverse=True)
+    return chunks[:top_k]
+
+
+def reject_if_low_score(chunks: list[dict], threshold: float = 0.5) -> bool:
+    """Rerank 后最高分低于阈值则拒答。阈值通过 20 个无答案问题测算"""
+    if not chunks:
+        return True
+    max_score = max(c.get("rerank_score", 0) for c in chunks)
+    return max_score < threshold
+
+
+async def ask_question(resume_id: int, question: str) -> tuple[str, list[dict]]:
+    """RAG 全链路：改写 → 混合检索(20) → Rerank(5) → 拒答判断 → Prompt → LLM → 返回"""
+    timer = StepTimer()
+
+    rewritten = await timer.run("rewrite", rewrite_query(question))
+    chunks = await timer.run("hybrid", hybrid_search(resume_id, rewritten, top_k=20))
+
+    if not chunks:
+        return ("抱歉，简历中未提及该信息。", [])
+
+    reranked = await timer.run("rerank", rerank(rewritten, chunks, top_k=5))
+
+    if reject_if_low_score(reranked):
+        timer.log()
+        return ("抱歉，简历中未提及该信息。", [])
+
+    prompt = build_prompt([c["text"] for c in reranked], rewritten)
+    answer = await timer.run(
+        "generate",
+        with_retry(_llm_generate, prompt["system"], prompt["user"], fallback=FALLBACK_MESSAGE),
+    )
+
+    timer.log()
+    return answer, reranked
+
 
 def build_prompt(context_chunks: list[str], question: str) -> dict:
     """组装 System Prompt + 来源上下文"""
