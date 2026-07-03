@@ -10,6 +10,10 @@ class Settings(BaseSettings):
     EMBEDDING_BASE_URL: str
     EMBEDDING_MODEL: str
 
+    RERANK_API_KEY: str
+    RERANK_BASE_URL: str
+    RERANK_MODEL: str
+
     DATABASE_URL: str
     CHROMA_PERSIST_DIR: str = "./chroma_data"
 

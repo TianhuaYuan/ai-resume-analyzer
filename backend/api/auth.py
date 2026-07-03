@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
@@ -17,8 +18,18 @@ async def register(data: RegisterRequest, db: AsyncSession = Depends(get_db)):
 
 @router.post("/login", response_model=TokenResponse)
 async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
-    """登录。返回 access + refresh token 对。"""
+    """登录（JSON）。前端调这个，POST body 传 {email, password}。"""
     user = await authenticate_user(db, data.email, data.password)
+    return create_tokens(user)
+
+
+@router.post("/token", response_model=TokenResponse)
+async def login_form(
+    form: OAuth2PasswordRequestForm = Depends(),
+    db: AsyncSession = Depends(get_db),
+):
+    """登录（form）。Swagger UI 的 Authorize 按钮走的这个，username 字段填邮箱。"""
+    user = await authenticate_user(db, form.username, form.password)
     return create_tokens(user)
 
 

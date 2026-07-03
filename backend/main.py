@@ -1,3 +1,7 @@
+import logging
+import tempfile
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -5,6 +9,19 @@ from api.auth import router as auth_router
 from api.qa import router as qa_router
 from api.resumes import router as resumes_router
 from core.database import init_db
+
+LOG_DIR = Path(tempfile.gettempdir()) / "ai-resume-analyzer"
+LOG_DIR.mkdir(exist_ok=True)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(name)-10s | %(message)s",
+    datefmt="%H:%M:%S",
+    handlers=[
+        logging.FileHandler(str(LOG_DIR / "app.log"), encoding="utf-8"),
+        logging.StreamHandler(),
+    ],
+)
 
 app = FastAPI(title="AI简历分析系统", version="0.1.0")
 

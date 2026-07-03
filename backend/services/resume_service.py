@@ -4,10 +4,12 @@ import uuid
 from pathlib import Path
 
 from fastapi import HTTPException, UploadFile, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core import cache as embedding_cache
 from core.config import settings
+from core.database import AsyncSessionLocal
 from models.resume import Resume
 from services import rag_service
 from utils.file_parser import parse_resume
@@ -31,24 +33,43 @@ async def save_upload_file(file: UploadFile) -> tuple[str, str]:
     return str(save_path), original
 
 
-async def create_resume(db: AsyncSession, user_id: int, filename: str, file_path: str) -> Resume:
-    """解析文件 → 存入 MySQL → 切块入 Chroma → 更新 chunk_count"""
-    parsed_text = parse_resume(file_path)
+async def create_resume_quick(db: AsyncSession, user_id: int, filename: str, file_path: str) -> Resume:
+    """快速创建 resume 行（status=processing），不阻塞等 RAG 处理"""
     resume = Resume(
         user_id=user_id,
         filename=filename,
         file_path=file_path,
-        parsed_text=parsed_text,
+        parsed_text="",
         chunk_count=0,
+        status="processing",
     )
     db.add(resume)
     await db.commit()
     await db.refresh(resume)
-
-    chunk_count = await rag_service.process_resume(resume.id, parsed_text)
-    resume.chunk_count = chunk_count
-    await db.commit()
     return resume
+
+
+async def process_resume_background(resume_id: int, file_path: str):
+    """后台任务：解析文件 → 分块 → 向量化 → 更新状态。
+    用独立的 DB session，因为原请求 session 已关闭。"""
+    async with AsyncSessionLocal() as db:
+        try:
+            parsed_text = parse_resume(file_path)
+            chunk_count = await rag_service.process_resume(resume_id, parsed_text)
+            await db.execute(
+                update(Resume)
+                .where(Resume.id == resume_id)
+                .values(parsed_text=parsed_text, chunk_count=chunk_count, status="ready")
+            )
+            await db.commit()
+        except Exception as e:
+            logger.error("Background processing failed for resume %d: %s", resume_id, e)
+            await db.execute(
+                update(Resume)
+                .where(Resume.id == resume_id)
+                .values(status="failed", status_message=str(e)[:200])
+            )
+            await db.commit()
 
 
 async def get_user_resumes(
@@ -83,7 +104,7 @@ async def get_resume(db: AsyncSession, resume_id: int, user_id: int) -> Resume:
 
 
 async def delete_resume(db: AsyncSession, resume_id: int, user_id: int) -> None:
-    """先删 MySQL（CASCADE 清历史）→ 清 Chroma → 删文件"""
+    """先删 MySQL（CASCADE 清历史）→ 清 Chroma → 删文件 → 清 Embedding 缓存"""
     resume = await get_resume(db, resume_id, user_id)
     file_path = resume.file_path
     await db.delete(resume)
@@ -94,3 +115,4 @@ async def delete_resume(db: AsyncSession, resume_id: int, user_id: int) -> None:
         os.remove(file_path)
     except Exception:
         logger.warning("Failed to delete resume file: %s", file_path)
+    embedding_cache.clear()

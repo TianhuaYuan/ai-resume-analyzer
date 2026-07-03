@@ -1,8 +1,10 @@
-import json
 import logging
+import os
 import re
+import shutil
 
 import chromadb
+import httpx
 import jieba
 from openai import AsyncOpenAI
 from rank_bm25 import BM25Okapi
@@ -21,11 +23,24 @@ _chroma_client = None
 _bm25_indexes: dict[int, tuple[BM25Okapi, list[dict]]] = {}
 
 SECTION_HEADERS = [
-    "教育背景", "教育经历", "工作经历", "实习经历", "项目经历", "项目经验",
-    "专业技能", "技能", "个人技能", "技术栈", "自我评价", "个人总结",
+    # 教育
+    "教育背景", "教育经历", "学历", "教育", "学习经历",
+    # 工作 / 实习
+    "工作经历", "工作经验", "实习经历", "实习经验", "工作", "实习",
+    # 项目
+    "项目经历", "项目经验", "项目展示", "项目",
+    # 技能
+    "专业技能", "技能", "技术栈", "技术能力", "个人技能", "掌握技能",
+    # 评价 / 总结
+    "自我评价", "个人总结", "自我介绍", "个人评价", "自我总结",
+    # 其他
+    "开源贡献", "开源", "证书", "获奖", "荣誉", "证书与奖项",
 ]
+# 行首 + 可选的序号（一/1.） + 标题 + 冒号 + 换行
 SECTION_PATTERN = re.compile(
-    r"(?:^|\n)\s*(" + "|".join(re.escape(h) for h in SECTION_HEADERS) + r")[\s:：]*\n",
+    r"(?:^|\n)\s*(?:(?:[一二三四五六七八九十]+|\d+)[、.）\)]?\s*)?("
+    + "|".join(re.escape(h) for h in SECTION_HEADERS)
+    + r")[\s:：]*\n",
     re.IGNORECASE,
 )
 
@@ -110,7 +125,7 @@ def _make_chunk(text: str, section: str, index: int, offset: int) -> dict:
     }
 
 
-def chunk_by_sections(text: str, chunk_size: int = 500, overlap: int = 50) -> list[dict]:
+def chunk_by_sections(text: str, chunk_size: int = 80, overlap: int = 25) -> list[dict]:
     """结构感知分块：先按节段切，超长节段内部再递归细分"""
     sections = _split_by_sections(text)
     chunks = []
@@ -147,7 +162,9 @@ def fixed_chunk(text: str, chunk_size: int, overlap: int = 50) -> list[dict]:
 
 async def get_embeddings(texts: list[str]) -> list[list[float]]:
     """批量调百炼 Embedding API，缓存命中跳过 API 调用"""
-    vectors: list[list[float]] = []; uncached_idx: list[int] = []; uncached: list[str] = []
+    vectors: list[list[float]] = []
+    uncached_idx: list[int] = []
+    uncached: list[str] = []
 
     for i, t in enumerate(texts):
         vec = embedding_cache.get_embedding(t)
@@ -160,24 +177,67 @@ async def get_embeddings(texts: list[str]) -> list[list[float]]:
 
     if uncached:
         client = get_embedding_client()
-        response = await client.embeddings.create(
-            model=settings.EMBEDDING_MODEL, input=uncached,
-        )
-        for j, item in enumerate(response.data):
-            idx = uncached_idx[j]; vectors[idx] = item.embedding
-            embedding_cache.set_embedding(uncached[j], item.embedding)
+        for batch_start in range(0, len(uncached), 10):
+            batch_texts = uncached[batch_start:batch_start + 10]
+            batch_idx = uncached_idx[batch_start:batch_start + 10]
+            response = await client.embeddings.create(
+                model=settings.EMBEDDING_MODEL, input=batch_texts,
+            )
+            for j, item in enumerate(response.data):
+                idx = batch_idx[j]
+                vectors[idx] = item.embedding
+                embedding_cache.set_embedding(batch_texts[j], item.embedding)
 
     return vectors
+
+
+def _cleanup_orphan_segments() -> int:
+    """清理 ChromaDB delete_collection 在 Windows 上留下的孤儿 HNSW 目录"""
+    persist_dir = settings.CHROMA_PERSIST_DIR
+    if not os.path.isdir(persist_dir):
+        return 0
+
+    # 从磁盘收集所有 UUID 格式的目录
+    disk_dirs = set()
+    for entry in os.listdir(persist_dir):
+        full = os.path.join(persist_dir, entry)
+        if os.path.isdir(full) and len(entry) == 36 and entry.count("-") == 4:
+            disk_dirs.add(entry)
+
+    if not disk_dirs:
+        return 0
+
+    # 从 SQLite 查活跃 segment ID
+    try:
+        client = get_chroma_client()
+        # ChromaDB 不暴露 segments 列表，直接从 SQLite 读
+        import sqlite3
+        db_path = os.path.join(persist_dir, "chroma.sqlite3")
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM segments")
+        active = {row[0] for row in cur.fetchall()}
+        conn.close()
+    except Exception:
+        return 0
+
+    orphans = disk_dirs - active
+    for d in orphans:
+        shutil.rmtree(os.path.join(persist_dir, d), ignore_errors=True)
+        logger.info("Removed orphan ChromaDB segment: %s", d)
+
+    return len(orphans)
 
 
 async def process_resume(resume_id: int, text: str) -> int:
     """清理旧向量 → 结构分块 → 向量化 → 存入 Chroma → 清空 BM25 缓存"""
     client = get_chroma_client()
     name = _collection_name(resume_id)
-    try:
+    # 同名 collection 存在才删，不存在跳过——避免每次新简历上传都打 warning
+    existing = [c for c in client.list_collections() if c.name == name]
+    if existing:
         client.delete_collection(name)
-    except Exception:
-        logger.warning("Failed to delete Chroma collection %s before re-creating", name)
+        _cleanup_orphan_segments()
 
     collection = client.get_or_create_collection(name=name)
     chunks = chunk_by_sections(text)
@@ -212,6 +272,8 @@ async def rewrite_query(question: str) -> str:
     system = "你是一个问题改写助手。"
     user = (
         "把用户的问题改写成完整、具体、适合向量检索的问题。保留所有关键实体。"
+        "如果用户的问题包含'除了...以外'、'除...外还有哪些'等排除性表述，"
+        "请将排除部分去掉，重新组织为只关注目标内容的查询。"
         "如果问题已经完整，直接返回原句。\n"
         f"用户问题：{question}\n"
         "改写后的问题："
@@ -341,48 +403,47 @@ async def _llm_generate(
 
 
 async def rerank(question: str, chunks: list[dict], top_k: int = 5) -> list[dict]:
-    """LLM Cross-Encoder 精排：把问题和所有段落一起送给模型联合打分，截断 top_k"""
+    """百炼 gte-rerank Cross-Encoder 精排：query+documents 送专有模型打分，取 top_k"""
     if len(chunks) <= top_k:
         for c in chunks:
             c["rerank_score"] = 1.0
         return chunks
 
-    passages = "\n".join(
-        f"[{i}] {c['text'][:400]}" for i, c in enumerate(chunks)
-    )
-    prompt = (
-        f"问题：{question}\n\n"
-        f"候选段落：\n{passages}\n\n"
-        f"对每个候选段落与问题的相关性打分（0-1，1=完全相关，0=无关）。"
-        f"只返回 JSON：{{\"scores\": [0.8, 0.3, ...]}}，数组长度必须为 {len(chunks)}。"
-    )
-    # rerank 用低温度保证打分稳定
-    response = await with_retry(
-        _llm_generate,
-        "你是一个精确的文本相关性评估助手。只输出 JSON，不输出其他内容。",
-        prompt,
-        fallback="",
-    )
+    async def _call_api():
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                settings.RERANK_BASE_URL,
+                json={
+                    "model": settings.RERANK_MODEL,
+                    "input": {
+                        "query": question,
+                        "documents": [c["text"][:400] for c in chunks],
+                    },
+                    "parameters": {"top_n": top_k},
+                },
+                headers={
+                    "Authorization": f"Bearer {settings.RERANK_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                timeout=10,
+            )
+            resp.raise_for_status()
+            return resp.json()
 
-    scores: list[float] = []
     try:
-        text = response.strip()
-        if "```" in text:  # 去掉可能的 markdown 代码块包裹
-            text = text.split("```")[1]
-            if text.startswith("json"):
-                text = text[4:]
-        data = json.loads(text)
-        scores = data.get("scores", [])
-    except (json.JSONDecodeError, KeyError, IndexError):
-        logger.warning("Rerank JSON parse failed, falling back to original order")
-
-    if not scores or len(scores) != len(chunks):
+        data = await with_retry(_call_api, fallback=None)
+        if data is None:
+            raise RuntimeError("Rerank API 全部重试失败")
+        results = data.get("output", {}).get("results", [])
+    except Exception as e:
+        logger.warning("Rerank API failed: %s, falling back to original order", e)
         for c in chunks:
             c["rerank_score"] = 0.5
         return chunks[:top_k]
 
+    score_map: dict[int, float] = {r["index"]: r["relevance_score"] for r in results}
     for i, c in enumerate(chunks):
-        c["rerank_score"] = float(scores[i]) if i < len(scores) else 0.0
+        c["rerank_score"] = score_map.get(i, 0.0)
 
     chunks.sort(key=lambda c: c.get("rerank_score", 0), reverse=True)
     return chunks[:top_k]
@@ -397,7 +458,7 @@ def reject_if_low_score(chunks: list[dict], threshold: float = 0.5) -> bool:
 
 
 async def ask_question(resume_id: int, question: str) -> tuple[str, list[dict]]:
-    """RAG 全链路：改写 → 混合检索(20) → Rerank(5) → 拒答判断 → Prompt → LLM → 返回"""
+    """RAG 全链路：改写 → 混合检索(20) → Rerank(8) → 拒答判断 → Prompt → LLM → 返回"""
     timer = StepTimer()
 
     rewritten = await timer.run("rewrite", rewrite_query(question))
@@ -406,7 +467,7 @@ async def ask_question(resume_id: int, question: str) -> tuple[str, list[dict]]:
     if not chunks:
         return ("抱歉，简历中未提及该信息。", [])
 
-    reranked = await timer.run("rerank", rerank(rewritten, chunks, top_k=5))
+    reranked = await timer.run("rerank", rerank(rewritten, chunks, top_k=8))
 
     if reject_if_low_score(reranked):
         timer.log()
@@ -421,6 +482,67 @@ async def ask_question(resume_id: int, question: str) -> tuple[str, list[dict]]:
     timer.log()
     return answer, reranked
 
+async def _llm_generate_stream(
+    system: str, user: str, temperature: float = 0.3,
+):
+    """流式调 DeepSeek Chat，逐 token yield delta text"""
+    client = get_chat_client()
+    stream = await client.chat.completions.create(
+        model=settings.CHAT_MODEL,
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        temperature=temperature,
+        stream=True,
+    )
+    async for chunk in stream:
+        delta = chunk.choices[0].delta.content
+        if delta:
+            yield delta
+
+
+async def ask_question_stream(resume_id: int, question: str):
+    """RAG 全链路流式版：改写 → 混合检索 → Rerank → 流式生成，逐个 yield 事件 dict"""
+    timer = StepTimer()
+
+    rewritten = await timer.run("rewrite", rewrite_query(question))
+    yield {"type": "status", "message": "检索中..."}
+
+    chunks = await timer.run("hybrid", hybrid_search(resume_id, rewritten, top_k=20))
+
+    if not chunks:
+        timer.log()
+        yield {"type": "done", "answer": "抱歉，简历中未提及该信息。", "sources": []}
+        return
+
+    reranked = await timer.run("rerank", rerank(rewritten, chunks, top_k=8))
+
+    if reject_if_low_score(reranked):
+        timer.log()
+        yield {"type": "done", "answer": "抱歉，简历中未提及该信息。", "sources": []}
+        return
+
+    prompt = build_prompt([c["text"] for c in reranked], rewritten)
+    yield {"type": "status", "message": "生成中..."}
+
+    full = ""
+    try:
+        async for token in _llm_generate_stream(prompt["system"], prompt["user"]):
+            full += token
+            yield {"type": "token", "content": token}
+    except Exception:
+        # 流式失败 → 降级为非流式重试一次
+        logger.warning("Streaming failed, falling back to non-streaming")
+        fallback = await with_retry(
+            _llm_generate, prompt["system"], prompt["user"], fallback=FALLBACK_MESSAGE,
+        )
+        full = fallback
+        yield {"type": "token", "content": fallback}
+
+    timer.log()
+    yield {"type": "done", "answer": full, "sources": [c["text"] for c in reranked]}
+
 
 def build_prompt(context_chunks: list[str], question: str) -> dict:
     """组装 System Prompt + 来源上下文"""
@@ -429,7 +551,8 @@ def build_prompt(context_chunks: list[str], question: str) -> dict:
     )
     system = (
         "你是一个简历分析助手。请根据下面的简历内容回答问题。"
-        "简历中未提及的信息请明确说未提及，不要推测。"
+        "如果简历中没有直接相关信息，请明确说未提及，不要推测。"
+        "如果简历中有部分相关内容，请基于已有信息给出最佳回答。"
     )
     user = f"简历内容：\n{context}\n\n问题：{question}\n\n请给出简洁准确的回答。"
     return {"system": system, "user": user}

@@ -1,10 +1,13 @@
 """JWT 编解码 + bcrypt 密码哈希。"""
+import logging
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
 from jose import JWTError, jwt
 
 from .config import settings
+
+logger = logging.getLogger(__name__)
 
 
 def hash_password(plain: str) -> str:
@@ -35,5 +38,6 @@ def decode_token(token: str) -> dict | None:
     """解码 JWT，过期或无效返回 None"""
     try:
         return jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
-    except JWTError:
+    except JWTError as e:
+        logger.warning("JWT decode failed: %s", e)
         return None

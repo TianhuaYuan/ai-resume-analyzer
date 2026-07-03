@@ -24,3 +24,4 @@ class StepTimer:
 
     def log(self):
         logger.info(self.summary())
+

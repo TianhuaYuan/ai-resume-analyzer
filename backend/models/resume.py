@@ -17,6 +17,8 @@ class Resume(Base):
     file_path: Mapped[str] = mapped_column(String(512), nullable=False)
     parsed_text: Mapped[str] = mapped_column(Text, nullable=False)
     chunk_count: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(20), default="processing")  # processing / ready / failed
+    status_message: Mapped[str] = mapped_column(String(255), default="")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

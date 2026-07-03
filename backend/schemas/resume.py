@@ -6,6 +6,8 @@ class ResumeResponse(BaseModel):
     id: int
     filename: str
     chunk_count: int
+    status: str
+    status_message: str
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -16,8 +18,7 @@ class ResumeListResponse(BaseModel):
     total: int
 
 
-class UploadResponse(BaseModel):
+class UploadAsyncResponse(BaseModel):
     id: int
     filename: str
-    preview: str
-    chunk_count: int
+    status: str

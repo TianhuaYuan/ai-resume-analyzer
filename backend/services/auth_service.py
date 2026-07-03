@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import HTTPException, status
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,6 +8,8 @@ from core.security import hash_password, verify_password, create_access_token, c
 from models.user import User
 from schemas.auth import RegisterRequest, TokenResponse
 
+logger = logging.getLogger(__name__)
+
 
 async def register_user(db: AsyncSession, data: RegisterRequest) -> User:
     """注册。用户名或邮箱重复→409。"""
@@ -13,6 +17,7 @@ async def register_user(db: AsyncSession, data: RegisterRequest) -> User:
         select(User).where(or_(User.username == data.username, User.email == data.email))
     )
     if result.scalar_one_or_none() is not None:
+        logger.warning("注册冲突: username=%s, email=%s", data.username, data.email)
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="用户名或邮箱已被注册")
 
     user = User(
@@ -31,6 +36,7 @@ async def authenticate_user(db: AsyncSession, email: str, password: str) -> User
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
     if user is None or not verify_password(password, user.password_hash):
+        logger.warning("登录失败: email=%s, user_exists=%s", email, user is not None)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="邮箱或密码错误")
     return user
 
@@ -48,6 +54,7 @@ async def refresh_token(db: AsyncSession, token_str: str) -> TokenResponse:
     """用 refresh_token 换新 token 对。过期或 type 非 refresh→401。"""
     payload = decode_token(token_str)
     if payload is None or payload.get("type") != "refresh":
+        logger.warning("refresh token 无效: type=%s", payload.get("type") if payload else "decode_failed")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="无效或过期的刷新凭证")
 
     user_id_str = payload.get("sub")

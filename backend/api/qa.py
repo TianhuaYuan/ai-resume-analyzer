@@ -1,4 +1,8 @@
+import json
+import logging
+
 from fastapi import APIRouter, Depends
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_current_user
@@ -7,6 +11,7 @@ from models.user import User
 from schemas.qa import AnswerResponse, QuestionRequest, QAHistoryResponse
 from services import qa_service, rag_service, resume_service
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/qa", tags=["qa"])
 
 
@@ -16,7 +21,7 @@ async def ask_question(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """对简历提问。Query 改写 → 混合检索 → LLM 生成 → 存历史。"""
+    """对简历提问。Query 改写 → 混合检索 → Rerank → LLM 生成 → 存历史。"""
     await resume_service.get_resume(db, data.resume_id, current_user.id)
     answer, sources = await rag_service.ask_question(data.resume_id, data.question)
     record = await qa_service.save_qa(
@@ -36,6 +41,50 @@ async def ask_question(
     )
 
 
+@router.post("/ask/stream")
+async def ask_question_stream(
+    data: QuestionRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """SSE 流式问答。先检索→再逐 token 推送生成内容。"""
+    await resume_service.get_resume(db, data.resume_id, current_user.id)
+
+    async def event_stream():
+        full_answer = ""
+        sources_texts: list[str] = []
+        try:
+            async for event in rag_service.ask_question_stream(data.resume_id, data.question):
+                if event["type"] == "done":
+                    full_answer = event.get("answer", "")
+                    sources_texts = event.get("sources", [])
+                    # 存历史
+                    sources_for_db = [
+                        {"chunk_id": i, "text": t, "section": ""}
+                        for i, t in enumerate(sources_texts)
+                    ]
+                    record = await qa_service.save_qa(
+                        db, current_user.id, data.resume_id,
+                        data.question, full_answer, sources_for_db,
+                    )
+                    yield f"data: {json.dumps({'type': 'done', 'sources': sources_texts, 'qa_id': record.id}, ensure_ascii=False)}\n\n"
+                else:
+                    yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            logger.error("SSE stream error: %s", e)
+            yield f"data: {json.dumps({'type': 'error', 'message': '生成失败，请重试'}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # 关 nginx 缓冲
+        },
+    )
+
+
 @router.get("/history/{resume_id}", response_model=QAHistoryResponse)
 async def get_history(
     resume_id: int,
@@ -49,4 +98,16 @@ async def get_history(
     items, total = await qa_service.get_history(
         db, current_user.id, resume_id, limit, offset
     )
-    return QAHistoryResponse(items=items, total=total)
+    return QAHistoryResponse(
+        items=[
+            AnswerResponse(
+                id=it.id,
+                question=it.question,
+                answer=it.answer,
+                sources=[s["text"] for s in (it.sources or [])],
+                created_at=it.created_at,
+            )
+            for it in items
+        ],
+        total=total,
+    )

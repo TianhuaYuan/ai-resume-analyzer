@@ -1,29 +1,46 @@
-import { useEffect, useState, useRef, type FormEvent } from "react";
+import { useEffect, useState, useRef, useCallback, type FormEvent } from "react";
 import { useParams } from "react-router-dom";
-import { askQuestion, getHistory, type AnswerResponse } from "../api/qa";
+import { askQuestionStream, getHistory, type SSEEvent } from "../api/qa";
 import { listResumes, type ResumeItem } from "../api/resumes";
+
+interface ChatMessage {
+  id: number | string; // number = 已存库；string = 临时 ID
+  question: string;
+  answer: string;
+  sources: string[];
+  streaming: boolean;
+}
 
 export default function QAPage() {
   const { id } = useParams<{ id: string }>();
   const resumeId = Number(id);
 
   const [resume, setResume] = useState<ResumeItem | null>(null);
-  const [chat, setChat] = useState<AnswerResponse[]>([]);
+  const [chat, setChat] = useState<ChatMessage[]>([]);
   const [question, setQuestion] = useState("");
   const [asking, setAsking] = useState(false);
   const [error, setError] = useState("");
-  const [expandedSource, setExpandedSource] = useState<number | null>(null);
+  const [expandedSource, setExpandedSource] = useState<string | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
-    // 拿到简历文件名
     listResumes().then((data) => {
       const r = data.items.find((item) => item.id === resumeId);
       if (r) setResume(r);
     });
-    // 加载历史问答
     getHistory(resumeId)
-      .then((data) => setChat(data.items))
+      .then((data) =>
+        setChat(
+          data.items.map((it) => ({
+            id: it.id,
+            question: it.question,
+            answer: it.answer,
+            sources: it.sources,
+            streaming: false,
+          }))
+        )
+      )
       .catch(() => {});
   }, [resumeId]);
 
@@ -31,22 +48,91 @@ export default function QAPage() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chat]);
 
-  const handleAsk = async (e: FormEvent) => {
-    e.preventDefault();
-    const q = question.trim();
-    if (!q || asking) return;
+  // 组件卸载时取消 SSE
+  useEffect(() => {
+    return () => abortRef.current?.();
+  }, []);
 
-    setQuestion("");
-    setError("");
-    setAsking(true);
-    try {
-      const answer = await askQuestion(resumeId, q);
-      setChat((prev) => [...prev, answer]);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "提问失败");
-    } finally {
-      setAsking(false);
-    }
+  const handleAsk = useCallback(
+    (e: FormEvent) => {
+      e.preventDefault();
+      const q = question.trim();
+      if (!q || asking) return;
+
+      setQuestion("");
+      setError("");
+      setAsking(true);
+
+      const tempId = `streaming-${Date.now()}`;
+      const newMsg: ChatMessage = {
+        id: tempId,
+        question: q,
+        answer: "",
+        sources: [],
+        streaming: true,
+      };
+      setChat((prev) => [...prev, newMsg]);
+
+      abortRef.current = askQuestionStream(
+        resumeId,
+        q,
+        (event: SSEEvent) => {
+          if (event.type === "token" && event.content) {
+            setChat((prev) =>
+              prev.map((m) =>
+                m.id === tempId ? { ...m, answer: m.answer + event.content } : m
+              )
+            );
+          } else if (event.type === "done") {
+            setChat((prev) =>
+              prev.map((m) =>
+                m.id === tempId
+                  ? {
+                      ...m,
+                      id: event.qa_id ?? tempId,
+                      sources: event.sources ?? [],
+                      streaming: false,
+                    }
+                  : m
+              )
+            );
+            setAsking(false);
+          } else if (event.type === "error") {
+            setChat((prev) =>
+              prev.map((m) =>
+                m.id === tempId
+                  ? { ...m, answer: event.message ?? "生成失败", streaming: false }
+                  : m
+              )
+            );
+            setAsking(false);
+          }
+        },
+        (err: Error) => {
+          setError(err.message);
+          setChat((prev) =>
+            prev.map((m) =>
+              m.id === tempId
+                ? { ...m, answer: "生成失败，请重试", streaming: false }
+                : m
+            )
+          );
+          setAsking(false);
+        }
+      );
+    },
+    [question, asking, resumeId]
+  );
+
+  // 取消当前生成
+  const handleCancel = () => {
+    abortRef.current?.();
+    setAsking(false);
+    setChat((prev) =>
+      prev.map((m) =>
+        m.streaming ? { ...m, answer: m.answer || "已取消", streaming: false } : m
+      )
+    );
   };
 
   return (
@@ -72,77 +158,76 @@ export default function QAPage() {
           </div>
         )}
 
-        {chat.map((item, i) => (
-          <div key={item.id || i}>
-            {/* 用户问题 */}
-            <div className="flex justify-end mb-3">
-              <div className="max-w-[80%] px-4 py-2.5 bg-blue-600 text-white text-sm rounded-2xl rounded-br-md">
-                {item.question}
-              </div>
-            </div>
-
-            {/* AI 回答 */}
-            <div className="flex justify-start">
-              <div className="max-w-[85%]">
-                <div className="px-4 py-3 bg-gray-100 text-gray-800 text-sm rounded-2xl rounded-bl-md leading-relaxed whitespace-pre-wrap">
-                  {item.answer}
+        {chat.map((item) => {
+          const msgKey = String(item.id);
+          return (
+            <div key={msgKey}>
+              {/* 用户问题 */}
+              <div className="flex justify-end mb-3">
+                <div className="max-w-[80%] px-4 py-2.5 bg-blue-600 text-white text-sm rounded-2xl rounded-br-md">
+                  {item.question}
                 </div>
+              </div>
 
-                {/* 来源引用 */}
-                {item.sources && item.sources.length > 0 && (
-                  <div className="mt-1.5">
-                    <button
-                      onClick={() =>
-                        setExpandedSource(
-                          expandedSource === i ? null : i
-                        )
-                      }
-                      className="text-xs text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
-                    >
-                      来源 ({item.sources.length}){" "}
-                      {expandedSource === i ? "▲" : "▼"}
-                    </button>
-                    {expandedSource === i && (
-                      <div className="mt-1.5 space-y-1.5">
-                        {item.sources.map((src, j) => (
-                          <div
-                            key={j}
-                            className="p-2.5 bg-yellow-50 border border-yellow-100 rounded-lg text-xs text-gray-600"
-                          >
-                            <span className="text-yellow-600 font-medium mr-2">
-                              [{j + 1}]
-                            </span>
-                            {src.length > 200
-                              ? src.slice(0, 200) + "..."
-                              : src}
-                          </div>
-                        ))}
-                      </div>
+              {/* AI 回答 */}
+              <div className="flex justify-start">
+                <div className="max-w-[85%]">
+                  <div
+                    className={`px-4 py-3 text-sm rounded-2xl rounded-bl-md leading-relaxed whitespace-pre-wrap ${
+                      item.streaming && !item.answer
+                        ? "bg-gray-100 text-gray-400"
+                        : "bg-gray-100 text-gray-800"
+                    }`}
+                  >
+                    {item.answer || (item.streaming ? "思考中..." : "")}
+                    {item.streaming && (
+                      <span className="inline-block w-1.5 h-4 bg-gray-500 ml-0.5 animate-pulse align-middle" />
                     )}
                   </div>
-                )}
+
+                  {/* 来源引用 */}
+                  {!item.streaming && item.sources.length > 0 && (
+                    <div className="mt-1.5">
+                      <button
+                        onClick={() =>
+                          setExpandedSource(
+                            expandedSource === msgKey ? null : msgKey
+                          )
+                        }
+                        className="text-xs text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
+                      >
+                        来源 ({item.sources.length}){" "}
+                        {expandedSource === msgKey ? "▲" : "▼"}
+                      </button>
+                      {expandedSource === msgKey && (
+                        <div className="mt-1.5 space-y-1.5">
+                          {item.sources.map((src, j) => (
+                            <div
+                              key={j}
+                              className="p-2.5 bg-yellow-50 border border-yellow-100 rounded-lg text-xs text-gray-600"
+                            >
+                              <span className="text-yellow-600 font-medium mr-2">
+                                [{j + 1}]
+                              </span>
+                              {src.length > 200
+                                ? src.slice(0, 200) + "..."
+                                : src}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
 
         {/* 错误提示 */}
         {error && (
           <div className="p-3 rounded-lg bg-red-50 border border-red-100 text-red-700 text-sm">
             {error}
-          </div>
-        )}
-
-        {/* 思考中 */}
-        {asking && (
-          <div className="flex justify-start">
-            <div className="px-5 py-3 bg-gray-100 text-gray-500 text-sm rounded-2xl rounded-bl-md">
-              <span className="inline-flex gap-1">
-                <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" />
-                <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:0.15s]" />
-                <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:0.3s]" />
-              </span>
-            </div>
           </div>
         )}
 
@@ -164,15 +249,26 @@ export default function QAPage() {
             focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
             placeholder:text-gray-400 disabled:bg-gray-50"
         />
-        <button
-          type="submit"
-          disabled={asking || !question.trim()}
-          className="px-5 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-xl
-            hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed
-            transition-colors cursor-pointer shrink-0"
-        >
-          {asking ? "思考中" : "发送"}
-        </button>
+        {asking ? (
+          <button
+            type="button"
+            onClick={handleCancel}
+            className="px-5 py-2.5 bg-gray-400 text-white text-sm font-medium rounded-xl
+              hover:bg-gray-500 transition-colors cursor-pointer shrink-0"
+          >
+            取消
+          </button>
+        ) : (
+          <button
+            type="submit"
+            disabled={!question.trim()}
+            className="px-5 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-xl
+              hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed
+              transition-colors cursor-pointer shrink-0"
+          >
+            发送
+          </button>
+        )}
       </form>
     </div>
   );

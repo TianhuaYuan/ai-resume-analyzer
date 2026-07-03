@@ -4,6 +4,7 @@ import {
   listResumes,
   uploadResume,
   deleteResume,
+  getResume,
   type ResumeItem,
 } from "../api/resumes";
 
@@ -14,6 +15,7 @@ export default function ResumeListPage() {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchResumes = async () => {
     setLoading(true);
@@ -30,7 +32,46 @@ export default function ResumeListPage() {
 
   useEffect(() => {
     fetchResumes();
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
   }, []);
+
+  const startPoll = (resumeId: number) => {
+    let attempts = 0;
+    pollRef.current = setInterval(async () => {
+      attempts++;
+      try {
+        const r = await getResume(resumeId);
+        if (r.status === "ready") {
+          clearInterval(pollRef.current!);
+          pollRef.current = null;
+          setResumes((prev) => prev.map((item) => (item.id === resumeId ? r : item)));
+          return;
+        }
+        if (r.status === "failed" || attempts > 30) {
+          clearInterval(pollRef.current!);
+          pollRef.current = null;
+          setResumes((prev) =>
+            prev.map((item) =>
+              item.id === resumeId
+                ? { ...item, status: r.status, status_message: r.status_message }
+                : item
+            )
+          );
+          if (r.status === "failed") setError(`处理失败：${r.status_message || "未知错误"}`);
+          return;
+        }
+        // processing → 更新列表中的状态
+        setResumes((prev) =>
+          prev.map((item) => (item.id === resumeId ? { ...item, status: r.status } : item))
+        );
+      } catch {
+        clearInterval(pollRef.current!);
+        pollRef.current = null;
+      }
+    }, 1500);
+  };
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -39,13 +80,23 @@ export default function ResumeListPage() {
     setError("");
     setUploading(true);
     try {
-      await uploadResume(file);
-      await fetchResumes();
+      const result = await uploadResume(file);
+      // 立即插入占位卡片，然后轮询状态
+      const placeholder: ResumeItem = {
+        id: result.id,
+        filename: result.filename,
+        chunk_count: 0,
+        status: "processing",
+        status_message: "",
+        created_at: new Date().toISOString(),
+      };
+      setResumes((prev) => [placeholder, ...prev]);
+      setTotal((prev) => prev + 1);
+      startPoll(result.id);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "上传失败");
     } finally {
       setUploading(false);
-      // 重置 input，否则同一个文件再选不触发 onChange
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
@@ -59,6 +110,24 @@ export default function ResumeListPage() {
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "删除失败");
     }
+  };
+
+  const statusBadge = (r: ResumeItem) => {
+    if (r.status === "processing") {
+      return (
+        <span className="text-xs text-yellow-600 bg-yellow-50 px-2 py-0.5 rounded-full">
+          处理中...
+        </span>
+      );
+    }
+    if (r.status === "failed") {
+      return (
+        <span className="text-xs text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
+          失败
+        </span>
+      );
+    }
+    return null;
   };
 
   return (
@@ -112,18 +181,29 @@ export default function ResumeListPage() {
               className="flex items-center justify-between p-4 bg-white rounded-lg
                 border border-gray-200 hover:border-blue-200 transition-colors"
             >
-              <Link
-                to={`/resumes/${r.id}`}
-                className="flex-1 min-w-0 no-underline"
-              >
-                <p className="text-sm font-medium text-gray-900 truncate">
-                  {r.filename}
-                </p>
-                <p className="text-xs text-gray-400 mt-1">
-                  {r.chunk_count} 个分块 ·{" "}
-                  {new Date(r.created_at).toLocaleDateString("zh-CN")}
-                </p>
-              </Link>
+              {r.status === "ready" ? (
+                <Link
+                  to={`/resumes/${r.id}`}
+                  className="flex-1 min-w-0 no-underline"
+                >
+                  <p className="text-sm font-medium text-gray-900 truncate">
+                    {r.filename}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    {r.chunk_count} 个分块 ·{" "}
+                    {new Date(r.created_at).toLocaleDateString("zh-CN")}
+                  </p>
+                </Link>
+              ) : (
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-500 truncate">
+                    {r.filename}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1 flex items-center gap-2">
+                    {statusBadge(r)}
+                  </p>
+                </div>
+              )}
               <button
                 onClick={() => handleDelete(r.id, r.filename)}
                 className="ml-4 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50

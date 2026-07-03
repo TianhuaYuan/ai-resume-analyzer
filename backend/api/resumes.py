@@ -1,31 +1,32 @@
-from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_current_user
 from core.database import get_db
 from models.user import User
-from schemas.resume import ResumeListResponse, ResumeResponse, UploadResponse
+from schemas.resume import ResumeListResponse, ResumeResponse, UploadAsyncResponse
 from services import resume_service
 
 router = APIRouter(prefix="/api/resumes", tags=["resumes"])
 
 
-@router.post("", response_model=UploadResponse, status_code=201)
+@router.post("", response_model=UploadAsyncResponse, status_code=202)
 async def upload_resume(
     file: UploadFile = File(...),
+    background: BackgroundTasks = None,  # type: ignore[assignment]
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """上传简历。解析文件 → 分块 → 向量化 → Chroma 入库。"""
+    """上传简历。立即返回 202，后台异步解析+分块+向量化。"""
     file_path, filename = await resume_service.save_upload_file(file)
-    resume = await resume_service.create_resume(
+    resume = await resume_service.create_resume_quick(
         db, current_user.id, filename, file_path
     )
-    return UploadResponse(
+    background.add_task(resume_service.process_resume_background, resume.id, file_path)
+    return UploadAsyncResponse(
         id=resume.id,
         filename=resume.filename,
-        preview=resume.parsed_text[:200],
-        chunk_count=resume.chunk_count,
+        status=resume.status,
     )
 
 
@@ -49,7 +50,7 @@ async def get_resume(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """查单份简历。非本人→404。"""
+    """查单份简历（含处理状态）。非本人→404。"""
     return await resume_service.get_resume(db, resume_id, current_user.id)
 
 
@@ -59,6 +60,6 @@ async def delete_resume(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """删简历。先删 MySQL（CASCADE 清历史）→ 清 Chroma → 删文件。"""
+    """删简历。先删 MySQL（CASCADE 清历史）→ 清 Chroma → 删文件 → 清 Embedding 缓存。"""
     await resume_service.delete_resume(db, resume_id, current_user.id)
     return None

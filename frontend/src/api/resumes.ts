@@ -4,14 +4,15 @@ export interface ResumeItem {
   id: number;
   filename: string;
   chunk_count: number;
+  status: string;
+  status_message: string;
   created_at: string;
 }
 
-export interface UploadResult {
+export interface UploadAsyncResult {
   id: number;
   filename: string;
-  preview: string;
-  chunk_count: number;
+  status: string;
 }
 
 export async function listResumes(limit = 20, offset = 0) {
@@ -24,7 +25,11 @@ export async function listResumes(limit = 20, offset = 0) {
 export async function uploadResume(file: File) {
   const form = new FormData();
   form.append("file", file);
-  return api.post("/api/resumes", form, true) as Promise<UploadResult>;
+  return api.post("/api/resumes", form, true) as Promise<UploadAsyncResult>;
+}
+
+export async function getResume(id: number) {
+  return api.get(`/api/resumes/${id}`) as Promise<ResumeItem>;
 }
 
 export async function deleteResume(id: number) {
