@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
+    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:5174"
+    LOG_LEVEL: str = "INFO"
+
     UPLOAD_DIR: str = "./uploads"
 
     model_config = SettingsConfigDict(

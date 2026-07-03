@@ -1,3 +1,4 @@
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -29,6 +30,6 @@ async def get_db():
 
 
 async def init_db():
-    """开发用：启动时 create_all，生产用 alembic"""
+    """启动时验证数据库连通性，表迁移由 alembic 管理"""
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.execute(text("SELECT 1"))
