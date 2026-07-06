@@ -8,6 +8,147 @@ import {
   type ResumeItem,
 } from "../api/resumes";
 
+// ── 骨架屏 ──────────────────────────────────────────────
+
+function SkeletonCard() {
+  return (
+    <div className="bg-white/4 border border-white/8 rounded-2xl p-5">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3 flex-1">
+          <div className="w-8 h-8 rounded-lg animate-skeleton" />
+          <div className="flex-1 space-y-2">
+            <div className="h-4 w-48 rounded animate-skeleton" />
+            <div className="h-3 w-32 rounded animate-skeleton" />
+          </div>
+        </div>
+        <div className="h-6 w-16 rounded-full animate-skeleton" />
+      </div>
+    </div>
+  );
+}
+
+function SkeletonList() {
+  return (
+    <div className="space-y-3">
+      {[0, 1, 2].map((i) => (
+        <SkeletonCard key={i} />
+      ))}
+    </div>
+  );
+}
+
+// ── 状态 Badge ──────────────────────────────────────────
+
+function StatusBadge({ status }: { status: string }) {
+  if (status === "processing") {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium
+        bg-amber-500/12 border border-amber-500/20 text-amber-400">
+        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-progress-pulse" />
+        处理中
+      </span>
+    );
+  }
+  if (status === "failed") {
+    return (
+      <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium
+        bg-red-500/12 border border-red-500/20 text-red-400">
+        失败
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium
+      bg-emerald-500/12 border border-emerald-500/20 text-emerald-400">
+      就绪
+    </span>
+  );
+}
+
+// ── 文件图标 ────────────────────────────────────────────
+
+function FileIcon({ status }: { status: string }) {
+  const bg =
+    status === "failed"
+      ? "bg-red-500/12"
+      : status === "processing"
+      ? "bg-amber-500/12"
+      : "bg-indigo-500/12";
+  const emoji = status === "failed" ? "⚠️" : status === "processing" ? "⏳" : "📄";
+
+  return (
+    <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-base ${bg}`}>
+      {emoji}
+    </div>
+  );
+}
+
+// ── 确认删除弹窗 ────────────────────────────────────────
+
+function ConfirmDialog({
+  filename,
+  onConfirm,
+  onCancel,
+}: {
+  filename: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="bg-[#1e293b] border border-white/10 rounded-2xl p-6 max-w-sm w-full mx-4
+        animate-fade-in-up shadow-2xl">
+        <h3 className="text-lg font-semibold text-slate-100 mb-2">确认删除</h3>
+        <p className="text-sm text-slate-400 mb-6">
+          确定删除「<span className="text-slate-200">{filename}</span>」吗？此操作不可撤销。
+        </p>
+        <div className="flex gap-3 justify-end">
+          <button
+            onClick={onCancel}
+            className="px-4 py-2 text-sm text-slate-400 hover:text-slate-200
+              bg-white/5 border border-white/10 rounded-lg transition-colors cursor-pointer"
+          >
+            取消
+          </button>
+          <button
+            onClick={onConfirm}
+            className="px-4 py-2 text-sm text-white bg-red-500/80 hover:bg-red-500
+              rounded-lg transition-colors cursor-pointer"
+          >
+            删除
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── 空状态 ──────────────────────────────────────────────
+
+function EmptyState({ onUpload }: { onUpload: () => void }) {
+  return (
+    <div className="text-center py-20">
+      <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-indigo-500/10 border border-indigo-500/15
+        flex items-center justify-center text-4xl">
+        📋
+      </div>
+      <h3 className="text-lg font-medium text-slate-200 mb-2">还没有简历</h3>
+      <p className="text-sm text-slate-500 mb-6">上传你的第一份简历，开始 AI 智能分析</p>
+      <button
+        onClick={onUpload}
+        className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white
+          bg-linear-to-r from-indigo-500 to-purple-600
+          hover:brightness-110 hover:shadow-lg hover:shadow-indigo-500/25
+          active:scale-[0.98] transition-all duration-200 cursor-pointer"
+      >
+        上传简历
+      </button>
+    </div>
+  );
+}
+
+// ── 主组件 ──────────────────────────────────────────────
+
 export default function ResumeListPage() {
   const [resumes, setResumes] = useState<ResumeItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -16,6 +157,8 @@ export default function ResumeListPage() {
   const [error, setError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [newCardId, setNewCardId] = useState<number | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ResumeItem | null>(null);
 
   const fetchResumes = async () => {
     setLoading(true);
@@ -37,6 +180,7 @@ export default function ResumeListPage() {
     };
   }, []);
 
+  // ── 轮询处理状态 ──
   const startPoll = (resumeId: number) => {
     let attempts = 0;
     pollRef.current = setInterval(async () => {
@@ -46,7 +190,9 @@ export default function ResumeListPage() {
         if (r.status === "ready") {
           clearInterval(pollRef.current!);
           pollRef.current = null;
-          setResumes((prev) => prev.map((item) => (item.id === resumeId ? r : item)));
+          setResumes((prev) =>
+            prev.map((item) => (item.id === resumeId ? r : item))
+          );
           return;
         }
         if (r.status === "failed" || attempts > 30) {
@@ -59,12 +205,14 @@ export default function ResumeListPage() {
                 : item
             )
           );
-          if (r.status === "failed") setError(`处理失败：${r.status_message || "未知错误"}`);
+          if (r.status === "failed")
+            setError(`处理失败：${r.status_message || "未知错误"}`);
           return;
         }
-        // processing → 更新列表中的状态
         setResumes((prev) =>
-          prev.map((item) => (item.id === resumeId ? { ...item, status: r.status } : item))
+          prev.map((item) =>
+            item.id === resumeId ? { ...item, status: r.status } : item
+          )
         );
       } catch {
         clearInterval(pollRef.current!);
@@ -72,6 +220,9 @@ export default function ResumeListPage() {
       }
     }, 1500);
   };
+
+  // ── 上传 ──
+  const triggerUpload = () => fileInputRef.current?.click();
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -81,7 +232,6 @@ export default function ResumeListPage() {
     setUploading(true);
     try {
       const result = await uploadResume(file);
-      // 立即插入占位卡片，然后轮询状态
       const placeholder: ResumeItem = {
         id: result.id,
         filename: result.filename,
@@ -92,6 +242,7 @@ export default function ResumeListPage() {
       };
       setResumes((prev) => [placeholder, ...prev]);
       setTotal((prev) => prev + 1);
+      setNewCardId(result.id);
       startPoll(result.id);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "上传失败");
@@ -101,123 +252,163 @@ export default function ResumeListPage() {
     }
   };
 
-  const handleDelete = async (id: number, filename: string) => {
-    if (!confirm(`确定删除「${filename}」吗？`)) return;
+  // ── 删除 ──
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
     try {
-      await deleteResume(id);
-      setResumes((prev) => prev.filter((r) => r.id !== id));
+      await deleteResume(deleteTarget.id);
+      setResumes((prev) => prev.filter((r) => r.id !== deleteTarget.id));
       setTotal((prev) => prev - 1);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "删除失败");
+    } finally {
+      setDeleteTarget(null);
     }
-  };
-
-  const statusBadge = (r: ResumeItem) => {
-    if (r.status === "processing") {
-      return (
-        <span className="text-xs text-yellow-600 bg-yellow-50 px-2 py-0.5 rounded-full">
-          处理中...
-        </span>
-      );
-    }
-    if (r.status === "failed") {
-      return (
-        <span className="text-xs text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
-          失败
-        </span>
-      );
-    }
-    return null;
   };
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-semibold text-gray-900">
-          我的简历{" "}
-          <span className="text-sm font-normal text-gray-400">
-            ({total} 份)
-          </span>
-        </h2>
-        <div>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".pdf,.docx"
-            onChange={handleUpload}
-            className="hidden"
-          />
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
-            className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg
-              hover:bg-blue-700 disabled:opacity-50 transition-colors cursor-pointer"
-          >
-            {uploading ? "上传中..." : "+ 上传简历"}
-          </button>
+    <div className="min-h-screen bg-[#0f172a]">
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
+        {/* ── 顶部栏 ── */}
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-xl font-semibold text-slate-100">
+              我的简历
+              <span className="text-sm font-normal text-slate-500 ml-2">
+                ({total} 份)
+              </span>
+            </h1>
+          </div>
+          <div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.docx"
+              onChange={handleUpload}
+              className="hidden"
+            />
+            <button
+              onClick={triggerUpload}
+              disabled={uploading}
+              className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white
+                bg-linear-to-r from-indigo-500 to-purple-600
+                hover:brightness-110 hover:shadow-lg hover:shadow-indigo-500/25
+                active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed
+                transition-all duration-200 cursor-pointer"
+            >
+              {uploading ? "上传中..." : "+ 上传简历"}
+            </button>
+          </div>
         </div>
+
+        {/* ── 错误提示 ── */}
+        {error && (
+          <div className="mb-6 p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm animate-shake">
+            {error}
+            <button
+              onClick={() => setError("")}
+              className="ml-3 text-red-500 hover:text-red-400 cursor-pointer"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
+        {/* ── 内容区 ── */}
+        {loading ? (
+          <SkeletonList />
+        ) : resumes.length === 0 ? (
+          <EmptyState onUpload={triggerUpload} />
+        ) : (
+          <div className="space-y-3">
+            {resumes.map((r, index) => (
+              <Link
+                key={r.id}
+                to={r.status === "ready" ? `/resumes/${r.id}` : "#"}
+                className={`block group ${r.status !== "ready" ? "pointer-events-none" : ""}`}
+              >
+                <div
+                  className={`flex items-center justify-between p-5 rounded-2xl
+                    border transition-all duration-200
+                    ${r.status === "ready"
+                      ? "bg-white/4 border-white/8 hover:border-indigo-500/30 hover:bg-white/[0.06] hover:-translate-y-px cursor-pointer"
+                      : r.status === "failed"
+                      ? "bg-white/4 border-red-500/15"
+                      : "bg-white/4 border-white/8"
+                    }
+                    ${r.id === newCardId ? "animate-slide-in-top" : ""}
+                  `}
+                  style={
+                    r.id !== newCardId
+                      ? { animationDelay: `${index * 60}ms` }
+                      : undefined
+                  }
+                >
+                  {/* 左侧 */}
+                  <div className="flex items-center gap-3.5 flex-1 min-w-0">
+                    <FileIcon status={r.status} />
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-sm font-medium truncate ${
+                        r.status === "ready" ? "text-slate-200 group-hover:text-white" : "text-slate-400"
+                      }`}>
+                        {r.filename}
+                      </p>
+                      <div className="flex items-center gap-2 mt-1">
+                        {r.status === "processing" ? (
+                          <div className="flex items-center gap-2">
+                            <div className="h-1 w-24 rounded-full bg-white/6 overflow-hidden">
+                              <div className="h-full w-3/5 rounded-full bg-linear-to-r from-amber-500 to-amber-400 animate-progress-pulse" />
+                            </div>
+                            <span className="text-xs text-slate-500">解析中...</span>
+                          </div>
+                        ) : r.status === "failed" ? (
+                          <span className="text-xs text-red-400/80">
+                            {r.status_message || "处理失败"}
+                          </span>
+                        ) : (
+                          <>
+                            <span className="text-xs text-slate-500">
+                              {r.chunk_count} 个分块
+                            </span>
+                            <span className="text-xs text-slate-600">·</span>
+                            <span className="text-xs text-slate-500">
+                              {new Date(r.created_at).toLocaleDateString("zh-CN")}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 右侧 */}
+                  <div className="flex items-center gap-3 ml-4 shrink-0">
+                    <StatusBadge status={r.status} />
+                    <button
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setDeleteTarget(r);
+                      }}
+                      className="px-2.5 py-1.5 text-xs text-slate-500 hover:text-red-400
+                        hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer"
+                    >
+                      删除
+                    </button>
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
       </div>
 
-      {error && (
-        <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-100 text-red-700 text-sm">
-          {error}
-        </div>
-      )}
-
-      {/* 空状态 */}
-      {!loading && resumes.length === 0 && (
-        <div className="text-center py-16 text-gray-400">
-          <p className="text-lg mb-2">还没有简历</p>
-          <p className="text-sm">点击右上角「上传简历」开始</p>
-        </div>
-      )}
-
-      {/* 列表 */}
-      {resumes.length > 0 && (
-        <div className="space-y-3">
-          {resumes.map((r) => (
-            <div
-              key={r.id}
-              className="flex items-center justify-between p-4 bg-white rounded-lg
-                border border-gray-200 hover:border-blue-200 transition-colors"
-            >
-              {r.status === "ready" ? (
-                <Link
-                  to={`/resumes/${r.id}`}
-                  className="flex-1 min-w-0 no-underline"
-                >
-                  <p className="text-sm font-medium text-gray-900 truncate">
-                    {r.filename}
-                  </p>
-                  <p className="text-xs text-gray-400 mt-1">
-                    {r.chunk_count} 个分块 ·{" "}
-                    {new Date(r.created_at).toLocaleDateString("zh-CN")}
-                  </p>
-                </Link>
-              ) : (
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-500 truncate">
-                    {r.filename}
-                  </p>
-                  <p className="text-xs text-gray-400 mt-1 flex items-center gap-2">
-                    {statusBadge(r)}
-                  </p>
-                </div>
-              )}
-              <button
-                onClick={() => handleDelete(r.id, r.filename)}
-                className="ml-4 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50
-                  rounded-md transition-colors cursor-pointer shrink-0"
-              >
-                删除
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {loading && (
-        <div className="text-center py-8 text-gray-400 text-sm">加载中...</div>
+      {/* ── 删除确认弹窗 ── */}
+      {deleteTarget && (
+        <ConfirmDialog
+          filename={deleteTarget.filename}
+          onConfirm={handleDelete}
+          onCancel={() => setDeleteTarget(null)}
+        />
       )}
     </div>
   );

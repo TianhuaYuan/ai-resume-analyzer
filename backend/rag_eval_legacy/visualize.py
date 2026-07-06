@@ -1,7 +1,7 @@
 """
 可视化 Baseline 对照实验结果。
-用法: python -m eval.visualize
-输出: backend/eval/baseline_charts.png
+用法: python -m rag_eval_legacy.visualize
+输出: backend/rag_eval_legacy/baseline_charts.png
 """
 
 import json

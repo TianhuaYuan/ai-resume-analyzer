@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import uuid
@@ -21,15 +22,60 @@ UPLOAD_DIR = Path(settings.UPLOAD_DIR).resolve()
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 
+ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt"}
+ALLOWED_MIME_TYPES = {
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "text/plain",
+}
+CHUNK_SIZE = 64 * 1024  # 64KB per read chunk
+
+
 async def save_upload_file(file: UploadFile) -> tuple[str, str]:
-    """将上传文件保存到 uploads/，返回 (存储路径, 原始文件名)"""
+    """将上传文件保存到 uploads/，返回 (存储路径, 原始文件名)。
+    Content-Length 预检 → 扩展名/MIME 白名单 → 流式写入 + 实时大小检查。"""
     original = file.filename or "resume.bin"
-    ext = Path(original).suffix
+    ext = Path(original).suffix.lower()
+
+    # 1. 扩展名白名单
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"不支持的文件类型 {ext}，仅允许 {', '.join(ALLOWED_EXTENSIONS)}",
+        )
+
+    # 2. MIME 类型白名单
+    if file.content_type and file.content_type not in ALLOWED_MIME_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"不支持的 MIME 类型 {file.content_type}",
+        )
+
+    # 3. Content-Length 预检（快速拒绝超大文件）
+    max_bytes = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
+    if file.size and file.size > max_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"文件大小 {file.size / (1024*1024):.1f}MB 超过限制 {settings.MAX_UPLOAD_SIZE_MB}MB",
+        )
+
+    # 4. 流式写入 + 实时大小检查
     unique_name = f"{uuid.uuid4().hex}{ext}"
     save_path = UPLOAD_DIR / unique_name
-    content = await file.read()
+    written = 0
+
     with open(save_path, "wb") as f:
-        f.write(content)
+        while chunk := await file.read(CHUNK_SIZE):
+            written += len(chunk)
+            if written > max_bytes:
+                f.close()
+                save_path.unlink(missing_ok=True)
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail=f"文件大小超过限制 {settings.MAX_UPLOAD_SIZE_MB}MB",
+                )
+            f.write(chunk)
+
     return str(save_path), original
 
 
@@ -110,9 +156,10 @@ async def delete_resume(db: AsyncSession, resume_id: int, user_id: int) -> None:
     await db.delete(resume)
     await db.commit()
 
-    rag_service.clear_resume_vectors(resume_id)
+    cleared = await embedding_cache.clear_resume(resume_id)
+    logger.info("Cleared %d embedding cache entries for resume %d", cleared, resume_id)
+    await rag_service.clear_resume_vectors(resume_id)
     try:
         os.remove(file_path)
     except Exception:
         logger.warning("Failed to delete resume file: %s", file_path)
-    embedding_cache.clear()

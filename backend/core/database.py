@@ -9,6 +9,7 @@ engine = create_async_engine(
     pool_size=10,
     max_overflow=20,
     pool_pre_ping=True,
+    pool_recycle=3600,  # 主动回收空闲连接，防止 MySQL wait_timeout 断开
     echo=False,
 )
 

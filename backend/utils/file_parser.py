@@ -21,7 +21,7 @@ def parse_pdf(path: str) -> str:
 def parse_docx(path: str) -> str:
     """逐段提取 Word 文本"""
     doc = Document(path)
-    return "\n".join(p.text for p in doc.paragraphs).strip()
+    return "\n".join((p.text or "") for p in doc.paragraphs).strip()
 
 
 def parse_txt(path: str) -> str:
@@ -36,18 +36,21 @@ def parse_txt(path: str) -> str:
     return raw.decode("utf-8", errors="replace").strip()
 
 
+_PARSERS: dict[str, callable] = {
+    ".pdf": parse_pdf,
+    ".docx": parse_docx,
+    ".txt": parse_txt,
+}
+
+
 def parse_resume(path: str) -> str:
     """根据扩展名自动选 PDF/Word/TXT 解析器"""
     ext = Path(path).suffix.lower()
-    if ext == ".pdf":
-        text = parse_pdf(path)
-    elif ext == ".docx":
-        text = parse_docx(path)
-    elif ext == ".txt":
-        text = parse_txt(path)
-    else:
+    parser = _PARSERS.get(ext)
+    if parser is None:
         raise ValueError(f"不支持的文件格式：{ext}")
 
+    text = parser(path)
     if len(text) < MIN_SCAN_TEXT_LENGTH:
         logger.warning("解析文本过短: path=%s, len=%d", path, len(text))
         raise ValueError("解析文本过短，可能是扫描件 PDF")

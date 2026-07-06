@@ -7,8 +7,15 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
-FALLBACK_MESSAGE = "服务暂时不可用，请稍后重试。"
-
+# 不可重试的编程错误（重试也无法修复，应立即暴露）
+NON_RETRYABLE = (
+    TypeError,
+    ValueError,
+    AttributeError,
+    KeyError,
+    IndexError,
+    AssertionError,
+)
 
 async def with_retry(
     fn: Callable[..., Coroutine[Any, Any, T]],
@@ -18,11 +25,14 @@ async def with_retry(
     fallback: T | None = None,
     **kwargs,
 ) -> T:
-    """指数退避重试：1s → 2s → 4s。全部失败返回 fallback 或抛异常。"""
+    """指数退避重试：1s → 2s → 4s。
+    所有异常默认重试，但编程错误（TypeError/ValueError/KeyError 等）直接抛出。"""
     last_error: Exception | None = None
     for attempt in range(max_retries + 1):
         try:
             return await fn(*args, **kwargs)
+        except NON_RETRYABLE:
+            raise  # 编程错误不重试，直接抛
         except Exception as e:
             last_error = e
             if attempt < max_retries:

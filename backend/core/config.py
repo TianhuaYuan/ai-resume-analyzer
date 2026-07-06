@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -26,13 +27,21 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
 
     UPLOAD_DIR: str = "./uploads"
+    MAX_UPLOAD_SIZE_MB: int = 10  # 单文件最大 10MB
 
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
-        extra="ignore",
+        extra="forbid",
         case_sensitive=True,
     )
+
+    @field_validator("JWT_SECRET_KEY")
+    @classmethod
+    def _check_secret_length(cls, v: str) -> str:
+        if len(v) < 32:
+            raise ValueError("JWT_SECRET_KEY must be at least 32 characters")
+        return v
 
 
 settings = Settings()

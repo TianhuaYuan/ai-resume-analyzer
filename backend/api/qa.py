@@ -1,12 +1,13 @@
 import json
 import logging
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_current_user
 from core.database import get_db
+from core.limiter import limiter
 from models.user import User
 from schemas.qa import AnswerResponse, QuestionRequest, QAHistoryResponse
 from services import qa_service, rag_service, resume_service
@@ -16,7 +17,9 @@ router = APIRouter(prefix="/api/qa", tags=["qa"])
 
 
 @router.post("/ask", response_model=AnswerResponse)
+@limiter.limit("20/minute")
 async def ask_question(
+    request: Request,
     data: QuestionRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -42,7 +45,9 @@ async def ask_question(
 
 
 @router.post("/ask/stream")
+@limiter.limit("20/minute")
 async def ask_question_stream(
+    request: Request,
     data: QuestionRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -57,16 +62,17 @@ async def ask_question_stream(
             async for event in rag_service.ask_question_stream(data.resume_id, data.question):
                 if event["type"] == "done":
                     full_answer = event.get("answer", "")
-                    sources_texts = event.get("sources", [])
-                    # 存历史
+                    sources_data = event.get("sources", [])
+                    # sources_data 现在是 [{"chunk_index":..., "text":..., "section":...}]
                     sources_for_db = [
-                        {"chunk_id": i, "text": t, "section": ""}
-                        for i, t in enumerate(sources_texts)
+                        {"chunk_id": s.get("chunk_index", i), "text": s["text"], "section": s.get("section", "")}
+                        for i, s in enumerate(sources_data)
                     ]
                     record = await qa_service.save_qa(
                         db, current_user.id, data.resume_id,
                         data.question, full_answer, sources_for_db,
                     )
+                    sources_texts = [s["text"] for s in sources_data]
                     yield f"data: {json.dumps({'type': 'done', 'sources': sources_texts, 'qa_id': record.id}, ensure_ascii=False)}\n\n"
                 else:
                     yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
@@ -80,7 +86,7 @@ async def ask_question_stream(
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",  # 关 nginx 缓冲
+            "X-Accel-Buffering": "no",
         },
     )
 

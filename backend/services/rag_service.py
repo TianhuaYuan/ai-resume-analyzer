@@ -1,7 +1,9 @@
+import asyncio
 import logging
 import os
 import re
 import shutil
+import sqlite3
 
 import chromadb
 import httpx
@@ -11,16 +13,20 @@ from rank_bm25 import BM25Okapi
 
 from core import cache as embedding_cache
 from core.config import settings
-from core.retry import FALLBACK_MESSAGE, with_retry
+from core.rag_params import RagParams
+from core.retry import with_retry
 from core.trace import StepTimer
 
 logger = logging.getLogger(__name__)
 
+FALLBACK_MESSAGE = "服务暂时不可用，请稍后重试。"
 
 _chat_client: AsyncOpenAI | None = None
 _embedding_client: AsyncOpenAI | None = None
 _chroma_client = None
 _bm25_indexes: dict[int, tuple[BM25Okapi, list[dict]]] = {}
+_BM25_MAX_SIZE = 50  # LRU 上限，防止内存无限增长
+_bm25_lock = asyncio.Lock()
 
 SECTION_HEADERS = [
     # 教育
@@ -103,6 +109,8 @@ def _find_split(text: str, chunk_size: int, separators: list[str]) -> int:
 
 
 def _recursive_split(text: str, chunk_size: int, overlap: int) -> list[str]:
+    if overlap >= chunk_size:
+        raise ValueError(f"overlap ({overlap}) must be < chunk_size ({chunk_size})")
     separators = ["\n\n", "\n", "。", "，", " "]  # 按优先级切分
     result = []
     current = text
@@ -125,7 +133,7 @@ def _make_chunk(text: str, section: str, index: int, offset: int) -> dict:
     }
 
 
-def chunk_by_sections(text: str, chunk_size: int = 80, overlap: int = 25) -> list[dict]:
+def chunk_by_sections(text: str, chunk_size: int = 1200, overlap: int = 50) -> list[dict]:
     """结构感知分块：先按节段切，超长节段内部再递归细分"""
     sections = _split_by_sections(text)
     chunks = []
@@ -160,8 +168,8 @@ def fixed_chunk(text: str, chunk_size: int, overlap: int = 50) -> list[dict]:
     return chunks
 
 
-async def get_embeddings(texts: list[str]) -> list[list[float]]:
-    """批量调百炼 Embedding API，缓存命中跳过 API 调用"""
+async def get_embeddings(texts: list[str], resume_id: int | None = None) -> list[list[float]]:
+    """批量调 Embedding API（模型由 settings.EMBEDDING_MODEL 决定），缓存命中跳过 API 调用。resume_id 用于按简历追踪缓存。"""
     vectors: list[list[float]] = []
     uncached_idx: list[int] = []
     uncached: list[str] = []
@@ -186,7 +194,7 @@ async def get_embeddings(texts: list[str]) -> list[list[float]]:
             for j, item in enumerate(response.data):
                 idx = batch_idx[j]
                 vectors[idx] = item.embedding
-                embedding_cache.set_embedding(batch_texts[j], item.embedding)
+                await embedding_cache.set_embedding(batch_texts[j], item.embedding, resume_id)
 
     return vectors
 
@@ -211,7 +219,6 @@ def _cleanup_orphan_segments() -> int:
     try:
         client = get_chroma_client()
         # ChromaDB 不暴露 segments 列表，直接从 SQLite 读
-        import sqlite3
         db_path = os.path.join(persist_dir, "chroma.sqlite3")
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()
@@ -233,35 +240,37 @@ async def process_resume(resume_id: int, text: str) -> int:
     """清理旧向量 → 结构分块 → 向量化 → 存入 Chroma → 清空 BM25 缓存"""
     client = get_chroma_client()
     name = _collection_name(resume_id)
-    # 同名 collection 存在才删，不存在跳过——避免每次新简历上传都打 warning
-    existing = [c for c in client.list_collections() if c.name == name]
-    if existing:
-        client.delete_collection(name)
-        _cleanup_orphan_segments()
 
-    collection = client.get_or_create_collection(name=name)
+    def _sync_chroma_ops():
+        try:
+            client.delete_collection(name)
+        except Exception:
+            pass  # collection 不存在，忽略
+        coll = client.get_or_create_collection(name=name, metadata={"hnsw:space": "cosine"})
+        coll.add(
+            ids=[str(c["chunk_index"]) for c in chunks],
+            documents=texts,
+            embeddings=embeddings,
+            metadatas=[
+                {
+                    "resume_id": resume_id,
+                    "chunk_index": c["chunk_index"],
+                    "section": c["section"],
+                    "start_char": c["start_char"],
+                    "end_char": c["end_char"],
+                }
+                for c in chunks
+            ],
+        )
+
     chunks = chunk_by_sections(text)
     if not chunks:
         return 0
 
     texts = [c["text"] for c in chunks]
-    embeddings = await get_embeddings(texts)
+    embeddings = await get_embeddings(texts, resume_id)
 
-    collection.add(
-        ids=[str(c["chunk_index"]) for c in chunks],
-        documents=texts,
-        embeddings=embeddings,
-        metadatas=[
-            {
-                "resume_id": resume_id,
-                "chunk_index": c["chunk_index"],
-                "section": c["section"],
-                "start_char": c["start_char"],
-                "end_char": c["end_char"],
-            }
-            for c in chunks
-        ],
-    )
+    await asyncio.to_thread(_sync_chroma_ops)
 
     _bm25_indexes.pop(resume_id, None)
     return len(chunks)
@@ -286,32 +295,51 @@ async def rewrite_query(question: str) -> str:
 
 async def hybrid_search(resume_id: int, question: str, top_k: int = 5) -> list[dict]:
     """稠密向量 + BM25 关键词 → RRF 融合 → 返回 top_k"""
-    dense = await _vector_search(resume_id, question, top_k=20)
-    sparse = await _keyword_search(resume_id, question, top_k=20)
+    dense, sparse = await asyncio.gather(
+        _vector_search(resume_id, question, top_k=20),
+        _keyword_search(resume_id, question, top_k=20),
+    )
     return _merge_results(dense, sparse, top_k)
+
+
+async def hybrid_search_p(
+    resume_id: int, question: str, p: RagParams,
+) -> list[dict]:
+    """参数化版混合检索"""
+    dense, sparse = await asyncio.gather(
+        _vector_search(resume_id, question, top_k=p.dense_top_k),
+        _keyword_search(resume_id, question, top_k=p.sparse_top_k),
+    )
+    return _merge_results(dense, sparse, top_k=p.hybrid_top_k, k=p.rrf_k)
 
 
 async def _vector_search(resume_id: int, question: str, top_k: int) -> list[dict]:
     """稠密向量检索：问题转向量 → Chroma 余弦相似度查询，collection 不存在时返回空"""
     embedding = (await get_embeddings([question]))[0]
     name = _collection_name(resume_id)
-    try:
-        collection = get_chroma_client().get_collection(name)
-    except Exception:
+
+    def _sync_query():
+        try:
+            collection = get_chroma_client().get_collection(name)
+        except Exception:
+            return None
+        return collection.query(
+            query_embeddings=[embedding],
+            n_results=top_k,
+            include=["documents", "metadatas", "distances"],
+        )
+
+    results = await asyncio.to_thread(_sync_query)
+    if results is None:
         logger.warning("Chroma collection %s not found, returning empty", name)
         return []
-    results = collection.query(
-        query_embeddings=[embedding],
-        n_results=top_k,
-        include=["documents", "metadatas", "distances"],
-    )
 
     chunks = []
     for i in range(len(results["ids"][0])):
         meta = results["metadatas"][0][i]
         chunks.append({
             "text": results["documents"][0][i],
-            "score": 1.0 - results["distances"][0][i],  # Chroma 默认 cosine distance，转相似度
+            "score": 1.0 - results["distances"][0][i],  # cosine distance 0..2 → similarity -1..1
             "chunk_index": meta["chunk_index"],
             "section": meta["section"],
             "source": "dense",
@@ -319,15 +347,21 @@ async def _vector_search(resume_id: int, question: str, top_k: int) -> list[dict
     return chunks
 
 
-def _load_bm25_index(resume_id: int) -> bool:
+async def _load_bm25_index(resume_id: int) -> bool:
     """从 Chroma 读取文档构建 BM25 索引，返回是否加载成功"""
     name = _collection_name(resume_id)
-    try:
-        collection = get_chroma_client().get_collection(name)
-    except Exception:
+
+    def _sync_get():
+        try:
+            collection = get_chroma_client().get_collection(name)
+        except Exception:
+            return None
+        return collection.get(include=["documents", "metadatas"])
+
+    data = await asyncio.to_thread(_sync_get)
+    if data is None:
         logger.warning("Chroma collection %s not found, skip BM25 build", name)
         return False
-    data = collection.get(include=["documents", "metadatas"])
     chunks = []
     for doc, meta in zip(data["documents"], data["metadatas"]):
         chunks.append({
@@ -338,15 +372,20 @@ def _load_bm25_index(resume_id: int) -> bool:
     if not chunks:
         return False
     tokenized = [_tokenize(c["text"]) for c in chunks]
+    # LRU 淘汰：超过上限时移除最早的条目
+    while len(_bm25_indexes) >= _BM25_MAX_SIZE:
+        oldest = next(iter(_bm25_indexes))
+        _bm25_indexes.pop(oldest, None)
     _bm25_indexes[resume_id] = (BM25Okapi(tokenized), chunks)
     return True
 
 
 async def _keyword_search(resume_id: int, question: str, top_k: int) -> list[dict]:
     """BM25 关键词检索：懒加载索引 → 分词算分 → 返回 top_k，过滤零分结果"""
-    if resume_id not in _bm25_indexes:
-        if not _load_bm25_index(resume_id):
-            return []
+    async with _bm25_lock:
+        if resume_id not in _bm25_indexes:
+            if not await _load_bm25_index(resume_id):
+                return []
 
     index_data = _bm25_indexes.get(resume_id)
     if index_data is None:
@@ -366,7 +405,7 @@ async def _keyword_search(resume_id: int, question: str, top_k: int) -> list[dic
     ]
 
 
-def _merge_results(dense: list[dict], sparse: list[dict], top_k: int, k: int = 60) -> list[dict]:  # k: RRF 平滑常数，论文常用 60
+def _merge_results(dense: list[dict], sparse: list[dict], top_k: int, k: int = 100) -> list[dict]:  # k: RRF 平滑常数，调优后最优 100
     """RRF 融合：按排名而非分数合并两路结果，同一 chunk 两路都中则累加得分"""
     scores: dict[int, dict] = {}
     for rank, item in enumerate(dense):
@@ -384,9 +423,9 @@ def _merge_results(dense: list[dict], sparse: list[dict], top_k: int, k: int = 6
 
 
 async def _llm_generate(
-    system: str, user: str, temperature: float = 0.3, max_tokens: int | None = None,
+    system: str, user: str, temperature: float = 0.1, max_tokens: int | None = None,
 ) -> str:
-    """调 DeepSeek Chat 生成回答，抽出来方便加不同的 temperature 和重试"""
+    """调 Chat API 生成回答（模型由 settings.CHAT_MODEL 决定），抽出来方便加不同的 temperature 和重试"""
     client = get_chat_client()
     kwargs = {
         "model": settings.CHAT_MODEL,
@@ -403,11 +442,9 @@ async def _llm_generate(
 
 
 async def rerank(question: str, chunks: list[dict], top_k: int = 5) -> list[dict]:
-    """百炼 gte-rerank Cross-Encoder 精排：query+documents 送专有模型打分，取 top_k"""
+    """Rerank Cross-Encoder 精排（模型由 settings.RERANK_MODEL 决定）：query+documents 送专有模型打分，取 top_k"""
     if len(chunks) <= top_k:
-        for c in chunks:
-            c["rerank_score"] = 1.0
-        return chunks
+        return chunks  # 无需 Rerank，直接返回
 
     async def _call_api():
         async with httpx.AsyncClient() as client:
@@ -449,27 +486,85 @@ async def rerank(question: str, chunks: list[dict], top_k: int = 5) -> list[dict
     return chunks[:top_k]
 
 
-def reject_if_low_score(chunks: list[dict], threshold: float = 0.5) -> bool:
-    """Rerank 后最高分低于阈值则拒答。阈值通过 20 个无答案问题测算"""
+async def rerank_p(question: str, chunks: list[dict], p: RagParams) -> list[dict]:
+    """参数化版 Rerank，支持可配截断长度和 top_k"""
+    if len(chunks) <= p.rerank_final_top_k:
+        return chunks
+
+    trunc = p.rerank_truncation if p.rerank_truncation > 0 else 999999
+
+    async def _call_api():
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                settings.RERANK_BASE_URL,
+                json={
+                    "model": settings.RERANK_MODEL,
+                    "input": {
+                        "query": question,
+                        "documents": [c["text"][:trunc] for c in chunks],
+                    },
+                    "parameters": {"top_n": p.rerank_final_top_k},
+                },
+                headers={
+                    "Authorization": f"Bearer {settings.RERANK_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                timeout=10,
+            )
+            resp.raise_for_status()
+            return resp.json()
+
+    try:
+        data = await with_retry(_call_api, fallback=None)
+        if data is None:
+            raise RuntimeError("Rerank API 全部重试失败")
+        results = data.get("output", {}).get("results", [])
+    except Exception as e:
+        logger.warning("Rerank API failed: %s, falling back to original order", e)
+        for c in chunks:
+            c["rerank_score"] = 0.5
+        return chunks[:p.rerank_final_top_k]
+
+    score_map: dict[int, float] = {r["index"]: r["relevance_score"] for r in results}
+    for i, c in enumerate(chunks):
+        c["rerank_score"] = score_map.get(i, 0.0)
+
+    chunks.sort(key=lambda c: c.get("rerank_score", 0), reverse=True)
+    return chunks[:p.rerank_final_top_k]
+
+
+def reject_if_low_score(chunks: list[dict], threshold: float = 0.3) -> bool:
+    """Rerank 后最高分低于阈值则拒答。
+    阈值通过参数调优实验确定（Phase 4: 0.3 最优）。无 rerank_score 的 chunk（未经过 rerank）不拒答。"""
     if not chunks:
         return True
-    max_score = max(c.get("rerank_score", 0) for c in chunks)
-    return max_score < threshold
+    scores = [c["rerank_score"] for c in chunks if "rerank_score" in c]
+    if not scores:
+        return False  # 未经过 rerank，保留所有结果
+    return max(scores) < threshold
+
+
+async def _retrieve(
+    resume_id: int, question: str, timer: StepTimer
+) -> tuple[str, list[dict]]:
+    """检索链路：改写 → 混合检索(20) → Rerank(5) → 拒答判断。
+    返回 (rewritten_question, reranked_chunks)。检索失败时 reranked_chunks 为空。"""
+    rewritten = await timer.run("rewrite", rewrite_query(question))
+    chunks = await timer.run("hybrid", hybrid_search(resume_id, rewritten, top_k=20))
+    if not chunks:
+        return rewritten, []
+    reranked = await timer.run("rerank", rerank(rewritten, chunks, top_k=5))
+    if reject_if_low_score(reranked):
+        return rewritten, []
+    return rewritten, reranked
 
 
 async def ask_question(resume_id: int, question: str) -> tuple[str, list[dict]]:
-    """RAG 全链路：改写 → 混合检索(20) → Rerank(8) → 拒答判断 → Prompt → LLM → 返回"""
+    """RAG 全链路：检索 → Prompt → LLM 生成（同步）"""
     timer = StepTimer()
 
-    rewritten = await timer.run("rewrite", rewrite_query(question))
-    chunks = await timer.run("hybrid", hybrid_search(resume_id, rewritten, top_k=20))
-
-    if not chunks:
-        return ("抱歉，简历中未提及该信息。", [])
-
-    reranked = await timer.run("rerank", rerank(rewritten, chunks, top_k=8))
-
-    if reject_if_low_score(reranked):
+    rewritten, reranked = await _retrieve(resume_id, question, timer)
+    if not reranked:
         timer.log()
         return ("抱歉，简历中未提及该信息。", [])
 
@@ -482,10 +577,48 @@ async def ask_question(resume_id: int, question: str) -> tuple[str, list[dict]]:
     timer.log()
     return answer, reranked
 
+
+async def _retrieve_p(
+    resume_id: int, question: str, p: RagParams, timer: StepTimer,
+) -> tuple[str, list[dict]]:
+    """参数化版检索链路"""
+    rewritten = await timer.run("rewrite", rewrite_query(question))
+    chunks = await timer.run("hybrid", hybrid_search_p(resume_id, rewritten, p))
+    if not chunks:
+        return rewritten, []
+    reranked = await timer.run("rerank", rerank_p(rewritten, chunks, p))
+    if reject_if_low_score(reranked, threshold=p.reject_threshold):
+        return rewritten, []
+    return rewritten, reranked
+
+
+async def ask_question_p(
+    resume_id: int, question: str, p: RagParams,
+) -> tuple[str, list[dict], dict]:
+    """参数化版 RAG 全链路，返回 (answer, sources, timings)"""
+    timer = StepTimer()
+
+    rewritten, reranked = await _retrieve_p(resume_id, question, p, timer)
+    if not reranked:
+        timer.log()
+        return ("抱歉，简历中未提及该信息。", [], timer.steps)
+
+    prompt = build_prompt([c["text"] for c in reranked], rewritten)
+    answer = await timer.run(
+        "generate",
+        with_retry(
+            _llm_generate, prompt["system"], prompt["user"],
+            temperature=p.generate_temperature, fallback=FALLBACK_MESSAGE,
+        ),
+    )
+
+    timer.log()
+    return answer, reranked, timer.steps
+
 async def _llm_generate_stream(
-    system: str, user: str, temperature: float = 0.3,
+    system: str, user: str, temperature: float = 0.1,
 ):
-    """流式调 DeepSeek Chat，逐 token yield delta text"""
+    """流式调 Chat API（模型由 settings.CHAT_MODEL 决定），逐 token yield delta text"""
     client = get_chat_client()
     stream = await client.chat.completions.create(
         model=settings.CHAT_MODEL,
@@ -503,22 +636,13 @@ async def _llm_generate_stream(
 
 
 async def ask_question_stream(resume_id: int, question: str):
-    """RAG 全链路流式版：改写 → 混合检索 → Rerank → 流式生成，逐个 yield 事件 dict"""
+    """RAG 全链路流式版：检索 → 流式生成，逐个 yield 事件 dict"""
     timer = StepTimer()
 
-    rewritten = await timer.run("rewrite", rewrite_query(question))
     yield {"type": "status", "message": "检索中..."}
+    rewritten, reranked = await _retrieve(resume_id, question, timer)
 
-    chunks = await timer.run("hybrid", hybrid_search(resume_id, rewritten, top_k=20))
-
-    if not chunks:
-        timer.log()
-        yield {"type": "done", "answer": "抱歉，简历中未提及该信息。", "sources": []}
-        return
-
-    reranked = await timer.run("rerank", rerank(rewritten, chunks, top_k=8))
-
-    if reject_if_low_score(reranked):
+    if not reranked:
         timer.log()
         yield {"type": "done", "answer": "抱歉，简历中未提及该信息。", "sources": []}
         return
@@ -531,9 +655,11 @@ async def ask_question_stream(resume_id: int, question: str):
         async for token in _llm_generate_stream(prompt["system"], prompt["user"]):
             full += token
             yield {"type": "token", "content": token}
+    except asyncio.CancelledError:
+        raise  # 客户端断开连接，不吞异常
     except Exception:
         # 流式失败 → 降级为非流式重试一次
-        logger.warning("Streaming failed, falling back to non-streaming")
+        logger.exception("Streaming failed, falling back to non-streaming")
         fallback = await with_retry(
             _llm_generate, prompt["system"], prompt["user"], fallback=FALLBACK_MESSAGE,
         )
@@ -541,7 +667,14 @@ async def ask_question_stream(resume_id: int, question: str):
         yield {"type": "token", "content": fallback}
 
     timer.log()
-    yield {"type": "done", "answer": full, "sources": [c["text"] for c in reranked]}
+    yield {
+        "type": "done",
+        "answer": full,
+        "sources": [
+            {"chunk_index": c["chunk_index"], "text": c["text"], "section": c["section"]}
+            for c in reranked
+        ],
+    }
 
 
 def build_prompt(context_chunks: list[str], question: str) -> dict:
@@ -558,10 +691,12 @@ def build_prompt(context_chunks: list[str], question: str) -> dict:
     return {"system": system, "user": user}
 
 
-def clear_resume_vectors(resume_id: int) -> None:
+async def clear_resume_vectors(resume_id: int) -> None:
     """删 Chroma collection + 清 BM25 内存缓存"""
     try:
-        get_chroma_client().delete_collection(_collection_name(resume_id))
+        await asyncio.to_thread(
+            get_chroma_client().delete_collection, _collection_name(resume_id)
+        )
     except Exception:
         logger.warning("Failed to delete Chroma collection for resume %d", resume_id)
     _bm25_indexes.pop(resume_id, None)

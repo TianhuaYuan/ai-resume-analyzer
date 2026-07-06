@@ -1,4 +1,4 @@
-# Python
+# ==================== Python ====================
 __pycache__/
 *.py[cod]
 *$py.class
@@ -11,41 +11,54 @@ ENV/
 *.egg-info/
 .pytest_cache/
 
-# 环境变量
+# ==================== 环境变量 ====================
 .env
 .env.*
 !.env.example
 
-# 运行时数据
+# ==================== 运行时数据 ====================
 uploads/
 chroma_data/
 *.db
 *.sqlite3
 
-# Node/前端
+# ==================== Node/前端 ====================
 node_modules/
 dist/
 .vite/
 *.local
 
-# IDE
+# ==================== IDE ====================
 .vscode/
 .idea/
 *.swp
 *.swo
 
-# Claude Code
+# ==================== Claude Code ====================
 .claude/
+.swarm/
 
-# OS
+# ==================== OS ====================
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# 评估输出
-eval/baseline_results.json
-eval/baseline_charts.png
+# ==================== 实验数据（不上传到公共仓库） ====================
+# RAG 参数调优实验结果（个人基准测试数据，不公开）
+backend/rag_tuning_results/
 
-# 日志
+# RAG 参数调优测试简历（含个人信息）
+backend/rag_tuning/uploads/
+
+# RAG 参数调优 golden_set（含真实姓名、学校、公司等个人信息）
+backend/rag_tuning/golden_set.json
+
+# 初始评估数据（已过时，含虚构简历数据）
+backend/rag_eval_legacy/archive/
+
+# ==================== 日志 ====================
 *.log
 logs/
+
+# ==================== 输出文件 ====================
+output/

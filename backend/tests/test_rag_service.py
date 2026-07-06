@@ -183,8 +183,8 @@ class TestRejectIfLowScore:
 
     def test_missing_rerank_score(self):
         chunks = [{"text": "no score field"}]
-        # 缺少 rerank_score → 默认 0 → 低于阈值 → 拒答
-        assert reject_if_low_score(chunks, threshold=0.5) is True
+        # 缺少 rerank_score → 未经过 rerank → 不拒答（保留结果）
+        assert reject_if_low_score(chunks, threshold=0.5) is False
 
 
 # ── _merge_results (RRF) ────────────────────────────────

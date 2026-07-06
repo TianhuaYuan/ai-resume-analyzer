@@ -1,15 +1,115 @@
 import { useEffect, useState, useRef, useCallback, type FormEvent } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, Link } from "react-router-dom";
 import { askQuestionStream, getHistory, type SSEEvent } from "../api/qa";
 import { listResumes, type ResumeItem } from "../api/resumes";
 
 interface ChatMessage {
-  id: number | string; // number = 已存库；string = 临时 ID
+  id: number | string;
   question: string;
   answer: string;
   sources: string[];
   streaming: boolean;
 }
+
+// ── 来源引用组件 ────────────────────────────────────────
+
+function SourceCard({ index, text }: { index: number; text: string }) {
+  return (
+    <div className="p-3 rounded-xl bg-indigo-500/6 border border-indigo-500/10 text-xs text-slate-400 leading-relaxed">
+      <span className="text-indigo-400 font-semibold mr-2">[{index}]</span>
+      {text.length > 220 ? text.slice(0, 220) + "..." : text}
+    </div>
+  );
+}
+
+function SourceToggle({ sources }: { sources: string[] }) {
+  const [expanded, setExpanded] = useState(false);
+
+  if (sources.length === 0) return null;
+
+  return (
+    <div className="mt-2">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="inline-flex items-center gap-1 text-xs text-slate-500
+          hover:text-indigo-400 hover:bg-indigo-500/8 px-2 py-1 rounded-md
+          transition-colors cursor-pointer"
+      >
+        来源 ({sources.length}) {expanded ? "▲" : "▼"}
+      </button>
+      {expanded && (
+        <div className="mt-2 space-y-2 animate-fade-in-up">
+          {sources.map((src, j) => (
+            <SourceCard key={j} index={j + 1} text={src} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── 流式光标 ────────────────────────────────────────────
+
+function StreamingCursor() {
+  return (
+    <span className="inline-block w-0.5 h-4 bg-indigo-400 ml-0.5 align-middle animate-cursor-blink" />
+  );
+}
+
+// ── 空状态 ──────────────────────────────────────────────
+
+function EmptyChat() {
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center py-16">
+      <div className="w-16 h-16 rounded-2xl bg-indigo-500/10 border border-indigo-500/15
+        flex items-center justify-center text-3xl mb-5">
+        💬
+      </div>
+      <p className="text-base text-slate-300 mb-1.5">开始提问</p>
+      <p className="text-sm text-slate-500">
+        例如：这份简历的亮点是什么？适合什么岗位？
+      </p>
+    </div>
+  );
+}
+
+// ── 消息气泡 ────────────────────────────────────────────
+
+function MessageBubble({ msg }: { msg: ChatMessage }) {
+  return (
+    <div className="animate-fade-in-up">
+      {/* 用户问题 */}
+      <div className="flex justify-end mb-4">
+        <div className="max-w-[75%] px-4 py-3 bg-linear-to-br from-indigo-500 to-purple-600
+          text-white text-sm leading-relaxed rounded-2xl rounded-br-md">
+          {msg.question}
+        </div>
+      </div>
+
+      {/* AI 回答 */}
+      <div className="flex justify-start mb-4">
+        <div className="max-w-[82%]">
+          <div className="px-4 py-3.5 rounded-2xl rounded-bl-md leading-relaxed text-sm
+            bg-white/5 border border-white/8 backdrop-blur-sm">
+            {msg.streaming && !msg.answer ? (
+              <span className="text-slate-500">思考中...</span>
+            ) : (
+              <span className="text-slate-300 whitespace-pre-wrap">
+                {msg.answer}
+                {msg.streaming && <StreamingCursor />}
+              </span>
+            )}
+          </div>
+
+          {/* 来源引用 */}
+          {!msg.streaming && <SourceToggle sources={msg.sources} />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── 主组件 ──────────────────────────────────────────────
 
 export default function QAPage() {
   const { id } = useParams<{ id: string }>();
@@ -20,9 +120,9 @@ export default function QAPage() {
   const [question, setQuestion] = useState("");
   const [asking, setAsking] = useState(false);
   const [error, setError] = useState("");
-  const [expandedSource, setExpandedSource] = useState<string | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<(() => void) | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     listResumes().then((data) => {
@@ -48,7 +148,6 @@ export default function QAPage() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chat]);
 
-  // 组件卸载时取消 SSE
   useEffect(() => {
     return () => abortRef.current?.();
   }, []);
@@ -80,7 +179,9 @@ export default function QAPage() {
           if (event.type === "token" && event.content) {
             setChat((prev) =>
               prev.map((m) =>
-                m.id === tempId ? { ...m, answer: m.answer + event.content } : m
+                m.id === tempId
+                  ? { ...m, answer: m.answer + event.content }
+                  : m
               )
             );
           } else if (event.type === "done") {
@@ -101,7 +202,11 @@ export default function QAPage() {
             setChat((prev) =>
               prev.map((m) =>
                 m.id === tempId
-                  ? { ...m, answer: event.message ?? "生成失败", streaming: false }
+                  ? {
+                      ...m,
+                      answer: event.message ?? "生成失败",
+                      streaming: false,
+                    }
                   : m
               )
             );
@@ -124,152 +229,108 @@ export default function QAPage() {
     [question, asking, resumeId]
   );
 
-  // 取消当前生成
   const handleCancel = () => {
     abortRef.current?.();
     setAsking(false);
     setChat((prev) =>
       prev.map((m) =>
-        m.streaming ? { ...m, answer: m.answer || "已取消", streaming: false } : m
+        m.streaming
+          ? { ...m, answer: m.answer || "已取消", streaming: false }
+          : m
       )
     );
+    inputRef.current?.focus();
   };
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-6 flex flex-col h-[calc(100vh-57px)]">
-      {/* 顶栏 */}
-      <div className="mb-4 pb-3 border-b border-gray-100">
-        <h2 className="text-lg font-semibold text-gray-900 truncate">
-          {resume?.filename ?? "加载中..."}
-        </h2>
-        <p className="text-xs text-gray-400 mt-0.5">
-          {resume ? `${resume.chunk_count} 个分块` : ""}
-        </p>
-      </div>
-
-      {/* 聊天区 */}
-      <div className="flex-1 overflow-y-auto pb-4 space-y-5">
-        {chat.length === 0 && (
-          <div className="text-center py-12 text-gray-400">
-            <p className="text-lg mb-1">开始提问</p>
-            <p className="text-sm">
-              例如：这份简历的亮点是什么？适合什么岗位？
+    <div className="min-h-screen bg-[#0f172a] flex flex-col">
+      {/* ── 顶栏 ── */}
+      <div className="px-6 py-4 border-b border-white/6 flex items-center justify-between shrink-0">
+        <div className="min-w-0">
+          <h2 className="text-base font-semibold text-slate-100 truncate">
+            {resume?.filename ?? "加载中..."}
+          </h2>
+          {resume && (
+            <p className="text-xs text-slate-500 mt-0.5">
+              {resume.chunk_count} 个分块
             </p>
-          </div>
-        )}
-
-        {chat.map((item) => {
-          const msgKey = String(item.id);
-          return (
-            <div key={msgKey}>
-              {/* 用户问题 */}
-              <div className="flex justify-end mb-3">
-                <div className="max-w-[80%] px-4 py-2.5 bg-blue-600 text-white text-sm rounded-2xl rounded-br-md">
-                  {item.question}
-                </div>
-              </div>
-
-              {/* AI 回答 */}
-              <div className="flex justify-start">
-                <div className="max-w-[85%]">
-                  <div
-                    className={`px-4 py-3 text-sm rounded-2xl rounded-bl-md leading-relaxed whitespace-pre-wrap ${
-                      item.streaming && !item.answer
-                        ? "bg-gray-100 text-gray-400"
-                        : "bg-gray-100 text-gray-800"
-                    }`}
-                  >
-                    {item.answer || (item.streaming ? "思考中..." : "")}
-                    {item.streaming && (
-                      <span className="inline-block w-1.5 h-4 bg-gray-500 ml-0.5 animate-pulse align-middle" />
-                    )}
-                  </div>
-
-                  {/* 来源引用 */}
-                  {!item.streaming && item.sources.length > 0 && (
-                    <div className="mt-1.5">
-                      <button
-                        onClick={() =>
-                          setExpandedSource(
-                            expandedSource === msgKey ? null : msgKey
-                          )
-                        }
-                        className="text-xs text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
-                      >
-                        来源 ({item.sources.length}){" "}
-                        {expandedSource === msgKey ? "▲" : "▼"}
-                      </button>
-                      {expandedSource === msgKey && (
-                        <div className="mt-1.5 space-y-1.5">
-                          {item.sources.map((src, j) => (
-                            <div
-                              key={j}
-                              className="p-2.5 bg-yellow-50 border border-yellow-100 rounded-lg text-xs text-gray-600"
-                            >
-                              <span className="text-yellow-600 font-medium mr-2">
-                                [{j + 1}]
-                              </span>
-                              {src.length > 200
-                                ? src.slice(0, 200) + "..."
-                                : src}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          );
-        })}
-
-        {/* 错误提示 */}
-        {error && (
-          <div className="p-3 rounded-lg bg-red-50 border border-red-100 text-red-700 text-sm">
-            {error}
-          </div>
-        )}
-
-        <div ref={chatEndRef} />
+          )}
+        </div>
+        <Link
+          to="/"
+          className="text-xs text-slate-500 hover:text-indigo-400 transition-colors shrink-0 ml-4"
+        >
+          ← 返回列表
+        </Link>
       </div>
 
-      {/* 输入框 */}
-      <form
-        onSubmit={handleAsk}
-        className="pt-3 border-t border-gray-100 flex gap-3"
-      >
-        <input
-          type="text"
-          value={question}
-          onChange={(e) => setQuestion(e.target.value)}
-          placeholder="输入问题，例如：这份简历的亮点是什么？"
-          disabled={asking}
-          className="flex-1 px-4 py-2.5 border border-gray-300 rounded-xl text-sm
-            focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
-            placeholder:text-gray-400 disabled:bg-gray-50"
-        />
-        {asking ? (
-          <button
-            type="button"
-            onClick={handleCancel}
-            className="px-5 py-2.5 bg-gray-400 text-white text-sm font-medium rounded-xl
-              hover:bg-gray-500 transition-colors cursor-pointer shrink-0"
-          >
-            取消
-          </button>
-        ) : (
-          <button
-            type="submit"
-            disabled={!question.trim()}
-            className="px-5 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-xl
-              hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed
-              transition-colors cursor-pointer shrink-0"
-          >
-            发送
-          </button>
-        )}
-      </form>
+      {/* ── 聊天区 ── */}
+      <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-6">
+        <div className="max-w-3xl mx-auto">
+          {chat.length === 0 ? (
+            <EmptyChat />
+          ) : (
+            chat.map((msg) => <MessageBubble key={String(msg.id)} msg={msg} />)
+          )}
+
+          {/* 错误提示 */}
+          {error && (
+            <div className="max-w-3xl mx-auto mb-4 p-3 rounded-xl
+              bg-red-500/10 border border-red-500/20 text-red-400 text-sm animate-shake">
+              {error}
+            </div>
+          )}
+
+          <div ref={chatEndRef} />
+        </div>
+      </div>
+
+      {/* ── 输入区 ── */}
+      <div className="shrink-0 px-4 sm:px-6 py-4 border-t border-white/6">
+        <form
+          onSubmit={handleAsk}
+          className="max-w-3xl mx-auto flex gap-3 items-center"
+        >
+          <input
+            ref={inputRef}
+            type="text"
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            placeholder="输入问题，例如：这份简历的亮点是什么？"
+            disabled={asking}
+            className="flex-1 px-5 py-3 rounded-2xl text-sm text-slate-200
+              bg-white/5 border border-white/10
+              placeholder:text-slate-500
+              focus:outline-none focus:ring-2 focus:ring-indigo-500/40
+              focus:border-indigo-500/50 focus:shadow-[0_0_15px_rgba(99,102,241,0.15)]
+              disabled:opacity-50 transition-all duration-200"
+          />
+          {asking ? (
+            <button
+              type="button"
+              onClick={handleCancel}
+              className="px-5 py-3 rounded-2xl text-sm font-medium
+                border border-white/10 text-slate-400
+                hover:text-red-400 hover:border-red-500/30 hover:bg-red-500/8
+                transition-all duration-200 cursor-pointer shrink-0"
+            >
+              ■ 取消
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={!question.trim()}
+              className="px-6 py-3 rounded-2xl text-sm font-semibold text-white
+                bg-linear-to-br from-indigo-500 to-purple-600
+                hover:brightness-110 hover:shadow-lg hover:shadow-indigo-500/25
+                active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed
+                transition-all duration-200 cursor-pointer shrink-0"
+            >
+              发送
+            </button>
+          )}
+        </form>
+      </div>
     </div>
   );
 }

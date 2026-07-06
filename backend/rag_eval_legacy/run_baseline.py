@@ -28,7 +28,7 @@ from services.rag_service import (
     ask_question,
     rewrite_query,
 )
-from eval.evaluate import (
+from rag_eval_legacy.evaluate import (
     EvalCase,
     EvalResult,
     load_golden_set,

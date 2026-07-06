@@ -17,9 +17,13 @@ class RegisterRequest(BaseModel):
 
     @field_validator("password")
     @classmethod
-    def password_min_length(cls, v: str) -> str:
-        if len(v) < 6:
-            raise ValueError("密码至少6位")
+    def password_strength(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("密码至少8位")
+        if not any(c.isalpha() for c in v):
+            raise ValueError("密码必须包含字母")
+        if not any(c.isdigit() for c in v):
+            raise ValueError("密码必须包含数字")
         return v
 
     @field_validator("password_confirm")

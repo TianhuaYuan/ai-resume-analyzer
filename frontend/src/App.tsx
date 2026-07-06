@@ -11,7 +11,7 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-gray-400 text-sm">
+      <div className="min-h-screen flex items-center justify-center bg-[#0f172a] text-slate-400 text-sm">
         加载中...
       </div>
     );

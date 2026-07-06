@@ -16,3 +16,4 @@ openai==2.44.0
 python-dotenv==1.2.2
 httpx==0.28.1
 alembic==1.18.5
+slowapi==0.1.9
