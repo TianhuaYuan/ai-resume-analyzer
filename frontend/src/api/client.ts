@@ -1,8 +1,20 @@
 const BASE = "";
 
-/** 生成 UUID v4 作为前端 request_id */
+/** 生成 UUID v4 作为前端 request_id（兼容所有浏览器） */
 function generateRequestId(): string {
-  return crypto.randomUUID();
+  const arr = new Uint8Array(16);
+  if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+    crypto.getRandomValues(arr);
+  } else {
+    for (let i = 0; i < 16; i++) arr[i] = Math.floor(Math.random() * 256);
+  }
+  // UUID v4 格式：xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
+  arr[6] = (arr[6] & 0x0f) | 0x40;
+  arr[8] = (arr[8] & 0x3f) | 0x80;
+  return Array.from(arr, (b) => b.toString(16).padStart(2, "0")).join("").replace(
+    /^(.{8})(.{4})(.{4})(.{4})(.{12})$/,
+    "$1-$2-$3-$4-$5"
+  );
 }
 
 async function refreshToken(): Promise<boolean> {
