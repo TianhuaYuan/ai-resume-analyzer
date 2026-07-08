@@ -2,8 +2,6 @@ import { useState, useEffect, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
-// ── 小组件 ──────────────────────────────────────────────
-
 function Spinner() {
   return (
     <svg
@@ -49,8 +47,6 @@ function FeaturePill({
     </span>
   );
 }
-
-// ── 输入框组件 ──────────────────────────────────────────
 
 function FormInput({
   id,
@@ -129,7 +125,6 @@ export default function LoginPage() {
     setMounted(true);
   }, []);
 
-  // ── Tab 切换（带淡出淡入）──
   const switchTab = (t: "login" | "register") => {
     if (t === tab) return;
     setFormVisible(false);
@@ -142,7 +137,6 @@ export default function LoginPage() {
     }, 150);
   };
 
-  // ── 表单验证 ──
   const validateLogin = (): boolean => {
     const errs: Record<string, string> = {};
     if (!email.trim()) errs.email = "请输入邮箱";
@@ -156,8 +150,8 @@ export default function LoginPage() {
     if (!username.trim() || username.trim().length < 2)
       errs.username = "用户名至少2个字符";
     if (!regEmail.trim()) errs.regEmail = "请输入邮箱";
-    if (!regPassword || regPassword.length < 6)
-      errs.regPassword = "密码至少6位";
+    if (!regPassword || regPassword.length < 8)
+      errs.regPassword = "密码至少8位，需包含字母和数字";
     if (regPassword !== regConfirm) errs.regConfirm = "两次密码不一致";
     setFieldErrors(errs);
     return Object.keys(errs).length === 0;
@@ -316,7 +310,7 @@ export default function LoginPage() {
                     type="password"
                     value={password}
                     onChange={setPassword}
-                    placeholder="至少6位"
+                    placeholder="至少8位，需包含字母和数字"
                     error={fieldErrors.password}
                   />
                   <button
@@ -357,7 +351,7 @@ export default function LoginPage() {
                     type="password"
                     value={regPassword}
                     onChange={setRegPassword}
-                    placeholder="至少6位"
+                    placeholder="至少8位，需包含字母和数字"
                     error={fieldErrors.regPassword}
                   />
                   <FormInput

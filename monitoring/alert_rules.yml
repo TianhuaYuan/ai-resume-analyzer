@@ -1,0 +1,123 @@
+# Prometheus 告警规则
+
+groups:
+  - name: http_alerts
+    rules:
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(app_http_requests_total{status_code=~"5.."}[5m]))
+          /
+          sum(rate(app_http_requests_total[5m]))
+          > 0.1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "5xx 错误率超过 10%"
+          description: "过去 5 分钟内 5xx 错误率 {{ $value | humanizePercentage }}，超过 10% 阈值"
+
+      - alert: HighResponseLatency
+        expr: |
+          histogram_quantile(0.95, sum(rate(app_http_request_duration_seconds_bucket[5m])) by (le))
+          > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "HTTP P95 响应时间超过 5 秒"
+          description: "当前 P95 响应时间 {{ $value | humanizeDuration }}，端点 {{ $labels.endpoint }}"
+
+      - alert: LowRequestRate
+        expr: |
+          sum(rate(app_http_requests_total[5m])) < 0.01
+          and
+          sum(app_http_requests_total offset 5m) > 100
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "请求量骤降，可能服务异常"
+          description: "当前请求速率 {{ $value }}/s，相比之前显著下降"
+
+  - name: rag_alerts
+    rules:
+      - alert: RAGStepSlow
+        expr: |
+          histogram_quantile(0.95, sum(rate(app_rag_step_duration_seconds_bucket[5m])) by (le, step))
+          > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "RAG 步骤 P95 耗时超过 10 秒"
+          description: "步骤 {{ $labels.step }} P95 耗时 {{ $value | humanizeDuration }}"
+
+      - alert: RAGHighRetryRate
+        expr: |
+          rate(app_rag_retries_total[5m]) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "RAG 生成重试率过高"
+          description: "每秒重试次数 {{ $value }}，可能存在生成质量问题"
+
+      - alert: RAGZeroSearchRate
+        expr: |
+          sum(rate(app_rag_search_results_count{stage="reranked"}[5m]) * (app_rag_search_results_count{stage="reranked"} == 0))
+          /
+          sum(rate(app_rag_search_results_count{stage="reranked"}[5m]))
+          > 0.3
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "RAG 搜索空结果率超过 30%"
+          description: "检索阶段空结果率 {{ $value | humanizePercentage }}"
+
+  - name: llm_alerts
+    rules:
+      - alert: LLMHighErrorRate
+        expr: |
+          sum(rate(app_llm_call_errors_total[5m]))
+          /
+          sum(rate(app_llm_calls_total[5m]))
+          > 0.2
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "LLM API 调用错误率超过 20%"
+          description: "模型 {{ $labels.model }} 操作 {{ $labels.operation }} 错误率 {{ $value | humanizePercentage }}"
+
+      - alert: LLMSlowResponse
+        expr: |
+          histogram_quantile(0.95, sum(rate(app_llm_call_duration_seconds_bucket[5m])) by (le, model))
+          > 30
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "LLM API P95 延迟超过 30 秒"
+          description: "模型 {{ $labels.model }} P95 延迟 {{ $value | humanizeDuration }}"
+
+  - name: system_alerts
+    rules:
+      - alert: HighMemoryUsage
+        expr: |
+          app_process_memory_rss_bytes / (1024 * 1024 * 1024) > 1.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "进程 RSS 内存超过 1.5 GB"
+          description: "当前 RSS 内存 {{ $value | humanize1024 }}B"
+
+      - alert: HighThreadCount
+        expr: app_process_threads_total > 200
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "进程线程数超过 200"
+          description: "当前线程数 {{ $value }}，可能存在线程泄漏"

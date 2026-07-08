@@ -12,7 +12,7 @@ from httpx import AsyncClient
 @pytest.mark.asyncio
 async def test_ask_without_auth(client: AsyncClient):
     """未登录提问 → 401。"""
-    resp = await client.post("/api/qa/ask", json={
+    resp = await client.post("/api/v1/qa/ask", json={
         "resume_id": 1,
         "question": "这个人的学历是什么？",
     })
@@ -22,7 +22,7 @@ async def test_ask_without_auth(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_stream_without_auth(client: AsyncClient):
     """未登录流式提问 → 401。"""
-    resp = await client.post("/api/qa/ask/stream", json={
+    resp = await client.post("/api/v1/qa/ask/stream", json={
         "resume_id": 1,
         "question": "这个人的学历是什么？",
     })
@@ -32,7 +32,7 @@ async def test_stream_without_auth(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_history_without_auth(client: AsyncClient):
     """未登录查历史 → 401。"""
-    resp = await client.get("/api/qa/history/1")
+    resp = await client.get("/api/v1/qa/history/1")
     assert resp.status_code == 401
 
 
@@ -42,7 +42,7 @@ async def test_history_without_auth(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_ask_empty_question(client: AsyncClient, auth_headers: dict):
     """空问题 → 422。"""
-    resp = await client.post("/api/qa/ask", json={
+    resp = await client.post("/api/v1/qa/ask", json={
         "resume_id": 1,
         "question": "",
     }, headers=auth_headers)
@@ -52,7 +52,7 @@ async def test_ask_empty_question(client: AsyncClient, auth_headers: dict):
 @pytest.mark.asyncio
 async def test_ask_whitespace_question(client: AsyncClient, auth_headers: dict):
     """纯空格问题 → 422。"""
-    resp = await client.post("/api/qa/ask", json={
+    resp = await client.post("/api/v1/qa/ask", json={
         "resume_id": 1,
         "question": "   ",
     }, headers=auth_headers)
@@ -62,7 +62,7 @@ async def test_ask_whitespace_question(client: AsyncClient, auth_headers: dict):
 @pytest.mark.asyncio
 async def test_ask_long_question(client: AsyncClient, auth_headers: dict):
     """超长问题（>500字）→ 422。"""
-    resp = await client.post("/api/qa/ask", json={
+    resp = await client.post("/api/v1/qa/ask", json={
         "resume_id": 1,
         "question": "x" * 501,
     }, headers=auth_headers)
@@ -75,5 +75,5 @@ async def test_ask_long_question(client: AsyncClient, auth_headers: dict):
 @pytest.mark.asyncio
 async def test_history_nonexistent_resume(client: AsyncClient, auth_headers: dict):
     """查不存在的简历的历史 → 404。"""
-    resp = await client.get("/api/qa/history/99999", headers=auth_headers)
+    resp = await client.get("/api/v1/qa/history/99999", headers=auth_headers)
     assert resp.status_code == 404

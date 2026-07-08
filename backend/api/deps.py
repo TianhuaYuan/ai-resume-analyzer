@@ -7,7 +7,7 @@ from core.database import get_db
 from core.security import decode_token
 from models.user import User
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token")
 
 
 async def get_current_user(

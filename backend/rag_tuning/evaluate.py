@@ -163,7 +163,7 @@ async def judge_answer(
     system_answer: str, gold_answer: str, answer_type: str,
 ) -> int:
     """LLM-as-Judge 打分，返回 0/1/2"""
-    from services.rag_service import _llm_generate
+    from services.rag_service import llm_generate
 
     prompt = (
         f"标准答案：{gold_answer}\n"
@@ -172,7 +172,7 @@ async def judge_answer(
         "打分（0/1/2）："
     )
     try:
-        result = await _llm_generate(JUDGE_SYSTEM, prompt, temperature=0.0, max_tokens=10)
+        result = await llm_generate(JUDGE_SYSTEM, prompt, temperature=0.0, max_tokens=10)
         match = re.search(r"[012]", result)
         return int(match.group()) if match else 1
     except Exception:

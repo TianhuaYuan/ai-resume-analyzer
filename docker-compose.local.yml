@@ -1,0 +1,74 @@
+# 本地测试环境（Docker Desktop 用）
+# 独立文件，不需要 -f 多文件叠加
+# 用法：docker compose -f docker-compose.local.yml up --build
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: resume-mysql-local
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: devpassword
+      MYSQL_DATABASE: resume_ai
+      MYSQL_CHARACTER_SET_SERVER: utf8mb4
+      MYSQL_COLLATION_SERVER: utf8mb4_unicode_ci
+    volumes:
+      - mysql_local_data:/var/lib/mysql
+    ports:
+      - "3307:3306"          # 错开端口，避免与本机 MySQL 冲突
+    networks:
+      - resume-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-pdevpassword"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  backend:
+    image: resume-backend
+    container_name: resume-backend-local
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env.dev
+    environment:
+      DATABASE_URL: mysql+aiomysql://root:devpassword@mysql:3306/resume_ai
+    volumes:
+      - uploads_local:/app/uploads
+      - chroma_local:/app/chroma_data
+    ports:
+      - "8001:8000"          # 错开端口
+    networks:
+      - resume-network
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  frontend:
+    image: resume-frontend
+    container_name: resume-frontend-local
+    restart: unless-stopped
+    ports:
+      - "8080:80"            # 错开端口
+    networks:
+      - resume-network
+    depends_on:
+      - backend
+
+volumes:
+  mysql_local_data:
+    driver: local
+  uploads_local:
+    driver: local
+  chroma_local:
+    driver: local
+
+networks:
+  resume-network:
+    driver: bridge

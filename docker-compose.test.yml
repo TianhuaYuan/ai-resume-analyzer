@@ -1,0 +1,27 @@
+# 测试环境：模拟生产行为，但使用开发配置
+# 用法：docker compose -f docker-compose.yml -f docker-compose.test.yml --env-file backend/.env.dev up --build
+
+services:
+  mysql:
+    ports:
+      - "3307:3306"   # 错开端口，避免与本机 MySQL 冲突
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: resume-backend-test
+    env_file:
+      - ./backend/.env.dev
+    environment:
+      DATABASE_URL: mysql+aiomysql://root:devpassword@mysql:3306/resume_ai
+    ports:
+      - "8001:8000"   # 错开端口
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: resume-frontend-test
+    ports:
+      - "8080:80"     # 错开端口

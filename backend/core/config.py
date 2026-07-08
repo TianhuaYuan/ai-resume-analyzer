@@ -29,6 +29,19 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = "./uploads"
     MAX_UPLOAD_SIZE_MB: int = 10  # 单文件最大 10MB
 
+    # ── 环境配置 ──
+    ENVIRONMENT: str = "development"  # development / staging / production
+
+    # ── 限流配置 ──
+    RATE_LIMIT_DEFAULT: str = "60/minute"
+    RATE_LIMIT_LOGIN: str = "10/minute"
+    RATE_LIMIT_REGISTER: str = "5/minute"
+    RATE_LIMIT_ASK: str = "20/minute"
+
+    # ── MCP 配置 ──
+    MCP_SERVER_URL: str = "http://127.0.0.1:8000/mcp"
+    MCP_TOKEN: str = ""  # MCP Server 认证 token，为空则不认证
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

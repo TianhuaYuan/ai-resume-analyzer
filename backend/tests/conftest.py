@@ -9,6 +9,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from core.database import Base, get_db
+from core.limiter import limiter
 from main import app
 
 # SQLite 内存数据库，每个测试函数独立
@@ -34,6 +35,14 @@ async def setup_db():
     yield
     async with engine_test.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
+
+
+@pytest.fixture(autouse=True)
+def disable_rate_limit():
+    """测试中禁用限流，避免测试间互相影响。"""
+    limiter.enabled = False
+    yield
+    limiter.enabled = True
 
 
 async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
@@ -62,7 +71,7 @@ async def registered_user(client: AsyncClient) -> dict:
         "password": "Test1234!",
         "password_confirm": "Test1234!",
     }
-    resp = await client.post("/api/auth/register", json=user_data)
+    resp = await client.post("/api/v1/auth/register", json=user_data)
     assert resp.status_code == 201
     return {**user_data, "id": resp.json()["id"]}
 
@@ -70,7 +79,7 @@ async def registered_user(client: AsyncClient) -> dict:
 @pytest.fixture
 async def auth_headers(client: AsyncClient, registered_user: dict) -> dict:
     """登录并返回带 Authorization 的请求头。"""
-    resp = await client.post("/api/auth/login", json={
+    resp = await client.post("/api/v1/auth/login", json={
         "email": registered_user["email"],
         "password": registered_user["password"],
     })

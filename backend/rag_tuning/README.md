@@ -7,7 +7,7 @@ rag_tuning/
 ├── README.md                      ← 本文件
 ├── evaluation.md                  ← 📚 评估体系总览（面试要点）
 ├── evaluate.py                    ← ✅ 评估框架核心
-├── golden_set.json                ← ✅ 测试数据（袁天华简历）
+├── golden_set.json                ← ✅ 测试数据（真实简历 QA）
 ├── run_concurrent.py              ← ✅ 主力并发实验框架
 ├── run_phase1_single.py           ← Phase1 单组测试
 ├── run_phase5_concurrent.py       ← Phase5 并发版
@@ -38,17 +38,17 @@ rag_tuning/
 - **被谁调用**：所有 `run_*.py` 脚本
 
 ### golden_set.json（测试数据）
-- **内容**：袁天华简历的 QA 对（1082行）
+- **内容**：真实简历的 QA 对（1082行）
 - **格式**：
   ```json
   {
     "qa_id": "pm_001",
     "resume_file": "resume_pm.txt",
-    "question": "袁天华的学历是什么？",
-    "gold_answer": "广东海洋大学软件工程本科",
+    "question": "用户的学历是什么？",
+    "gold_answer": "XX大学软件工程本科",
     "answer_type": "exact_match",
     "should_answer": true,
-    "acceptable_keywords": ["广东海洋大学", "本科", "软件工程"]
+    "acceptable_keywords": ["XX大学", "本科", "软件工程"]
   }
   ```
 

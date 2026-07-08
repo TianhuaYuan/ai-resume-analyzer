@@ -21,7 +21,7 @@ export async function askQuestion(
   resume_id: number,
   question: string
 ): Promise<AnswerResponse> {
-  return api.post("/api/qa/ask", { resume_id, question }) as Promise<AnswerResponse>;
+  return api.post("/api/v1/qa/ask", { resume_id, question }) as Promise<AnswerResponse>;
 }
 
 /**
@@ -39,7 +39,7 @@ export function askQuestionStream(
 
   (async () => {
     try {
-      const res = await fetch("/api/qa/ask/stream", {
+      const res = await fetch("/api/v1/qa/ask/stream", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -95,6 +95,6 @@ export async function getHistory(
   offset = 0
 ) {
   return api.get(
-    `/api/qa/history/${resume_id}?limit=${limit}&offset=${offset}`
+    `/api/v1/qa/history/${resume_id}?limit=${limit}&offset=${offset}`
   ) as Promise<{ items: AnswerResponse[]; total: number }>;
 }

@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Callable
 from pathlib import Path
 
 from docx import Document
@@ -36,7 +37,7 @@ def parse_txt(path: str) -> str:
     return raw.decode("utf-8", errors="replace").strip()
 
 
-_PARSERS: dict[str, callable] = {
+_PARSERS: dict[str, Callable[[str], str]] = {
     ".pdf": parse_pdf,
     ".docx": parse_docx,
     ".txt": parse_txt,

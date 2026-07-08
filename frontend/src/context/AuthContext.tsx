@@ -40,8 +40,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const payload = JSON.parse(atob(token.split(".")[1]));
         if (payload.exp * 1000 > Date.now()) {
           setUser({
-            id: payload.user_id,
-            username: payload.sub || "",
+            id: Number(payload.sub),
+            username: payload.username || "",
             email: payload.email || "",
           });
         } else {
@@ -59,8 +59,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // 解码 token 拿到 user 信息
     const payload = JSON.parse(atob(data.access_token.split(".")[1]));
     setUser({
-      id: payload.user_id,
-      username: payload.sub || "",
+      id: Number(payload.sub),
+      username: payload.username || "",
       email: payload.email || "",
     });
   };

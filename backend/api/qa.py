@@ -6,6 +6,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_current_user
+from core.config import settings
 from core.database import get_db
 from core.limiter import limiter
 from models.user import User
@@ -13,11 +14,11 @@ from schemas.qa import AnswerResponse, QuestionRequest, QAHistoryResponse
 from services import qa_service, rag_service, resume_service
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/qa", tags=["qa"])
+router = APIRouter(prefix="/qa", tags=["qa"])
 
 
 @router.post("/ask", response_model=AnswerResponse)
-@limiter.limit("20/minute")
+@limiter.limit(settings.RATE_LIMIT_ASK)
 async def ask_question(
     request: Request,
     data: QuestionRequest,
@@ -45,7 +46,7 @@ async def ask_question(
 
 
 @router.post("/ask/stream")
-@limiter.limit("20/minute")
+@limiter.limit(settings.RATE_LIMIT_ASK)
 async def ask_question_stream(
     request: Request,
     data: QuestionRequest,

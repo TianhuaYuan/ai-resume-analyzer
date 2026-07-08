@@ -1,10 +1,15 @@
 const BASE = "";
 
+/** 生成 UUID v4 作为前端 request_id */
+function generateRequestId(): string {
+  return crypto.randomUUID();
+}
+
 async function refreshToken(): Promise<boolean> {
   const token = localStorage.getItem("refresh_token");
   if (!token) return false;
   try {
-    const res = await fetch(`${BASE}/api/auth/refresh`, {
+    const res = await fetch(`${BASE}/api/v1/auth/refresh`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ refresh_token: token }),
@@ -22,8 +27,11 @@ async function refreshToken(): Promise<boolean> {
 async function handleResponse(res: Response) {
   if (res.status === 204) return null;
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: "请求失败" }));
-    throw new Error(err.detail || "请求失败");
+    const err = await res.json().catch(() => null);
+    // 兼容新格式 {"error": {"code", "message", "request_id"}} 和旧格式 {"detail": "..."}
+    const message =
+      err?.error?.message || err?.detail || "请求失败";
+    throw new Error(message);
   }
   return res.json();
 }
@@ -34,6 +42,7 @@ async function request(
 ): Promise<unknown> {
   const token = localStorage.getItem("access_token");
   const headers: Record<string, string> = {
+    "X-Request-ID": generateRequestId(),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...((options.headers as Record<string, string>) || {}),
   };

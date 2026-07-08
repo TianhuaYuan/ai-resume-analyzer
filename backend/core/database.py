@@ -27,7 +27,7 @@ class Base(DeclarativeBase):
 async def get_db():
     """每个请求拿一个 session，用完还回连接池"""
     async with AsyncSessionLocal() as session:
-            yield session
+        yield session
 
 
 async def init_db():

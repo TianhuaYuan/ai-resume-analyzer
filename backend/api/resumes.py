@@ -7,7 +7,7 @@ from models.user import User
 from schemas.resume import ResumeListResponse, ResumeResponse, UploadAsyncResponse
 from services import resume_service
 
-router = APIRouter(prefix="/api/resumes", tags=["resumes"])
+router = APIRouter(prefix="/resumes", tags=["resumes"])
 
 
 @router.post("", response_model=UploadAsyncResponse, status_code=202)

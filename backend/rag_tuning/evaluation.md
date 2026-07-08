@@ -6,8 +6,8 @@
 
 | 体系 | 目录 | 测试数据 | 状态 | 用途 |
 |------|------|----------|------|------|
-| **初始评估** | `rag_eval_legacy/` | 陈明（虚构） | ⚠️ 已过时 | 建立基线、识别坏案例 |
-| **调优实验** | `rag_tuning_results/` + `rag_tuning/` | 袁天华（真实） | ✅ 当前使用 | RAG 参数调优 |
+| **初始评估** | `archive/rag_eval_legacy/` | 虚构用户 | ⚠️ 已过时 | 建立基线、识别坏案例 |
+| **调优实验** | `rag_tuning_results/` + `rag_tuning/` | 真实简历用户 | ✅ 当前使用 | RAG 参数调优 |
 
 ## 🎯 最终结论
 
@@ -33,7 +33,7 @@ backend/
 ├── rag_tuning/                        ← 实验框架
 │   ├── README.md
 │   ├── evaluate.py                    ← ✅ 评估框架核心
-│   ├── golden_set.json                ← ✅ 测试数据（袁天华简历）
+│   ├── golden_set.json                ← ✅ 测试数据（真实简历 QA）
 │   ├── run_concurrent.py              ← ✅ 主力并发框架
 │   ├── run_phase1_single.py           ← Phase1 单组测试
 │   ├── run_phase5_concurrent.py       ← Phase5 并发版
@@ -51,16 +51,17 @@ backend/
 │       ├── phase2_*.json
 │       └── phase5/
 │
-└── rag_eval_legacy/                   ← 初始评估（已过时）
-    ├── README.md
-    ├── evaluate.py                    ← 评估脚本（可复用）
-    ├── run_baseline.py                ← 基线脚本
-    ├── visualize.py                   ← 可视化
-    ├── badcase_ledger.md              ← 坏案例记录
-    └── archive/                       ← 旧数据
-        ├── golden_set.json            ← 陈明简历（虚构）
-        ├── baseline_results.json
-        └── baseline_charts.png
+└── archive/
+    └── rag_eval_legacy/                   ← 初始评估（已过时）
+        ├── README.md
+        ├── evaluate.py                    ← 评估脚本（可复用）
+        ├── run_baseline.py                ← 基线脚本
+        ├── visualize.py                   ← 可视化
+        ├── badcase_ledger.md              ← 坏案例记录
+        └── archive/                       ← 旧数据
+            ├── golden_set.json            ← 虚构简历（已弃用）
+            ├── baseline_results.json
+            └── baseline_charts.png
 ```
 
 ## 🚀 快速使用
@@ -139,4 +140,4 @@ cat rag_tuning_results/summary/phase1.json
 
 - `rag_tuning_results/README.md` - 实验结果详解
 - `rag_tuning/README.md` - 运行脚本说明
-- `rag_eval_legacy/README.md` - 初始评估说明
+- `archive/rag_eval_legacy/README.md` - 初始评估说明

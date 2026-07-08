@@ -48,8 +48,6 @@ function SourceToggle({ sources }: { sources: string[] }) {
   );
 }
 
-// ── 流式光标 ────────────────────────────────────────────
-
 function StreamingCursor() {
   return (
     <span className="inline-block w-0.5 h-4 bg-indigo-400 ml-0.5 align-middle animate-cursor-blink" />

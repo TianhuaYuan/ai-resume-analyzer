@@ -11,7 +11,7 @@ from httpx import AsyncClient
 @pytest.mark.asyncio
 async def test_register_success(client: AsyncClient):
     """正常注册 → 201 + 返回用户信息。"""
-    resp = await client.post("/api/auth/register", json={
+    resp = await client.post("/api/v1/auth/register", json={
         "username": "alice",
         "email": "alice@example.com",
         "password": "Abc12345!",
@@ -28,20 +28,23 @@ async def test_register_success(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_register_duplicate_email(client: AsyncClient, registered_user: dict):
     """重复邮箱注册 → 409。"""
-    resp = await client.post("/api/auth/register", json={
+    resp = await client.post("/api/v1/auth/register", json={
         "username": "another",
         "email": registered_user["email"],  # 同一邮箱
         "password": "Abc12345!",
         "password_confirm": "Abc12345!",
     })
     assert resp.status_code == 409
-    assert "已被注册" in resp.json()["detail"]
+    # 兼容新格式 {"error": {"message": "..."}} 和旧格式 {"detail": "..."}
+    err = resp.json()
+    msg = err.get("error", {}).get("message", err.get("detail", ""))
+    assert "已被注册" in msg
 
 
 @pytest.mark.asyncio
 async def test_register_password_mismatch(client: AsyncClient):
     """两次密码不一致 → 422。"""
-    resp = await client.post("/api/auth/register", json={
+    resp = await client.post("/api/v1/auth/register", json={
         "username": "bob",
         "email": "bob@example.com",
         "password": "Abc12345!",
@@ -53,7 +56,7 @@ async def test_register_password_mismatch(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_register_short_password(client: AsyncClient):
     """密码太短 → 422。"""
-    resp = await client.post("/api/auth/register", json={
+    resp = await client.post("/api/v1/auth/register", json={
         "username": "charlie",
         "email": "charlie@example.com",
         "password": "123",
@@ -68,7 +71,7 @@ async def test_register_short_password(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_login_success(client: AsyncClient, registered_user: dict):
     """正确邮箱+密码 → 200 + 返回双 token。"""
-    resp = await client.post("/api/auth/login", json={
+    resp = await client.post("/api/v1/auth/login", json={
         "email": registered_user["email"],
         "password": registered_user["password"],
     })
@@ -82,7 +85,7 @@ async def test_login_success(client: AsyncClient, registered_user: dict):
 @pytest.mark.asyncio
 async def test_login_wrong_password(client: AsyncClient, registered_user: dict):
     """密码错误 → 401。"""
-    resp = await client.post("/api/auth/login", json={
+    resp = await client.post("/api/v1/auth/login", json={
         "email": registered_user["email"],
         "password": "WrongPassword!",
     })
@@ -92,7 +95,7 @@ async def test_login_wrong_password(client: AsyncClient, registered_user: dict):
 @pytest.mark.asyncio
 async def test_login_nonexistent_email(client: AsyncClient):
     """不存在的邮箱 → 401。"""
-    resp = await client.post("/api/auth/login", json={
+    resp = await client.post("/api/v1/auth/login", json={
         "email": "nobody@example.com",
         "password": "Whatever1!",
     })
@@ -106,14 +109,14 @@ async def test_login_nonexistent_email(client: AsyncClient):
 async def test_refresh_token_success(client: AsyncClient, registered_user: dict):
     """用 refresh_token 换新 token 对 → 200。"""
     # 先登录拿 refresh_token
-    login_resp = await client.post("/api/auth/login", json={
+    login_resp = await client.post("/api/v1/auth/login", json={
         "email": registered_user["email"],
         "password": registered_user["password"],
     })
     refresh = login_resp.json()["refresh_token"]
 
     # 用 refresh_token 刷新
-    resp = await client.post("/api/auth/refresh", json={
+    resp = await client.post("/api/v1/auth/refresh", json={
         "refresh_token": refresh,
     })
     assert resp.status_code == 200
@@ -125,13 +128,13 @@ async def test_refresh_token_success(client: AsyncClient, registered_user: dict)
 @pytest.mark.asyncio
 async def test_refresh_with_access_token_fails(client: AsyncClient, registered_user: dict):
     """误用 access_token 做 refresh → 401。"""
-    login_resp = await client.post("/api/auth/login", json={
+    login_resp = await client.post("/api/v1/auth/login", json={
         "email": registered_user["email"],
         "password": registered_user["password"],
     })
     access = login_resp.json()["access_token"]
 
-    resp = await client.post("/api/auth/refresh", json={
+    resp = await client.post("/api/v1/auth/refresh", json={
         "refresh_token": access,  # 用 access_token 冒充
     })
     assert resp.status_code == 401

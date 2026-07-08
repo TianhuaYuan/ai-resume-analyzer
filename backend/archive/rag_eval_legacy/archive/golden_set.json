@@ -1,0 +1,856 @@
+[
+  {
+    "id": 1,
+    "resume_id": 11,
+    "category": "工作经历",
+    "question": "陈明在字节主要做哪块业务？",
+    "relevant_chunk_indices": [
+      4,
+      5,
+      6
+    ],
+    "keywords": [
+      "飞书",
+      "文档协作",
+      "实时同步"
+    ],
+    "answerable": true
+  },
+  {
+    "id": 2,
+    "resume_id": 11,
+    "category": "工作经历",
+    "question": "在腾讯云的时候他搞了什么？",
+    "relevant_chunk_indices": [
+      9,
+      10,
+      11,
+      12,
+      15,
+      20,
+      21,
+      22,
+      23
+    ],
+    "keywords": [
+      "腾讯云",
+      "API网关",
+      "Django",
+      "Celery"
+    ],
+    "answerable": true
+  },
+  {
+    "id": 3,
+    "resume_id": 11,
+    "category": "专业技能",
+    "question": "他数据库用得怎么样，熟悉哪些？",
+    "relevant_chunk_indices": [
+      5,
+      6,
+      13,
+      21,
+      22
+    ],
+    "keywords": [
+      "PostgreSQL",
+      "MySQL",
+      "Redis",
+      "读写分离"
+    ],
+    "answerable": true
+  },
+  {
+    "id": 4,
+    "resume_id": 11,
+    "category": "项目经历",
+    "question": "有没有做过AI相关的项目？",
+    "relevant_chunk_indices": [
+      18,
+      19
+    ],
+    "keywords": [
+      "RAG",
+      "LangChain",
+      "ChromaDB",
+      "知识库"
+    ],
+    "answerable": true
+  },
+  {
+    "id": 5,
+    "resume_id": 11,
+    "category": "项目经历",
+    "question": "开源项目有人用吗？",
+    "relevant_chunk_indices": [
+      0,
+      5,
+      13,
+      14,
+      15,
+      16,
+      18,
+      19,
+      20,
+      21
+    ],
+    "keywords": [
+      "800",
+      "stars",
+      "AST",
+      "OpenAPI"
+    ],
+    "answerable": true
+  },
+  {
+    "id": 6,
+    "resume_id": 11,
+    "category": "基本信息",
+    "question": "他要多少钱？",
+    "relevant_chunk_indices": [
+      1
+    ],
+    "keywords": [
+      "18K",
+      "25K"
+    ],
+    "answerable": true
+  },
+  {
+    "id": 7,
+    "resume_id": 11,
+    "category": "专业技能",
+    "question": "Python异步编程熟不熟？",
+    "relevant_chunk_indices": [
+      20
+    ],
+    "keywords": [
+      "asyncio",
+      "装饰器",
+      "生成器"
+    ],
+    "answerable": true
+  },
+  {
+    "id": 8,
+    "resume_id": 11,
+    "category": "拒答测试",
+    "question": "陈明为什么从腾讯跳到字节？",
+    "relevant_chunk_indices": [],
+    "keywords": [
+      "离职",
+      "跳槽",
+      "原因"
+    ],
+    "answerable": false
+  },
+  {
+    "id": 9,
+    "resume_id": 11,
+    "category": "拒答测试",
+    "question": "他会讲日语吗？",
+    "relevant_chunk_indices": [],
+    "keywords": [
+      "日语"
+    ],
+    "answerable": false
+  },
+  {
+    "id": 10,
+    "resume_id": 11,
+    "category": "拒答测试",
+    "question": "陈明搞过微服务架构设计吗？",
+    "relevant_chunk_indices": [],
+    "keywords": [
+      "微服务",
+      "架构设计"
+    ],
+    "answerable": false
+  },
+  {
+    "id": 11,
+    "resume_id": 12,
+    "category": "工作经历",
+    "question": "刘芳在美团具体做什么？",
+    "relevant_chunk_indices": [
+      3,
+      4,
+      5,
+      10,
+      11,
+      14,
+      18,
+      21,
+      26
+    ],
+    "keywords": [
+      "美团",
+      "外卖",
+      "商家端",
+      "React"
+    ],
+    "answerable": true
+  },
+  {
+    "id": 12,
+    "resume_id": 12,
+    "category": "工作经历",
+    "question": "她做过哪些性能优化？具体说说",
+    "relevant_chunk_indices": [
+      5,
+      6,
+      11,
+      12
+    ],
+    "keywords": [
+      "LCP",
+      "SSR",
+      "虚拟滚动",
+      "防抖"
+    ],
+    "answerable": true
+  },
+  {
+    "id": 13,
+    "resume_id": 12,
+    "category": "项目经历",
+    "question": "有没有给社区贡献过开源项目？",
+    "relevant_chunk_indices": [
+      14,
+      16,
+      17,
+      18
+    ],
+    "keywords": [
+      "2.1k",
+      "stars",
+      "拖拽表单",
+      "npm",
+      "Bridge UI"
+    ],
+    "answerable": true
+  },
+  {
+    "id": 14,
+    "resume_id": 12,
+    "category": "工作经历",
+    "question": "她带过团队不？",
+    "relevant_chunk_indices": [
+      8,
+      9
+    ],
+    "keywords": [
+      "3人",
+      "小组",
+      "Review"
+    ],
+    "answerable": true
+  },
+  {
+    "id": 15,
+    "resume_id": 12,
+    "category": "专业技能",
+    "question": "除了React，Vue会不会？",
+    "relevant_chunk_indices": [
+      22,
+      23,
+      24
+    ],
+    "keywords": [
+      "Vue",
+      "Composition API",
+      "Pinia"
+    ],
+    "answerable": true
+  },
+  {
+    "id": 16,
+    "resume_id": 12,
+    "category": "专业技能",
+    "question": "Node.js能写不？",
+    "relevant_chunk_indices": [
+      25,
+      26
+    ],
+    "keywords": [
+      "Node.js",
+      "Express",
+      "Nest.js"
+    ],
+    "answerable": true
+  },
+  {
+    "id": 17,
+    "resume_id": 12,
+    "category": "基本信息",
+    "question": "她学历什么水平？",
+    "relevant_chunk_indices": [
+      2
+    ],
+    "keywords": [
+      "华中师范大学",
+      "计算机",
+      "本科"
+    ],
+    "answerable": true
+  },
+  {
+    "id": 18,
+    "resume_id": 12,
+    "category": "拒答测试",
+    "question": "刘芳会写Java后端吗？",
+    "relevant_chunk_indices": [
+      20
+    ],
+    "keywords": [
+      "Java",
+      "Spring"
+    ],
+    "answerable": false
+  },
+  {
+    "id": 19,
+    "resume_id": 12,
+    "category": "拒答测试",
+    "question": "在美团有晋升过吗？",
+    "relevant_chunk_indices": [],
+    "keywords": [
+      "晋升",
+      "职级"
+    ],
+    "answerable": false
+  },
+  {
+    "id": 20,
+    "resume_id": 12,
+    "category": "拒答测试",
+    "question": "她做过数据库设计吗？",
+    "relevant_chunk_indices": [],
+    "keywords": [
+      "数据库设计",
+      "ER图",
+      "范式"
+    ],
+    "answerable": false
+  },
+  {
+    "id": 21,
+    "resume_id": 13,
+    "category": "工作经历",
+    "question": "周婷在小红书负责什么？",
+    "relevant_chunk_indices": [
+      5,
+      6,
+      7,
+      18,
+      32
+    ],
+    "keywords": [
+      "小红书",
+      "电商",
+      "GMV",
+      "AB实验"
+    ],
+    "answerable": true
+  },
+  {
+    "id": 22,
+    "resume_id": 13,
+    "category": "工作经历",
+    "question": "在拼多多的时候具体做了啥？",
+    "relevant_chunk_indices": [
+      12,
+      13,
+      15,
+      16
+    ],
+    "keywords": [
+      "拼多多",
+      "百亿补贴",
+      "核销率",
+      "刷单"
+    ],
+    "answerable": true
+  },
+  {
+    "id": 23,
+    "resume_id": 13,
+    "category": "专业技能",
+    "question": "SQL和Python数据分析她哪个更熟？",
+    "relevant_chunk_indices": [
+      9,
+      10,
+      14,
+      15,
+      22,
+      24,
+      25
+    ],
+    "keywords": [
+      "SQL",
+      "Hive",
+      "Spark SQL",
+      "Pandas",
+      "Python"
+    ],
+    "answerable": true
+  },
+  {
+    "id": 24,
+    "resume_id": 13,
+    "category": "专业技能",
+    "question": "AB实验这块她能力怎么样？",
+    "relevant_chunk_indices": [
+      22,
+      23,
+      27,
+      28
+    ],
+    "keywords": [
+      "AB实验",
+      "t-test",
+      "bootstrap",
+      "显著性"
+    ],
+    "answerable": true
+  },
+  {
+    "id": 25,
+    "resume_id": 13,
+    "category": "项目经历",
+    "question": "她做过预测模型之类的吗？",
+    "relevant_chunk_indices": [
+      18,
+      19,
+      28
+    ],
+    "keywords": [
+      "XGBoost",
+      "AUC",
+      "SHAP",
+      "流失预测"
+    ],
+    "answerable": true
+  },
+  {
+    "id": 26,
+    "resume_id": 13,
+    "category": "教育背景",
+    "question": "周婷学历怎么样？",
+    "relevant_chunk_indices": [
+      2
+    ],
+    "keywords": [
+      "上海交大",
+      "硕士",
+      "应用统计"
+    ],
+    "answerable": true
+  },
+  {
+    "id": 27,
+    "resume_id": 13,
+    "category": "基本信息",
+    "question": "她期望多少薪资？",
+    "relevant_chunk_indices": [
+      1
+    ],
+    "keywords": [
+      "22K",
+      "30K"
+    ],
+    "answerable": true
+  },
+  {
+    "id": 28,
+    "resume_id": 13,
+    "category": "拒答测试",
+    "question": "周婷会写Java吗？",
+    "relevant_chunk_indices": [],
+    "keywords": [
+      "Java"
+    ],
+    "answerable": false
+  },
+  {
+    "id": 29,
+    "resume_id": 13,
+    "category": "拒答测试",
+    "question": "她带过数据团队吗？",
+    "relevant_chunk_indices": [
+      7,
+      8,
+      23
+    ],
+    "keywords": [
+      "管理",
+      "团队",
+      "带领"
+    ],
+    "answerable": false
+  },
+  {
+    "id": 30,
+    "resume_id": 13,
+    "category": "拒答测试",
+    "question": "她上一份工作做了多久，为啥跳槽？",
+    "relevant_chunk_indices": [],
+    "keywords": [
+      "跳槽",
+      "离职",
+      "原因"
+    ],
+    "answerable": false
+  },
+  {
+    "id": 31,
+    "resume_id": 14,
+    "category": "工作经历",
+    "question": "孙伟在阿里主要负责什么？",
+    "relevant_chunk_indices": [
+      3,
+      4,
+      5
+    ],
+    "keywords": [
+      "淘宝",
+      "SRE",
+      "SLA",
+      "容灾",
+      "压测"
+    ],
+    "answerable": true
+  },
+  {
+    "id": 32,
+    "resume_id": 14,
+    "category": "工作经历",
+    "question": "他待过哪些公司？",
+    "relevant_chunk_indices": [
+      3,
+      9,
+      10,
+      17,
+      23,
+      24
+    ],
+    "keywords": [
+      "阿里巴巴",
+      "腾讯",
+      "中国平安"
+    ],
+    "answerable": true
+  },
+  {
+    "id": 33,
+    "resume_id": 14,
+    "category": "专业技能",
+    "question": "K8s什么水平？",
+    "relevant_chunk_indices": [
+      7,
+      14,
+      15,
+      27,
+      36
+    ],
+    "keywords": [
+      "Kubernetes",
+      "K8s",
+      "CKA",
+      "CKS"
+    ],
+    "answerable": true
+  },
+  {
+    "id": 34,
+    "resume_id": 14,
+    "category": "专业技能",
+    "question": "他搞运维自动化能力怎么样？",
+    "relevant_chunk_indices": [
+      6,
+      11,
+      12,
+      13,
+      15,
+      18,
+      19,
+      30,
+      31,
+      32,
+      34
+    ],
+    "keywords": [
+      "自动化",
+      "Ansible",
+      "Terraform",
+      "CMDB"
+    ],
+    "answerable": true
+  },
+  {
+    "id": 35,
+    "resume_id": 14,
+    "category": "项目经历",
+    "question": "有没有搞过成本优化？效果怎么样？",
+    "relevant_chunk_indices": [
+      23,
+      25
+    ],
+    "keywords": [
+      "成本",
+      "300万",
+      "28%"
+    ],
+    "answerable": true
+  },
+  {
+    "id": 36,
+    "resume_id": 14,
+    "category": "专业技能",
+    "question": "他监控技术栈主要用啥？",
+    "relevant_chunk_indices": [
+      13,
+      14,
+      28,
+      29
+    ],
+    "keywords": [
+      "Prometheus",
+      "Grafana",
+      "ELK",
+      "监控"
+    ],
+    "answerable": true
+  },
+  {
+    "id": 37,
+    "resume_id": 14,
+    "category": "教育背景",
+    "question": "孙伟哪个学校毕业的？",
+    "relevant_chunk_indices": [
+      2
+    ],
+    "keywords": [
+      "电子科技大学",
+      "网络工程"
+    ],
+    "answerable": true
+  },
+  {
+    "id": 38,
+    "resume_id": 14,
+    "category": "拒答测试",
+    "question": "他会写前端吗？React或者Vue？",
+    "relevant_chunk_indices": [],
+    "keywords": [
+      "前端",
+      "React",
+      "Vue"
+    ],
+    "answerable": false
+  },
+  {
+    "id": 39,
+    "resume_id": 14,
+    "category": "拒答测试",
+    "question": "英文水平怎么样？能和老外开会吗？",
+    "relevant_chunk_indices": [],
+    "keywords": [
+      "英语",
+      "CET",
+      "IELTS"
+    ],
+    "answerable": false
+  },
+  {
+    "id": 40,
+    "resume_id": 14,
+    "category": "拒答测试",
+    "question": "有没有做过大数据开发？Hadoop或者Spark？",
+    "relevant_chunk_indices": [],
+    "keywords": [
+      "大数据",
+      "Spark",
+      "Hadoop"
+    ],
+    "answerable": false
+  },
+  {
+    "id": 41,
+    "resume_id": 15,
+    "category": "实习经历",
+    "question": "吴雪在达摩院实习做了啥？",
+    "relevant_chunk_indices": [
+      7,
+      8,
+      9,
+      25
+    ],
+    "keywords": [
+      "达摩院",
+      "通义千问",
+      "Alignment",
+      "DPO"
+    ],
+    "answerable": true
+  },
+  {
+    "id": 42,
+    "resume_id": 15,
+    "category": "实习经历",
+    "question": "除了达摩院还在哪实习过？",
+    "relevant_chunk_indices": [
+      12,
+      13,
+      14,
+      22,
+      33,
+      36,
+      37
+    ],
+    "keywords": [
+      "上海人工智能实验室",
+      "InternVL",
+      "多模态"
+    ],
+    "answerable": true
+  },
+  {
+    "id": 43,
+    "resume_id": 15,
+    "category": "论文与竞赛",
+    "question": "发过论文没？什么级别的？",
+    "relevant_chunk_indices": [
+      11,
+      12,
+      24,
+      25,
+      26
+    ],
+    "keywords": [
+      "EMNLP",
+      "Data Quality Matters",
+      "一作"
+    ],
+    "answerable": true
+  },
+  {
+    "id": 44,
+    "resume_id": 15,
+    "category": "专业技能",
+    "question": "大模型微调她会哪些？",
+    "relevant_chunk_indices": [
+      31,
+      32
+    ],
+    "keywords": [
+      "LoRA",
+      "QLoRA",
+      "DeepSpeed",
+      "Flash Attention"
+    ],
+    "answerable": true
+  },
+  {
+    "id": 45,
+    "resume_id": 15,
+    "category": "论文与竞赛",
+    "question": "参加过什么比赛拿过奖吗？",
+    "relevant_chunk_indices": [
+      26,
+      27
+    ],
+    "keywords": [
+      "Kaggle",
+      "金牌",
+      "BDCI",
+      "数学建模"
+    ],
+    "answerable": true
+  },
+  {
+    "id": 46,
+    "resume_id": 15,
+    "category": "校园项目",
+    "question": "她毕设做的什么方向？",
+    "relevant_chunk_indices": [
+      17,
+      18,
+      19,
+      20,
+      21,
+      32,
+      33
+    ],
+    "keywords": [
+      "RAG",
+      "论文阅读",
+      "ChromaDB",
+      "OCR"
+    ],
+    "answerable": true
+  },
+  {
+    "id": 47,
+    "resume_id": 15,
+    "category": "教育背景",
+    "question": "英语能力怎么样？",
+    "relevant_chunk_indices": [
+      4,
+      5,
+      6,
+      35
+    ],
+    "keywords": [
+      "IELTS",
+      "8.0",
+      "NUS",
+      "交换"
+    ],
+    "answerable": true
+  },
+  {
+    "id": 48,
+    "resume_id": 15,
+    "category": "拒答测试",
+    "question": "她会C++吗？",
+    "relevant_chunk_indices": [],
+    "keywords": [
+      "C++",
+      "C语言"
+    ],
+    "answerable": false
+  },
+  {
+    "id": 49,
+    "resume_id": 15,
+    "category": "拒答测试",
+    "question": "有没有产品经理的实习经验？",
+    "relevant_chunk_indices": [],
+    "keywords": [
+      "产品经理",
+      "需求分析",
+      "PRD"
+    ],
+    "answerable": false
+  },
+  {
+    "id": 50,
+    "resume_id": 15,
+    "category": "拒答测试",
+    "question": "她想去哪个城市工作？",
+    "relevant_chunk_indices": [
+      7,
+      12,
+      13
+    ],
+    "keywords": [
+      "城市",
+      "北京",
+      "上海",
+      "深圳",
+      "杭州"
+    ],
+    "answerable": false
+  }
+]

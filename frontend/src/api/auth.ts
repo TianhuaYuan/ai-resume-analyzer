@@ -6,7 +6,7 @@ interface LoginData {
 }
 
 export async function login(email: string, password: string): Promise<LoginData> {
-  const data = await api.post("/api/auth/login", { email, password }) as LoginData;
+  const data = await api.post("/api/v1/auth/login", { email, password }) as LoginData;
   localStorage.setItem("access_token", data.access_token);
   localStorage.setItem("refresh_token", data.refresh_token);
   return data;
@@ -18,7 +18,7 @@ export async function register(
   password: string,
   password_confirm: string
 ) {
-  return api.post("/api/auth/register", {
+  return api.post("/api/v1/auth/register", {
     username,
     email,
     password,

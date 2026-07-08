@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+ENV/
+*.egg-info/
+.pytest_cache/
+
+# 环境变量
+.env
+.env.*
+!.env.example
+
+# 运行时数据
+uploads/
+chroma_data/
+*.db
+*.sqlite3
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Claude Code
+.claude/
+.swarm/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Git
+.git
+.gitignore
+
+# 实验数据
+rag_tuning_results/
+rag_tuning/uploads/
+rag_tuning/golden_set.json
+rag_eval_legacy/archive/
+
+# 日志
+*.log
+logs/
+
+# 文档
+docs/
+README.md

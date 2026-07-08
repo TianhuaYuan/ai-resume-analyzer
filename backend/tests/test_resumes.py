@@ -12,21 +12,21 @@ from httpx import AsyncClient
 @pytest.mark.asyncio
 async def test_list_resumes_without_auth(client: AsyncClient):
     """未登录访问简历列表 → 401。"""
-    resp = await client.get("/api/resumes")
+    resp = await client.get("/api/v1/resumes")
     assert resp.status_code == 401
 
 
 @pytest.mark.asyncio
 async def test_get_resume_without_auth(client: AsyncClient):
     """未登录访问简历详情 → 401。"""
-    resp = await client.get("/api/resumes/1")
+    resp = await client.get("/api/v1/resumes/1")
     assert resp.status_code == 401
 
 
 @pytest.mark.asyncio
 async def test_upload_without_auth(client: AsyncClient):
     """未登录上传简历 → 401。"""
-    resp = await client.post("/api/resumes", files={"file": ("test.pdf", b"fake", "application/pdf")})
+    resp = await client.post("/api/v1/resumes", files={"file": ("test.pdf", b"fake", "application/pdf")})
     assert resp.status_code == 401
 
 
@@ -36,7 +36,7 @@ async def test_upload_without_auth(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_list_resumes_empty(client: AsyncClient, auth_headers: dict):
     """新用户简历列表为空。"""
-    resp = await client.get("/api/resumes", headers=auth_headers)
+    resp = await client.get("/api/v1/resumes", headers=auth_headers)
     assert resp.status_code == 200
     data = resp.json()
     assert data["items"] == []
@@ -49,7 +49,7 @@ async def test_list_resumes_empty(client: AsyncClient, auth_headers: dict):
 @pytest.mark.asyncio
 async def test_get_nonexistent_resume(client: AsyncClient, auth_headers: dict):
     """访问不存在的简历 → 404。"""
-    resp = await client.get("/api/resumes/99999", headers=auth_headers)
+    resp = await client.get("/api/v1/resumes/99999", headers=auth_headers)
     assert resp.status_code == 404
 
 
@@ -59,5 +59,5 @@ async def test_get_nonexistent_resume(client: AsyncClient, auth_headers: dict):
 @pytest.mark.asyncio
 async def test_delete_nonexistent_resume(client: AsyncClient, auth_headers: dict):
     """删除不存在的简历 → 404。"""
-    resp = await client.delete("/api/resumes/99999", headers=auth_headers)
+    resp = await client.delete("/api/v1/resumes/99999", headers=auth_headers)
     assert resp.status_code == 404

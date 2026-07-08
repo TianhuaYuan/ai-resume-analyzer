@@ -288,7 +288,7 @@ async def rewrite_query(question: str) -> str:
         "改写后的问题："
     )
     rewritten = await with_retry(
-        _llm_generate, system, user, temperature=0.1, max_tokens=200, fallback=question,
+        llm_generate, system, user, temperature=0.1, max_tokens=200, fallback=question,
     )
     return rewritten or question
 
@@ -422,7 +422,7 @@ def _merge_results(dense: list[dict], sparse: list[dict], top_k: int, k: int = 1
     return [x["item"] for x in ranked[:top_k]]
 
 
-async def _llm_generate(
+async def llm_generate(
     system: str, user: str, temperature: float = 0.1, max_tokens: int | None = None,
 ) -> str:
     """调 Chat API 生成回答（模型由 settings.CHAT_MODEL 决定），抽出来方便加不同的 temperature 和重试"""
@@ -571,7 +571,7 @@ async def ask_question(resume_id: int, question: str) -> tuple[str, list[dict]]:
     prompt = build_prompt([c["text"] for c in reranked], rewritten)
     answer = await timer.run(
         "generate",
-        with_retry(_llm_generate, prompt["system"], prompt["user"], fallback=FALLBACK_MESSAGE),
+        with_retry(llm_generate, prompt["system"], prompt["user"], fallback=FALLBACK_MESSAGE),
     )
 
     timer.log()
@@ -607,7 +607,7 @@ async def ask_question_p(
     answer = await timer.run(
         "generate",
         with_retry(
-            _llm_generate, prompt["system"], prompt["user"],
+            llm_generate, prompt["system"], prompt["user"],
             temperature=p.generate_temperature, fallback=FALLBACK_MESSAGE,
         ),
     )
@@ -661,7 +661,7 @@ async def ask_question_stream(resume_id: int, question: str):
         # 流式失败 → 降级为非流式重试一次
         logger.exception("Streaming failed, falling back to non-streaming")
         fallback = await with_retry(
-            _llm_generate, prompt["system"], prompt["user"], fallback=FALLBACK_MESSAGE,
+            llm_generate, prompt["system"], prompt["user"], fallback=FALLBACK_MESSAGE,
         )
         full = fallback
         yield {"type": "token", "content": fallback}

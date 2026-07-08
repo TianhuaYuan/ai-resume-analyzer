@@ -65,8 +65,6 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-// ── 文件图标 ────────────────────────────────────────────
-
 function FileIcon({ status }: { status: string }) {
   const bg =
     status === "failed"
@@ -180,7 +178,6 @@ export default function ResumeListPage() {
     };
   }, []);
 
-  // ── 轮询处理状态 ──
   const startPoll = (resumeId: number) => {
     let attempts = 0;
     pollRef.current = setInterval(async () => {
@@ -221,7 +218,6 @@ export default function ResumeListPage() {
     }, 1500);
   };
 
-  // ── 上传 ──
   const triggerUpload = () => fileInputRef.current?.click();
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -252,7 +248,6 @@ export default function ResumeListPage() {
     }
   };
 
-  // ── 删除 ──
   const handleDelete = async () => {
     if (!deleteTarget) return;
     try {
@@ -331,7 +326,7 @@ export default function ResumeListPage() {
                   className={`flex items-center justify-between p-5 rounded-2xl
                     border transition-all duration-200
                     ${r.status === "ready"
-                      ? "bg-white/4 border-white/8 hover:border-indigo-500/30 hover:bg-white/[0.06] hover:-translate-y-px cursor-pointer"
+                      ? "bg-white/4 border-white/8 hover:border-indigo-500/30 hover:bg-white/6 hover:-translate-y-px cursor-pointer"
                       : r.status === "failed"
                       ? "bg-white/4 border-red-500/15"
                       : "bg-white/4 border-white/8"
