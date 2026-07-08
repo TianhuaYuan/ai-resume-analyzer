@@ -124,7 +124,7 @@ jobs:
           RERANK_MODEL=test
           DATABASE_URL=sqlite+aiosqlite:///:memory:
           CHROMA_PERSIST_DIR=./chroma_data
-          JWT_SECRET_KEY=test-secret-key-for-cd
+          JWT_SECRET_KEY=test-secret-key-for-cd-this-is-32-chars-long
           UPLOAD_DIR=./uploads
           EOF
 
