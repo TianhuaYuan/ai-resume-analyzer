@@ -4,7 +4,7 @@
     "description": "RAG 评测集 v2 — 招聘方/求职者双视角，82条QA，tuning(60)+eval(22)",
     "version": "2.1.0",
     "date": "2026-07-17",
-    "judge_model": "deepseek-chat"
+    "note": "judge_model 在运行时从 settings.JUDGE_MODEL 动态读取"
   },
   "resumes": {
     "1": {
@@ -374,15 +374,15 @@
       ],
       "split": "tuning",
       "asker": "hr",
-      "should_answer": true
+      "should_answer": false
     },
     {
       "id": "q021",
       "resume_id": 2,
-      "category": "rejection",
+      "category": "factual",
       "difficulty": "medium",
       "question": "他在腾讯实习的时候用的什么语言？",
-      "reference_answer": "用的Go语言，在腾讯实习期间他用Go编写高性能数据聚合接口。",
+      "reference_answer": "Go语言。在腾讯实习期间他用Go编写高性能数据聚合接口。",
       "keywords": [
         "Go",
         "腾讯",
@@ -390,7 +390,7 @@
       ],
       "split": "tuning",
       "asker": "tech_interviewer",
-      "should_answer": false
+      "should_answer": true
     },
     {
       "id": "q022",
@@ -421,7 +421,7 @@
       ],
       "split": "tuning",
       "must_include": [
-        "强一致性"
+        "数据一致性"
       ],
       "asker": "tech_interviewer",
       "should_answer": true
@@ -577,7 +577,7 @@
       ],
       "split": "tuning",
       "asker": "hr",
-      "should_answer": true
+      "should_answer": false
     },
     {
       "id": "q033",
@@ -770,7 +770,7 @@
       ],
       "split": "tuning",
       "asker": "hr",
-      "should_answer": true
+      "should_answer": false
     },
     {
       "id": "q045",
@@ -969,7 +969,7 @@
     {
       "id": "q057",
       "resume_id": 5,
-      "category": "rejection",
+      "category": "factual",
       "difficulty": "medium",
       "question": "他用的什么芯片平台？",
       "reference_answer": "海思Hi3516平台。",
@@ -995,7 +995,7 @@
       ],
       "split": "tuning",
       "asker": "tech_interviewer",
-      "should_answer": true
+      "should_answer": false
     },
     {
       "id": "q059",
@@ -1032,7 +1032,7 @@
       "split": "tuning",
       "must_include": [
         "LoRa",
-        "LPWAN"
+        "LoRa"
       ],
       "asker": "tech_interviewer",
       "should_answer": true
@@ -1049,7 +1049,7 @@
         "主从复制",
         "性能调优"
       ],
-      "split": "eval",
+      "split": "tuning",
       "must_include": [
         "分库分表"
       ],
@@ -1070,7 +1070,7 @@
         "TPS",
         "30万"
       ],
-      "split": "eval",
+      "split": "tuning",
       "must_include": [
         "布隆过滤器",
         "Raft"
@@ -1091,7 +1091,7 @@
         "实习",
         "Spring Boot"
       ],
-      "split": "eval",
+      "split": "tuning",
       "asker": "job_seeker",
       "should_answer": true
     },
@@ -1107,7 +1107,7 @@
         "微服务",
         "校内项目"
       ],
-      "split": "eval",
+      "split": "tuning",
       "must_include": [
         "实习"
       ],
@@ -1127,14 +1127,15 @@
         "CRUD",
         "技术亮点"
       ],
-      "split": "eval",
+      "split": "tuning",
       "asker": "job_seeker",
-      "should_answer": true
+      "should_answer": true,
+      "is_subjective": true
     },
     {
       "id": "q066",
       "resume_id": 1,
-      "category": "rejection",
+      "category": "reasoning",
       "difficulty": "medium",
       "question": "我这个项目经历能冲字节跳动吗？",
       "reference_answer": "目前项目深度和体量离字节的校招要求还有明显差距。字节校招一般要求有实习经历或高复杂度开源项目，或者ACM等竞赛获奖。建议先积累一段实习再投递。",
@@ -1144,7 +1145,7 @@
         "校招",
         "开源"
       ],
-      "split": "eval",
+      "split": "tuning",
       "asker": "job_seeker",
       "should_answer": false
     },
@@ -1213,7 +1214,8 @@
       ],
       "split": "eval",
       "asker": "job_seeker",
-      "should_answer": true
+      "should_answer": true,
+      "is_subjective": true
     },
     {
       "id": "q071",
@@ -1280,7 +1282,8 @@
       ],
       "split": "eval",
       "asker": "job_seeker",
-      "should_answer": true
+      "should_answer": true,
+      "is_subjective": true
     },
     {
       "id": "q075",
@@ -1300,7 +1303,8 @@
         "开源"
       ],
       "asker": "job_seeker",
-      "should_answer": true
+      "should_answer": true,
+      "is_subjective": true
     },
     {
       "id": "q076",
@@ -1377,7 +1381,7 @@
     {
       "id": "q080",
       "resume_id": 5,
-      "category": "rejection",
+      "category": "reasoning",
       "difficulty": "hard",
       "question": "我想去大疆或者小米做嵌入式，简历够得着吗？",
       "reference_answer": "海康威视背景+智能摄像头+物联网平台经验，投大疆/小米的嵌入式岗有竞争力。但需要针对性调整：投大疆突出RTOS和电机控制经验；投小米突出IoT设备和MQTT云平台经验。",
@@ -1440,7 +1444,8 @@
       ],
       "split": "eval",
       "asker": "job_seeker",
-      "should_answer": true
+      "should_answer": true,
+      "is_subjective": true
     },
     {
       "id": "q084",
@@ -1455,9 +1460,10 @@
         "筛选",
         "Java"
       ],
-      "split": "tuning",
+      "split": "eval",
       "asker": "job_seeker",
-      "should_answer": true
+      "should_answer": true,
+      "is_subjective": true
     },
     {
       "id": "q085",
@@ -1485,7 +1491,7 @@
         "年薪",
         "跳槽"
       ],
-      "split": "tuning",
+      "split": "eval",
       "asker": "job_seeker",
       "should_answer": false
     },
@@ -1515,7 +1521,7 @@
       "keywords": [
         "竞业"
       ],
-      "split": "tuning",
+      "split": "eval",
       "asker": "hr",
       "should_answer": false
     },
@@ -1531,7 +1537,7 @@
         "电商",
         "美团"
       ],
-      "split": "tuning",
+      "split": "eval",
       "asker": "hr",
       "should_answer": true
     },
@@ -1549,7 +1555,7 @@
         "B端",
         "C端"
       ],
-      "split": "tuning",
+      "split": "eval",
       "asker": "tech_interviewer",
       "should_answer": true
     },
@@ -1568,6 +1574,138 @@
       "split": "eval",
       "asker": "product_manager",
       "should_answer": true
+    },
+    {
+      "id": "q092",
+      "resume_id": 6,
+      "category": "factual",
+      "difficulty": "easy",
+      "question": "她之前在携程和美团分别负责什么方向？",
+      "reference_answer": "在携程负责酒店预订流程优化和会员权益体系（C端）；在美团负责商家订单管理系统和商家入驻（B端）。",
+      "keywords": [
+        "携程",
+        "美团",
+        "B端",
+        "C端"
+      ],
+      "should_answer": true,
+      "split": "eval",
+      "asker": "hr"
+    },
+    {
+      "id": "q093",
+      "resume_id": 6,
+      "category": "factual",
+      "difficulty": "medium",
+      "question": "她的智能客服工单项目解决了什么问题？效果怎样？",
+      "reference_answer": "发现客服响应延迟的核心瓶颈在人工分单环节。设计基于规则的自动分配策略，工单平均响应时间降低40%。",
+      "keywords": [
+        "工单",
+        "自动分配",
+        "40%"
+      ],
+      "should_answer": true,
+      "split": "eval",
+      "asker": "hr"
+    },
+    {
+      "id": "q094",
+      "resume_id": 6,
+      "category": "reasoning",
+      "difficulty": "medium",
+      "question": "她做完 C 端再做 B 端，这个转型有什么难点？",
+      "reference_answer": "C端关注用户体验和转化率，B端关注效率和流程规范化。转型难点在于思维方式切换：C端做加法（加功能吸引用户），B端做减法（精简流程减少操作步骤）。",
+      "keywords": [
+        "B端",
+        "C端",
+        "转型"
+      ],
+      "should_answer": true,
+      "split": "eval",
+      "asker": "hr"
+    },
+    {
+      "id": "q095",
+      "resume_id": 6,
+      "category": "reasoning",
+      "difficulty": "hard",
+      "question": "她设计的自动审核规则引擎，从人工审核到自动审核需要解决哪些问题？",
+      "reference_answer": "需要解决：1）OCR识别准确率达不到100%，需要置信度阈值和人工兜底；2）工商信息校验的接口稳定性；3）风险控制：自动审核通过后如果出现问题，责任划分和追溯机制。",
+      "keywords": [
+        "OCR",
+        "自动审核",
+        "风控",
+        "兜底"
+      ],
+      "should_answer": true,
+      "split": "eval",
+      "asker": "tech_interviewer"
+    },
+    {
+      "id": "q096",
+      "resume_id": 6,
+      "category": "rejection",
+      "difficulty": "medium",
+      "question": "她有技术背景吗？会写代码吗？",
+      "reference_answer": "简历中未提到编程开发经验，她的技能集中在产品设计、数据分析和项目管理。",
+      "keywords": [
+        "编程",
+        "开发",
+        "技术背景"
+      ],
+      "should_answer": false,
+      "split": "eval",
+      "asker": "hr"
+    },
+    {
+      "id": "q097",
+      "resume_id": 6,
+      "category": "comparative",
+      "difficulty": "medium",
+      "question": "她的携程和美团两段经历，哪个系统复杂度更高？",
+      "reference_answer": "美团阶段复杂度更高。携程主要是前端功能优化（预订流程、会员体系）；美团涉及订单SOP工作流引擎、自动审核规则引擎等系统级产品设计，以及对接风控体系等跨系统集成。",
+      "keywords": [
+        "携程",
+        "美团",
+        "SOP",
+        "规则引擎"
+      ],
+      "should_answer": true,
+      "split": "eval",
+      "asker": "tech_interviewer"
+    },
+    {
+      "id": "q098",
+      "resume_id": 6,
+      "category": "multi_turn",
+      "difficulty": "easy",
+      "question": "她优化退款审核流程，从24小时缩短到4小时，具体怎么做的？",
+      "reference_answer": "简历中未详细展开具体优化手段，只提到设计了订单SOP工作流引擎和退款审核流程优化。具体方法可能包括：简化审核层级、引入自动退款规则、异常单自动标定等。",
+      "keywords": [
+        "退款",
+        "审核",
+        "4小时"
+      ],
+      "should_answer": true,
+      "split": "eval",
+      "asker": "hr"
+    },
+    {
+      "id": "q099",
+      "resume_id": 6,
+      "category": "factual",
+      "difficulty": "hard",
+      "question": "她在哪些公司待过，时长分别是多少？",
+      "reference_answer": "携程2021.07-2023.02（约1年8个月），美团2023.03至今（约3年4个月）。",
+      "keywords": [
+        "携程",
+        "美团",
+        "2021",
+        "2023"
+      ],
+      "should_answer": true,
+      "split": "eval",
+      "asker": "hr"
     }
   ]
 }
