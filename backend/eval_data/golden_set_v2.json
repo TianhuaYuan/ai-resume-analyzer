@@ -1,0 +1,1050 @@
+{
+  "meta": {
+    "name": "rag-eval-v2",
+    "description": "RAG 评测集 v2 — 基于真实简历结构模式生成",
+    "version": "2.0.0",
+    "date": "2026-07-17",
+    "judge_model": "deepseek-chat"
+  },
+  "resumes": {
+    "1": {
+      "file": "resume_junior_backend.txt",
+      "name": "初级后端-王浩"
+    },
+    "2": {
+      "file": "resume_mid_backend.txt",
+      "name": "中级后端-张明"
+    },
+    "3": {
+      "file": "resume_senior_architect.txt",
+      "name": "高级架构师-陈磊"
+    },
+    "4": {
+      "file": "resume_junior_frontend.txt",
+      "name": "初级前端-李婷"
+    },
+    "5": {
+      "file": "resume_mid_iot.txt",
+      "name": "嵌入式工程师-赵刚"
+    }
+  },
+  "samples": [
+    {
+      "id": "q001",
+      "resume_id": 1,
+      "category": "factual",
+      "difficulty": "easy",
+      "answer_type": "factual",
+      "question": "王浩毕业于哪所大学？学的是什么专业？",
+      "reference_answer": "武汉理工大学，计算机科学与技术专业本科。",
+      "keywords": [
+        "武汉理工大学",
+        "计算机科学与技术",
+        "本科"
+      ],
+      "split": "tuning"
+    },
+    {
+      "id": "q002",
+      "resume_id": 1,
+      "category": "factual",
+      "difficulty": "easy",
+      "answer_type": "factual",
+      "question": "王浩的英语六级成绩是多少？",
+      "reference_answer": "528分。",
+      "keywords": [
+        "528",
+        "六级"
+      ],
+      "split": "tuning",
+      "must_include": [
+        "528"
+      ]
+    },
+    {
+      "id": "q003",
+      "resume_id": 1,
+      "category": "factual",
+      "difficulty": "medium",
+      "answer_type": "factual",
+      "question": "王浩掌握的数据库相关技能有哪些？",
+      "reference_answer": "熟悉MySQL常用SQL、索引优化、事务隔离级别和锁机制，具备基本的数据建模能力。",
+      "keywords": [
+        "MySQL",
+        "SQL",
+        "索引",
+        "事务",
+        "锁"
+      ],
+      "split": "tuning"
+    },
+    {
+      "id": "q004",
+      "resume_id": 1,
+      "category": "factual",
+      "difficulty": "hard",
+      "answer_type": "factual",
+      "question": "王浩在在线考试系统中如何处理分布式环境下的定时任务重复执行问题？",
+      "reference_answer": "基于Redis的过期特性实现考试倒计时管理，解决定时任务在分布式环境下重复执行的问题。同时使用RabbitMQ异步处理试卷批改任务。",
+      "keywords": [
+        "Redis",
+        "过期",
+        "倒计时",
+        "RabbitMQ",
+        "异步"
+      ],
+      "split": "tuning"
+    },
+    {
+      "id": "q005",
+      "resume_id": 1,
+      "category": "reasoning",
+      "difficulty": "easy",
+      "answer_type": "factual",
+      "question": "王浩的项目经历中涉及了哪些消息中间件？它们分别用在什么场景？",
+      "reference_answer": "使用了RabbitMQ。在在线考试系统中，用RabbitMQ异步处理试卷批改任务，提交后立即返回「批改中」状态，后台消费完成后通过WebSocket推送结果。",
+      "keywords": [
+        "RabbitMQ",
+        "批改",
+        "异步"
+      ],
+      "split": "tuning"
+    },
+    {
+      "id": "q006",
+      "resume_id": 1,
+      "category": "reasoning",
+      "difficulty": "medium",
+      "answer_type": "factual",
+      "question": "王浩的个人博客平台项目中，他使用了什么方式来实现操作日志记录？",
+      "reference_answer": "基于Spring AOP实现操作日志记录，同时统一处理异常。",
+      "keywords": [
+        "AOP",
+        "Spring AOP",
+        "日志"
+      ],
+      "split": "tuning"
+    },
+    {
+      "id": "q007",
+      "resume_id": 1,
+      "category": "reasoning",
+      "difficulty": "hard",
+      "answer_type": "factual",
+      "question": "从王浩的简历来看，他距离成为一名高级后端工程师还缺少哪些关键经验？",
+      "reference_answer": "王浩目前缺少分布式系统设计经验、微服务架构经验（未涉及Spring Cloud）、高并发场景实战经验、以及线上问题排查和性能调优经验。他的项目中未涉及消息队列的复杂场景、分布式事务、分库分表等进阶技术。",
+      "keywords": [
+        "分布式",
+        "微服务",
+        "高并发",
+        "Spring Cloud"
+      ],
+      "split": "tuning",
+      "must_include": [
+        "分布式"
+      ]
+    },
+    {
+      "id": "q008",
+      "resume_id": 1,
+      "category": "rejection",
+      "difficulty": "medium",
+      "answer_type": "rejection",
+      "question": "王浩在腾讯实习期间参与过什么项目？",
+      "reference_answer": "王浩的简历中没有腾讯实习经历。",
+      "keywords": [
+        "腾讯"
+      ],
+      "split": "tuning"
+    },
+    {
+      "id": "q009",
+      "resume_id": 1,
+      "category": "rejection",
+      "difficulty": "easy",
+      "answer_type": "rejection",
+      "question": "王浩是否有使用Docker和Kubernetes的经验？",
+      "reference_answer": "王浩的简历中未提到Docker和Kubernetes相关经验。",
+      "keywords": [
+        "Docker",
+        "Kubernetes"
+      ],
+      "split": "tuning"
+    },
+    {
+      "id": "q010",
+      "resume_id": 1,
+      "category": "rejection",
+      "difficulty": "hard",
+      "answer_type": "rejection",
+      "question": "王浩在在线考试系统中如何保证高并发场景下数据库不会被打满？",
+      "reference_answer": "简历中仅提到使用了RabbitMQ异步处理批改任务来解耦，但未详细说明高并发场景下的数据库保护措施，没有涉及限流、降级、熔断等机制。",
+      "keywords": [
+        "限流",
+        "降级",
+        "熔断"
+      ],
+      "split": "tuning"
+    },
+    {
+      "id": "q011",
+      "resume_id": 1,
+      "category": "comparative",
+      "difficulty": "medium",
+      "answer_type": "factual",
+      "question": "比较王浩的两个项目，哪个技术难度更高？为什么？",
+      "reference_answer": "在线考试系统技术难度更高。因为它涉及了分布式定时任务管理（Redis过期）、异步消息处理（RabbitMQ）、WebSocket实时推送等技术方案，而个人博客平台用的是基本的Spring Boot + Thymeleaf + MySQL框架，没有使用中间件。",
+      "keywords": [
+        "在线考试",
+        "RabbitMQ",
+        "Redis",
+        "WebSocket",
+        "异步"
+      ],
+      "split": "tuning"
+    },
+    {
+      "id": "q012",
+      "resume_id": 1,
+      "category": "multi_turn",
+      "difficulty": "medium",
+      "answer_type": "factual",
+      "question": "王浩在个人博客平台中使用了什么模板引擎？这个引擎有什么优缺点？",
+      "reference_answer": "使用了Thymeleaf。优点是Spring Boot原生支持、天然支持HTML标签语法、前后端可分离开发。缺点是性能不如JSP的某些实现、复杂页面逻辑写起来比较繁琐。",
+      "keywords": [
+        "Thymeleaf",
+        "模板引擎",
+        "Spring Boot"
+      ],
+      "split": "tuning"
+    },
+    {
+      "id": "q013",
+      "resume_id": 2,
+      "category": "factual",
+      "difficulty": "easy",
+      "answer_type": "factual",
+      "question": "张明毕业于哪所大学？他的第一份正式工作在哪家公司？",
+      "reference_answer": "华南理工大学软件工程本科，第一份正式工作在字节跳动。",
+      "keywords": [
+        "华南理工大学",
+        "软件工程",
+        "字节跳动"
+      ],
+      "split": "tuning"
+    },
+    {
+      "id": "q014",
+      "resume_id": 2,
+      "category": "factual",
+      "difficulty": "easy",
+      "answer_type": "factual",
+      "question": "张明在字节跳动负责哪个业务系统？",
+      "reference_answer": "电商订单履约系统和商家数据看板。",
+      "keywords": [
+        "电商订单履约",
+        "商家数据看板",
+        "字节跳动"
+      ],
+      "split": "tuning"
+    },
+    {
+      "id": "q015",
+      "resume_id": 2,
+      "category": "factual",
+      "difficulty": "medium",
+      "answer_type": "factual",
+      "question": "张明在优化热点商品详情页查询时，采用了什么技术方案？具体效果如何？",
+      "reference_answer": "引入Caffeine本地缓存+Redis分布式缓存两级缓存架构，热点商品详情页查询延迟从120ms降至8ms。",
+      "keywords": [
+        "Caffeine",
+        "Redis",
+        "两级缓存",
+        "120ms",
+        "8ms"
+      ],
+      "split": "tuning",
+      "must_include": [
+        "Caffeine",
+        "两级缓存"
+      ]
+    },
+    {
+      "id": "q016",
+      "resume_id": 2,
+      "category": "factual",
+      "difficulty": "hard",
+      "answer_type": "factual",
+      "question": "张明用Elasticsearch搭建的商家销售数据看板，数据同步机制是怎样的？日增量数据量级是多少？",
+      "reference_answer": "通过Canal监听MySQL binlog变更实时同步至Elasticsearch，端到端延迟控制在5秒内。日增量数据超2亿条，月活商家超5万。",
+      "keywords": [
+        "Canal",
+        "binlog",
+        "Elasticsearch",
+        "2亿",
+        "5万"
+      ],
+      "split": "tuning"
+    },
+    {
+      "id": "q017",
+      "resume_id": 2,
+      "category": "reasoning",
+      "difficulty": "easy",
+      "answer_type": "factual",
+      "question": "张明是如何解决高并发抢购场景下库存超卖问题的？",
+      "reference_answer": "基于Redis Lua脚本实现库存扣减的原子操作，解决高并发抢购场景下的超卖问题，单机QPS从800提升至3000+。",
+      "keywords": [
+        "Redis",
+        "Lua",
+        "原子",
+        "QPS",
+        "3000"
+      ],
+      "split": "tuning",
+      "must_include": [
+        "Redis"
+      ]
+    },
+    {
+      "id": "q018",
+      "resume_id": 2,
+      "category": "reasoning",
+      "difficulty": "medium",
+      "answer_type": "factual",
+      "question": "张明设计的订单状态机需要覆盖多少种状态转换？为什么要用状态机驱动？",
+      "reference_answer": "覆盖创建、支付、发货、签收、退款等30+种状态转换。使用状态机驱动可以确保复杂电商场景下的数据一致性，防止订单状态跳转出现非法转换。",
+      "keywords": [
+        "30",
+        "状态机",
+        "数据一致性"
+      ],
+      "split": "tuning"
+    },
+    {
+      "id": "q019",
+      "resume_id": 2,
+      "category": "reasoning",
+      "difficulty": "hard",
+      "answer_type": "factual",
+      "question": "系统迁移上云时，张明如何保证MySQL分库分表迁移的数据一致性？停机窗口控制在了什么范围？",
+      "reference_answer": "通过设计平滑迁移方案，停机窗口控制在15分钟内。具体措施文中未详细展开，但涉及全量同步+增量追平+切换验证等步骤。",
+      "keywords": [
+        "15分钟",
+        "平滑迁移",
+        "停机窗口"
+      ],
+      "split": "tuning",
+      "must_include": [
+        "15分钟"
+      ]
+    },
+    {
+      "id": "q020",
+      "resume_id": 2,
+      "category": "rejection",
+      "difficulty": "easy",
+      "answer_type": "rejection",
+      "question": "张明是否有过团队管理经验？",
+      "reference_answer": "张明的简历中没有提到团队管理经验。",
+      "keywords": [
+        "管理",
+        "团队"
+      ],
+      "split": "tuning"
+    },
+    {
+      "id": "q021",
+      "resume_id": 2,
+      "category": "rejection",
+      "difficulty": "medium",
+      "answer_type": "factual",
+      "question": "张明在腾讯实习期间使用的是什么编程语言？",
+      "reference_answer": "张明在腾讯实习期间使用Go语言编写高性能数据聚合接口。但这是他实习经历的内容，不是全职工作。",
+      "keywords": [
+        "Go",
+        "腾讯"
+      ],
+      "split": "tuning",
+      "must_include": [
+        "Go"
+      ]
+    },
+    {
+      "id": "q022",
+      "resume_id": 2,
+      "category": "rejection",
+      "difficulty": "hard",
+      "answer_type": "rejection",
+      "question": "张明是否有使用过Seata处理分布式事务的经验？",
+      "reference_answer": "张明的专业技能中提到了了解分布式事务（Seata），但项目经历中没有实际使用Seata的具体案例。",
+      "keywords": [
+        "Seata",
+        "分布式事务"
+      ],
+      "split": "tuning"
+    },
+    {
+      "id": "q023",
+      "resume_id": 2,
+      "category": "comparative",
+      "difficulty": "medium",
+      "answer_type": "factual",
+      "question": "比较张明的电商订单履约系统和分布式任务调度中心，两个系统对数据一致性的要求有什么不同？",
+      "reference_answer": "电商订单履约系统要求强一致性（涉及资金和库存），使用状态机和Lua脚本来保证；而分布式任务调度中心允许最终一致性，失败可通过重试机制补偿。",
+      "keywords": [
+        "数据一致性",
+        "强一致性",
+        "最终一致性",
+        "状态机"
+      ],
+      "split": "tuning"
+    },
+    {
+      "id": "q024",
+      "resume_id": 2,
+      "category": "multi_turn",
+      "difficulty": "hard",
+      "answer_type": "factual",
+      "question": "张明在字节跳动做了3年，他在电商订单履约系统和商家数据看板两个项目中的角色定位有什么不同？",
+      "reference_answer": "在电商订单履约系统中他是核心开发，负责关键链路和架构设计（库存扣减、状态机、缓存架构、上云迁移）；在商家数据看板中他偏向功能开发（ES搭建、同步机制设计）。前者涉及核心交易链路，后者属于数据分析支撑系统。",
+      "keywords": [
+        "核心开发",
+        "功能开发",
+        "核心交易",
+        "数据分析"
+      ],
+      "split": "tuning"
+    },
+    {
+      "id": "q025",
+      "resume_id": 3,
+      "category": "factual",
+      "difficulty": "easy",
+      "answer_type": "factual",
+      "question": "陈磊的最高学历是什么？在哪个大学获得的？",
+      "reference_answer": "浙江大学计算机科学与技术硕士学位。",
+      "keywords": [
+        "浙江大学",
+        "硕士",
+        "计算机科学与技术"
+      ],
+      "split": "tuning",
+      "must_include": [
+        "浙江大学"
+      ]
+    },
+    {
+      "id": "q026",
+      "resume_id": 3,
+      "category": "factual",
+      "difficulty": "easy",
+      "answer_type": "factual",
+      "question": "陈磊目前在哪家公司？职级是什么？",
+      "reference_answer": "在阿里巴巴，职级为技术专家P7。",
+      "keywords": [
+        "阿里巴巴",
+        "P7",
+        "技术专家"
+      ],
+      "split": "tuning"
+    },
+    {
+      "id": "q027",
+      "resume_id": 3,
+      "category": "factual",
+      "difficulty": "medium",
+      "answer_type": "factual",
+      "question": "陈磊在蚂蚁集团期间参与了什么系统开发？",
+      "reference_answer": "参与了自研分布式链路追踪系统（类似OpenTelemetry）的核心开发。",
+      "keywords": [
+        "分布式链路追踪",
+        "蚂蚁",
+        "OpenTelemetry"
+      ],
+      "split": "tuning"
+    },
+    {
+      "id": "q028",
+      "resume_id": 3,
+      "category": "factual",
+      "difficulty": "hard",
+      "answer_type": "factual",
+      "question": "陈磊的秒杀系统架构升级将吞吐从5万TPS提升至多少？采用了哪些技术手段？",
+      "reference_answer": "提升至30万TPS。采用多级缓存+请求队列的削峰填谷方案：前端布隆过滤器拦截无效请求、Nginx本地缓存+Redis集群+数据库三级逐级下探；重构库存中心为独立服务，基于Raft协议实现库存数据跨机房强一致。",
+      "keywords": [
+        "30万",
+        "TPS",
+        "布隆过滤器",
+        "Raft",
+        "库存"
+      ],
+      "split": "tuning",
+      "must_include": [
+        "30万"
+      ]
+    },
+    {
+      "id": "q029",
+      "resume_id": 3,
+      "category": "reasoning",
+      "difficulty": "easy",
+      "answer_type": "factual",
+      "question": "陈磊在分布式链路追踪系统中如何解决海量数据的存储和成本问题？",
+      "reference_answer": "实现基于Sampling的自适应采样策略，在每天100TB级调用数据中保证关键业务的全量采样，使存储成本降低70%。",
+      "keywords": [
+        "Sampling",
+        "自适应采样",
+        "100TB",
+        "70%"
+      ],
+      "split": "tuning",
+      "must_include": [
+        "自适应采样"
+      ]
+    },
+    {
+      "id": "q030",
+      "resume_id": 3,
+      "category": "reasoning",
+      "difficulty": "medium",
+      "answer_type": "factual",
+      "question": "陈磊设计统一订单数据模型时为什么引入CQRS架构？",
+      "reference_answer": "引入CQRS架构分离读写，订单写入端保持强一致，查询端通过事件驱动同步至Elasticsearch。这样可以分别优化读写两端，写入端保证事务一致性，查询端利用ES的全文搜索和聚合分析能力，互不影响。",
+      "keywords": [
+        "CQRS",
+        "读写分离",
+        "Elasticsearch",
+        "一致",
+        "事件驱动"
+      ],
+      "split": "tuning"
+    },
+    {
+      "id": "q031",
+      "resume_id": 3,
+      "category": "reasoning",
+      "difficulty": "hard",
+      "answer_type": "factual",
+      "question": "库存中心重构为独立服务并基于Raft协议实现，解决了什么问题？带来了什么新的挑战？",
+      "reference_answer": "解决了库存数据跨机房强一致性问题，单机QPS突破10万。Raft协议带来的挑战包括：leader选举期间服务不可用窗口、日志复制带来的网络开销、快照压缩和恢复的复杂度。",
+      "keywords": [
+        "Raft",
+        "跨机房",
+        "强一致",
+        "QPS",
+        "10万"
+      ],
+      "split": "tuning",
+      "must_include": [
+        "Raft"
+      ]
+    },
+    {
+      "id": "q032",
+      "resume_id": 3,
+      "category": "rejection",
+      "difficulty": "easy",
+      "answer_type": "rejection",
+      "question": "陈磊是否有云计算平台（AWS/Azure/GCP）的使用经验？",
+      "reference_answer": "简历中未提及AWS、Azure或GCP的使用经验。",
+      "keywords": [
+        "AWS",
+        "Azure",
+        "GCP"
+      ],
+      "split": "tuning"
+    },
+    {
+      "id": "q033",
+      "resume_id": 3,
+      "category": "rejection",
+      "difficulty": "medium",
+      "answer_type": "rejection",
+      "question": "陈磊带领的团队有多少人？",
+      "reference_answer": "带领8人技术团队。",
+      "keywords": [
+        "8人"
+      ],
+      "split": "tuning"
+    },
+    {
+      "id": "q034",
+      "resume_id": 3,
+      "category": "rejection",
+      "difficulty": "hard",
+      "answer_type": "rejection",
+      "question": "陈磊在阿里巴巴的绩效考核结果如何？",
+      "reference_answer": "简历中未提及绩效考核相关信息。",
+      "keywords": [
+        "绩效",
+        "考核",
+        "3.75"
+      ],
+      "split": "tuning"
+    },
+    {
+      "id": "q035",
+      "resume_id": 3,
+      "category": "comparative",
+      "difficulty": "medium",
+      "answer_type": "factual",
+      "question": "比较陈磊在蚂蚁集团和阿里巴巴的工作内容，哪个阶段的架构挑战更大？为什么？",
+      "reference_answer": "阿里巴巴阶段的挑战更大。在蚂蚁集团主要参与已有系统的核心功能开发（链路追踪），而在阿里巴巴主导了整个秒杀系统的架构升级（从5万到30万TPS），涉及多级缓存、Raft库存中心、全链路压测等完整的架构方案设计和落地。",
+      "keywords": [
+        "架构升级",
+        "秒杀",
+        "Raft",
+        "30万",
+        "TPS"
+      ],
+      "split": "tuning"
+    },
+    {
+      "id": "q036",
+      "resume_id": 3,
+      "category": "multi_turn",
+      "difficulty": "hard",
+      "answer_type": "factual",
+      "question": "陈磊作为Apache RocketMQ Committer，他在开源社区的贡献对他的技术成长有什么帮助？",
+      "reference_answer": "作为Apache RocketMQ Committer贡献了消息轨迹和批量消费等核心功能。开源社区贡献帮助他：1）深入理解消息队列内核实现；2）建立技术影响力（GitHub 3000+ star）；3）形成输出驱动输入的学习闭环；4）通过社区Issue和邮件列表了解一线生产环境中消息队列的真实问题。",
+      "keywords": [
+        "RocketMQ",
+        "Committer",
+        "开源",
+        "消息轨迹",
+        "批量消费"
+      ],
+      "split": "tuning"
+    },
+    {
+      "id": "q037",
+      "resume_id": 4,
+      "category": "factual",
+      "difficulty": "easy",
+      "answer_type": "factual",
+      "question": "李婷就读于哪所大学？什么专业？",
+      "reference_answer": "广东工业大学，软件工程专业本科。",
+      "keywords": [
+        "广东工业大学",
+        "软件工程"
+      ],
+      "split": "tuning"
+    },
+    {
+      "id": "q038",
+      "resume_id": 4,
+      "category": "factual",
+      "difficulty": "easy",
+      "answer_type": "factual",
+      "question": "李婷掌握哪些前端框架？",
+      "reference_answer": "熟练使用React 18和Vue 3开发单页应用，了解组件通信和状态管理。",
+      "keywords": [
+        "React",
+        "Vue",
+        "前端框架"
+      ],
+      "split": "tuning"
+    },
+    {
+      "id": "q039",
+      "resume_id": 4,
+      "category": "factual",
+      "difficulty": "medium",
+      "answer_type": "factual",
+      "question": "李婷的在线课程学习平台项目使用了哪些技术栈？",
+      "reference_answer": "React 18 + TypeScript + Vite + Tailwind CSS + Redux Toolkit。",
+      "keywords": [
+        "React",
+        "TypeScript",
+        "Vite",
+        "Tailwind",
+        "Redux"
+      ],
+      "split": "tuning",
+      "must_include": [
+        "React"
+      ]
+    },
+    {
+      "id": "q040",
+      "resume_id": 4,
+      "category": "factual",
+      "difficulty": "hard",
+      "answer_type": "factual",
+      "question": "李婷在天气查询小程序中使用了哪些第三方API和本地存储方案？",
+      "reference_answer": "使用了高德地图API获取地理位置，和风天气API展示气象数据。使用localStorage缓存最近查询的城市列表，使用Pinia管理用户偏好设置。",
+      "keywords": [
+        "高德地图",
+        "和风天气",
+        "localStorage",
+        "Pinia"
+      ],
+      "split": "tuning"
+    },
+    {
+      "id": "q041",
+      "resume_id": 4,
+      "category": "reasoning",
+      "difficulty": "easy",
+      "answer_type": "factual",
+      "question": "李婷的课程平台项目中是如何处理用户认证和权限的？",
+      "reference_answer": "基于React Router v6实现路由权限控制，区分学生和管理员两种角色。",
+      "keywords": [
+        "React Router",
+        "权限",
+        "角色",
+        "路由"
+      ],
+      "split": "eval",
+      "must_include": [
+        "React Router"
+      ]
+    },
+    {
+      "id": "q042",
+      "resume_id": 4,
+      "category": "reasoning",
+      "difficulty": "medium",
+      "answer_type": "factual",
+      "question": "为什么李婷选择封装通用请求拦截器？具体实现了什么功能？",
+      "reference_answer": "为了统一处理Token刷新和错误提示，减少重复代码约40%。将API调用的公共逻辑（请求头注入、401自动刷新Token、错误响应统一处理）集中到拦截器中，每个业务模块的API调用不需要重复编写这些逻辑。",
+      "keywords": [
+        "拦截器",
+        "Token",
+        "401",
+        "重复代码",
+        "40%"
+      ],
+      "split": "eval"
+    },
+    {
+      "id": "q043",
+      "resume_id": 4,
+      "category": "reasoning",
+      "difficulty": "hard",
+      "answer_type": "factual",
+      "question": "从李婷的项目来看，她在移动端适配方面做了哪些工作？",
+      "reference_answer": "使用媒体查询和相对单位实现响应式布局，使页面在不同屏幕尺寸下正常显示。但简历中没有涉及更复杂的移动端适配方案如vw/vh单位、Rem适配方案或移动端touch事件的特殊处理。",
+      "keywords": [
+        "媒体查询",
+        "响应式",
+        "移动端适配"
+      ],
+      "split": "eval"
+    },
+    {
+      "id": "q044",
+      "resume_id": 4,
+      "category": "rejection",
+      "difficulty": "easy",
+      "answer_type": "rejection",
+      "question": "李婷是否有后端开发经验？",
+      "reference_answer": "简历中未提到后端开发经验，她的技能和项目都集中在前端方向。",
+      "keywords": [
+        "后端"
+      ],
+      "split": "eval"
+    },
+    {
+      "id": "q045",
+      "resume_id": 4,
+      "category": "rejection",
+      "difficulty": "medium",
+      "answer_type": "rejection",
+      "question": "李婷是否有过实习经历？",
+      "reference_answer": "李婷的简历中没有实习经历。",
+      "keywords": [
+        "实习"
+      ],
+      "split": "eval"
+    },
+    {
+      "id": "q046",
+      "resume_id": 4,
+      "category": "rejection",
+      "difficulty": "hard",
+      "answer_type": "rejection",
+      "question": "李婷是否了解前端性能优化相关工具如Lighthouse或Webpack Bundle Analyzer？",
+      "reference_answer": "简历中未提到Lighthouse或Webpack Bundle Analyzer。她熟悉Vite和Webpack的基本配置，但没有涉及性能分析工具的深入使用。",
+      "keywords": [
+        "Lighthouse",
+        "Bundle Analyzer",
+        "性能优化"
+      ],
+      "split": "eval"
+    },
+    {
+      "id": "q047",
+      "resume_id": 4,
+      "category": "comparative",
+      "difficulty": "medium",
+      "answer_type": "factual",
+      "question": "比较李婷的两个项目，哪个项目的技术广度更大？",
+      "reference_answer": "在线课程学习平台的技术广度更大。它涉及了React 18 + TypeScript + Redux Toolkit的状态管理、React Router的权限控制、通用请求拦截器封装以及移动端适配等多个技术面。而天气查询小程序相对简单，主要是Vue 3 + API调用 + 本地缓存。",
+      "keywords": [
+        "在线课程",
+        "React Router",
+        "拦截器",
+        "响应式"
+      ],
+      "split": "eval"
+    },
+    {
+      "id": "q048",
+      "resume_id": 4,
+      "category": "multi_turn",
+      "difficulty": "easy",
+      "answer_type": "factual",
+      "question": "李婷在天气查询小程序中如何提升用户体验？",
+      "reference_answer": "她利用localStorage缓存最近查询的城市列表，减少重复API调用，提升响应速度。同时使用Pinia管理用户偏好设置（城市收藏、温度单位切换），让用户不必每次重复设置。",
+      "keywords": [
+        "localStorage",
+        "缓存",
+        "Pinia",
+        "偏好设置"
+      ],
+      "split": "eval"
+    },
+    {
+      "id": "q049",
+      "resume_id": 5,
+      "category": "factual",
+      "difficulty": "easy",
+      "answer_type": "factual",
+      "question": "赵刚就读于哪所大学？什么专业？",
+      "reference_answer": "杭州电子科技大学，电子信息工程专业本科。",
+      "keywords": [
+        "杭州电子科技大学",
+        "电子信息工程"
+      ],
+      "split": "eval"
+    },
+    {
+      "id": "q050",
+      "resume_id": 5,
+      "category": "factual",
+      "difficulty": "easy",
+      "answer_type": "factual",
+      "question": "赵刚目前在哪家公司工作？职位是什么？",
+      "reference_answer": "在海康威视，职位是嵌入式软件开发工程师。",
+      "keywords": [
+        "海康威视",
+        "嵌入式软件开发工程师"
+      ],
+      "split": "eval"
+    },
+    {
+      "id": "q051",
+      "resume_id": 5,
+      "category": "factual",
+      "difficulty": "medium",
+      "answer_type": "factual",
+      "question": "赵刚设计的OTA差分升级方案基于什么算法？达到什么效果？",
+      "reference_answer": "基于bsdiff算法生成增量包，升级包大小缩减60%，升级成功率99.5%。",
+      "keywords": [
+        "bsdiff",
+        "差异",
+        "增量",
+        "60%",
+        "99.5%"
+      ],
+      "split": "eval",
+      "must_include": [
+        "bsdiff"
+      ]
+    },
+    {
+      "id": "q052",
+      "resume_id": 5,
+      "category": "factual",
+      "difficulty": "hard",
+      "answer_type": "factual",
+      "question": "赵刚实现的LoRa农田环境监测系统中，终端采用什么供电方案？续航多久？",
+      "reference_answer": "终端采用电池供电，结合低功耗模式（待机电流5μA），续航达6个月。",
+      "keywords": [
+        "电池",
+        "低功耗",
+        "5μA",
+        "6个月"
+      ],
+      "split": "eval",
+      "must_include": [
+        "6个月"
+      ]
+    },
+    {
+      "id": "q053",
+      "resume_id": 5,
+      "category": "reasoning",
+      "difficulty": "easy",
+      "answer_type": "factual",
+      "question": "赵刚在智能摄像头项目中如何保证视频推流的实时性？",
+      "reference_answer": "基于海思Hi3516平台实现RTSP推流，推流延迟控制在200ms内。",
+      "keywords": [
+        "RTSP",
+        "200ms",
+        "Hi3516",
+        "推流"
+      ],
+      "split": "eval",
+      "must_include": [
+        "200ms"
+      ]
+    },
+    {
+      "id": "q054",
+      "resume_id": 5,
+      "category": "reasoning",
+      "difficulty": "medium",
+      "answer_type": "factual",
+      "question": "赵刚为什么在球机云台控制模块中使用FreeRTOS？",
+      "reference_answer": "需要同时处理遥控器按键、串口指令和限位开关信号等多个并发任务，FreeRTOS的任务调度机制可以有效管理这些任务的执行时序和优先级，确保实时响应。",
+      "keywords": [
+        "FreeRTOS",
+        "任务调度",
+        "并发",
+        "实时"
+      ],
+      "split": "eval"
+    },
+    {
+      "id": "q055",
+      "resume_id": 5,
+      "category": "reasoning",
+      "difficulty": "hard",
+      "answer_type": "factual",
+      "question": "在设备管理平台中，设备影子的数据结构设计解决了什么核心问题？",
+      "reference_answer": "设备影子数据结构解决了设备离线期间指令无法送达的问题。云端将配置指令缓存在影子中，设备上线后自动同步，实现指令的异步可靠投递。",
+      "keywords": [
+        "设备影子",
+        "离线",
+        "缓存",
+        "同步",
+        "异步"
+      ],
+      "split": "eval"
+    },
+    {
+      "id": "q056",
+      "resume_id": 5,
+      "category": "rejection",
+      "difficulty": "easy",
+      "answer_type": "rejection",
+      "question": "赵刚是否有使用Python的经验？",
+      "reference_answer": "简历中未提到Python相关经验，他的主要编程语言是C/C++。",
+      "keywords": [
+        "Python"
+      ],
+      "split": "eval"
+    },
+    {
+      "id": "q057",
+      "resume_id": 5,
+      "category": "rejection",
+      "difficulty": "medium",
+      "answer_type": "rejection",
+      "question": "赵刚在海康威视使用的是哪家芯片平台？",
+      "reference_answer": "使用的是海思Hi3516平台。",
+      "keywords": [
+        "海思",
+        "Hi3516"
+      ],
+      "split": "eval"
+    },
+    {
+      "id": "q058",
+      "resume_id": 5,
+      "category": "rejection",
+      "difficulty": "hard",
+      "answer_type": "rejection",
+      "question": "赵刚是否有Android或iOS应用开发经验？",
+      "reference_answer": "简历中未提到移动端应用开发经验。",
+      "keywords": [
+        "Android",
+        "iOS",
+        "移动端"
+      ],
+      "split": "eval"
+    },
+    {
+      "id": "q059",
+      "resume_id": 5,
+      "category": "comparative",
+      "difficulty": "medium",
+      "answer_type": "factual",
+      "question": "比较赵刚在海康威视和大华股份的工作内容，哪段经历对技术积累的帮助更大？",
+      "reference_answer": "海康威视的经历帮助更大。在海康威视他参与了完整的IPC智能摄像头固件开发（应用层、驱动调试、OTA升级），以及设备管理平台的后端开发（MQTT、IoT平台对接），技术广度更大。大华实习期间主要负责STM32底层的电机控制和FreeRTOS任务调度，深度有限。",
+      "keywords": [
+        "海康",
+        "IPC",
+        "OTA",
+        "MQTT",
+        "大华",
+        "STM32"
+      ],
+      "split": "eval"
+    },
+    {
+      "id": "q060",
+      "resume_id": 5,
+      "category": "multi_turn",
+      "difficulty": "hard",
+      "answer_type": "factual",
+      "question": "赵刚的业余项目（LoRa农田监测）与他的日常工作有什么技术关联？LoRa和他在海康使用的WiFi/BLE通信有什么区别？",
+      "reference_answer": "LoRa项目延续了他在物联网通信（MQTT协议、云平台对接）方面的技术积累。LoRa与WiFi/BLE的核心区别：LoRa是LPWAN技术，传输距离远（实测3km）、功耗极低（待机5μA）、带宽小（适合传感器数据）；WiFi带宽大但功耗高、距离短；BLE功耗低但距离更短（10-100m）。LoRa更适合广覆盖、低功耗、小数据量的IoT场景。",
+      "keywords": [
+        "LoRa",
+        "LPWAN",
+        "WiFi",
+        "BLE",
+        "低功耗",
+        "MQTT"
+      ],
+      "split": "eval",
+      "must_include": [
+        "LoRa"
+      ]
+    },
+    {
+      "id": "q061",
+      "resume_id": 0,
+      "category": "comparative",
+      "difficulty": "hard",
+      "answer_type": "factual",
+      "question": "王浩（初级后端）和张明（中级后端）在MySQL使用深度上的主要差距是什么？",
+      "reference_answer": "王浩具备基本的SQL编写和数据建模能力，了解索引优化和事务隔离级别。张明则精通MySQL分库分表、索引优化、主从复制，并有大规模的线上MySQL运维经验。核心差距在：大规模数据处理经验（张明处理过日增量2亿+数据）、性能调优经验（P99从2.3秒降至180ms）、复杂架构经验（分库分表迁移）。",
+      "keywords": [
+        "分库分表",
+        "主从复制",
+        "性能调优",
+        "大规模"
+      ],
+      "split": "eval",
+      "must_include": [
+        "分库分表"
+      ]
+    },
+    {
+      "id": "q062",
+      "resume_id": 0,
+      "category": "comparative",
+      "difficulty": "hard",
+      "answer_type": "factual",
+      "question": "陈磊（高级架构师）和张明（中级后端）的秒杀/高并发方案有什么本质区别？",
+      "reference_answer": "张明的方案偏向单系统优化层面（Redis Lua脚本+本地缓存），QPS从800提升到3000+。陈磊的方案是完整架构方案：布隆过滤器→Nginx缓存→Redis集群→数据库的多级防护、库存中心独立为Raft集群实现跨机房强一致、全链路压测平台，TPS从5万提升到30万。本质区别：张明在系统层面优化，陈磊在架构层面重新设计。",
+      "keywords": [
+        "多级缓存",
+        "布隆过滤器",
+        "Raft",
+        "全链路压测",
+        "架构"
+      ],
+      "split": "eval",
+      "must_include": [
+        "布隆过滤器",
+        "Raft"
+      ]
+    }
+  ]
+}
