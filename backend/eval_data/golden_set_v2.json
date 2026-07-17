@@ -46,7 +46,8 @@
         "本科"
       ],
       "split": "tuning",
-      "asker": "hr"
+      "asker": "hr",
+      "should_answer": true
     },
     {
       "id": "q002",
@@ -63,7 +64,8 @@
       "must_include": [
         "528"
       ],
-      "asker": "hr"
+      "asker": "hr",
+      "should_answer": true
     },
     {
       "id": "q003",
@@ -79,7 +81,8 @@
         "事务"
       ],
       "split": "tuning",
-      "asker": "tech_interviewer"
+      "asker": "tech_interviewer",
+      "should_answer": true
     },
     {
       "id": "q004",
@@ -96,7 +99,8 @@
         "WebSocket"
       ],
       "split": "tuning",
-      "asker": "tech_interviewer"
+      "asker": "tech_interviewer",
+      "should_answer": true
     },
     {
       "id": "q005",
@@ -111,7 +115,8 @@
         "异步"
       ],
       "split": "tuning",
-      "asker": "tech_interviewer"
+      "asker": "tech_interviewer",
+      "should_answer": true
     },
     {
       "id": "q006",
@@ -126,7 +131,8 @@
         "日志"
       ],
       "split": "tuning",
-      "asker": "tech_interviewer"
+      "asker": "tech_interviewer",
+      "should_answer": true
     },
     {
       "id": "q007",
@@ -146,7 +152,8 @@
         "初级",
         "微服务"
       ],
-      "asker": "tech_interviewer"
+      "asker": "tech_interviewer",
+      "should_answer": true
     },
     {
       "id": "q008",
@@ -160,7 +167,8 @@
         "实习"
       ],
       "split": "tuning",
-      "asker": "hr"
+      "asker": "hr",
+      "should_answer": false
     },
     {
       "id": "q009",
@@ -174,7 +182,8 @@
         "Kubernetes"
       ],
       "split": "tuning",
-      "asker": "hr"
+      "asker": "hr",
+      "should_answer": false
     },
     {
       "id": "q010",
@@ -189,7 +198,8 @@
         "熔断"
       ],
       "split": "tuning",
-      "asker": "tech_interviewer"
+      "asker": "tech_interviewer",
+      "should_answer": false
     },
     {
       "id": "q011",
@@ -205,7 +215,8 @@
         "WebSocket"
       ],
       "split": "tuning",
-      "asker": "tech_interviewer"
+      "asker": "tech_interviewer",
+      "should_answer": true
     },
     {
       "id": "q012",
@@ -220,7 +231,8 @@
         "前后端分离"
       ],
       "split": "tuning",
-      "asker": "tech_interviewer"
+      "asker": "tech_interviewer",
+      "should_answer": true
     },
     {
       "id": "q013",
@@ -235,7 +247,8 @@
         "字节跳动"
       ],
       "split": "tuning",
-      "asker": "hr"
+      "asker": "hr",
+      "should_answer": true
     },
     {
       "id": "q014",
@@ -249,7 +262,8 @@
         "商家数据看板"
       ],
       "split": "tuning",
-      "asker": "hr"
+      "asker": "hr",
+      "should_answer": true
     },
     {
       "id": "q015",
@@ -269,7 +283,8 @@
       "must_include": [
         "Caffeine"
       ],
-      "asker": "tech_interviewer"
+      "asker": "tech_interviewer",
+      "should_answer": true
     },
     {
       "id": "q016",
@@ -290,7 +305,8 @@
         "Canal",
         "2亿"
       ],
-      "asker": "tech_interviewer"
+      "asker": "tech_interviewer",
+      "should_answer": true
     },
     {
       "id": "q017",
@@ -307,7 +323,8 @@
         "3000"
       ],
       "split": "tuning",
-      "asker": "tech_interviewer"
+      "asker": "tech_interviewer",
+      "should_answer": true
     },
     {
       "id": "q018",
@@ -322,7 +339,8 @@
         "数据一致性"
       ],
       "split": "tuning",
-      "asker": "tech_interviewer"
+      "asker": "tech_interviewer",
+      "should_answer": true
     },
     {
       "id": "q019",
@@ -340,7 +358,8 @@
       "must_include": [
         "15分钟"
       ],
-      "asker": "hr"
+      "asker": "hr",
+      "should_answer": true
     },
     {
       "id": "q020",
@@ -354,7 +373,8 @@
         "团队"
       ],
       "split": "tuning",
-      "asker": "hr"
+      "asker": "hr",
+      "should_answer": true
     },
     {
       "id": "q021",
@@ -369,7 +389,8 @@
         "实习"
       ],
       "split": "tuning",
-      "asker": "tech_interviewer"
+      "asker": "tech_interviewer",
+      "should_answer": false
     },
     {
       "id": "q022",
@@ -383,7 +404,8 @@
         "分布式事务"
       ],
       "split": "tuning",
-      "asker": "tech_interviewer"
+      "asker": "tech_interviewer",
+      "should_answer": false
     },
     {
       "id": "q023",
@@ -401,7 +423,8 @@
       "must_include": [
         "强一致性"
       ],
-      "asker": "tech_interviewer"
+      "asker": "tech_interviewer",
+      "should_answer": true
     },
     {
       "id": "q024",
@@ -416,7 +439,8 @@
         "数据分析"
       ],
       "split": "tuning",
-      "asker": "tech_interviewer"
+      "asker": "tech_interviewer",
+      "should_answer": true
     },
     {
       "id": "q025",
@@ -431,7 +455,8 @@
         "计算机科学与技术"
       ],
       "split": "tuning",
-      "asker": "tech_interviewer"
+      "asker": "tech_interviewer",
+      "should_answer": true
     },
     {
       "id": "q026",
@@ -446,7 +471,8 @@
         "技术专家"
       ],
       "split": "tuning",
-      "asker": "hr"
+      "asker": "hr",
+      "should_answer": true
     },
     {
       "id": "q027",
@@ -461,7 +487,8 @@
         "OpenTelemetry"
       ],
       "split": "tuning",
-      "asker": "tech_interviewer"
+      "asker": "tech_interviewer",
+      "should_answer": true
     },
     {
       "id": "q028",
@@ -481,7 +508,8 @@
         "30万",
         "Raft"
       ],
-      "asker": "tech_interviewer"
+      "asker": "tech_interviewer",
+      "should_answer": true
     },
     {
       "id": "q029",
@@ -497,7 +525,8 @@
         "70%"
       ],
       "split": "tuning",
-      "asker": "tech_interviewer"
+      "asker": "tech_interviewer",
+      "should_answer": true
     },
     {
       "id": "q030",
@@ -513,7 +542,8 @@
         "事件驱动"
       ],
       "split": "tuning",
-      "asker": "tech_interviewer"
+      "asker": "tech_interviewer",
+      "should_answer": true
     },
     {
       "id": "q031",
@@ -530,7 +560,8 @@
         "10万"
       ],
       "split": "tuning",
-      "asker": "tech_interviewer"
+      "asker": "tech_interviewer",
+      "should_answer": true
     },
     {
       "id": "q032",
@@ -545,7 +576,8 @@
         "GCP"
       ],
       "split": "tuning",
-      "asker": "hr"
+      "asker": "hr",
+      "should_answer": true
     },
     {
       "id": "q033",
@@ -558,7 +590,8 @@
         "8人"
       ],
       "split": "tuning",
-      "asker": "tech_interviewer"
+      "asker": "tech_interviewer",
+      "should_answer": false
     },
     {
       "id": "q034",
@@ -573,7 +606,8 @@
         "3.75"
       ],
       "split": "tuning",
-      "asker": "product_manager"
+      "asker": "product_manager",
+      "should_answer": false
     },
     {
       "id": "q035",
@@ -589,7 +623,8 @@
         "30万"
       ],
       "split": "tuning",
-      "asker": "tech_interviewer"
+      "asker": "tech_interviewer",
+      "should_answer": true
     },
     {
       "id": "q036",
@@ -608,7 +643,8 @@
       "must_include": [
         "RocketMQ"
       ],
-      "asker": "hr"
+      "asker": "hr",
+      "should_answer": true
     },
     {
       "id": "q037",
@@ -622,7 +658,8 @@
         "软件工程"
       ],
       "split": "tuning",
-      "asker": "product_manager"
+      "asker": "product_manager",
+      "should_answer": true
     },
     {
       "id": "q038",
@@ -637,7 +674,8 @@
         "单页应用"
       ],
       "split": "tuning",
-      "asker": "hr"
+      "asker": "hr",
+      "should_answer": true
     },
     {
       "id": "q039",
@@ -653,7 +691,8 @@
         "Tailwind"
       ],
       "split": "tuning",
-      "asker": "product_manager"
+      "asker": "product_manager",
+      "should_answer": true
     },
     {
       "id": "q040",
@@ -667,7 +706,8 @@
         "和风天气"
       ],
       "split": "tuning",
-      "asker": "hr"
+      "asker": "hr",
+      "should_answer": true
     },
     {
       "id": "q041",
@@ -682,7 +722,8 @@
         "角色"
       ],
       "split": "tuning",
-      "asker": "tech_interviewer"
+      "asker": "tech_interviewer",
+      "should_answer": true
     },
     {
       "id": "q042",
@@ -698,7 +739,8 @@
         "40%"
       ],
       "split": "tuning",
-      "asker": "tech_interviewer"
+      "asker": "tech_interviewer",
+      "should_answer": true
     },
     {
       "id": "q043",
@@ -713,7 +755,8 @@
         "移动端"
       ],
       "split": "tuning",
-      "asker": "tech_interviewer"
+      "asker": "tech_interviewer",
+      "should_answer": true
     },
     {
       "id": "q044",
@@ -726,7 +769,8 @@
         "后端"
       ],
       "split": "tuning",
-      "asker": "hr"
+      "asker": "hr",
+      "should_answer": true
     },
     {
       "id": "q045",
@@ -739,7 +783,8 @@
         "实习"
       ],
       "split": "tuning",
-      "asker": "hr"
+      "asker": "hr",
+      "should_answer": false
     },
     {
       "id": "q046",
@@ -754,7 +799,8 @@
         "Bundle Analyzer"
       ],
       "split": "tuning",
-      "asker": "tech_interviewer"
+      "asker": "tech_interviewer",
+      "should_answer": false
     },
     {
       "id": "q047",
@@ -770,7 +816,8 @@
         "响应式"
       ],
       "split": "tuning",
-      "asker": "tech_interviewer"
+      "asker": "tech_interviewer",
+      "should_answer": true
     },
     {
       "id": "q048",
@@ -785,7 +832,8 @@
         "偏好设置"
       ],
       "split": "tuning",
-      "asker": "product_manager"
+      "asker": "product_manager",
+      "should_answer": true
     },
     {
       "id": "q049",
@@ -799,7 +847,8 @@
         "电子信息工程"
       ],
       "split": "tuning",
-      "asker": "hr"
+      "asker": "hr",
+      "should_answer": true
     },
     {
       "id": "q050",
@@ -813,7 +862,8 @@
         "嵌入式"
       ],
       "split": "tuning",
-      "asker": "tech_interviewer"
+      "asker": "tech_interviewer",
+      "should_answer": true
     },
     {
       "id": "q051",
@@ -829,7 +879,8 @@
         "99.5%"
       ],
       "split": "tuning",
-      "asker": "tech_interviewer"
+      "asker": "tech_interviewer",
+      "should_answer": true
     },
     {
       "id": "q052",
@@ -848,7 +899,8 @@
       "must_include": [
         "6个月"
       ],
-      "asker": "tech_interviewer"
+      "asker": "tech_interviewer",
+      "should_answer": true
     },
     {
       "id": "q053",
@@ -863,7 +915,8 @@
         "Hi3516"
       ],
       "split": "tuning",
-      "asker": "tech_interviewer"
+      "asker": "tech_interviewer",
+      "should_answer": true
     },
     {
       "id": "q054",
@@ -879,7 +932,8 @@
         "实时"
       ],
       "split": "tuning",
-      "asker": "tech_interviewer"
+      "asker": "tech_interviewer",
+      "should_answer": true
     },
     {
       "id": "q055",
@@ -895,7 +949,8 @@
         "同步"
       ],
       "split": "tuning",
-      "asker": "tech_interviewer"
+      "asker": "tech_interviewer",
+      "should_answer": true
     },
     {
       "id": "q056",
@@ -908,7 +963,8 @@
         "Python"
       ],
       "split": "tuning",
-      "asker": "hr"
+      "asker": "hr",
+      "should_answer": false
     },
     {
       "id": "q057",
@@ -922,7 +978,8 @@
         "Hi3516"
       ],
       "split": "tuning",
-      "asker": "hr"
+      "asker": "hr",
+      "should_answer": true
     },
     {
       "id": "q058",
@@ -937,7 +994,8 @@
         "移动端"
       ],
       "split": "tuning",
-      "asker": "tech_interviewer"
+      "asker": "tech_interviewer",
+      "should_answer": true
     },
     {
       "id": "q059",
@@ -955,7 +1013,8 @@
         "STM32"
       ],
       "split": "tuning",
-      "asker": "product_manager"
+      "asker": "product_manager",
+      "should_answer": true
     },
     {
       "id": "q060",
@@ -975,7 +1034,8 @@
         "LoRa",
         "LPWAN"
       ],
-      "asker": "tech_interviewer"
+      "asker": "tech_interviewer",
+      "should_answer": true
     },
     {
       "id": "q061",
@@ -993,7 +1053,8 @@
       "must_include": [
         "分库分表"
       ],
-      "asker": "tech_interviewer"
+      "asker": "tech_interviewer",
+      "should_answer": true
     },
     {
       "id": "q062",
@@ -1014,7 +1075,8 @@
         "布隆过滤器",
         "Raft"
       ],
-      "asker": "tech_interviewer"
+      "asker": "tech_interviewer",
+      "should_answer": true
     },
     {
       "id": "q063",
@@ -1030,7 +1092,8 @@
         "Spring Boot"
       ],
       "split": "eval",
-      "asker": "job_seeker"
+      "asker": "job_seeker",
+      "should_answer": true
     },
     {
       "id": "q064",
@@ -1048,7 +1111,8 @@
       "must_include": [
         "实习"
       ],
-      "asker": "job_seeker"
+      "asker": "job_seeker",
+      "should_answer": true
     },
     {
       "id": "q065",
@@ -1056,7 +1120,7 @@
       "category": "reasoning",
       "difficulty": "hard",
       "question": "在线考试系统这个项目在简历里写得太啰嗦了还是不够？哪些可以砍掉？",
-      "reference_answer": "整体不错，但可以更聚焦技术亮点。建议：1）保留Redis倒计时和RabbitMQ异步批改这两个技术点，这是面试官最想看的；2）砍掉「实现基本CRUD」这种没有技术含量的描述；3）补充遇到的坑和怎么解决的，比只写功能更有价值。",
+      "reference_answer": "在线考试系统项目中涉及了Redis倒计时和RabbitMQ异步批改等技术点，同时也包含了基础的CRUD功能描述。",
       "keywords": [
         "Redis",
         "RabbitMQ",
@@ -1064,7 +1128,8 @@
         "技术亮点"
       ],
       "split": "eval",
-      "asker": "job_seeker"
+      "asker": "job_seeker",
+      "should_answer": true
     },
     {
       "id": "q066",
@@ -1080,7 +1145,8 @@
         "开源"
       ],
       "split": "eval",
-      "asker": "job_seeker"
+      "asker": "job_seeker",
+      "should_answer": false
     },
     {
       "id": "q067",
@@ -1097,7 +1163,8 @@
         "P99"
       ],
       "split": "eval",
-      "asker": "job_seeker"
+      "asker": "job_seeker",
+      "should_answer": true
     },
     {
       "id": "q068",
@@ -1113,7 +1180,8 @@
         "团队"
       ],
       "split": "eval",
-      "asker": "job_seeker"
+      "asker": "job_seeker",
+      "should_answer": true
     },
     {
       "id": "q069",
@@ -1127,7 +1195,8 @@
         "外企"
       ],
       "split": "eval",
-      "asker": "job_seeker"
+      "asker": "job_seeker",
+      "should_answer": false
     },
     {
       "id": "q070",
@@ -1143,7 +1212,8 @@
         "30万"
       ],
       "split": "eval",
-      "asker": "job_seeker"
+      "asker": "job_seeker",
+      "should_answer": true
     },
     {
       "id": "q071",
@@ -1159,7 +1229,8 @@
         "全栈"
       ],
       "split": "eval",
-      "asker": "job_seeker"
+      "asker": "job_seeker",
+      "should_answer": true
     },
     {
       "id": "q072",
@@ -1175,7 +1246,8 @@
         "人才培养"
       ],
       "split": "eval",
-      "asker": "job_seeker"
+      "asker": "job_seeker",
+      "should_answer": false
     },
     {
       "id": "q073",
@@ -1189,7 +1261,8 @@
         "蚂蚁"
       ],
       "split": "eval",
-      "asker": "job_seeker"
+      "asker": "job_seeker",
+      "should_answer": true
     },
     {
       "id": "q074",
@@ -1206,7 +1279,8 @@
         "响应式"
       ],
       "split": "eval",
-      "asker": "job_seeker"
+      "asker": "job_seeker",
+      "should_answer": true
     },
     {
       "id": "q075",
@@ -1225,7 +1299,8 @@
       "must_include": [
         "开源"
       ],
-      "asker": "job_seeker"
+      "asker": "job_seeker",
+      "should_answer": true
     },
     {
       "id": "q076",
@@ -1240,7 +1315,8 @@
         "校招"
       ],
       "split": "eval",
-      "asker": "job_seeker"
+      "asker": "job_seeker",
+      "should_answer": false
     },
     {
       "id": "q077",
@@ -1257,7 +1333,8 @@
         "中上"
       ],
       "split": "eval",
-      "asker": "job_seeker"
+      "asker": "job_seeker",
+      "should_answer": true
     },
     {
       "id": "q078",
@@ -1273,7 +1350,8 @@
         "应用编程"
       ],
       "split": "eval",
-      "asker": "job_seeker"
+      "asker": "job_seeker",
+      "should_answer": true
     },
     {
       "id": "q079",
@@ -1293,7 +1371,8 @@
       "must_include": [
         "OTA"
       ],
-      "asker": "job_seeker"
+      "asker": "job_seeker",
+      "should_answer": true
     },
     {
       "id": "q080",
@@ -1309,7 +1388,8 @@
         "嵌入式"
       ],
       "split": "eval",
-      "asker": "job_seeker"
+      "asker": "job_seeker",
+      "should_answer": false
     },
     {
       "id": "q081",
@@ -1324,7 +1404,8 @@
         "核心链路"
       ],
       "split": "eval",
-      "asker": "product_manager"
+      "asker": "product_manager",
+      "should_answer": true
     },
     {
       "id": "q082",
@@ -1341,7 +1422,8 @@
         "NoSQL"
       ],
       "split": "eval",
-      "asker": "job_seeker"
+      "asker": "job_seeker",
+      "should_answer": true
     },
     {
       "id": "q083",
@@ -1357,7 +1439,8 @@
         "高并发"
       ],
       "split": "eval",
-      "asker": "job_seeker"
+      "asker": "job_seeker",
+      "should_answer": true
     },
     {
       "id": "q084",
@@ -1373,7 +1456,8 @@
         "Java"
       ],
       "split": "tuning",
-      "asker": "job_seeker"
+      "asker": "job_seeker",
+      "should_answer": true
     },
     {
       "id": "q085",
@@ -1386,7 +1470,8 @@
         "空窗期"
       ],
       "split": "eval",
-      "asker": "job_seeker"
+      "asker": "job_seeker",
+      "should_answer": false
     },
     {
       "id": "q086",
@@ -1401,7 +1486,8 @@
         "跳槽"
       ],
       "split": "tuning",
-      "asker": "job_seeker"
+      "asker": "job_seeker",
+      "should_answer": false
     },
     {
       "id": "q087",
@@ -1416,7 +1502,8 @@
         "字节跳动"
       ],
       "split": "eval",
-      "asker": "hr"
+      "asker": "hr",
+      "should_answer": true
     },
     {
       "id": "q088",
@@ -1429,7 +1516,8 @@
         "竞业"
       ],
       "split": "tuning",
-      "asker": "hr"
+      "asker": "hr",
+      "should_answer": false
     },
     {
       "id": "q089",
@@ -1444,7 +1532,8 @@
         "美团"
       ],
       "split": "tuning",
-      "asker": "hr"
+      "asker": "hr",
+      "should_answer": true
     },
     {
       "id": "q090",
@@ -1461,7 +1550,8 @@
         "C端"
       ],
       "split": "tuning",
-      "asker": "tech_interviewer"
+      "asker": "tech_interviewer",
+      "should_answer": true
     },
     {
       "id": "q091",
@@ -1476,7 +1566,8 @@
         "Temperature"
       ],
       "split": "eval",
-      "asker": "product_manager"
+      "asker": "product_manager",
+      "should_answer": true
     }
   ]
 }
