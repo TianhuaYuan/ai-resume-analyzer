@@ -1,0 +1,101 @@
+{
+  "meta": {
+    "name": "eval-cross-resume",
+    "description": "跨简历对比 + 元问题（单独存储，新框架多简历 Executor 就绪后使用）",
+    "version": "1.0.0",
+    "date": "2026-07-17"
+  },
+  "questions": [
+    {
+      "id": "q061",
+      "resume_id": 0,
+      "category": "comparative",
+      "difficulty": "hard",
+      "question": "这两个候选人（初级后端vs中级后端）在MySQL能力上差在哪？",
+      "reference_answer": "初级后端会基本的SQL编写和数据建模，了解索引和事务。中级后端已经精通分库分表、主从复制和线上性能调优，而且有处理海量数据的实际生产经验。",
+      "keywords": [
+        "分库分表",
+        "主从复制",
+        "性能调优"
+      ],
+      "must_include": [
+        "分库分表"
+      ],
+      "asker": "tech_interviewer",
+      "should_answer": true,
+      "type": "cross_resume"
+    },
+    {
+      "id": "q062",
+      "resume_id": 0,
+      "category": "comparative",
+      "difficulty": "hard",
+      "question": "比较一下这两个后端的高并发方案（中级vs高级），本质区别在哪？",
+      "reference_answer": "中级后端是单系统级别优化（Redis Lua脚本+本地缓存），QPS有大幅提升。高级架构师是完整的架构重设计：布隆过滤器拦截无效请求、多级缓存逐级下探、库存中心独立为Raft集群、全链路压测平台，TPS从5万提升到30万。本质区别：一个在系统内优化，一个在架构层面重新设计。",
+      "keywords": [
+        "布隆过滤器",
+        "Raft",
+        "架构",
+        "TPS",
+        "30万"
+      ],
+      "must_include": [
+        "布隆过滤器",
+        "Raft"
+      ],
+      "asker": "tech_interviewer",
+      "should_answer": true,
+      "type": "cross_resume"
+    },
+    {
+      "id": "q081",
+      "resume_id": 0,
+      "category": "comparative",
+      "difficulty": "hard",
+      "question": "我有三个候选人，一个是做Java的、一个是前端、一个是嵌入式，他们的简历怎么看各自的水平高低？",
+      "reference_answer": "Java后端（张明）在字节核心链路3年，项目体量最大、技术深度最扎实；前端（李婷）应届生无实习，项目复杂度适中但有主流技术栈覆盖；嵌入式（赵刚）海康经验务实、有完整产品经验，但技术栈偏传统（C/RTOS）。如果比纯技术纵深，Java后端 > 嵌入式 > 前端；比成长潜力，前端 > 嵌入式 > 后端（前端领域尚有较大上升空间）。",
+      "keywords": [
+        "技术纵深",
+        "成长潜力",
+        "核心链路"
+      ],
+      "asker": "product_manager",
+      "should_answer": true,
+      "type": "cross_resume"
+    },
+    {
+      "id": "q082",
+      "resume_id": 0,
+      "category": "comparative",
+      "difficulty": "medium",
+      "question": "想投后端方向，以王浩的简历为参考，我还需要在哪些方面超过他才能更有竞争力？",
+      "reference_answer": "要在王浩的基础上更有竞争力，建议：1）增加至少一段实习经历，这是应届生简历最大的加分项；2）项目加入分布式或微服务元素，不一定非要上线，Demo级别也可以；3）如果能参加一个开源项目做点贡献，面试时非常加分；4）技术栈扩展到至少一个消息队列和NoSQL数据库。",
+      "keywords": [
+        "实习",
+        "分布式",
+        "开源",
+        "消息队列",
+        "NoSQL"
+      ],
+      "asker": "job_seeker",
+      "should_answer": true,
+      "type": "cross_resume"
+    },
+    {
+      "id": "q091",
+      "resume_id": 0,
+      "category": "comparative",
+      "difficulty": "hard",
+      "question": "同一个用户的简历反复问10次同样的问题，回答是不是应该一致？怎么验证？",
+      "reference_answer": "RAG系统的回答一致性取决于：1）检索阶段每次返回的chunks是否一致（向量索引随机性影响很小）；2）LLM生成的Temperature参数（越高越不稳定）。建议在评估框架中增加重复查询稳定性指标：同一问题问3次，计算答案语义相似度，平均相似度应>=0.9。",
+      "keywords": [
+        "一致性",
+        "稳定性",
+        "Temperature"
+      ],
+      "asker": "product_manager",
+      "should_answer": true,
+      "type": "cross_resume"
+    }
+  ]
+}
