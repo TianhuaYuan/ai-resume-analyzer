@@ -17,7 +17,12 @@ function generateRequestId(): string {
   );
 }
 
-async function refreshToken(): Promise<boolean> {
+// 单飞（single-flight）锁：并发的 401 只触发一次真实刷新。
+// 否则多个请求同时 401 会各自刷新，后端若启用 refresh_token 轮转，
+// 第二次刷新用的旧 refresh_token 已被第一次作废 → 全部失败、用户被踢登。
+let refreshPromise: Promise<boolean> | null = null;
+
+async function doRefresh(): Promise<boolean> {
   const token = localStorage.getItem("refresh_token");
   if (!token) return false;
   try {
@@ -34,6 +39,22 @@ async function refreshToken(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+export function refreshToken(): Promise<boolean> {
+  if (!refreshPromise) {
+    // 用 .finally 在微任务里释放锁：保证赋值 refreshPromise=p 先完成，
+    // 再清锁。否则同步早返回时会先把锁置 null 又被赋值覆盖，导致锁永不释放。
+    refreshPromise = doRefresh().finally(() => {
+      refreshPromise = null;
+    });
+  }
+  return refreshPromise;
+}
+
+export function clearSessionAndRedirect() {
+  localStorage.clear();
+  window.location.href = "/login";
 }
 
 async function handleResponse(res: Response) {
@@ -71,8 +92,7 @@ async function request(
         handleResponse
       );
     }
-    localStorage.clear();
-    window.location.href = "/login";
+    clearSessionAndRedirect();
     throw new Error("登录已过期");
   }
 

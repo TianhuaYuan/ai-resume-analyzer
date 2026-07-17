@@ -1,14 +1,21 @@
-"""MCP Tool: rerank_results — LLM Cross-Encoder 精排。"""
+"""MCP Tool: rerank_results — 复用 Cross-Encoder 精排。
+
+H6/M6 修复：原先使用 LLM 打分（llm_generate）做精排，属于重复实现且不稳定。
+现改为直接复用 services.rag_service.rerank 中已有的 Cross-Encoder 精排能力。
+"""
 import json
 import logging
 
+import httpx
 from mcp.types import TextContent
 
-from mcp_server.server import mcp
+from mcp_server.server import get_current_user_id, mcp
 
 logger = logging.getLogger(__name__)
 
 _RERANK_TOP_K = 5
+# 远端 Cross-Encoder 调用的总超时上限（对齐阶段1：30s 总时限 / 10s 连接）
+MCP_HTTP_TIMEOUT = httpx.Timeout(30, connect=10)
 
 
 @mcp.tool()
@@ -17,15 +24,26 @@ async def rerank_results(
     chunks: str,
     top_k: int = 5,
 ) -> list[TextContent]:
-    """对搜索结果进行 LLM Cross-Encoder 精排。
+    """对搜索结果进行 Cross-Encoder 精排（复用 services.rag_service.rerank）。
 
     Args:
         query: 搜索查询文本
         chunks: 候选文档块列表（JSON 字符串），每块至少包含 "text" 字段
         top_k: 返回结果数量，默认 5
     """
-    from core.retry import with_retry
-    from services.rag_service import llm_generate
+    # SEC-002：MCP 工具必须校验用户身份，缺失上下文时拒绝而非静默放行。
+    try:
+        _user_id = get_current_user_id()
+    except LookupError:
+        return [TextContent(
+            type="text",
+            text=json.dumps(
+                {"error": "authentication required: missing user context"},
+                ensure_ascii=False,
+            ),
+        )]
+
+    import asyncio
 
     try:
         chunk_list = json.loads(chunks) if isinstance(chunks, str) else chunks
@@ -37,88 +55,30 @@ async def rerank_results(
 
     top_k = max(1, min(top_k, 20))
 
-    if len(chunk_list) <= top_k:
-        results = [
-            {
-                "text": c.get("text", ""),
-                "rerank_score": 1.0,
-                "section": c.get("section", ""),
-                "chunk_index": c.get("chunk_index", i),
-            }
-            for i, c in enumerate(chunk_list)
-        ]
-        return [TextContent(type="text", text=json.dumps(results, ensure_ascii=False))]
-
-    docs_text = "\n\n".join(
-        f"[文档 {i + 1}] 分类：{c.get('section', '未知')}\n{c.get('text', '')[:400]}"
-        for i, c in enumerate(chunk_list)
-    )
-
-    system = (
-        "你是一个文档相关性评估专家。根据查询对候选文档进行相关性打分。\n"
-        "请按相关性从高到低排列文档编号，并给出 0-1 的相关性分数。\n"
-        "请严格按以下 JSON 格式返回（不要包含其他文字）：\n"
-        '{"results": [{"index": 0, "relevance_score": 0.95}, ...]}'
-    )
-    user = (
-        f"查询：{query}\n\n"
-        f"候选文档：\n{docs_text}\n\n"
-        f"请对以上 {len(chunk_list)} 个文档进行相关性打分，返回 top {top_k} 个最相关的文档。"
-    )
-
     try:
-        raw = await with_retry(
-            llm_generate,
-            system,
-            user,
-            temperature=0.0,
-            max_tokens=500,
-            fallback="",
+        # H6/M6：复用已有的 Cross-Encoder 精排，而非自实现 LLM 打分。
+        from services.rag_service import rerank as cross_encoder_rerank
+
+        reranked = await asyncio.wait_for(
+            cross_encoder_rerank(query, chunk_list, top_k=top_k),
+            timeout=MCP_HTTP_TIMEOUT.read,
         )
-
-        if not raw:
-            raise ValueError("LLM returned empty response")
-
-        data = json.loads(raw.strip())
-        score_results = data.get("results", [])
-
-        score_map = {}
-        for item in score_results:
-            idx = item.get("index", -1)
-            score = item.get("relevance_score", 0.0)
-            if 0 <= idx < len(chunk_list):
-                score_map[idx] = max(0.0, min(1.0, float(score)))
-
-        for i, c in enumerate(chunk_list):
-            c["rerank_score"] = score_map.get(i, 0.0)
-
-        chunk_list.sort(key=lambda c: c.get("rerank_score", 0), reverse=True)
-
-        results = [
-            {
-                "text": c.get("text", ""),
-                "rerank_score": round(c.get("rerank_score", 0.0), 4),
-                "section": c.get("section", ""),
-                "chunk_index": c.get("chunk_index", i),
-            }
-            for i, c in enumerate(chunk_list[:top_k])
-        ]
-
-        return [TextContent(type="text", text=json.dumps(results, ensure_ascii=False))]
-
     except Exception as e:
-        logger.warning("rerank_results LLM failed: %s, falling back to original order", e)
-        for i, c in enumerate(chunk_list):
-            c["rerank_score"] = max(0.0, 1.0 - i * 0.1)
+        logger.warning("rerank_results Cross-Encoder failed: %s", e)
+        # 降级：保留原始顺序，给出保底分数，不向上抛异常。
+        reranked = [
+            {**c, "rerank_score": max(0.0, 1.0 - i * 0.1)}
+            for i, c in enumerate(chunk_list)
+        ][:top_k]
 
-        results = [
-            {
-                "text": c.get("text", ""),
-                "rerank_score": round(c.get("rerank_score", 0.0), 4),
-                "section": c.get("section", ""),
-                "chunk_index": c.get("chunk_index", i),
-            }
-            for i, c in enumerate(chunk_list[:top_k])
-        ]
+    results = [
+        {
+            "text": c.get("text", ""),
+            "rerank_score": round(float(c.get("rerank_score", 1.0)), 4),
+            "section": c.get("section", ""),
+            "chunk_index": c.get("chunk_index", i),
+        }
+        for i, c in enumerate(reranked)
+    ]
 
-        return [TextContent(type="text", text=json.dumps(results, ensure_ascii=False))]
+    return [TextContent(type="text", text=json.dumps(results, ensure_ascii=False))]

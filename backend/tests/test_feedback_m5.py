@@ -1,6 +1,5 @@
 """M5: clear_resume_vectors 无锁操作 _bm25_indexes.pop()"""
 import inspect
-import pytest
 from services.rag_service import clear_resume_vectors
 
 

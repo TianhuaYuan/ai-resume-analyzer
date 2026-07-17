@@ -221,6 +221,15 @@ export default function QAPage() {
             )
           );
           setAsking(false);
+        },
+        // C2：兜底。即使后端中途断开、没发 done 事件，也复位 asking 并结束该条流式消息。
+        () => {
+          setAsking(false);
+          setChat((prev) =>
+            prev.map((m) =>
+              m.id === tempId ? { ...m, streaming: false } : m
+            )
+          );
         }
       );
     },

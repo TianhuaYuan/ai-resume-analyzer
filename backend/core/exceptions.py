@@ -1,7 +1,6 @@
 """全局异常处理：AppException 业务异常 + 统一 JSON 错误格式。"""
 
 import logging
-from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -52,7 +51,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         errors = exc.errors()
         if errors:
             first = errors[0]
-            loc = " -> ".join(str(l) for l in first.get("loc", []))
+            loc = " -> ".join(str(part) for part in first.get("loc", []))
             msg = f"{loc}: {first.get('msg', '参数校验失败')}"
         else:
             msg = "参数校验失败"

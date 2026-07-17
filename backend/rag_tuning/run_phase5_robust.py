@@ -231,7 +231,7 @@ async def main():
 
     # 增量加载
     summary = load_phase5("summary.json") or {"configs": {}}
-    print(f"[READY] Starting experiments...", flush=True)
+    print("[READY] Starting experiments...", flush=True)
 
     for cfg in configs:
         cid = cfg["id"]
@@ -275,7 +275,7 @@ async def main():
 
     # ── 最终统计 ──
     print(f"\n{'=' * 65}")
-    print(f"  Phase 5 最终统计汇总")
+    print("  Phase 5 最终统计汇总")
     print(f"{'=' * 65}")
 
     final_results = []
@@ -304,7 +304,7 @@ async def main():
         base = next((r for r in final_results if r["config_id"] == "B_Baseline"), None)
 
         if opt and base:
-            print(f"\n  ── Optimal vs Baseline ──")
+            print("\n  ── Optimal vs Baseline ──")
             print(f"  {'指标':<22s} {'Optimal':>12s} {'Baseline':>12s} {'Δ':>10s} {'提升%':>9s}")
             print(f"  {'─' * 67}")
             for metric in ["composite", "avg_score", "reject_f1", "p95_latency_ms"]:
@@ -315,7 +315,7 @@ async def main():
                 print(f"  {metric:<22s} {opt_val:>12.4f} {base_val:>12.4f} {delta:>+10.4f} {pct:>+8.1f}%")
 
     # ── 变异系数 ──
-    print(f"\n  ── 稳定性检验 (CV%) ──")
+    print("\n  ── 稳定性检验 (CV%) ──")
     for r in final_results:
         vals = [run["composite"] for run in r["runs"]]
         cv = statistics.stdev(vals) / statistics.mean(vals) * 100 if statistics.mean(vals) != 0 else 0

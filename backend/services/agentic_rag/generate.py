@@ -26,9 +26,51 @@ def _extract_sources(chunks: list[dict]) -> list[dict]:
     ]
 
 
+def _format_failed_tools(tool_errors: list[dict]) -> str:
+    """把 tool_errors 渲染成可读的失败工具清单。"""
+    lines = []
+    for i, err in enumerate(tool_errors, 1):
+        tool = err.get("tool", "unknown")
+        error = err.get("error", "")
+        extra = err.get("query")
+        suffix = f"（查询：{extra}）" if extra else ""
+        lines.append(f"{i}. {tool}{suffix}：{error}")
+    return "\n".join(lines)
+
+
+def _build_generate_prompt(chunks_texts: list[str], query: str, tool_errors: list[dict]) -> dict:
+    """组装生成用 prompt。
+
+    阶段4 错误透传：当 tool_errors 非空（部分检索/重排失败）时，在 system 与 user 中
+    注入降级说明——告知 LLM 仅基于已有内容作答、明确标注信息可能不完整、严禁编造来源。
+    正常路径（无失败）完全复用 rag_service.build_prompt，行为不变。
+    """
+    if not tool_errors:
+        return build_prompt(chunks_texts, query)
+
+    base = build_prompt(chunks_texts, query)
+    failed_list = _format_failed_tools(tool_errors)
+
+    system = (
+        base["system"]
+        + "\n\n【检索降级提示】本次回答所依赖的以下检索工具调用失败，相关来源可能缺失：\n"
+        + failed_list
+        + "\n请严格遵循：仅基于下方已提供的简历内容回答；"
+        "若问题恰好涉及缺失的检索结果，请明确说明『部分检索工具失败，相关信息可能不完整』；"
+        "绝对不要编造或猜测未在简历中出现的来源与事实。"
+    )
+    user = (
+        base["user"]
+        + "\n\n（提示：本次检索存在部分失败，已在上方的系统说明中列出，请据此作答并说明信息局限。）"
+    )
+    return {"system": system, "user": user}
+
+
 async def generate_node(state: AgenticRAGState) -> dict:
     chunks = state.get("chunks", [])
     query = state.get("rewritten_query") or state["question"]
+    # 阶段4 错误透传：读取上游 search/rerank 写入的 tool_errors。
+    tool_errors = state.get("tool_errors", []) or []
 
     timer_start = time.monotonic()
 
@@ -47,7 +89,7 @@ async def generate_node(state: AgenticRAGState) -> dict:
             "trace": trace,
         }
 
-    prompt = build_prompt([c["text"] for c in chunks], query)
+    prompt = _build_generate_prompt([c["text"] for c in chunks], query, tool_errors)
 
     answer = await with_retry(
         llm_generate,

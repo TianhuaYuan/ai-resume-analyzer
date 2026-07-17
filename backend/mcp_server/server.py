@@ -44,8 +44,9 @@ def create_auth_middleware(app):
 
     class MCPAuthMiddleware(BaseHTTPMiddleware):
         async def dispatch(self, request: Request, call_next):
-            path = request.url.path.rstrip("/")
-            if path not in ("/mcp",):
+            # SEC-001 修复：用前缀匹配保护 /mcp 及其所有子路径，
+            # 避免旧实现（精确匹配 "/mcp"）被 "/mcp/..." 这类拼接绕过。
+            if not request.url.path.startswith("/mcp"):
                 return await call_next(request)
 
             auth_header = request.headers.get("authorization", "")

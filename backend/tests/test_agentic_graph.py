@@ -10,7 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch
 
 from services.agentic_rag.state import AgenticRAGState
 from services.agentic_rag.graph import (
@@ -237,7 +237,6 @@ class TestGraphEndToEnd:
         mock_chunks = [{"text": "工作经验", "chunk_index": 0, "section": "工作经历", "score": 0.9}]
         mock_reranked = [{"text": "工作经验", "chunk_index": 0, "section": "工作经历", "rerank_score": 0.95}]
         mock_answer = "候选人有3年工作经验。"
-        mock_sources = [{"chunk_index": 0, "text": "工作经验", "section": "工作经历", "rerank_score": 0.95}]
 
         with (
             patch("services.agentic_rag.rewrite.with_retry", new_callable=AsyncMock, return_value="工作经历"),

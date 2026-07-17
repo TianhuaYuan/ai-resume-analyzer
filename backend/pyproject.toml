@@ -90,3 +90,20 @@ formatter = "generic"
 [tool.alembic.formatter_generic]
 format = "%(levelname)-5.5s [%(name)s] %(message)s"
 datefmt = "%H:%M:%S"
+
+# =============================================================================
+# Ruff 配置（阶段11 引入；按通用规则 E/F，仅对历史目录做最小豁免）
+# =============================================================================
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+exclude = ["archive"]
+
+[tool.ruff.lint]
+# 使用 ruff 默认规则集（E4/E7/E9/F，不含 E501 行长度），与项目基线一致
+
+# alembic/env.py 与 rag_tuning 启动脚本需在 sys.path 注入后才 import，E402 在此为合理模式
+[tool.ruff.lint.per-file-ignores]
+"alembic/*" = ["E402"]
+"rag_tuning/run_concurrent.py" = ["E402"]
+

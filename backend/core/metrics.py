@@ -266,6 +266,32 @@ def timer_context(step: str):
         rag_step_duration.labels(step=step).observe(elapsed)
 
 
+# OBS-004：timer_context 的 async 版本，支持 `async with`。
+# 注意：不能用 `async def` + `yield` 的异步生成器直接配 `async with`
+# （它缺少 __aenter__/__aexit__ 协议），故用类实现。
+# 用法：
+#   async with async_timer_context("retrieve"):
+#       docs = await vector_search(...)
+# 同步代码仍用 timer_context（保持向后兼容，不删不改）。
+class async_timer_context:
+    """`async with` 版的 RAG 步骤计时器（OBS-004）。"""
+
+    def __init__(self, step: str) -> None:
+        self._step = step
+        self._start: float | None = None
+
+    async def __aenter__(self) -> "async_timer_context":
+        self._start = time.perf_counter()
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> bool:
+        elapsed = time.perf_counter() - (self._start or time.perf_counter())
+        if exc_type is not None:
+            rag_step_errors.labels(step=self._step, error_type=exc_type.__name__).inc()
+        rag_step_duration.labels(step=self._step).observe(elapsed)
+        return False  # 不吞异常，原样向上抛
+
+
 def track_llm_call(model: str, operation: str) -> Callable:
     def decorator(func: Callable) -> Callable:
         @wraps(func)

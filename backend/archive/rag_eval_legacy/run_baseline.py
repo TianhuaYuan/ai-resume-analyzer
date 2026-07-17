@@ -26,7 +26,6 @@ from services.rag_service import (
     hybrid_search,
     rerank,
     ask_question,
-    rewrite_query,
 )
 from rag_eval_legacy.evaluate import (
     EvalCase,

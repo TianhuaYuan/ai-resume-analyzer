@@ -179,6 +179,12 @@ export default function ResumeListPage() {
   }, []);
 
   const startPoll = (resumeId: number) => {
+    // H8：先清掉可能还在跑的旧轮询。否则连续上传多份简历时，
+    // 上一份还在 processing 的轮询会被直接覆盖且不清除 → 定时器泄漏、状态永不更新。
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
     let attempts = 0;
     pollRef.current = setInterval(async () => {
       attempts++;

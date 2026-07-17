@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 @mcp.resource("resume://list")
 async def get_resume_list() -> str:
     """获取当前用户的所有简历列表。"""
-    from sqlalchemy import func, select
+    from sqlalchemy import select
 
     from core.database import AsyncSessionLocal
     from models.resume import Resume

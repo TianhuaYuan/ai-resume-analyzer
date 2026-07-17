@@ -16,14 +16,12 @@ from unittest.mock import AsyncMock, patch
 from services.agentic_rag.state import AgenticRAGState
 from services.agentic_rag.mcp_graph import (
     create_mcp_agentic_rag_graph,
-    direct_answer_node,
     output_node,
     _route_after_route,
     _route_after_evaluate,
     DIRECT_ANSWER_NODE,
     MCP_SEARCH_NODE,
-    MCP_RERANK_NODE,
-    MCP_GENERATE_NODE,
+    SELF_REFLECTION_NODE,
 )
 
 
@@ -76,13 +74,13 @@ class TestMCPRouteAfterEvaluate:
         state = _make_state(should_retry=False, search_round=1)
         assert _route_after_evaluate(state) == "output"
 
-    def test_retry_within_limit_goes_to_mcp_search(self):
+    def test_retry_within_limit_goes_to_self_reflection(self):
         state = _make_state(should_retry=True, search_round=1)
-        assert _route_after_evaluate(state) == MCP_SEARCH_NODE
+        assert _route_after_evaluate(state) == SELF_REFLECTION_NODE
 
-    def test_retry_at_limit_goes_to_mcp_search(self):
+    def test_retry_at_limit_goes_to_self_reflection(self):
         state = _make_state(should_retry=True, search_round=2)
-        assert _route_after_evaluate(state) == MCP_SEARCH_NODE
+        assert _route_after_evaluate(state) == SELF_REFLECTION_NODE
 
     def test_retry_exceeds_limit_goes_to_output(self):
         state = _make_state(should_retry=True, search_round=3)
@@ -288,7 +286,7 @@ class TestMCPEdgeCases:
 
     def test_route_after_evaluate_retry_at_boundary(self):
         state = _make_state(should_retry=True, search_round=2)
-        assert _route_after_evaluate(state) == MCP_SEARCH_NODE
+        assert _route_after_evaluate(state) == SELF_REFLECTION_NODE
 
     def test_route_after_evaluate_retry_over_boundary(self):
         state = _make_state(should_retry=True, search_round=3)

@@ -29,8 +29,10 @@ def test_h5_mcp_route_retry_should_not_skip_reflection():
     # 而应该是 "should_retry and search_round <= 2: return SELF_REFLECTION_NODE"
     import re
 
+    # 注意：使用非贪婪匹配，定位"重试分支"对应的 return 目标，
+    # 避免贪婪匹配一路吃到函数末尾的 return OUTPUT_NODE 而误判。
     retry_pattern = re.search(
-        r"should_retry.*search_round.*return\s+(\w+)", src_mcp
+        r"should_retry.*?search_round.*?return\s+(\w+)", src_mcp
     )
     if retry_pattern:
         target = retry_pattern.group(1)

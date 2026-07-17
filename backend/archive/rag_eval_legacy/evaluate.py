@@ -28,10 +28,7 @@ if sys.platform == "win32":
 from services.rag_service import (
     _vector_search,
     hybrid_search,
-    rerank,
     ask_question,
-    process_resume,
-    chunk_by_sections,
 )
 
 logging.basicConfig(level=logging.WARNING)

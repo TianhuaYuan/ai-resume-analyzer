@@ -10,7 +10,8 @@ import httpx
 logger = logging.getLogger(__name__)
 
 _DEFAULT_BASE_URL = "http://127.0.0.1:8000/mcp"
-_DEFAULT_TIMEOUT = 30.0
+# 2.6 N1：对外 HTTP 调用统一超时（对齐阶段1：30s 总时限 / 10s 连接）
+_DEFAULT_TIMEOUT = httpx.Timeout(30, connect=10)
 
 
 class MCPClientError(Exception):
@@ -155,24 +156,21 @@ class MCPClient:
 
 
 _client_instance: MCPClient | None = None
-_client_lock: asyncio.Lock | None = None
-
-
-def _get_lock() -> asyncio.Lock:
-    global _client_lock
-    if _client_lock is None:
-        _client_lock = asyncio.Lock()
-    return _client_lock
+# 2.5 N1：模块级单例锁，避免惰性创建时的竞态；
+# 配合下方 get_mcp_client 的双重检查锁（double-checked locking）防止并发重复创建。
+_client_lock: asyncio.Lock = asyncio.Lock()
 
 
 async def get_mcp_client(
     base_url: str = _DEFAULT_BASE_URL, token: str = "",
 ) -> MCPClient:
     global _client_instance
+    # 第一次检查（无锁，快速路径）
     if _client_instance is not None:
         return _client_instance
 
-    async with _get_lock():
+    # 获取锁后进行第二次检查（双重检查锁核心）
+    async with _client_lock:
         if _client_instance is not None:
             return _client_instance
         _client_instance = MCPClient(base_url=base_url, token=token)

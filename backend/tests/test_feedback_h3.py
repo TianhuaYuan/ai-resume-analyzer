@@ -1,6 +1,5 @@
 """H3: rerank 函数原地修改输入 chunks"""
 import inspect
-import pytest
 from services.rag_service import rerank
 
 

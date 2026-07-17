@@ -19,6 +19,8 @@ class Resume(Base):
     chunk_count: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(String(20), default="processing")  # processing / ready / failed
     status_message: Mapped[str] = mapped_column(String(255), default="")
+    # 幂等上传键：由客户端在 Idempotency-Key 头提供，按用户维度去重（普通索引列，业务层判重）
+    idempotency_key: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

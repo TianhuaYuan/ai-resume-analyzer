@@ -1,6 +1,5 @@
 """H2: BM25 索引字典无锁读取"""
 import inspect
-import pytest
 from services.rag_service import _keyword_search
 
 
@@ -19,7 +18,7 @@ def test_h2_keyword_search_lock_should_cover_bm25_read():
         if "async with _bm25_lock" in stripped:
             lock_start = i
             in_lock = True
-        elif in_lock and stripped and not stripped.startswith(" ") and "async with" not in stripped:
+        elif in_lock and stripped and not line.startswith(" ") and "async with" not in stripped:
             # 锁块结束（缩进恢复）
             lock_end = i
             break

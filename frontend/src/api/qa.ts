@@ -1,4 +1,5 @@
 import { api } from "./client";
+import { refreshToken, clearSessionAndRedirect } from "./client";
 
 export interface AnswerResponse {
   id: number;
@@ -9,12 +10,26 @@ export interface AnswerResponse {
 }
 
 export interface SSEEvent {
+  /** 事件去重用的唯一 id（N5）。后端未下发时为 undefined，此时不去重。 */
+  id?: string | number;
   type: "status" | "token" | "done" | "error";
   message?: string;
   content?: string;
   answer?: string;
   sources?: string[];
   qa_id?: number;
+}
+
+/**
+ * N5：判断某个 SSE 事件是否应被丢弃（已出现过相同 id）。
+ * 纯函数，便于单测。后端若未下发 id 则永远返回 false（不去重）。
+ */
+export function shouldSkipEvent(seen: Set<string>, event: SSEEvent): boolean {
+  if (event.id == null) return false;
+  const key = String(event.id);
+  if (seen.has(key)) return true;
+  seen.add(key);
+  return false;
 }
 
 export async function askQuestion(
@@ -26,32 +41,57 @@ export async function askQuestion(
 
 /**
  * SSE 流式问答。返回 abort 函数用于取消请求。
- * onEvent 在每个 SSE 事件时调用，onDone 在流结束时调用。
+ * onEvent 在每个 SSE 事件时调用；onError 在出错时调用；
+ * onDone 在流"无论正常结束还是异常"后都会调用（取消除外），用于兜底重置 UI 状态（C2）。
  */
 export function askQuestionStream(
   resume_id: number,
   question: string,
   onEvent: (event: SSEEvent) => void,
   onError: (err: Error) => void,
+  onDone?: () => void,
 ): () => void {
   const abort = new AbortController();
-  const token = localStorage.getItem("access_token");
+  const seenIds = new Set<string>();
+  let aborted = false;
+
+  const buildHeaders = (): Record<string, string> => ({
+    "Content-Type": "application/json",
+    ...(localStorage.getItem("access_token")
+      ? { Authorization: `Bearer ${localStorage.getItem("access_token")}` }
+      : {}),
+  });
+
+  const body = JSON.stringify({ resume_id, question });
 
   (async () => {
     try {
-      const res = await fetch("/api/v1/qa/ask/stream", {
+      let res = await fetch("/api/v1/qa/ask/stream", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ resume_id, question }),
+        headers: buildHeaders(),
+        body,
         signal: abort.signal,
       });
 
+      // H10：流式接口原本不走 client.request，不会自动刷新 token。
+      // 这里补上：401 先刷新再重试；刷新失败则踢回登录页。
+      if (res.status === 401) {
+        const ok = await refreshToken();
+        if (!ok) {
+          clearSessionAndRedirect();
+          throw new Error("登录已过期");
+        }
+        res = await fetch("/api/v1/qa/ask/stream", {
+          method: "POST",
+          headers: buildHeaders(),
+          body,
+          signal: abort.signal,
+        });
+      }
+
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: "请求失败" }));
-        throw new Error(err.detail || "请求失败");
+        throw new Error((err as { detail?: string }).detail || "请求失败");
       }
 
       const reader = res.body?.getReader();
@@ -74,6 +114,7 @@ export function askQuestionStream(
           if (!line.startsWith("data: ")) continue;
           try {
             const data: SSEEvent = JSON.parse(line.slice(6));
+            if (shouldSkipEvent(seenIds, data)) continue; // N5 去重
             onEvent(data);
           } catch {
             // 跳过解析失败的行
@@ -81,8 +122,16 @@ export function askQuestionStream(
         }
       }
     } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") return;
+      if (err instanceof DOMException && err.name === "AbortError") {
+        aborted = true;
+        return;
+      }
       onError(err instanceof Error ? err : new Error("流式请求失败"));
+    } finally {
+      // C2：流结束（正常或异常）必兜底，确保 asking 状态一定被复位，
+      // 否则网络中途断开没收到 done 事件时输入框会卡死在"发送中"。
+      // 用户主动取消（abort）由调用方自己复位，这里跳过。
+      if (!aborted) onDone?.();
     }
   })();
 

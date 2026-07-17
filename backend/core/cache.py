@@ -13,8 +13,9 @@ def embedding_key(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
 
 
-def get_embedding(text: str) -> list[float] | None:
-    return _cache.get(embedding_key(text))
+async def get_embedding(text: str) -> list[float] | None:
+    async with _lock:
+        return _cache.get(embedding_key(text))
 
 
 async def set_embedding(text: str, vector: list[float], resume_id: int | None = None) -> None:

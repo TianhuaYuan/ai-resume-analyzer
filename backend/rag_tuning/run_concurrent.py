@@ -6,10 +6,7 @@
 import argparse
 import asyncio
 import itertools
-import json
-import os
 import sys
-import time
 from dataclasses import replace
 from pathlib import Path
 
@@ -21,14 +18,13 @@ if sys.platform == "win32":
     sys.stderr.reconfigure(encoding="utf-8")
 
 from core.rag_params import (
-    PHASE1_GRID, PHASE2_SWEEP, PHASE3_GRID,
+    PHASE3_GRID,
     PHASE4_THRESHOLDS, PHASE6_TEMPERATURES, RagParams,
 )
 from rag_tuning.evaluate import (
     load_golden_set, load_resume_texts, _resume_id_map,
-    evaluate_one, aggregate_metrics, save_results, save_details,
-    print_metrics, print_table, _load_best, _load_results_list,
-    RESULTS_DIR, rebuild_all_indices,
+    evaluate_one, aggregate_metrics, save_results, print_metrics, print_table, _load_best, _load_results_list,
+    rebuild_all_indices,
 )
 
 CONCURRENCY = 10  # 同时跑 10 条 QA

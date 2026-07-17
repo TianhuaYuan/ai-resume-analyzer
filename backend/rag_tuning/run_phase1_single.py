@@ -20,7 +20,7 @@ if sys.platform == "win32":
 from core.rag_params import PHASE1_GRID, RagParams
 from rag_tuning.evaluate import (
     load_golden_set, load_resume_texts, _resume_id_map,
-    run_experiment, save_results, save_details, print_metrics,
+    run_experiment, save_details, print_metrics,
     RESULTS_DIR,
 )
 

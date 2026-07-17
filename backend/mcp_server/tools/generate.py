@@ -2,13 +2,16 @@
 import json
 import logging
 
+import httpx
 from mcp.types import TextContent
 
-from mcp_server.server import mcp
+from mcp_server.server import get_current_user_id, mcp
 
 logger = logging.getLogger(__name__)
 
 _GENERATE_TEMPERATURE = 0.3
+# 远端 LLM 调用的总超时上限（对齐阶段1：30s 总时限 / 10s 连接）
+MCP_HTTP_TIMEOUT = httpx.Timeout(30, connect=10)
 
 
 @mcp.tool()
@@ -24,6 +27,20 @@ async def generate_answer(
         context: 检索到的上下文文本
         resume_id: 简历 ID（字符串数字）
     """
+    # SEC-002：MCP 工具必须校验用户身份，缺失上下文时拒绝而非静默放行。
+    try:
+        _user_id = get_current_user_id()
+    except LookupError:
+        return [TextContent(
+            type="text",
+            text=json.dumps(
+                {"error": "authentication required: missing user context"},
+                ensure_ascii=False,
+            ),
+        )]
+
+    import asyncio
+
     from core.retry import with_retry
     from services.rag_service import build_prompt, llm_generate, reject_if_low_score
 
@@ -50,12 +67,15 @@ async def generate_answer(
     prompt = build_prompt(context_texts, question)
 
     try:
-        answer = await with_retry(
-            llm_generate,
-            prompt["system"],
-            prompt["user"],
-            temperature=_GENERATE_TEMPERATURE,
-            fallback="服务暂时不可用，请稍后重试。",
+        answer = await asyncio.wait_for(
+            with_retry(
+                llm_generate,
+                prompt["system"],
+                prompt["user"],
+                temperature=_GENERATE_TEMPERATURE,
+                fallback="服务暂时不可用，请稍后重试。",
+            ),
+            timeout=MCP_HTTP_TIMEOUT.read,
         )
 
         sources = [
@@ -75,7 +95,7 @@ async def generate_answer(
             "chunk_count": len(chunks),
         }, ensure_ascii=False))]
 
-    except Exception as e:
+    except Exception:
         logger.exception("generate_answer failed for resume %s", resume_id)
         return [TextContent(type="text", text=json.dumps({
             "answer": "服务暂时不可用，请稍后重试。",

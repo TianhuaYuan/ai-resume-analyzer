@@ -3,7 +3,7 @@
 所有参数都有默认值（与当前 rag_service.py 硬编码一致），
 实验时通过 dataclasses.replace() 覆盖即可。
 """
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True)

@@ -19,6 +19,7 @@ import json
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 
+from httpx import AsyncClient
 from mcp_server.server import mcp, _current_user_id, get_current_user_id
 
 
@@ -404,7 +405,7 @@ async def test_mcp_client_resource_read_integration():
 @pytest.mark.asyncio
 async def test_mcp_tools_module_search_integration():
     """mcp_client.tools.mcp_search 集成。"""
-    from mcp_client.tools import mcp_search, _parse_tool_result
+    from mcp_client.tools import mcp_search
 
     mock_result = {
         "content": [{"type": "text", "text": json.dumps([
@@ -833,24 +834,8 @@ class TestMCPHTTPEndpoint:
     @pytest.mark.asyncio
     async def test_mcp_asgi_tool_call_rewrite(self):
         """MCP ASGI app：tools/call rewrite_query → 改写查询。"""
-        from mcp_server.transport.http import get_mcp_app
-
-        app = get_mcp_app()
-
         with patch("services.rag_service.rewrite_query", new_callable=AsyncMock) as mock_rw:
             mock_rw.return_value = "简历中候选人的教育背景是什么"
-
-            # 构造 ASGI scope 模拟 POST /mcp/
-            scope = {
-                "type": "http",
-                "method": "POST",
-                "path": "/mcp/",
-                "raw_path": b"/mcp/",
-                "headers": [
-                    (b"content-type", b"application/json"),
-                    (b"authorization", b"Bearer test"),
-                ],
-            }
 
             # 认证中间件会拦截，这里直接测试 Tool 函数
             from mcp_server.tools.rewrite import rewrite_query

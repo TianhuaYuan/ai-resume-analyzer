@@ -3,7 +3,7 @@
 import json
 import logging
 
-from mcp_client.client import MCPClient, MCPClientError, get_mcp_client
+from mcp_client.client import MCPClientError, get_mcp_client
 
 logger = logging.getLogger(__name__)
 

@@ -11,8 +11,6 @@
 """
 
 import asyncio
-import json
-import os
 import statistics
 import sys
 import time
@@ -34,7 +32,6 @@ from rag_tuning.evaluate import (
     save_results,
     save_details,
     print_metrics,
-    RESULTS_DIR,
     rebuild_all_indices,
 )
 
@@ -197,7 +194,7 @@ async def main():
 
     # ── 组间对比 ──
     print(f"\n{'=' * 65}")
-    print(f"  组间对比 (Optimal vs Baseline vs NearOptimal)")
+    print("  组间对比 (Optimal vs Baseline vs NearOptimal)")
     print(f"{'=' * 65}")
 
     opt = all_phase5_results[0]
@@ -213,7 +210,7 @@ async def main():
         print(f"  {metric:<22s} {opt_val:>10.4f} {base_val:>10.4f} {delta:>+10.4f} {pct:>+8.1f}%")
 
     # ── 统计显著性（简易 t-test） ──
-    print(f"\n  ── 简易统计检验 ──")
+    print("\n  ── 简易统计检验 ──")
     for config in all_phase5_results:
         cid = config["config_id"]
         vals = [r["composite"] for r in config["runs"]]

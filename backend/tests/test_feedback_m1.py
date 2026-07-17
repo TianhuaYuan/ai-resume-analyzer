@@ -1,6 +1,5 @@
 """M1: embedding cache get_embedding 无锁读取"""
 import inspect
-import pytest
 from core.cache import get_embedding
 
 

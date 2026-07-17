@@ -413,7 +413,7 @@ class TestE2EMultiTurnDialogue:
             mock_http.post = AsyncMock(return_value=mock_response)
             client._client = mock_http
 
-            result = await client.call_tool("test", {"call_index": i})
+            await client.call_tool("test", {"call_index": i})
             # 每次调用使用独立的 request_id，验证无状态
             call_args = mock_http.post.call_args
             payload = call_args[1].get("json") or call_args[0][1]
@@ -554,7 +554,7 @@ class TestE2EConditionalEdges:
     @pytest.mark.asyncio
     async def test_max_retry_stops_loop(self):
         """search_round=3 时 evaluate 即使低分也强制通过（防止无限循环）。"""
-        from services.agentic_rag.mcp_graph import create_mcp_agentic_rag_graph, _route_after_evaluate
+        from services.agentic_rag.mcp_graph import _route_after_evaluate
 
         # 直接测试条件边逻辑
         state = {

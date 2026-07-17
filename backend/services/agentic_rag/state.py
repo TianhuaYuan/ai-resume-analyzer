@@ -23,6 +23,11 @@ class AgenticRAGState(TypedDict):
     final_answer: str
     final_sources: list[str]
     trace: dict
+    # 阶段4 错误透传：记录检索/重排等子步骤中失败的「工具」及错误摘要。
+    # 形如 [{"tool": "hybrid_search", "query": "...", "error": "..."}, ...]
+    # 空列表表示全程无失败；非空时下游生成节点据此注入降级说明，API 据此置 degraded。
+    # 注意：这是累加字段，由各节点在 state 已有 tool_errors 基础上 append，不覆盖。
+    tool_errors: list[dict]
 
 
 REWRITE_NODE = "rewrite"

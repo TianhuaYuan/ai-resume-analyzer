@@ -54,3 +54,12 @@ deploy/*.log
 *.log
 logs/
 docs/
+
+# 第三方工作目录
+.workbuddy/
+
+# 评估框架规划文档（PRD / 任务分解，给 agent 用的指引）
+backend/eval/
+
+# 阶段命名不规范的测试文件
+backend/tests/test_阶段*

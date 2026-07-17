@@ -12,7 +12,7 @@ setup_logging → RequestIDMiddleware → MetricsMiddleware → register_excepti
 |------|------|--------|
 | config.py | Pydantic Settings，从 `.env` 读取所有配置，extra="forbid" 防止拼错 | 全局 |
 | database.py | SQLAlchemy async engine（pool_size=10, pool_recycle=3600），`get_db` 作为 FastAPI 依赖 | api/ 路由, services/ |
-| security.py | bcrypt 哈希 + JWT（access 30min / refresh 7 天），用 python-jose | api/auth.py, mcp_server/ |
+| security.py | bcrypt 哈希 + JWT（access 30min / refresh 7 天），用 PyJWT（阶段11 由 python-jose 迁移） | api/auth.py, mcp_server/ |
 | cache.py | Embedding 向量内存缓存，sha256 → vector，LRU 5000 条，按 resume_id 批量淘汰 | services/rag_service.py |
 | retry.py | `with_retry(fn, max_retries=3, base_delay=1.0, fallback=None)`，编程错误(TypeError/ValueError 等)直接抛，不重试 | services/ 各模块 |
 | trace.py | `StepTimer`，`await timer.run("search", hybrid_search(...))` 收集每一步耗时 | services/agentic_rag/ |

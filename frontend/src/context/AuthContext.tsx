@@ -7,6 +7,27 @@ import {
 } from "react";
 import { login as loginApi, register as registerApi, logout as clearTokens } from "../api/auth";
 
+interface JwtPayload {
+  sub?: string | number;
+  username?: string;
+  email?: string;
+  exp?: number;
+}
+
+/**
+ * H9：安全解码 JWT。任何异常（token 缺段、base64 非法、JSON 损坏）都返回 null，
+ * 绝不让 atob/JSON.parse 抛出的异常冒泡到 React 渲染或登录流程里造成白屏。
+ */
+export function safeDecodeJwt(token: string): JwtPayload | null {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+    return JSON.parse(atob(parts[1])) as JwtPayload;
+  } catch {
+    return null;
+  }
+}
+
 interface User {
   id: number;
   username: string;
@@ -36,18 +57,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const token = localStorage.getItem("access_token");
     if (token) {
-      try {
-        const payload = JSON.parse(atob(token.split(".")[1]));
-        if (payload.exp * 1000 > Date.now()) {
-          setUser({
-            id: Number(payload.sub),
-            username: payload.username || "",
-            email: payload.email || "",
-          });
-        } else {
-          clearTokens();
-        }
-      } catch {
+      const payload = safeDecodeJwt(token);
+      if (payload && payload.exp != null && payload.exp * 1000 > Date.now()) {
+        setUser({
+          id: Number(payload.sub),
+          username: payload.username || "",
+          email: payload.email || "",
+        });
+      } else {
         clearTokens();
       }
     }
@@ -56,8 +73,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (email: string, password: string) => {
     const data = await loginApi(email, password);
-    // 解码 token 拿到 user 信息
-    const payload = JSON.parse(atob(data.access_token.split(".")[1]));
+    // 解码 token 拿到 user 信息（H9：即便 token 异常也不崩，回退为未登录）
+    const payload = safeDecodeJwt(data.access_token);
+    if (!payload) {
+      clearTokens();
+      throw new Error("登录成功，但解析用户凭证失败，请重新登录");
+    }
     setUser({
       id: Number(payload.sub),
       username: payload.username || "",

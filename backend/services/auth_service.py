@@ -4,7 +4,14 @@ from fastapi import HTTPException, status
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.security import hash_password, verify_password, create_access_token, create_refresh_token, decode_token
+from core.security import (
+    hash_password,
+    verify_password,
+    create_access_token,
+    create_refresh_token,
+    decode_token,
+    is_token_revoked,
+)
 from models.user import User
 from schemas.auth import RegisterRequest, TokenResponse
 
@@ -51,11 +58,19 @@ def create_tokens(user: User) -> TokenResponse:
 
 
 async def refresh_token(db: AsyncSession, token_str: str) -> TokenResponse:
-    """用 refresh_token 换新 token 对。过期或 type 非 refresh→401。"""
+    """用 refresh_token 换新 token 对。过期或 type 非 refresh→401。
+
+    SEC-005：已被撤销的 refresh token（如其他端登出/改密后）直接拒。
+    """
     payload = decode_token(token_str)
     if payload is None or payload.get("type") != "refresh":
         logger.warning("refresh token 无效: type=%s", payload.get("type") if payload else "decode_failed")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="无效或过期的刷新凭证")
+
+    # SEC-005：撤销名单校验（登出/改密后旧 refresh 失效）
+    if is_token_revoked(payload.get("jti")):
+        logger.warning("refresh token 已撤销: jti=%s", payload.get("jti"))
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="刷新凭证已失效，请重新登录")
 
     user_id_str = payload.get("sub")
     if user_id_str is None:

@@ -260,7 +260,6 @@ async def run_experiment(
         results.append(r)
         # 进度输出
         if (i + 1) % 10 == 0 or (i + 1) == len(golden_set):
-            answered = sum(1 for x in results if not x["is_reject"])
             avg = sum(x["score"] for x in results) / max(len(results), 1)
             print(f"  [{i+1}/{len(golden_set)}] avg={avg:.2f}", end="", flush=True)
             print()
@@ -517,7 +516,7 @@ async def run_phase5(golden_set, id_map, resume_texts):
             base_p = replace(base_p, **{k: v})
 
     print(f"\n{'='*60}")
-    print(f"Phase 5: 最优参数 3 次重复验证")
+    print("Phase 5: 最优参数 3 次重复验证")
     print(f"参数: {base_p}")
     print(f"{'='*60}")
 
