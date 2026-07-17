@@ -13,6 +13,7 @@ ENV/
 .env
 .env.*
 !.env.example
+!.env.test
 !deploy/.env.prod.example
 
 uploads/

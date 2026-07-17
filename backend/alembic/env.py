@@ -7,20 +7,16 @@ from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-# 添加 backend 目录到 sys.path
 backend_dir = os.path.dirname(os.path.dirname(__file__))
 sys.path.insert(0, backend_dir)
 
 from core.database import Base
 from core.config import settings
 
-# 导入所有 model，确保 Base.metadata 包含全部表
 import models.user  # noqa: F401
 import models.resume  # noqa: F401
 import models.qa_history  # noqa: F401
 
-
-# Alembic Config 对象
 config = context.config
 
 # 设置脚本位置

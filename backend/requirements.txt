@@ -22,4 +22,3 @@ slowapi==0.1.9
 mcp>=1.28.0
 prometheus-client==0.21.1
 psutil==6.1.1
-pysqlite3-binary==0.5.4

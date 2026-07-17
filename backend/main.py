@@ -1,8 +1,3 @@
-# SQLite3 兼容性补丁（ChromaDB 需要 >= 3.35.0）
-import sys
-__import__('pysqlite3')
-sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
-
 from contextlib import asynccontextmanager
 import shutil
 import sys

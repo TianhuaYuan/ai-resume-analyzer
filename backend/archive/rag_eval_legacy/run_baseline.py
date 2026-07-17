@@ -206,7 +206,7 @@ def _compute_full_metrics(results: list[EvalResult], cases: list[EvalCase]) -> d
     # 保持字段顺序合理
     ordered = OrderedDict()
     for k in ["Recall@3", "Recall@5", "Recall@10", "MRR", "Precision@5",
-              "answer_hit_rate", "reject_accuracy", "avg_latency_ms"]:
+            "answer_hit_rate", "reject_accuracy", "avg_latency_ms"]:
         if k in m:
             ordered[k] = m[k]
     return ordered

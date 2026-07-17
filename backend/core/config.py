@@ -1,5 +1,11 @@
+import os
+
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# APP_ENV 控制加载哪个 .env 文件：dev → .env.dev, test → .env.test, prod → .env.prod
+# 未设置时默认 dev，与现有开发习惯兼容
+_APP_ENV = os.getenv("APP_ENV", "dev")
 
 
 class Settings(BaseSettings):
@@ -42,8 +48,11 @@ class Settings(BaseSettings):
     MCP_SERVER_URL: str = "http://127.0.0.1:8000/mcp"
     MCP_TOKEN: str = ""  # MCP Server 认证 token，为空则不认证
 
+    # ── 运行时配置 ──
+    UVICORN_WORKERS: int = 4  # 生产环境 worker 数，可通过环境变量覆盖
+
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=f".env.{_APP_ENV}",
         env_file_encoding="utf-8",
         extra="forbid",
         case_sensitive=True,

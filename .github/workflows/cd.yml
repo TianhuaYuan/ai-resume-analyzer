@@ -101,7 +101,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.14"
           cache: pip
           cache-dependency-path: backend/requirements.txt
 
@@ -112,10 +112,10 @@ jobs:
           pip install -r requirements.txt
           pip install pytest pytest-asyncio httpx aiosqlite
 
-          cat > .env << 'EOF'
+          cat > .env.test << 'EOF'
           CHAT_API_KEY=test
-          CHAT_BASE_URL=https://api.deepseek.com/v1
-          CHAT_MODEL=deepseek-chat
+          CHAT_BASE_URL=https://api.xiaomimimo.com/v1
+          CHAT_MODEL=mimo-v2.5
           EMBEDDING_API_KEY=test
           EMBEDDING_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
           EMBEDDING_MODEL=text-embedding-v4
@@ -129,6 +129,8 @@ jobs:
           EOF
 
           python -m pytest tests/ -v --tb=short
+        env:
+          APP_ENV: test
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
