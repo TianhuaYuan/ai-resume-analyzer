@@ -22,3 +22,7 @@ slowapi==0.1.9
 mcp>=1.28.0
 prometheus-client==0.21.1
 psutil==6.1.1
+
+# 评估框架：YAML 配置解析 + 贝叶斯优化
+pyyaml>=6.0.3
+optuna>=4.9.0
