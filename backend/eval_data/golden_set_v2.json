@@ -26,6 +26,10 @@
     "5": {
       "file": "resume_mid_iot.txt",
       "name": "嵌入式工程师-赵刚"
+    },
+    "6": {
+      "file": "resume_pm.txt",
+      "name": "产品经理-林芳"
     }
   },
   "samples": [
@@ -41,7 +45,8 @@
         "计算机科学与技术",
         "本科"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "hr"
     },
     {
       "id": "q002",
@@ -57,7 +62,8 @@
       "split": "tuning",
       "must_include": [
         "528"
-      ]
+      ],
+      "asker": "hr"
     },
     {
       "id": "q003",
@@ -72,14 +78,15 @@
         "索引",
         "事务"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "tech_interviewer"
     },
     {
       "id": "q004",
       "resume_id": 1,
       "category": "factual",
       "difficulty": "hard",
-      "question": "他那个在线考试系统，分布式环境下定时任务重复执行的问题是怎么解决的？",
+      "question": "他那个在线考试系统，多人同时交卷的时候会不会出问题？怎么处理的？",
       "reference_answer": "基于Redis的过期特性实现考试倒计时管理解决重复执行问题；使用RabbitMQ异步处理试卷批改任务，提交后返回「批改中」状态，完成后再通过WebSocket推送结果。",
       "keywords": [
         "Redis",
@@ -88,7 +95,8 @@
         "异步",
         "WebSocket"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "tech_interviewer"
     },
     {
       "id": "q005",
@@ -102,7 +110,8 @@
         "批改",
         "异步"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "tech_interviewer"
     },
     {
       "id": "q006",
@@ -116,7 +125,8 @@
         "Spring AOP",
         "日志"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "tech_interviewer"
     },
     {
       "id": "q007",
@@ -124,7 +134,7 @@
       "category": "reasoning",
       "difficulty": "hard",
       "question": "这人目前水平大概在什么阶段？离能独立负责中大型项目还有多远？",
-      "reference_answer": "目前处于初级后端水平，具备Spring Boot全栈开发能力和基础中间件使用经验，能独立完成小型项目。离独立负责中大型项目还缺少：分布式系统设计经验、微服务架构（未接触Spring Cloud）、高并发实战、以及线上问题排查和性能调优能力。",
+      "reference_answer": "目前处于初级后端水平，具备Spring Boot全栈开发能力和基础中间件使用经验，能独立完成小型项目。简历项目中未涉及分布式系统设计、微服务架构组件（如Spring Cloud）、高并发场景实战及线上问题排查和性能调优等内容。",
       "keywords": [
         "初级",
         "微服务",
@@ -135,7 +145,8 @@
       "must_include": [
         "初级",
         "微服务"
-      ]
+      ],
+      "asker": "tech_interviewer"
     },
     {
       "id": "q008",
@@ -148,7 +159,8 @@
         "大厂",
         "实习"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "hr"
     },
     {
       "id": "q009",
@@ -161,7 +173,8 @@
         "Docker",
         "Kubernetes"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "hr"
     },
     {
       "id": "q010",
@@ -169,13 +182,14 @@
       "category": "rejection",
       "difficulty": "hard",
       "question": "他那个在线考试系统，高并发场景下怎么保护数据库不被打满的？",
-      "reference_answer": "简历中只提到用RabbitMQ异步处理批改任务来解耦，但没有详细说明数据库保护的完整方案，涉及限流、降级、熔断等高级机制都没有涉及。",
+      "reference_answer": "简历中只提到用RabbitMQ异步处理批改任务来解耦，未详细说明数据库保护措施。",
       "keywords": [
         "限流",
         "降级",
         "熔断"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "tech_interviewer"
     },
     {
       "id": "q011",
@@ -190,7 +204,8 @@
         "Redis",
         "WebSocket"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "tech_interviewer"
     },
     {
       "id": "q012",
@@ -204,7 +219,8 @@
         "模板引擎",
         "前后端分离"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "tech_interviewer"
     },
     {
       "id": "q013",
@@ -218,7 +234,8 @@
         "软件工程",
         "字节跳动"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "hr"
     },
     {
       "id": "q014",
@@ -231,7 +248,8 @@
         "电商订单履约",
         "商家数据看板"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "hr"
     },
     {
       "id": "q015",
@@ -250,15 +268,16 @@
       "split": "tuning",
       "must_include": [
         "Caffeine"
-      ]
+      ],
+      "asker": "tech_interviewer"
     },
     {
       "id": "q016",
       "resume_id": 2,
       "category": "factual",
       "difficulty": "hard",
-      "question": "他那个商家数据看板数据量有多大？怎么保证数据实时性的？",
-      "reference_answer": "日增量数据超2亿条，月活商家超5万。通过Canal监听MySQL binlog变更实时同步至Elasticsearch，端到端延迟控制在5秒内。",
+      "question": "他那个商家数据看板数据量大概什么级别？实时性怎么保证的？",
+      "reference_answer": "日常维护着亿级数据量的系统，通过Canal监听MySQL binlog变更实时同步至Elasticsearch，端到端延迟控制在5秒内。",
       "keywords": [
         "Canal",
         "binlog",
@@ -270,7 +289,8 @@
       "must_include": [
         "Canal",
         "2亿"
-      ]
+      ],
+      "asker": "tech_interviewer"
     },
     {
       "id": "q017",
@@ -286,7 +306,8 @@
         "QPS",
         "3000"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "tech_interviewer"
     },
     {
       "id": "q018",
@@ -300,7 +321,8 @@
         "状态机",
         "数据一致性"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "tech_interviewer"
     },
     {
       "id": "q019",
@@ -317,7 +339,8 @@
       "split": "tuning",
       "must_include": [
         "15分钟"
-      ]
+      ],
+      "asker": "hr"
     },
     {
       "id": "q020",
@@ -330,7 +353,8 @@
         "管理",
         "团队"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "hr"
     },
     {
       "id": "q021",
@@ -344,7 +368,8 @@
         "腾讯",
         "实习"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "tech_interviewer"
     },
     {
       "id": "q022",
@@ -357,7 +382,8 @@
         "Seata",
         "分布式事务"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "tech_interviewer"
     },
     {
       "id": "q023",
@@ -374,7 +400,8 @@
       "split": "tuning",
       "must_include": [
         "强一致性"
-      ]
+      ],
+      "asker": "tech_interviewer"
     },
     {
       "id": "q024",
@@ -388,7 +415,8 @@
         "核心交易",
         "数据分析"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "tech_interviewer"
     },
     {
       "id": "q025",
@@ -402,7 +430,8 @@
         "硕士",
         "计算机科学与技术"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "tech_interviewer"
     },
     {
       "id": "q026",
@@ -416,7 +445,8 @@
         "P7",
         "技术专家"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "hr"
     },
     {
       "id": "q027",
@@ -430,7 +460,8 @@
         "蚂蚁",
         "OpenTelemetry"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "tech_interviewer"
     },
     {
       "id": "q028",
@@ -449,7 +480,8 @@
       "must_include": [
         "30万",
         "Raft"
-      ]
+      ],
+      "asker": "tech_interviewer"
     },
     {
       "id": "q029",
@@ -464,14 +496,15 @@
         "100TB",
         "70%"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "tech_interviewer"
     },
     {
       "id": "q030",
       "resume_id": 3,
       "category": "reasoning",
       "difficulty": "medium",
-      "question": "他为什么要把订单系统搞成CQRS架构？",
+      "question": "他为什么要把订单的读和写拆成两套系统来做？",
       "reference_answer": "为了分离读写，写入端保持事务强一致，查询端通过事件驱动同步到Elasticsearch，利用ES的搜索和聚合能力分别优化读写两端性能。",
       "keywords": [
         "CQRS",
@@ -479,7 +512,8 @@
         "Elasticsearch",
         "事件驱动"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "tech_interviewer"
     },
     {
       "id": "q031",
@@ -495,7 +529,8 @@
         "QPS",
         "10万"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "tech_interviewer"
     },
     {
       "id": "q032",
@@ -509,7 +544,8 @@
         "Azure",
         "GCP"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "hr"
     },
     {
       "id": "q033",
@@ -521,7 +557,8 @@
       "keywords": [
         "8人"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "tech_interviewer"
     },
     {
       "id": "q034",
@@ -535,7 +572,8 @@
         "考核",
         "3.75"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "product_manager"
     },
     {
       "id": "q035",
@@ -550,7 +588,8 @@
         "Raft",
         "30万"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "tech_interviewer"
     },
     {
       "id": "q036",
@@ -568,7 +607,8 @@
       "split": "tuning",
       "must_include": [
         "RocketMQ"
-      ]
+      ],
+      "asker": "hr"
     },
     {
       "id": "q037",
@@ -581,7 +621,8 @@
         "广东工业大学",
         "软件工程"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "product_manager"
     },
     {
       "id": "q038",
@@ -595,7 +636,8 @@
         "Vue",
         "单页应用"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "hr"
     },
     {
       "id": "q039",
@@ -610,7 +652,8 @@
         "Vite",
         "Tailwind"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "product_manager"
     },
     {
       "id": "q040",
@@ -623,7 +666,8 @@
         "高德地图",
         "和风天气"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "hr"
     },
     {
       "id": "q041",
@@ -637,7 +681,8 @@
         "权限",
         "角色"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "tech_interviewer"
     },
     {
       "id": "q042",
@@ -652,7 +697,8 @@
         "401",
         "40%"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "tech_interviewer"
     },
     {
       "id": "q043",
@@ -660,13 +706,14 @@
       "category": "reasoning",
       "difficulty": "hard",
       "question": "她在移动端适配方面做了哪些工作？深度怎么样？",
-      "reference_answer": "用了媒体查询和相对单位做响应式布局。但深度一般：没有涉及vw/vh单位、Rem适配方案或移动端touch事件等更进阶的适配技术。",
+      "reference_answer": "使用了媒体查询和相对单位做响应式布局。未涉及vw/vh单位、Rem适配方案或移动端touch事件等技术。",
       "keywords": [
         "媒体查询",
         "响应式",
         "移动端"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "tech_interviewer"
     },
     {
       "id": "q044",
@@ -678,7 +725,8 @@
       "keywords": [
         "后端"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "hr"
     },
     {
       "id": "q045",
@@ -690,7 +738,8 @@
       "keywords": [
         "实习"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "hr"
     },
     {
       "id": "q046",
@@ -704,7 +753,8 @@
         "性能优化",
         "Bundle Analyzer"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "tech_interviewer"
     },
     {
       "id": "q047",
@@ -719,7 +769,8 @@
         "Redux",
         "响应式"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "tech_interviewer"
     },
     {
       "id": "q048",
@@ -733,7 +784,8 @@
         "缓存",
         "偏好设置"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "product_manager"
     },
     {
       "id": "q049",
@@ -746,7 +798,8 @@
         "杭州电子科技大学",
         "电子信息工程"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "hr"
     },
     {
       "id": "q050",
@@ -759,7 +812,8 @@
         "海康威视",
         "嵌入式"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "tech_interviewer"
     },
     {
       "id": "q051",
@@ -774,7 +828,8 @@
         "60%",
         "99.5%"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "tech_interviewer"
     },
     {
       "id": "q052",
@@ -792,7 +847,8 @@
       "split": "tuning",
       "must_include": [
         "6个月"
-      ]
+      ],
+      "asker": "tech_interviewer"
     },
     {
       "id": "q053",
@@ -806,7 +862,8 @@
         "200ms",
         "Hi3516"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "tech_interviewer"
     },
     {
       "id": "q054",
@@ -821,7 +878,8 @@
         "并发",
         "实时"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "tech_interviewer"
     },
     {
       "id": "q055",
@@ -836,7 +894,8 @@
         "缓存",
         "同步"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "tech_interviewer"
     },
     {
       "id": "q056",
@@ -848,7 +907,8 @@
       "keywords": [
         "Python"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "hr"
     },
     {
       "id": "q057",
@@ -861,7 +921,8 @@
         "海思",
         "Hi3516"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "hr"
     },
     {
       "id": "q058",
@@ -875,7 +936,8 @@
         "iOS",
         "移动端"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "tech_interviewer"
     },
     {
       "id": "q059",
@@ -892,7 +954,8 @@
         "大华",
         "STM32"
       ],
-      "split": "tuning"
+      "split": "tuning",
+      "asker": "product_manager"
     },
     {
       "id": "q060",
@@ -911,7 +974,8 @@
       "must_include": [
         "LoRa",
         "LPWAN"
-      ]
+      ],
+      "asker": "tech_interviewer"
     },
     {
       "id": "q061",
@@ -919,7 +983,7 @@
       "category": "comparative",
       "difficulty": "hard",
       "question": "这两个候选人（初级后端vs中级后端）在MySQL能力上差在哪？",
-      "reference_answer": "初级后端会基本的SQL编写和数据建模，了解索引和事务。中级后端已经精通分库分表、主从复制和线上性能调优，而且有日增量2亿+数据的大规模实战经验。核心差距：大规模数据处理经验、性能调优经验（P99从2.3秒降至180ms）、分库分表架构经验。",
+      "reference_answer": "初级后端会基本的SQL编写和数据建模，了解索引和事务。中级后端已经精通分库分表、主从复制和线上性能调优，而且有处理海量数据的实际生产经验。",
       "keywords": [
         "分库分表",
         "主从复制",
@@ -928,7 +992,8 @@
       "split": "eval",
       "must_include": [
         "分库分表"
-      ]
+      ],
+      "asker": "tech_interviewer"
     },
     {
       "id": "q062",
@@ -936,7 +1001,7 @@
       "category": "comparative",
       "difficulty": "hard",
       "question": "比较一下这两个后端的高并发方案（中级vs高级），本质区别在哪？",
-      "reference_answer": "中级后端的方案是单系统级别优化（Redis Lua脚本+本地缓存），QPS从800到3000+。高级架构师的方案是完整的架构重设计：布隆过滤器→Nginx缓存→Redis集群→数据库的多级防护、库存中心独立为Raft集群、全链路压测平台，TPS从5万到30万。本质区别：一个在系统内优化，一个在架构层面重新设计。",
+      "reference_answer": "中级后端是单系统级别优化（Redis Lua脚本+本地缓存），QPS有大幅提升。高级架构师是完整的架构重设计：布隆过滤器拦截无效请求、多级缓存逐级下探、库存中心独立为Raft集群、全链路压测平台，TPS从5万提升到30万。本质区别：一个在系统内优化，一个在架构层面重新设计。",
       "keywords": [
         "布隆过滤器",
         "Raft",
@@ -948,7 +1013,8 @@
       "must_include": [
         "布隆过滤器",
         "Raft"
-      ]
+      ],
+      "asker": "tech_interviewer"
     },
     {
       "id": "q063",
@@ -963,7 +1029,8 @@
         "实习",
         "Spring Boot"
       ],
-      "split": "eval"
+      "split": "eval",
+      "asker": "job_seeker"
     },
     {
       "id": "q064",
@@ -980,7 +1047,8 @@
       "split": "eval",
       "must_include": [
         "实习"
-      ]
+      ],
+      "asker": "job_seeker"
     },
     {
       "id": "q065",
@@ -995,7 +1063,8 @@
         "CRUD",
         "技术亮点"
       ],
-      "split": "eval"
+      "split": "eval",
+      "asker": "job_seeker"
     },
     {
       "id": "q066",
@@ -1010,7 +1079,8 @@
         "校招",
         "开源"
       ],
-      "split": "eval"
+      "split": "eval",
+      "asker": "job_seeker"
     },
     {
       "id": "q067",
@@ -1026,7 +1096,8 @@
         "核心链路",
         "P99"
       ],
-      "split": "eval"
+      "split": "eval",
+      "asker": "job_seeker"
     },
     {
       "id": "q068",
@@ -1041,7 +1112,8 @@
         "管理",
         "团队"
       ],
-      "split": "eval"
+      "split": "eval",
+      "asker": "job_seeker"
     },
     {
       "id": "q069",
@@ -1054,7 +1126,8 @@
         "英语",
         "外企"
       ],
-      "split": "eval"
+      "split": "eval",
+      "asker": "job_seeker"
     },
     {
       "id": "q070",
@@ -1069,7 +1142,8 @@
         "Committer",
         "30万"
       ],
-      "split": "eval"
+      "split": "eval",
+      "asker": "job_seeker"
     },
     {
       "id": "q071",
@@ -1084,7 +1158,8 @@
         "云原生",
         "全栈"
       ],
-      "split": "eval"
+      "split": "eval",
+      "asker": "job_seeker"
     },
     {
       "id": "q072",
@@ -1099,7 +1174,8 @@
         "业务",
         "人才培养"
       ],
-      "split": "eval"
+      "split": "eval",
+      "asker": "job_seeker"
     },
     {
       "id": "q073",
@@ -1112,7 +1188,8 @@
         "链路追踪",
         "蚂蚁"
       ],
-      "split": "eval"
+      "split": "eval",
+      "asker": "job_seeker"
     },
     {
       "id": "q074",
@@ -1128,7 +1205,8 @@
         "diff",
         "响应式"
       ],
-      "split": "eval"
+      "split": "eval",
+      "asker": "job_seeker"
     },
     {
       "id": "q075",
@@ -1146,7 +1224,8 @@
       "split": "eval",
       "must_include": [
         "开源"
-      ]
+      ],
+      "asker": "job_seeker"
     },
     {
       "id": "q076",
@@ -1160,7 +1239,8 @@
         "实习",
         "校招"
       ],
-      "split": "eval"
+      "split": "eval",
+      "asker": "job_seeker"
     },
     {
       "id": "q077",
@@ -1176,7 +1256,8 @@
         "响应式",
         "中上"
       ],
-      "split": "eval"
+      "split": "eval",
+      "asker": "job_seeker"
     },
     {
       "id": "q078",
@@ -1191,7 +1272,8 @@
         "设备树",
         "应用编程"
       ],
-      "split": "eval"
+      "split": "eval",
+      "asker": "job_seeker"
     },
     {
       "id": "q079",
@@ -1210,7 +1292,8 @@
       "split": "eval",
       "must_include": [
         "OTA"
-      ]
+      ],
+      "asker": "job_seeker"
     },
     {
       "id": "q080",
@@ -1225,7 +1308,8 @@
         "海康",
         "嵌入式"
       ],
-      "split": "eval"
+      "split": "eval",
+      "asker": "job_seeker"
     },
     {
       "id": "q081",
@@ -1239,7 +1323,8 @@
         "成长潜力",
         "核心链路"
       ],
-      "split": "eval"
+      "split": "eval",
+      "asker": "product_manager"
     },
     {
       "id": "q082",
@@ -1255,7 +1340,143 @@
         "消息队列",
         "NoSQL"
       ],
-      "split": "eval"
+      "split": "eval",
+      "asker": "job_seeker"
+    },
+    {
+      "id": "q083",
+      "resume_id": 1,
+      "category": "reasoning",
+      "difficulty": "hard",
+      "question": "帮我看看这个JD（Java后端，要求高并发和微服务经验），我这简历匹配度怎么样？缺什么？",
+      "reference_answer": "匹配度中等偏低。简历的在线考试系统是单体架构，没有微服务和分布式经验。JD要求的高并发经验也没有实战支撑。建议：1）突出使用了Redis和RabbitMQ的场景；2）补一个微服务拆分的小项目或Demo；3）描述项目中遇到的最大性能瓶颈和解决方案。",
+      "keywords": [
+        "JD",
+        "匹配",
+        "微服务",
+        "高并发"
+      ],
+      "split": "eval",
+      "asker": "job_seeker"
+    },
+    {
+      "id": "q084",
+      "resume_id": 2,
+      "category": "reasoning",
+      "difficulty": "medium",
+      "question": "我这简历能过ATS自动筛选吗？有什么关键词必须补上？",
+      "reference_answer": "简历关键词覆盖了Java、Spring Boot、MySQL等主流技术栈，ATS筛选大概率能过。建议：1）明确写清楚公司和学校品牌关键词；2）技能列表补上版本号（如Spring Boot 3.x）；3）项目描述中多嵌入JD中能找到的关键词。",
+      "keywords": [
+        "ATS",
+        "关键词",
+        "筛选",
+        "Java"
+      ],
+      "split": "tuning",
+      "asker": "job_seeker"
+    },
+    {
+      "id": "q085",
+      "resume_id": 1,
+      "category": "rejection",
+      "difficulty": "medium",
+      "question": "我有一段3个月的空窗期，要不要写在简历里？面试问到怎么解释？",
+      "reference_answer": "简历中不包含空窗期相关信息。一般来说3个月空窗期不单独写出也可以，面试问到如实说明是求职过渡期或学习期即可。",
+      "keywords": [
+        "空窗期"
+      ],
+      "split": "eval",
+      "asker": "job_seeker"
+    },
+    {
+      "id": "q086",
+      "resume_id": 2,
+      "category": "rejection",
+      "difficulty": "hard",
+      "question": "我现在年薪大概35万，跳槽的话应该要多少？",
+      "reference_answer": "简历中不包含薪资信息。一般来说字节跳动3年后端在市场上估值在45-60万之间，具体取决于面试评级和公司薪资结构。建议参考行业招聘平台的同岗位薪资范围。",
+      "keywords": [
+        "薪资",
+        "年薪",
+        "跳槽"
+      ],
+      "split": "tuning",
+      "asker": "job_seeker"
+    },
+    {
+      "id": "q087",
+      "resume_id": 2,
+      "category": "reasoning",
+      "difficulty": "hard",
+      "question": "这人两年半换了三个项目组，是不是不太稳定？",
+      "reference_answer": "他在字节同一个公司做了近3年，项目经历展示的是在不同业务线流转（订单履约、商家数据看板、任务调度），这是大厂内部正常横向调动，不是跳槽。稳定性没有问题。",
+      "keywords": [
+        "稳定性",
+        "跳槽",
+        "字节跳动"
+      ],
+      "split": "eval",
+      "asker": "hr"
+    },
+    {
+      "id": "q088",
+      "resume_id": 3,
+      "category": "rejection",
+      "difficulty": "medium",
+      "question": "他之前在大厂签过竞业协议吗？有没有风险？",
+      "reference_answer": "简历中未包含竞业限制相关信息。大厂P7级别通常会签竞业协议，但具体条款和限制范围不属于简历内容。",
+      "keywords": [
+        "竞业"
+      ],
+      "split": "tuning",
+      "asker": "hr"
+    },
+    {
+      "id": "q089",
+      "resume_id": 6,
+      "category": "factual",
+      "difficulty": "easy",
+      "question": "这个产品经理的背景怎么样？",
+      "reference_answer": "林芳，5年产品经验，目前是高级产品经理。211本科毕业，有电商和金融双领域经验。在美团做过订单系统和商家端产品。",
+      "keywords": [
+        "产品经理",
+        "电商",
+        "美团"
+      ],
+      "split": "tuning",
+      "asker": "hr"
+    },
+    {
+      "id": "q090",
+      "resume_id": 6,
+      "category": "reasoning",
+      "difficulty": "medium",
+      "question": "她从携程跳到美团，成长路径清晰吗？",
+      "reference_answer": "成长路径清晰。从携程的C端功能迭代到美团的核心订单产品，项目体量和复杂度逐步提升。项目描述从单纯的功能设计升级到了系统级方案设计（SOP和工作流引擎），有B端和C端的双领域经验。",
+      "keywords": [
+        "携程",
+        "美团",
+        "订单",
+        "B端",
+        "C端"
+      ],
+      "split": "tuning",
+      "asker": "tech_interviewer"
+    },
+    {
+      "id": "q091",
+      "resume_id": 0,
+      "category": "comparative",
+      "difficulty": "hard",
+      "question": "同一个用户的简历反复问10次同样的问题，回答是不是应该一致？怎么验证？",
+      "reference_answer": "RAG系统的回答一致性取决于：1）检索阶段每次返回的chunks是否一致（向量索引随机性影响很小）；2）LLM生成的Temperature参数（越高越不稳定）。建议在评估框架中增加重复查询稳定性指标：同一问题问3次，计算答案语义相似度，平均相似度应>=0.9。",
+      "keywords": [
+        "一致性",
+        "稳定性",
+        "Temperature"
+      ],
+      "split": "eval",
+      "asker": "product_manager"
     }
   ]
 }
