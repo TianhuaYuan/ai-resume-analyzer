@@ -1,8 +1,8 @@
 {
   "meta": {
     "name": "rag-eval-v2",
-    "description": "RAG 评测集 v2 — 招聘方视角，自然语言问答",
-    "version": "2.0.1",
+    "description": "RAG 评测集 v2 — 招聘方/求职者双视角，82条QA，tuning(60)+eval(22)",
+    "version": "2.1.0",
     "date": "2026-07-17",
     "judge_model": "deepseek-chat"
   },
@@ -955,7 +955,7 @@
       "resume_id": 1,
       "category": "reasoning",
       "difficulty": "easy",
-      "question": "我是王浩，我这简历投Java后端能过吗？",
+      "question": "我这简历投Java后端能过吗？",
       "reference_answer": "作为应届生，简历具备Spring Boot全栈开发能力和一个中等复杂度的在线考试系统项目，投中小厂Java后端岗有竞争力。但缺实习经历是硬伤，建议补一段实习或开源贡献。",
       "keywords": [
         "应届生",
@@ -970,7 +970,7 @@
       "resume_id": 1,
       "category": "reasoning",
       "difficulty": "medium",
-      "question": "我是王浩，我这简历最明显的短板在哪？",
+      "question": "我这简历最明显的短板在哪？",
       "reference_answer": "主要短板：1）没有实习经历，简历里的项目都是校内做的，真实度打折扣；2）技术栈偏浅，没有微服务、消息队列的复杂场景经验；3）项目描述偏功能罗列，缺少技术难点和解决方案的深度。",
       "keywords": [
         "实习",
@@ -987,7 +987,7 @@
       "resume_id": 1,
       "category": "reasoning",
       "difficulty": "hard",
-      "question": "我是王浩，在线考试系统这个项目在简历里写得太啰嗦了还是不够？哪些可以砍掉？",
+      "question": "在线考试系统这个项目在简历里写得太啰嗦了还是不够？哪些可以砍掉？",
       "reference_answer": "整体不错，但可以更聚焦技术亮点。建议：1）保留Redis倒计时和RabbitMQ异步批改这两个技术点，这是面试官最想看的；2）砍掉「实现基本CRUD」这种没有技术含量的描述；3）补充遇到的坑和怎么解决的，比只写功能更有价值。",
       "keywords": [
         "Redis",
@@ -1002,7 +1002,7 @@
       "resume_id": 1,
       "category": "rejection",
       "difficulty": "medium",
-      "question": "我是王浩，我这个项目经历能冲字节跳动吗？",
+      "question": "我这个项目经历能冲字节跳动吗？",
       "reference_answer": "目前项目深度和体量离字节的校招要求还有明显差距。字节校招一般要求有实习经历或高复杂度开源项目，或者ACM等竞赛获奖。建议先积累一段实习再投递。",
       "keywords": [
         "字节",
@@ -1017,7 +1017,7 @@
       "resume_id": 2,
       "category": "reasoning",
       "difficulty": "medium",
-      "question": "我是张明，现在字节做了三年想跳槽，我的简历优势在哪？",
+      "question": "现在字节做了三年想跳槽，我的简历优势在哪？",
       "reference_answer": "优势很明显：字节跳动背景+电商核心链路经验+实际的高并发优化成果（QPS 3000+，P99 180ms）这三个是面试官最看重的。订单状态机和分库分表迁移经历也很有分量。",
       "keywords": [
         "字节",
@@ -1033,7 +1033,7 @@
       "resume_id": 2,
       "category": "reasoning",
       "difficulty": "hard",
-      "question": "我是张明，我要面P7的话简历还差什么？",
+      "question": "我要面P7的话简历还差什么？",
       "reference_answer": "面P7的话主要缺：1）架构设计经验——简历里偏向功能实现而非系统架构设计；2）没有带团队的经历；3）技术广度可以再拓展，目前深度集中在Java/MySQL/Redis，对Go、云原生、大数据等涉猎不够。",
       "keywords": [
         "P7",
@@ -1048,7 +1048,7 @@
       "resume_id": 2,
       "category": "rejection",
       "difficulty": "easy",
-      "question": "我是张明，我这份简历去外企英语够用吗？",
+      "question": "我这份简历去外企英语够用吗？",
       "reference_answer": "简历中没有提到英语水平信息，无法判断英语能力是否满足外企要求。",
       "keywords": [
         "英语",
@@ -1061,7 +1061,7 @@
       "resume_id": 3,
       "category": "reasoning",
       "difficulty": "easy",
-      "question": "我是陈磊，这份简历能打动面试官吗？",
+      "question": "这份简历能打动面试官吗？",
       "reference_answer": "非常能。985硕+阿里P7+RocketMQ Committer+30万TPS秒杀架构，这三个标签任何一个都含金量很高。简历写法也是加分项：每个项目有具体数字和成果，不是流水账。",
       "keywords": [
         "985",
@@ -1076,7 +1076,7 @@
       "resume_id": 3,
       "category": "reasoning",
       "difficulty": "medium",
-      "question": "我是陈磊，想跳去外企或者创业公司，简历需要调整什么？",
+      "question": "想跳去外企或者创业公司，简历需要调整什么？",
       "reference_answer": "去外企：建议突出英文能力（如果有雅思/托福成绩），增加云原生（K8s/Cloud Native）和Go语言的描述；去创业公司：建议强调全栈能力和快速试错经验，以及技术选型能力，创业公司更看重你能独立搞定一整套东西。",
       "keywords": [
         "外企",
@@ -1091,7 +1091,7 @@
       "resume_id": 3,
       "category": "rejection",
       "difficulty": "hard",
-      "question": "我是陈磊，我p8晋升答辩的话简历欠缺什么？",
+      "question": "我p8晋升答辩的话简历欠缺什么？",
       "reference_answer": "P8要求技术影响力。目前简历上缺：1）跨BU/跨团队的技术推动案例；2）更量化的业务成果（简历主要是技术指标，缺少带动了xx业务增长xx%这种）；3）人才培养证明（带8人团队但没有具体培养案例）。",
       "keywords": [
         "P8",
@@ -1106,7 +1106,7 @@
       "resume_id": 3,
       "category": "factual",
       "difficulty": "easy",
-      "question": "我是陈磊，我之前在蚂蚁做的那套链路追踪系统后来怎么样了？还在用吗？",
+      "question": "我之前在蚂蚁做的那套链路追踪系统后来怎么样了？还在用吗？",
       "reference_answer": "简历中没有提供链路追踪系统的后续演进信息。他在蚂蚁期间参与了核心开发，但离职后的系统状态不在简历范围内。",
       "keywords": [
         "链路追踪",
@@ -1119,7 +1119,7 @@
       "resume_id": 4,
       "category": "reasoning",
       "difficulty": "easy",
-      "question": "我是李婷，我简历上写熟练React和Vue，面试的时候会不会被追问太深？",
+      "question": "我简历上写熟练React和Vue，面试的时候会不会被追问太深？",
       "reference_answer": "有风险。简历只写了熟练使用但没有具体深度体现，面试官可能会追问：React Fiber原理、Virtual DOM diff算法、Vue响应式原理等。建议在项目描述中体现一些深入的技术实践，比如自定义Hook、性能优化等。",
       "keywords": [
         "React",
@@ -1135,7 +1135,7 @@
       "resume_id": 4,
       "category": "reasoning",
       "difficulty": "medium",
-      "question": "我是李婷，我投前端岗但没实习经历，怎么补救？",
+      "question": "我投前端岗但没实习经历，怎么补救？",
       "reference_answer": "建议：1）做一个拿得出手的开源项目或者有线上访问量的个人网站，这是「作品比经历更有说服力」的场景；2）把课程平台项目上线Demo并附链接，面试官能直接看到效果；3）可以考虑参加一些前端方向的开源贡献，哪怕修文档也是经历。",
       "keywords": [
         "开源",
@@ -1153,7 +1153,7 @@
       "resume_id": 4,
       "category": "rejection",
       "difficulty": "easy",
-      "question": "我是李婷，我有大厂实习机会吗？",
+      "question": "我有大厂实习机会吗？",
       "reference_answer": "简历中没有实习经历，直接投大厂校招竞争力不足。建议先积累项目经验或通过实习转正渠道。",
       "keywords": [
         "大厂",
@@ -1167,7 +1167,7 @@
       "resume_id": 4,
       "category": "comparative",
       "difficulty": "medium",
-      "question": "我是李婷，你说我这个简历和课程平台项目，是不是比那些只写了TodoList或电商项目的人好一些？",
+      "question": "你说我这个简历和课程平台项目，是不是比那些只写了TodoList或电商项目的人好一些？",
       "reference_answer": "好很多。课程平台涉及了TypeScript、Redux状态管理、路由权限控制、通用拦截器封装、响应式适配，在应届生简历里属于中上水平。但和真正做过商业项目或者有高质量开源贡献的候选人比还是有不小差距。",
       "keywords": [
         "TypeScript",
@@ -1183,7 +1183,7 @@
       "resume_id": 5,
       "category": "reasoning",
       "difficulty": "easy",
-      "question": "我是赵刚，我想转嵌入式Linux开发方向，我简历上还缺什么？",
+      "question": "我想转嵌入式Linux开发方向，我简历上还缺什么？",
       "reference_answer": "目前简历偏MCU裸机和RTOS方向（STM32/FreeRTOS），转嵌入式Linux还缺：1）Linux驱动开发经验（字符设备驱动、设备树）；2）Linux应用编程（多进程、网络编程）；3）Uboot或内核移植经验。海康的Hi3516平台虽然是Linux，但描述偏应用层。",
       "keywords": [
         "Linux",
@@ -1198,7 +1198,7 @@
       "resume_id": 5,
       "category": "reasoning",
       "difficulty": "medium",
-      "question": "我是赵刚，我这个OTA项目面试时可以怎么秀？",
+      "question": "我这个OTA项目面试时可以怎么秀？",
       "reference_answer": "这是个很好的面试话题——面试官一般会追问：1）bsdiff差分算法原理；2）升级失败怎么回滚（你的B区前置方案）；3）断电保护怎么做的；4）怎么验证固件完整性。把这些问题准备好，这个项目可以撑起30分钟的深度技术面。",
       "keywords": [
         "bsdiff",
@@ -1217,7 +1217,7 @@
       "resume_id": 5,
       "category": "rejection",
       "difficulty": "hard",
-      "question": "我是赵刚，我想去大疆或者小米做嵌入式，简历够得着吗？",
+      "question": "我想去大疆或者小米做嵌入式，简历够得着吗？",
       "reference_answer": "海康威视背景+智能摄像头+物联网平台经验，投大疆/小米的嵌入式岗有竞争力。但需要针对性调整：投大疆突出RTOS和电机控制经验；投小米突出IoT设备和MQTT云平台经验。",
       "keywords": [
         "大疆",
@@ -1246,7 +1246,7 @@
       "resume_id": 0,
       "category": "comparative",
       "difficulty": "medium",
-      "question": "我是应届生，想投后端方向，以王浩的简历为参考，我还需要在哪些方面超过他才能更有竞争力？",
+      "question": "想投后端方向，以王浩的简历为参考，我还需要在哪些方面超过他才能更有竞争力？",
       "reference_answer": "要在王浩的基础上更有竞争力，建议：1）增加至少一段实习经历，这是应届生简历最大的加分项；2）项目加入分布式或微服务元素，不一定非要上线，Demo级别也可以；3）如果能参加一个开源项目做点贡献，面试时非常加分；4）技术栈扩展到至少一个消息队列和NoSQL数据库。",
       "keywords": [
         "实习",
