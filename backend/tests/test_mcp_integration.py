@@ -157,16 +157,21 @@ async def test_auth_middleware_sets_contextvar():
 @pytest.mark.asyncio
 async def test_rewrite_query_tool_integration():
     """rewrite_query 工具：正常改写集成。"""
+    from mcp_server.server import _current_user_id
     from mcp_server.tools.rewrite import rewrite_query
 
-    with patch("services.rag.pipeline.rewrite_query", new_callable=AsyncMock) as mock_rw:
-        mock_rw.return_value = "简历中候选人的教育背景是什么"
-        result = await rewrite_query("他的学历是什么")
+    token = _current_user_id.set(1)
+    try:
+        with patch("services.rag.pipeline.rewrite_query", new_callable=AsyncMock) as mock_rw:
+            mock_rw.return_value = "简历中候选人的教育背景是什么"
+            result = await rewrite_query("他的学历是什么")
 
-    assert len(result) == 1
-    data = json.loads(result[0].text)
-    assert data["original"] == "他的学历是什么"
-    assert data["rewritten"] == "简历中候选人的教育背景是什么"
+        assert len(result) == 1
+        data = json.loads(result[0].text)
+        assert data["original"] == "他的学历是什么"
+        assert data["rewritten"] == "简历中候选人的教育背景是什么"
+    finally:
+        _current_user_id.reset(token)
 
 
 @pytest.mark.asyncio
@@ -188,12 +193,17 @@ async def test_search_knowledge_base_tool_integration():
 @pytest.mark.asyncio
 async def test_rerank_results_tool_empty_chunks():
     """rerank_results 工具：空 chunks 输入。"""
+    from mcp_server.server import _current_user_id
     from mcp_server.tools.rerank import rerank_results
 
-    result = await rerank_results(query="test", chunks="[]")
-    data = json.loads(result[0].text)
-    assert "results" in data
-    assert data["results"] == []
+    token = _current_user_id.set(1)
+    try:
+        result = await rerank_results(query="test", chunks="[]")
+        data = json.loads(result[0].text)
+        assert "results" in data
+        assert data["results"] == []
+    finally:
+        _current_user_id.reset(token)
 
 
 @pytest.mark.asyncio
@@ -209,28 +219,38 @@ async def test_rerank_results_tool_invalid_json():
 @pytest.mark.asyncio
 async def test_rerank_results_tool_small_batch():
     """rerank_results 工具：chunks 数量 <= top_k 时直接返回。"""
+    from mcp_server.server import _current_user_id
     from mcp_server.tools.rerank import rerank_results
 
-    chunks = json.dumps([
-        {"text": "内容1", "section": "工作经历"},
-        {"text": "内容2", "section": "教育背景"},
-    ])
-    result = await rerank_results(query="test", chunks=chunks, top_k=5)
-    data = json.loads(result[0].text)
-    # rerank 返回格式：list of {text, rerank_score, section, chunk_index}
-    assert len(data) == 2
-    assert all(r["rerank_score"] == 1.0 for r in data)
+    token = _current_user_id.set(1)
+    try:
+        chunks = json.dumps([
+            {"text": "内容1", "section": "工作经历"},
+            {"text": "内容2", "section": "教育背景"},
+        ])
+        result = await rerank_results(query="test", chunks=chunks, top_k=5)
+        data = json.loads(result[0].text)
+        # rerank 返回格式：list of {text, rerank_score, section, chunk_index}
+        assert len(data) == 2
+        assert all(r["rerank_score"] == 1.0 for r in data)
+    finally:
+        _current_user_id.reset(token)
 
 
 @pytest.mark.asyncio
 async def test_generate_answer_tool_empty_context():
     """generate_answer 工具：空 context → 拒答。"""
+    from mcp_server.server import _current_user_id
     from mcp_server.tools.generate import generate_answer
 
-    result = await generate_answer(question="工作经历？", context="", resume_id="1")
-    data = json.loads(result[0].text)
-    assert data["rejected"] is True
-    assert "未提及" in data["answer"]
+    token = _current_user_id.set(1)
+    try:
+        result = await generate_answer(question="工作经历？", context="", resume_id="1")
+        data = json.loads(result[0].text)
+        assert data["rejected"] is True
+        assert "未提及" in data["answer"]
+    finally:
+        _current_user_id.reset(token)
 
 
 @pytest.mark.asyncio
@@ -830,36 +850,49 @@ class TestMCPHTTPEndpoint:
     @pytest.mark.asyncio
     async def test_mcp_asgi_tool_call_rewrite(self):
         """MCP ASGI app：tools/call rewrite_query → 改写查询。"""
-        with patch("services.rag.pipeline.rewrite_query", new_callable=AsyncMock) as mock_rw:
-            mock_rw.return_value = "简历中候选人的教育背景是什么"
+        from mcp_server.server import _current_user_id
+        from mcp_server.tools.rewrite import rewrite_query
 
-            # 认证中间件会拦截，这里直接测试 Tool 函数
-            from mcp_server.tools.rewrite import rewrite_query
+        token = _current_user_id.set(1)
+        try:
+            with patch("services.rag.pipeline.rewrite_query", new_callable=AsyncMock) as mock_rw:
+                mock_rw.return_value = "简历中候选人的教育背景是什么"
+                result = await rewrite_query("他的学历是什么")
 
-            result = await rewrite_query("他的学历是什么")
-
-        assert len(result) == 1
-        data = json.loads(result[0].text)
-        assert data["original"] == "他的学历是什么"
-        assert data["rewritten"] == "简历中候选人的教育背景是什么"
+            assert len(result) == 1
+            data = json.loads(result[0].text)
+            assert data["original"] == "他的学历是什么"
+            assert data["rewritten"] == "简历中候选人的教育背景是什么"
+        finally:
+            _current_user_id.reset(token)
 
     @pytest.mark.asyncio
     async def test_mcp_asgi_tool_call_rerank_empty(self):
         """MCP Tool：rerank_results 空 chunks → 返回空结果。"""
+        from mcp_server.server import _current_user_id
         from mcp_server.tools.rerank import rerank_results
 
-        result = await rerank_results(query="test", chunks="[]")
-        data = json.loads(result[0].text)
-        assert data["results"] == []
+        token = _current_user_id.set(1)
+        try:
+            result = await rerank_results(query="test", chunks="[]")
+            data = json.loads(result[0].text)
+            assert data["results"] == []
+        finally:
+            _current_user_id.reset(token)
 
     @pytest.mark.asyncio
     async def test_mcp_asgi_tool_call_generate_empty_context(self):
         """MCP Tool：generate_answer 空 context → 拒答。"""
+        from mcp_server.server import _current_user_id
         from mcp_server.tools.generate import generate_answer
 
-        result = await generate_answer(question="工作经历？", context="", resume_id="1")
-        data = json.loads(result[0].text)
-        assert data["rejected"] is True
+        token = _current_user_id.set(1)
+        try:
+            result = await generate_answer(question="工作经历？", context="", resume_id="1")
+            data = json.loads(result[0].text)
+            assert data["rejected"] is True
+        finally:
+            _current_user_id.reset(token)
 
     @pytest.mark.asyncio
     async def test_mcp_asgi_tool_call_rerank_invalid_json(self):
@@ -882,14 +915,26 @@ class TestMCPHTTPEndpoint:
     @pytest.mark.asyncio
     async def test_mcp_asgi_search_ownership_check(self):
         """MCP Tool：search_knowledge_base 归属校验。"""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
         from mcp_server.server import _current_user_id
         from mcp_server.tools.search import search_knowledge_base
 
+        mock_db = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = None
+        mock_db.execute.return_value = mock_result
+
+        mock_cm = AsyncMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+
         token = _current_user_id.set(1)
         try:
-            result = await search_knowledge_base(query="test", resume_id="99999")
-            data = json.loads(result[0].text)
-            assert "error" in data
+            with patch("core.database.AsyncSessionLocal", return_value=mock_cm):
+                result = await search_knowledge_base(query="test", resume_id="99999")
+                data = json.loads(result[0].text)
+                assert "error" in data
         finally:
             _current_user_id.reset(token)
 

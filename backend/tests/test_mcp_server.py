@@ -184,17 +184,22 @@ async def test_mcp_initialize():
 async def test_rewrite_query_tool():
     """rewrite_query：正常改写。"""
     from mcp_server.tools.rewrite import rewrite_query
+    from mcp_server.server import _current_user_id
 
     mock_rewritten = "候选人掌握的编程语言和技能有哪些"
 
-    with patch("services.rag.pipeline.rewrite_query", new_callable=AsyncMock) as mock_rw:
-        mock_rw.return_value = mock_rewritten
-        result = await rewrite_query("除了 Python 还会什么")
+    token = _current_user_id.set(1)
+    try:
+        with patch("services.rag.pipeline.rewrite_query", new_callable=AsyncMock) as mock_rw:
+            mock_rw.return_value = mock_rewritten
+            result = await rewrite_query("除了 Python 还会什么")
 
-    assert len(result) == 1
-    data = json.loads(result[0].text)
-    assert data["original"] == "除了 Python 还会什么"
-    assert data["rewritten"] == mock_rewritten
+        assert len(result) == 1
+        data = json.loads(result[0].text)
+        assert data["original"] == "除了 Python 还会什么"
+        assert data["rewritten"] == mock_rewritten
+    finally:
+        _current_user_id.reset(token)
 
 
 @pytest.mark.asyncio
@@ -211,15 +216,20 @@ async def test_rewrite_query_tool_empty_input():
 async def test_rewrite_query_tool_fallback():
     """rewrite_query：LLM 失败 → 返回原问题。"""
     from mcp_server.tools.rewrite import rewrite_query
+    from mcp_server.server import _current_user_id
 
-    with patch("services.rag.pipeline.rewrite_query", new_callable=AsyncMock) as mock_rw:
-        mock_rw.side_effect = RuntimeError("LLM timeout")
-        result = await rewrite_query("测试问题")
+    token = _current_user_id.set(1)
+    try:
+        with patch("services.rag.pipeline.rewrite_query", new_callable=AsyncMock) as mock_rw:
+            mock_rw.side_effect = RuntimeError("LLM timeout")
+            result = await rewrite_query("测试问题")
 
-    data = json.loads(result[0].text)
-    assert data["original"] == "测试问题"
-    assert data["rewritten"] == "测试问题"  # 降级返回原问题
-    assert "error" in data
+        data = json.loads(result[0].text)
+        assert data["original"] == "测试问题"
+        assert data["rewritten"] == "测试问题"  # 降级返回原问题
+        assert "error" in data
+    finally:
+        _current_user_id.reset(token)
 
 
 # ── search_knowledge_base 工具测试 ──────────────────────────

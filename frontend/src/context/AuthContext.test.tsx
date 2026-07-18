@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { safeDecodeJwt } from "./AuthContext";
+import { safeDecodeJwt } from "../utils/jwt";
 
 function makeJwt(payload: Record<string, unknown>, expired = false): string {
   const p = expired
