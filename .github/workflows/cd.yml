@@ -184,16 +184,17 @@ jobs:
               ;;
           esac
 
-      - name: Deploy to server
-        uses: appleboy/ssh-action@v1
+      - name: Setup SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
         with:
-          host: ${{ steps.deploy_target.outputs.host }}
-          username: ${{ secrets.DEPLOY_USER || 'deploy' }}
-          key: ${{ secrets.DEPLOY_KEY }}
-          port: ${{ secrets.DEPLOY_SSH_PORT || 22 }}
-          timeout: 30s
-          command_timeout: 300s
-          script: |
+          ssh-private-key: ${{ secrets.DEPLOY_KEY }}
+
+      - name: Deploy to server
+        run: |
+          SSH_DEST="${{ secrets.DEPLOY_USER || 'root' }}@${{ steps.deploy_target.outputs.host }}"
+          SSH_PORT="${{ secrets.DEPLOY_SSH_PORT || 22 }}"
+
+          ssh -o StrictHostKeyChecking=no -p "$SSH_PORT" "$SSH_DEST" bash -s <<'ENDSSH'
             set -euo pipefail
 
             DEPLOY_PATH="${{ steps.deploy_target.outputs.path }}"
@@ -308,17 +309,19 @@ jobs:
             } > .rollback-info
 
             echo "=== Deploy Complete ==="
+          ENDSSH
+
+      - name: Setup SSH agent for verify
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_KEY }}
 
       - name: Verify deployment
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ steps.deploy_target.outputs.host }}
-          username: ${{ secrets.DEPLOY_USER || 'deploy' }}
-          key: ${{ secrets.DEPLOY_KEY }}
-          port: ${{ secrets.DEPLOY_SSH_PORT || 22 }}
-          timeout: 15s
-          command_timeout: 30s
-          script: |
+        run: |
+          SSH_DEST="${{ secrets.DEPLOY_USER || 'root' }}@${{ steps.deploy_target.outputs.host }}"
+          SSH_PORT="${{ secrets.DEPLOY_SSH_PORT || 22 }}"
+
+          ssh -o StrictHostKeyChecking=no -p "$SSH_PORT" "$SSH_DEST" bash -s <<'ENDSSH'
             echo "=== Post-deploy Verification ==="
             echo "--- Containers ---"
             docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E "resume-|NAMES"
@@ -337,6 +340,7 @@ jobs:
             echo "--- Disk ---"
             df -h / | tail -1
             echo "=== Verification Complete ==="
+          ENDSSH
 
   notify:
     needs: [prepare, deploy]
