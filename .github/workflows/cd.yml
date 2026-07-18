@@ -43,8 +43,6 @@ jobs:
     outputs:
       environment: ${{ steps.env.outputs.environment }}
       image_tag: ${{ steps.env.outputs.image_tag }}
-      deploy_host: ${{ steps.env.outputs.deploy_host }}
-      deploy_path: ${{ steps.env.outputs.deploy_path }}
     steps:
       - uses: actions/checkout@v4
 
@@ -65,21 +63,8 @@ jobs:
           TAG="${{ inputs.image_tag || github.sha }}"
           SHORT_TAG="${TAG:0:12}"
 
-          case "$ENV" in
-            staging)
-              HOST="${{ secrets.STAGING_DEPLOY_HOST }}"
-              PATH_="${{ secrets.STAGING_DEPLOY_PATH || '/opt/ai-resume-analyzer-staging' }}"
-              ;;
-            production)
-              HOST="${{ secrets.PRODUCTION_DEPLOY_HOST }}"
-              PATH_="${{ secrets.PRODUCTION_DEPLOY_PATH || '/opt/ai-resume-analyzer' }}"
-              ;;
-          esac
-
           echo "environment=$ENV" >> $GITHUB_OUTPUT
           echo "image_tag=$SHORT_TAG" >> $GITHUB_OUTPUT
-          echo "deploy_host=$HOST" >> $GITHUB_OUTPUT
-          echo "deploy_path=$PATH_" >> $GITHUB_OUTPUT
 
           {
           echo "### Deploy Plan"
@@ -87,8 +72,6 @@ jobs:
           echo "|-------|-------|"
           echo "| Environment | \`$ENV\` |"
           echo "| Image Tag | \`$SHORT_TAG\` |"
-          echo "| Deploy Host | \`$HOST\` |"
-          echo "| Deploy Path | \`$PATH_\` |"
           } >> $GITHUB_STEP_SUMMARY
 
   test:
@@ -185,24 +168,35 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: ${{ needs.prepare.outputs.environment }}
-      url: ${{ needs.prepare.outputs.deploy_host }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Resolve host and path
+        id: deploy_target
+        run: |
+          ENV="${{ needs.prepare.outputs.environment }}"
+          case "$ENV" in
+            staging)
+              echo "host=${{ secrets.STAGING_DEPLOY_HOST }}" >> $GITHUB_OUTPUT
+              echo "path=${{ secrets.STAGING_DEPLOY_PATH || '/opt/ai-resume-analyzer-staging' }}" >> $GITHUB_OUTPUT
+              ;;
+            production)
+              echo "host=${{ secrets.PRODUCTION_DEPLOY_HOST }}" >> $GITHUB_OUTPUT
+              echo "path=${{ secrets.PRODUCTION_DEPLOY_PATH || '/opt/ai-resume-analyzer' }}" >> $GITHUB_OUTPUT
+              ;;
+          esac
 
       - name: Deploy to server
         uses: appleboy/ssh-action@v1
         with:
-          host: ${{ needs.prepare.outputs.deploy_host }}
+          host: ${{ steps.deploy_target.outputs.host }}
           username: ${{ secrets.DEPLOY_USER || 'deploy' }}
           key: ${{ secrets.DEPLOY_KEY }}
           port: ${{ secrets.DEPLOY_SSH_PORT || 22 }}
-          connect_timeout: 30s
+          timeout: 30s
           command_timeout: 300s
-          script_stop: true
           script: |
             set -euo pipefail
 
-            DEPLOY_PATH="${{ needs.prepare.outputs.deploy_path }}"
+            DEPLOY_PATH="${{ steps.deploy_target.outputs.path }}"
             IMAGE_TAG="${{ needs.prepare.outputs.image_tag }}"
             DOCKER_REPO="${{ env.DOCKER_REPO }}"
             DOCKER_REGISTRY="${{ env.DOCKER_REGISTRY }}"
@@ -236,6 +230,11 @@ jobs:
 
             OLD_BACKEND=$(docker inspect --format='{{.Config.Image}}' resume-backend 2>/dev/null || echo "none")
             OLD_FRONTEND=$(docker inspect --format='{{.Config.Image}}' resume-frontend 2>/dev/null || echo "none")
+            OLD_BACKEND_TAG="${OLD_BACKEND##*:}"
+            OLD_FRONTEND_TAG="${OLD_FRONTEND##*:}"
+            # 确保 old tag 不包含 registry 前缀中的冒号
+            [ "$OLD_BACKEND_TAG" = "$OLD_BACKEND" ] && OLD_BACKEND_TAG=""
+            [ "$OLD_FRONTEND_TAG" = "$OLD_FRONTEND" ] && OLD_FRONTEND_TAG=""
 
             export DOCKER_REGISTRY DOCKER_REPO IMAGE_TAG
 
@@ -267,18 +266,24 @@ jobs:
               echo "--- Last 50 lines of backend logs ---"
               docker compose -f docker-compose.prod.yml logs --tail=50 backend
               echo "--- Rolling back ---"
-              if [ "$OLD_BACKEND" != "none" ]; then
-                docker tag "${DOCKER_REGISTRY}/${DOCKER_REPO}-backend:${IMAGE_TAG}" "${OLD_BACKEND}" 2>/dev/null || true
-                docker compose -f docker-compose.prod.yml up -d
+              if [ -n "$OLD_BACKEND_TAG" ]; then
+                echo "Reverting backend: ${OLD_BACKEND_TAG}"
+                docker pull "${DOCKER_REGISTRY}/${DOCKER_REPO}-backend:${OLD_BACKEND_TAG}" 2>/dev/null || true
               fi
+              if [ -n "$OLD_FRONTEND_TAG" ]; then
+                echo "Reverting frontend: ${OLD_FRONTEND_TAG}"
+                docker pull "${DOCKER_REGISTRY}/${DOCKER_REPO}-frontend:${OLD_FRONTEND_TAG}" 2>/dev/null || true
+              fi
+              IMAGE_TAG="${OLD_BACKEND_TAG:-$IMAGE_TAG}"
+              export IMAGE_TAG
+              docker compose -f docker-compose.prod.yml up -d
               exit 1
             fi
 
             docker image prune -f --filter "dangling=true" 2>/dev/null || true
             {
-              echo "ROLLBACK_TAG=$IMAGE_TAG"
-              echo "OLD_BACKEND=$OLD_BACKEND"
-              echo "OLD_FRONTEND=$OLD_FRONTEND"
+              echo "ROLLBACK_BACKEND_TAG=${OLD_BACKEND_TAG:-$IMAGE_TAG}"
+              echo "ROLLBACK_FRONTEND_TAG=${OLD_FRONTEND_TAG:-$IMAGE_TAG}"
               echo "TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
             } > .rollback-info
 
@@ -287,11 +292,11 @@ jobs:
       - name: Verify deployment
         uses: appleboy/ssh-action@v1
         with:
-          host: ${{ needs.prepare.outputs.deploy_host }}
+          host: ${{ steps.deploy_target.outputs.host }}
           username: ${{ secrets.DEPLOY_USER || 'deploy' }}
           key: ${{ secrets.DEPLOY_KEY }}
           port: ${{ secrets.DEPLOY_SSH_PORT || 22 }}
-          connect_timeout: 15s
+          timeout: 15s
           command_timeout: 30s
           script: |
             echo "=== Post-deploy Verification ==="
@@ -299,10 +304,15 @@ jobs:
             docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E "resume-|NAMES"
 
             echo "--- Health ---"
-            HTTP=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/ || echo "000")
+            HTTP=$(curl -sf -o /dev/null -w "%{http_code}" http://localhost:8000/ || echo "000")
             echo "Backend: HTTP $HTTP"
-            FE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:80/ || echo "000")
+            FE=$(curl -sf -o /dev/null -w "%{http_code}" http://localhost:80/ || echo "000")
             echo "Frontend: HTTP $FE"
+            # 非 200/302 视为异常
+            if [ "$HTTP" != "200" ] && [ "$HTTP" != "302" ]; then
+              echo "WARNING: Backend returned $HTTP (expected 200/302)"
+              exit 1
+            fi
 
             echo "--- Disk ---"
             df -h / | tail -1
@@ -325,15 +335,6 @@ jobs:
           echo "- [View run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
           } >> $GITHUB_STEP_SUMMARY
 
-          # 取消注释启用钉钉通知
-          # curl -s -X POST "${{ secrets.DINGTALK_WEBHOOK }}" \
-          #   -H "Content-Type: application/json" \
-          #   -d "{\"msgtype\":\"text\",\"text\":{\"content\":\"[CD] FAILED | Env=${{ needs.prepare.outputs.environment }} | Tag=${{ needs.prepare.outputs.image_tag }} | By ${{ github.actor }}\"}}"
-
-          # 取消注释启用飞书通知
-          # curl -s -X POST "${{ secrets.FEISHU_WEBHOOK }}" \
-          #   -H "Content-Type: application/json" \
-          #   -d "{\"msg_type\":\"text\",\"content\":{\"text\":\"[CD] FAILED | Env=${{ needs.prepare.outputs.environment }} | Tag=${{ needs.prepare.outputs.image_tag }}\"}}"
 
       - name: Notification (success)
         if: needs.deploy.result == 'success'
@@ -342,5 +343,4 @@ jobs:
           echo "### :white_check_mark: Deployment Successful"
           echo "- **Environment**: ${{ needs.prepare.outputs.environment }}"
           echo "- **Tag**: ${{ needs.prepare.outputs.image_tag }}"
-          echo "- **Host**: ${{ needs.prepare.outputs.deploy_host }}"
           } >> $GITHUB_STEP_SUMMARY

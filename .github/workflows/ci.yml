@@ -20,8 +20,10 @@ jobs:
 
       - name: Run pre-commit
         run: |
-          pip install pre-commit
+          pip install "pre-commit>=3.0,<5.0"
           pre-commit run --all-files
+        env:
+          APP_ENV: test
 
   backend-test:
     runs-on: ubuntu-latest
