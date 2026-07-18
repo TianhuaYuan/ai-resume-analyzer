@@ -17,8 +17,9 @@ TDD 纪律：先写测试（RED），再实现 core/metrics.py 增强 + 新建 c
 import time
 
 import pytest
+import pytest_asyncio
 from fastapi import FastAPI
-from starlette.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
 
 from core.metrics import (
     MetricsMiddleware,
@@ -71,15 +72,17 @@ def _build_app() -> FastAPI:
     return app
 
 
-@pytest.fixture
-def client():
-    return TestClient(_build_app())
+@pytest_asyncio.fixture
+async def client():
+    transport = ASGITransport(app=_build_app())
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac
 
 
 # ── OBS：请求延迟直方图 + 按 route/status 计数 ──
-def test_metrics_endpoint_exposes_latency_histogram_and_count(client):
-    client.get("/echo")
-    body = client.get("/metrics").text
+async def test_metrics_endpoint_exposes_latency_histogram_and_count(client):
+    await client.get("/echo")
+    body = (await client.get("/metrics")).text
     # 请求延迟直方图（按 method/endpoint）
     assert "app_http_request_duration_seconds" in body
     # 请求计数（按 method/endpoint/status_code）
@@ -89,49 +92,49 @@ def test_metrics_endpoint_exposes_latency_histogram_and_count(client):
     assert 'status_code="200"' in body
 
 
-def test_request_count_excludes_metrics_endpoint(client):
+async def test_request_count_excludes_metrics_endpoint(client):
     # /metrics 自身不应被计入请求数（避免自循环 + 污染基数）
-    client.get("/metrics")
-    body = client.get("/metrics").text
+    await client.get("/metrics")
+    body = (await client.get("/metrics")).text
     # 没有因访问 /metrics 而产生 endpoint="/metrics" 的计数
     assert 'endpoint="/metrics"' not in body
 
 
 # ── 阶段10 核心：trace_id 在请求内透传，并与 X-Request-ID 对齐 ──
-def test_trace_id_propagated_and_aligned_with_request_id(client):
+async def test_trace_id_propagated_and_aligned_with_request_id(client):
     rid = "req-abc-123"
-    resp = client.get("/trace", headers={"X-Request-ID": rid})
+    resp = await client.get("/trace", headers={"X-Request-ID": rid})
     assert resp.status_code == 200
     assert resp.json()["trace_id"] == rid
     # 响应头回写 X-Trace-ID，前端排障可原样带回
     assert resp.headers.get("X-Trace-ID") == rid
 
 
-def test_trace_id_generated_when_header_missing(client):
-    resp = client.get("/trace")
+async def test_trace_id_generated_when_header_missing(client):
+    resp = await client.get("/trace")
     tid = resp.json()["trace_id"]
     assert tid and tid != "-"
     assert resp.headers.get("X-Trace-ID") == tid
 
 
-def test_trace_id_request_isolated(client):
+async def test_trace_id_request_isolated(client):
     # 两次请求运单号应不同（contextvars 隔离，不串号）
-    t1 = client.get("/trace").json()["trace_id"]
-    t2 = client.get("/trace").json()["trace_id"]
+    t1 = (await client.get("/trace")).json()["trace_id"]
+    t2 = (await client.get("/trace")).json()["trace_id"]
     assert t1 != t2
 
 
 # ── OBS-004：async_timer_context 记录 RAG 步骤耗时 ──
-def test_async_timer_context_records_rag_step(client):
-    client.get("/rag-step")
-    body = client.get("/metrics").text
+async def test_async_timer_context_records_rag_step(client):
+    await client.get("/rag-step")
+    body = (await client.get("/metrics")).text
     assert "app_rag_step_duration_seconds" in body
 
 
 # ── OBS-001：track_llm_call 计数 LLM 调用 ──
-def test_track_llm_call_records_counter(client):
-    client.get("/llm")
-    body = client.get("/metrics").text
+async def test_track_llm_call_records_counter(client):
+    await client.get("/llm")
+    body = (await client.get("/metrics")).text
     assert "app_llm_calls_total" in body
 
 

@@ -27,7 +27,7 @@ def _guard_question(question: str) -> None:
         from fastapi import HTTPException, status
 
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="问题含疑似提示注入内容，已拒绝处理",
         )
 

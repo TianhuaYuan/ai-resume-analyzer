@@ -19,7 +19,7 @@ python-dotenv==1.2.2
 httpx==0.28.1
 alembic==1.18.5
 slowapi==0.1.9
-mcp>=1.28.0
+mcp>=1.28.0,<2.0.0
 prometheus-client==0.21.1
 psutil==6.1.1
 
