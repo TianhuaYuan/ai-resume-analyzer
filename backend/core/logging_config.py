@@ -67,6 +67,14 @@ def _get_sampler() -> LogSampler:
     return _sampler
 
 
+def _json_default(obj):
+    """处理 json.dumps 遇到不可序列化类型时降级为 str。"""
+    try:
+        return str(obj)
+    except Exception:
+        return f"<{obj.__class__.__name__}: unprintable>"
+
+
 class JSONFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         request_id = get_request_id()
@@ -105,7 +113,7 @@ class JSONFormatter(logging.Formatter):
         if extra_data:
             log_entry.update(_filter_pii_dict(extra_data))
 
-        result = json.dumps(log_entry, ensure_ascii=False)
+        result = json.dumps(log_entry, ensure_ascii=False, default=_json_default)
         return result
 
 
