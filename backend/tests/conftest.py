@@ -1,7 +1,11 @@
 """
 测试基础设施：SQLite 内存数据库 + AsyncClient fixture。
+
+注意：不再定义 session-scoped event_loop fixture，因为 Python 3.14+
+将 asyncio.get_event_loop() 行为改为 raise RuntimeError 而非自动创建，
+且 pytest-asyncio 0.25+ 已弃用该自定义 fixture。
+使用默认的 function-scoped 事件循环，每个测试独立隔离。
 """
-import asyncio
 from collections.abc import AsyncGenerator
 
 import pytest
@@ -17,14 +21,6 @@ TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
 engine_test = create_async_engine(TEST_DATABASE_URL, echo=False)
 AsyncSessionTest = async_sessionmaker(engine_test, class_=AsyncSession, expire_on_commit=False)
-
-
-@pytest.fixture(scope="session")
-def event_loop():
-    """pytest-asyncio 需要一个全局 event loop。"""
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
 
 
 @pytest.fixture(autouse=True)
