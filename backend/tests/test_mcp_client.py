@@ -5,10 +5,6 @@ MCP Client 单元测试。
 全部 mock HTTP 调用，不依赖真实 MCP Server。
 运行: python -m pytest tests/test_mcp_client.py -v
 """
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock

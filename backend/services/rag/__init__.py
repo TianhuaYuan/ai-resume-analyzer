@@ -6,5 +6,5 @@
 - retrieval.py : 向量 / BM25 / 混合检索 / RRF / 重排 / 拒答判定
 - pipeline.py  : 端到端编排（改写 → 检索 → 重排 → 生成 → 拒答）
 
-`services/rag_service.py` 现在只是薄 re-export shim，保证旧 import 不破。
+原 `services/rag_service.py` 兼容 shim 已清除，所有调用方直接导入本模块。
 """

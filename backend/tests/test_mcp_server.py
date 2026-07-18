@@ -187,7 +187,7 @@ async def test_rewrite_query_tool():
 
     mock_rewritten = "候选人掌握的编程语言和技能有哪些"
 
-    with patch("services.rag_service.rewrite_query", new_callable=AsyncMock) as mock_rw:
+    with patch("services.rag.pipeline.rewrite_query", new_callable=AsyncMock) as mock_rw:
         mock_rw.return_value = mock_rewritten
         result = await rewrite_query("除了 Python 还会什么")
 
@@ -212,7 +212,7 @@ async def test_rewrite_query_tool_fallback():
     """rewrite_query：LLM 失败 → 返回原问题。"""
     from mcp_server.tools.rewrite import rewrite_query
 
-    with patch("services.rag_service.rewrite_query", new_callable=AsyncMock) as mock_rw:
+    with patch("services.rag.pipeline.rewrite_query", new_callable=AsyncMock) as mock_rw:
         mock_rw.side_effect = RuntimeError("LLM timeout")
         result = await rewrite_query("测试问题")
 

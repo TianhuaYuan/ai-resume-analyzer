@@ -1,7 +1,7 @@
 """阶段9 安全加固验收测试（SEC-003~010, 013, 015, 017）。
 
 严格 TDD：先按 RED→GREEN 编写，仅跑本文件不影响其他测试。
-运行：cd backend && python -m pytest tests/test_stage9_security.py -q
+运行：cd backend && python -m pytest tests/test_security.py -q
 """
 
 from core.config import settings

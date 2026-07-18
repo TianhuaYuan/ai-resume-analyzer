@@ -26,7 +26,7 @@ async def search_knowledge_base(
 
     from core.database import AsyncSessionLocal
     from models.resume import Resume
-    from services.rag_service import hybrid_search, rerank
+    from services.rag.retrieval import hybrid_search, rerank
 
     user_id = get_current_user_id()
 

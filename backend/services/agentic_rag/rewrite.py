@@ -2,7 +2,7 @@ import logging
 import time
 
 from core.retry import with_retry
-from services.rag_service import rewrite_query, llm_generate
+from services.rag.pipeline import rewrite_query, llm_generate
 from services.agentic_rag.state import AgenticRAGState
 
 logger = logging.getLogger(__name__)

@@ -12,7 +12,8 @@ from core.limiter import limiter
 from core.security import detect_prompt_injection, redact_pii
 from models.user import User
 from schemas.qa import AnswerResponse, QuestionRequest, QAHistoryResponse
-from services import qa_service, rag_service, resume_service
+from services import qa_service, resume_service
+from services.rag.pipeline import ask_question_stream
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/qa", tags=["qa"])
@@ -143,7 +144,7 @@ async def ask_question_stream(
         full_answer = ""
         sources_texts: list[str] = []
         try:
-            async for event in rag_service.ask_question_stream(data.resume_id, data.question):
+            async for event in ask_question_stream(data.resume_id, data.question):
                 if event["type"] == "done":
                     full_answer = event.get("answer", "")
                     sources_data = event.get("sources", [])

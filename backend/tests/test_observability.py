@@ -3,7 +3,7 @@
 TDD 纪律：先写测试（RED），再实现 core/metrics.py 增强 + 新建 core/trace.py（GREEN）。
 
 独立运行（不依赖 MySQL / ChromaDB / MCP，自建最小 ASGI app）：
-    cd backend && python -m pytest tests/test_stage10_observability.py -q
+    cd backend && python -m pytest tests/test_observability.py -q
 
 覆盖点：
 - /metrics 暴露请求延迟直方图（OBS：请求延迟直方图）

@@ -1,6 +1,6 @@
 """H3: rerank 函数原地修改输入 chunks"""
 import inspect
-from services.rag_service import rerank
+from services.rag.retrieval import rerank
 
 
 def test_h3_rerank_should_not_mutate_input_chunks():

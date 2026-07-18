@@ -1,6 +1,6 @@
 """M5: clear_resume_vectors 无锁操作 _bm25_indexes.pop()"""
 import inspect
-from services.rag_service import clear_resume_vectors
+from services.rag.pipeline import clear_resume_vectors
 
 
 def test_m5_clear_resume_vectors_should_acquire_bm25_lock():

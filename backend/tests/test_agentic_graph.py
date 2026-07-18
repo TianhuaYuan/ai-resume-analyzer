@@ -4,10 +4,6 @@ Agentic RAG — StateGraph 组装 + 节点集成测试。
 全部 mock LLM 调用和外部依赖，不依赖数据库/API。
 运行: python -m pytest tests/test_agentic_graph.py -v
 """
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
 from unittest.mock import AsyncMock, patch

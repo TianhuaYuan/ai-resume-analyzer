@@ -12,10 +12,6 @@ MCP 端到端测试：验证完整的 MCP 驱动问答流程。
 
 运行: python -m pytest tests/test_mcp_e2e.py -v
 """
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import json
 import pytest

@@ -4,10 +4,6 @@ Agentic RAG — generate_node + evaluate_node 单元测试。
 全部 mock LLM 调用，不依赖外部 API。
 运行: python -m pytest tests/test_agentic_generate.py -v
 """
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
 from unittest.mock import AsyncMock, patch

@@ -1,6 +1,6 @@
 """H2: BM25 索引字典无锁读取"""
 import inspect
-from services.rag_service import _keyword_search
+from services.rag.retrieval import _keyword_search
 
 
 def test_h2_keyword_search_lock_should_cover_bm25_read():

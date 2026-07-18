@@ -4,10 +4,6 @@ Agentic RAG search/rerank 节点单元测试 — 覆盖节点逻辑，mock 外�
 运行: python -m pytest tests/test_agentic_search.py -v
 """
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
 from unittest.mock import AsyncMock, patch

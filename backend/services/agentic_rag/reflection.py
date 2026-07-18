@@ -5,7 +5,7 @@ import re
 
 from core.retry import with_retry
 from services.agentic_rag.state import AgenticRAGState
-from services.rag_service import llm_generate
+from services.rag.pipeline import llm_generate
 
 logger = logging.getLogger(__name__)
 

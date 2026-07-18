@@ -51,7 +51,7 @@ async def analyze_resume(
     from core.database import AsyncSessionLocal
     from core.retry import with_retry
     from models.resume import Resume
-    from services.rag_service import llm_generate
+    from services.rag.pipeline import llm_generate
 
     user_id = get_current_user_id()
 

@@ -46,7 +46,7 @@ async def lifespan(app: FastAPI):
     )
 
     try:
-        from services.rag_service import _cleanup_orphan_segments
+        from services.rag.clients import _cleanup_orphan_segments
 
         cleaned = _cleanup_orphan_segments()
         if cleaned:
@@ -221,7 +221,7 @@ async def health(verbose: bool = Query(False, description="返回详细检查信
 
     # ChromaDB 连通性
     try:
-        from services.rag_service import get_chroma_client
+        from services.rag.clients import get_chroma_client
 
         get_chroma_client().list_collections()
         checks["chromadb"] = "connected"

@@ -5,10 +5,6 @@ Agentic RAG MCP 节点单元测试。
 全部 mock MCP 客户端调用，不依赖真实 MCP Server。
 运行: python -m pytest tests/test_mcp_nodes.py -v
 """
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
 from unittest.mock import AsyncMock, patch

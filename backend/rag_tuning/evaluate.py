@@ -46,13 +46,10 @@ from core.rag_params import (
     PHASE6_TEMPERATURES,
     RagParams,
 )
-from services.rag_service import (
-    ask_question_p,
-    chunk_by_sections,
-    get_embeddings,
-    get_chroma_client,
-    _collection_name,
-)
+from services.rag.pipeline import ask_question_p
+from services.rag.chunking import chunk_by_sections
+from services.rag.retrieval import get_embeddings
+from services.rag.clients import _collection_name, get_chroma_client
 
 
 def get_model_metadata() -> dict:

@@ -2,7 +2,7 @@ import logging
 import time
 
 from services.agentic_rag.state import AgenticRAGState
-from services.rag_service import hybrid_search, rerank
+from services.rag.retrieval import hybrid_search, rerank
 
 logger = logging.getLogger(__name__)
 

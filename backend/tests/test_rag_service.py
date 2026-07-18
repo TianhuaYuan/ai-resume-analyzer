@@ -4,19 +4,10 @@ rag_service 单元测试 — 覆盖不依赖外部 API 的纯逻辑函数。
 运行: python -m pytest tests/test_rag_service.py -v
 """
 
-import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from services.rag_service import (
-    chunk_by_sections,
-    fixed_chunk,
-    build_prompt,
-    reject_if_low_score,
-    _merge_results,
-    _tokenize,
-)
+from services.rag.chunking import chunk_by_sections, fixed_chunk, _tokenize
+from services.rag.pipeline import build_prompt, reject_if_low_score
+from services.rag.retrieval import _merge_results
 
 # ── 测试数据 ──────────────────────────────────────────────
 

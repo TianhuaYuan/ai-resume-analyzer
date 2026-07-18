@@ -11,7 +11,7 @@ from core import cache as embedding_cache
 from core.config import settings
 from core.database import AsyncSessionLocal
 from models.resume import Resume
-from services import rag_service
+from services.rag.pipeline import clear_resume_vectors, process_resume
 from utils.file_parser import parse_resume
 
 logger = logging.getLogger(__name__)
@@ -100,7 +100,7 @@ async def process_resume_background(resume_id: int, file_path: str):
     async with AsyncSessionLocal() as db:
         try:
             parsed_text = parse_resume(file_path)
-            chunk_count = await rag_service.process_resume(resume_id, parsed_text)
+            chunk_count = await process_resume(resume_id, parsed_text)
             await db.execute(
                 update(Resume)
                 .where(Resume.id == resume_id)
@@ -157,7 +157,7 @@ async def delete_resume(db: AsyncSession, resume_id: int, user_id: int) -> None:
 
     cleared = await embedding_cache.clear_resume(resume_id)
     logger.info("Cleared %d embedding cache entries for resume %d", cleared, resume_id)
-    await rag_service.clear_resume_vectors(resume_id)
+    await clear_resume_vectors(resume_id)
     try:
         os.remove(file_path)
     except Exception:

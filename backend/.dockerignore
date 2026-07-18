@@ -42,10 +42,8 @@ desktop.ini
 .gitignore
 
 # 实验数据
-rag_tuning_results/
 rag_tuning/uploads/
 rag_tuning/golden_set.json
-rag_eval_legacy/archive/
 
 # 日志
 *.log

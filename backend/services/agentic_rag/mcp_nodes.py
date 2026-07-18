@@ -4,7 +4,7 @@ import time
 from mcp_client.tools import mcp_search, mcp_rerank, mcp_generate
 from services.agentic_rag.state import AgenticRAGState
 from services.agentic_rag.generate import _extract_sources
-from services.rag_service import reject_if_low_score
+from services.rag.pipeline import reject_if_low_score
 
 logger = logging.getLogger(__name__)
 

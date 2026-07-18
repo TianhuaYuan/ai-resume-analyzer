@@ -5,24 +5,15 @@
 ```
 rag_tuning/
 ├── README.md                      ← 本文件
-├── evaluation.md                  ← 📚 评估体系总览（面试要点）
+├── INTERVIEW_GUIDE.md             ← 📚 评估体系总览（面试要点）
 ├── evaluate.py                    ← ✅ 评估框架核心
+├── evaluate_judge.py              ← LLM-as-Judge 评估器
+├── judge_client.py                ← Judge API 调用封装
 ├── golden_set.json                ← ✅ 测试数据（真实简历 QA）
 ├── run_concurrent.py              ← ✅ 主力并发实验框架
 ├── run_phase1_single.py           ← Phase1 单组测试
 ├── run_phase5_concurrent.py       ← Phase5 并发版
-├── run_phase5_robust.py           ← Phase5 鲁棒版
-└── uploads/                       ← 测试简历文件
-    ├── resume_pm.txt
-    ├── resume_frontend.txt
-    ├── resume_python.txt
-    ├── resume_ai.txt
-    ├── resume_data.txt
-    ├── resume_design.txt
-    ├── resume_architect.txt
-    ├── resume_accounting.txt
-    ├── resume_sales.txt
-    └── resume_sre.txt
+└── run_phase5_robust.py           ← Phase5 鲁棒版
 ```
 
 ## 🔧 核心文件

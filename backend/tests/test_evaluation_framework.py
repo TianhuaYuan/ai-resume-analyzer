@@ -5,7 +5,7 @@
   既验证「解析路径」又避免泄露密钥与网络依赖。
 - evaluate_entry / compute_composite / needs_reflexion 均为纯逻辑，用 fake judge 直接验证。
 
-运行（在 backend 目录）：python -m pytest tests/test_stage7_evaluation.py -q
+运行（在 backend 目录）：python -m pytest tests/test_evaluation_framework.py -q
 """
 
 import json

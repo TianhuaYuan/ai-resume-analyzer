@@ -10,10 +10,6 @@ MCP 集成测试：验证 MCP Server / Client / Transport 的端到端集成。
 
 运行: python -m pytest tests/test_mcp_integration.py -v
 """
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import json
 import pytest
@@ -163,7 +159,7 @@ async def test_rewrite_query_tool_integration():
     """rewrite_query 工具：正常改写集成。"""
     from mcp_server.tools.rewrite import rewrite_query
 
-    with patch("services.rag_service.rewrite_query", new_callable=AsyncMock) as mock_rw:
+    with patch("services.rag.pipeline.rewrite_query", new_callable=AsyncMock) as mock_rw:
         mock_rw.return_value = "简历中候选人的教育背景是什么"
         result = await rewrite_query("他的学历是什么")
 
@@ -834,7 +830,7 @@ class TestMCPHTTPEndpoint:
     @pytest.mark.asyncio
     async def test_mcp_asgi_tool_call_rewrite(self):
         """MCP ASGI app：tools/call rewrite_query → 改写查询。"""
-        with patch("services.rag_service.rewrite_query", new_callable=AsyncMock) as mock_rw:
+        with patch("services.rag.pipeline.rewrite_query", new_callable=AsyncMock) as mock_rw:
             mock_rw.return_value = "简历中候选人的教育背景是什么"
 
             # 认证中间件会拦截，这里直接测试 Tool 函数

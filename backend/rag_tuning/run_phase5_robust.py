@@ -35,13 +35,11 @@ from rag_tuning.evaluate import (
     save_model_metadata,
     RESULTS_DIR,
 )
-import services.rag_service as rag_mod
-from services.rag_service import (
-    chunk_by_sections,
-    get_embeddings,
-    get_chroma_client,
-    _collection_name,
-)
+import services.rag.clients as rag_clients
+import services.rag.retrieval as rag_retrieval
+from services.rag.chunking import chunk_by_sections
+from services.rag.retrieval import get_embeddings
+from services.rag.clients import _collection_name, get_chroma_client
 
 CONCURRENCY = 5
 REPETITIONS = 3
@@ -74,12 +72,12 @@ def load_phase5(filename: str):
 
 def reset_chroma():
     """重置 ChromaDB 客户端单例，确保干净状态"""
-    if rag_mod._chroma_client is not None:
+    if rag_clients._chroma_client is not None:
         try:
-            rag_mod._chroma_client.close()
+            rag_clients._chroma_client.close()
         except Exception:
             pass
-    rag_mod._chroma_client = None
+    rag_clients._chroma_client = None
 
 
 def clear_all_collections():
@@ -101,7 +99,7 @@ def clear_all_collections():
 async def rebuild_all(resume_texts, id_map, p):
     """清除并重建所有简历索引"""
     print("  [REBUILD] clearing caches...", flush=True)
-    rag_mod._bm25_indexes.clear()
+    rag_retrieval._bm25_indexes.clear()
     reset_chroma()
     clear_all_collections()
 

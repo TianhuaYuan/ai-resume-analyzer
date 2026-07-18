@@ -58,5 +58,3 @@ docs/
 # 第三方工作目录
 .workbuddy/
 
-# 阶段命名不规范的测试文件
-backend/tests/test_阶段*

@@ -38,7 +38,7 @@ async def rewrite_query(
 
     import asyncio
 
-    from services.rag_service import rewrite_query as rag_rewrite
+    from services.rag.pipeline import rewrite_query as rag_rewrite
 
     if not question.strip():
         return [TextContent(type="text", text='{"error": "question cannot be empty"}')]

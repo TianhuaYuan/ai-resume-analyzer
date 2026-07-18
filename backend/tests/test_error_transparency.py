@@ -8,14 +8,10 @@
   4.4  qa API 在 tool_errors 场景下 AnswerResponse.degraded == True
 
 运行（仅本文件，避免触发 MySQL 集成测试）：
-  cd /d/Project/ai-resume-analyzer/backend && .venv/Scripts/python.exe -m pytest tests/test_stage4_error_transparency.py -p no:cacheprovider -q
+  cd /d/Project/ai-resume-analyzer/backend && .venv/Scripts/python.exe -m pytest tests/test_error_transparency.py -p no:cacheprovider -q
 """
-import sys
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
 from services.agentic_rag.state import AgenticRAGState

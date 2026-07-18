@@ -1,6 +1,7 @@
-# 本地测试环境（Docker Desktop 用）
+# 本地测试环境（Docker Desktop / WSL Docker 通用）
 # 独立文件，不需要 -f 多文件叠加
 # 用法：docker compose -f docker-compose.local.yml up --build
+#       docker compose -f docker-compose.local.yml up       # 使用预构建镜像
 
 services:
   mysql:
@@ -26,6 +27,9 @@ services:
       start_period: 30s
 
   backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     image: resume-backend
     container_name: resume-backend-local
     restart: unless-stopped
@@ -51,6 +55,9 @@ services:
       start_period: 40s
 
   frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
     image: resume-frontend
     container_name: resume-frontend-local
     restart: unless-stopped

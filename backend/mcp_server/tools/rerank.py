@@ -57,7 +57,7 @@ async def rerank_results(
 
     try:
         # H6/M6：复用已有的 Cross-Encoder 精排，而非自实现 LLM 打分。
-        from services.rag_service import rerank as cross_encoder_rerank
+        from services.rag.retrieval import rerank as cross_encoder_rerank
 
         reranked = await asyncio.wait_for(
             cross_encoder_rerank(query, chunk_list, top_k=top_k),

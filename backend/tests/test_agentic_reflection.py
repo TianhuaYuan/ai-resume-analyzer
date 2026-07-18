@@ -4,10 +4,6 @@ Agentic RAG — self_reflection_node 单元测试（Reflexion核心）。
 测试 Self-Reflection 节点的反思分析、缺失识别、查询生成能力。
 运行: python -m pytest tests/test_agentic_reflection.py -v
 """
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
 from unittest.mock import AsyncMock, patch

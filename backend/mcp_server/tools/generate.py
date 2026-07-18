@@ -42,7 +42,7 @@ async def generate_answer(
     import asyncio
 
     from core.retry import with_retry
-    from services.rag_service import build_prompt, llm_generate, reject_if_low_score
+    from services.rag.pipeline import build_prompt, llm_generate, reject_if_low_score
 
     if not question.strip():
         return [TextContent(type="text", text='{"error": "question cannot be empty"}')]
