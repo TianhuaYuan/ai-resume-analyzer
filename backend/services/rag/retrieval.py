@@ -5,6 +5,7 @@
 """
 import asyncio
 import logging
+from typing import Any
 
 import httpx
 from rank_bm25 import BM25Okapi
@@ -14,7 +15,7 @@ from core.config import settings
 from core.rag_params import RagParams
 from core.retry import with_retry
 from services.rag.chunking import _tokenize
-from services.rag.clients import _collection_name, get_chroma_client, get_embedding_client
+from services.rag.clients import _collection_name, get_chroma_client, get_embedding_client, with_chroma
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +31,7 @@ async def get_embeddings(texts: list[str], resume_id: int | None = None) -> list
     uncached: list[str] = []
 
     for i, t in enumerate(texts):
-        vec = embedding_cache.get_embedding(t)
+        vec = await embedding_cache.get_embedding(t)
         if vec is not None:
             vectors.append(vec)
         else:
@@ -54,9 +55,19 @@ async def get_embeddings(texts: list[str], resume_id: int | None = None) -> list
     return vectors
 
 
-async def _load_bm25_index(resume_id: int) -> bool:
-    """从 Chroma 读取文档构建 BM25 索引，返回是否加载成功"""
-    name = _collection_name(resume_id)
+async def _load_bm25_index(
+    resume_id: int,
+    collection_name: str | None = None,
+    bm25_key: Any | None = None,
+) -> bool:
+    """从 Chroma 读取文档构建 BM25 索引，返回是否加载成功。
+
+    collection_name / bm25_key 为可选项，用于参数化实验的命名空间隔离（Model C）：
+    - collection_name：要读取的 Chroma 集合（默认 resume_{resume_id}）。
+    - bm25_key：写入 _bm25_indexes 的键（默认 resume_id）。生产路径保持 resume_id。
+    """
+    name = collection_name or _collection_name(resume_id)
+    store_key = bm25_key if bm25_key is not None else resume_id
 
     def _sync_get():
         try:
@@ -65,7 +76,7 @@ async def _load_bm25_index(resume_id: int) -> bool:
             return None
         return collection.get(include=["documents", "metadatas"])
 
-    data = await asyncio.to_thread(_sync_get)
+    data = await with_chroma(_sync_get)
     if data is None:
         logger.warning("Chroma collection %s not found, skip BM25 build", name)
         return False
@@ -83,19 +94,29 @@ async def _load_bm25_index(resume_id: int) -> bool:
     while len(_bm25_indexes) >= _BM25_MAX_SIZE:
         oldest = next(iter(_bm25_indexes))
         _bm25_indexes.pop(oldest, None)
-    _bm25_indexes[resume_id] = (BM25Okapi(tokenized), chunks)
+    _bm25_indexes[store_key] = (BM25Okapi(tokenized), chunks)
     return True
 
 
-async def _keyword_search(resume_id: int, question: str, top_k: int) -> list[dict]:
-    """BM25 关键词检索：懒加载索引 → 分词算分 → 返回 top_k，过滤零分结果"""
+async def _keyword_search(
+    resume_id: int,
+    question: str,
+    top_k: int,
+    bm25_key: Any | None = None,
+    collection_name: str | None = None,
+) -> list[dict]:
+    """BM25 关键词检索：懒加载索引 → 分词算分 → 返回 top_k，过滤零分结果。
+
+    bm25_key / collection_name 为可选项，用于参数化实验隔离（默认按 resume_id）。
+    """
+    store_key = bm25_key if bm25_key is not None else resume_id
     async with _bm25_lock:
-        if resume_id not in _bm25_indexes:
-            if not await _load_bm25_index(resume_id):
+        if store_key not in _bm25_indexes:
+            if not await _load_bm25_index(resume_id, collection_name=collection_name, bm25_key=bm25_key):
                 return []
         # H2 修复：将 _bm25_indexes.get() 的读取纳入锁临界区，
         # 避免与 clear_resume_vectors 的 pop 产生数据竞争
-        index_data = _bm25_indexes.get(resume_id)
+        index_data = _bm25_indexes.get(store_key)
     if index_data is None:
         return []
     index, chunks = index_data
@@ -113,10 +134,14 @@ async def _keyword_search(resume_id: int, question: str, top_k: int) -> list[dic
     ]
 
 
-async def _vector_search(resume_id: int, question: str, top_k: int) -> list[dict]:
-    """稠密向量检索：问题转向量 → Chroma 余弦相似度查询，collection 不存在时返回空"""
+async def _vector_search(
+    resume_id: int, question: str, top_k: int, collection_name: str | None = None,
+) -> list[dict]:
+    """稠密向量检索：问题转向量 → Chroma 余弦相似度查询，collection 不存在时返回空。
+    collection_name 为可选项，用于参数化实验隔离（默认 resume_{resume_id}）。
+    """
     embedding = (await get_embeddings([question]))[0]
-    name = _collection_name(resume_id)
+    name = collection_name or _collection_name(resume_id)
 
     def _sync_query():
         try:
@@ -129,7 +154,7 @@ async def _vector_search(resume_id: int, question: str, top_k: int) -> list[dict
             include=["documents", "metadatas", "distances"],
         )
 
-    results = await asyncio.to_thread(_sync_query)
+    results = await with_chroma(_sync_query)
     if results is None:
         logger.warning("Chroma collection %s not found, returning empty", name)
         return []
@@ -158,17 +183,21 @@ async def hybrid_search(resume_id: int, question: str, top_k: int = 5) -> list[d
 
 async def hybrid_search_p(
     resume_id: int, question: str, p: RagParams,
+    collection_name: str | None = None, bm25_key: Any | None = None,
 ) -> list[dict]:
-    """参数化版混合检索"""
+    """参数化版混合检索。collection_name / bm25_key 用于参数化实验隔离（Model C）。"""
     dense, sparse = await asyncio.gather(
-        _vector_search(resume_id, question, top_k=p.dense_top_k),
-        _keyword_search(resume_id, question, top_k=p.sparse_top_k),
+        _vector_search(resume_id, question, top_k=p.dense_top_k, collection_name=collection_name),
+        _keyword_search(resume_id, question, top_k=p.sparse_top_k, bm25_key=bm25_key, collection_name=collection_name),
     )
     return _merge_results(dense, sparse, top_k=p.hybrid_top_k, k=p.rrf_k)
 
 
-def _merge_results(dense: list[dict], sparse: list[dict], top_k: int, k: int = 100) -> list[dict]:  # k: RRF 平滑常数，调优后最优 100
-    """RRF 融合：按排名而非分数合并两路结果，同一 chunk 两路都中则累加得分"""
+def _merge_results(dense: list[dict], sparse: list[dict], top_k: int, k: int = 60) -> list[dict]:
+    """RRF 融合：按排名而非分数合并两路结果，同一 chunk 两路都中则累加得分。
+
+    k 为 RRF 平滑常数：k 越小排名敏感度越高（头部优势更大），默认 60 为论文原始值。
+    """
     scores: dict[int, dict] = {}
     for rank, item in enumerate(dense):
         key = item["chunk_index"]
@@ -275,8 +304,7 @@ async def rerank_p(question: str, chunks: list[dict], p: RagParams) -> list[dict
 
 
 def reject_if_low_score(chunks: list[dict], threshold: float = 0.3) -> bool:
-    """Rerank 后最高分低于阈值则拒答。
-    阈值通过参数调优实验确定（Phase 4: 0.3 最优）。无 rerank_score 的 chunk（未经过 rerank）不拒答。"""
+    """Rerank 后最高分低于阈值则拒答。无 rerank_score 的 chunk（未经过 rerank）不拒答。"""
     if not chunks:
         return True
     scores = [c["rerank_score"] for c in chunks if "rerank_score" in c]

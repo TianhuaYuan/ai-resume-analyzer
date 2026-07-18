@@ -16,6 +16,7 @@ import argparse
 import asyncio
 import itertools
 import json
+import logging
 import os
 import re
 import statistics
@@ -24,6 +25,8 @@ import time
 from dataclasses import replace
 from pathlib import Path
 
+logger = logging.getLogger(__name__)
+
 # Windows GBK 兼容：强制 stdout/stderr 用 UTF-8
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
@@ -31,6 +34,8 @@ if sys.platform == "win32":
 
 # 确保能导入 backend 包
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from openai import AsyncOpenAI
 
 from core.config import settings
 from core.rag_params import (
@@ -56,6 +61,7 @@ def get_model_metadata() -> dict:
         "chat_model": settings.CHAT_MODEL,
         "embedding_model": settings.EMBEDDING_MODEL,
         "rerank_model": settings.RERANK_MODEL,
+        "judge_model": settings.JUDGE_MODEL,
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
     }
 
@@ -76,9 +82,29 @@ def save_model_metadata():
 
 # ───────────────────── 数据加载 ─────────────────────
 
-def load_golden_set(path: str = "golden_set.json") -> list[dict]:
+def load_golden_set(path: str = "golden_set.json", split: str | None = None) -> list[dict]:
+    """加载评测数据集，可选按 split 过滤。
+
+    JSON 顶层结构：
+      { "samples": [...], "resumes": {"1": {"file": "...", "name": "..."}} }
+    每个 sample 必须有 resume_id 字段。
+    返回的 list 中每条额外注入 resume_file 字段供下游使用。
+    """
     with open(path, encoding="utf-8") as f:
-        return json.load(f)
+        raw = json.load(f)
+    # 从 resumes 映射构建 resume_file 查找表
+    resume_map: dict[int, str] = {}
+    for rid_str, info in raw.get("resumes", {}).items():
+        resume_map[int(rid_str)] = info["file"]
+    # 注入 resume_file 字段，可选项按 split 过滤
+    samples = raw.get("samples", [])
+    for s in samples:
+        rid = s.get("resume_id", 0)
+        if rid > 0 and rid in resume_map:
+            s["resume_file"] = resume_map[rid]
+    if split is not None:
+        samples = [s for s in samples if s.get("split") == split]
+    return samples
 
 
 def load_resume_texts(resume_files: list[str], upload_dir: str = "./rag_tuning/uploads") -> dict[str, str]:
@@ -159,24 +185,55 @@ JUDGE_SYSTEM = (
 )
 
 
-async def judge_answer(
-    system_answer: str, gold_answer: str, answer_type: str,
-) -> int:
-    """LLM-as-Judge 打分，返回 0/1/2"""
-    from services.rag_service import llm_generate
+_judge_client: AsyncOpenAI | None = None
 
+
+def _get_judge_client() -> AsyncOpenAI:
+    """Judge 客户端单例（复用 TCP 连接，避免 6720 次 TLS 握手）。"""
+    global _judge_client
+    if _judge_client is None:
+        _judge_client = AsyncOpenAI(
+            api_key=settings.JUDGE_API_KEY,
+            base_url=settings.JUDGE_BASE_URL,
+            timeout=30.0,
+        )
+    return _judge_client
+
+
+async def _judge_llm_generate(system: str, user: str) -> str:
+    """用 JUDGE_* 配置的独立模型打分（与回答模型分离，消除同模型偏差）。"""
+    if not settings.JUDGE_ENABLED or not settings.JUDGE_API_KEY:
+        raise RuntimeError("Judge 未配置，无法打分。请设置 JUDGE_ENABLED=true 和 JUDGE_API_KEY。")
+    client = _get_judge_client()
+    response = await client.chat.completions.create(
+        model=settings.JUDGE_MODEL,
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        temperature=0.0,
+        max_tokens=10,
+    )
+    return (response.choices[0].message.content or "").strip()
+
+
+async def judge_answer(
+    system_answer: str, reference_answer: str, answer_type: str,
+) -> int:
+    """LLM-as-Judge 打分（使用 JUDGE_* 配置的独立模型），返回 0/1/2"""
     prompt = (
-        f"标准答案：{gold_answer}\n"
+        f"标准答案：{reference_answer}\n"
         f"系统答案：{system_answer}\n"
         f"问题类型：{answer_type}\n\n"
         "打分（0/1/2）："
     )
     try:
-        result = await llm_generate(JUDGE_SYSTEM, prompt, temperature=0.0, max_tokens=10)
+        result = await _judge_llm_generate(JUDGE_SYSTEM, prompt)
         match = re.search(r"[012]", result)
         return int(match.group()) if match else 1
-    except Exception:
-        return 1  # 评分失败默认给 1
+    except Exception as e:
+        logger.warning("Judge API call failed: %s, defaulting to score=1", e)
+        return 1  # 评分失败默认给 1（不中断实验）
 
 
 def check_reject(answer: str) -> bool:
@@ -186,14 +243,12 @@ def check_reject(answer: str) -> bool:
 
 
 def check_hallucination(answer: str, sources: list[dict]) -> bool:
-    """简单幻觉检测：答案中的数字/年份是否在来源中出现"""
-    source_text = " ".join(c.get("text", "") for c in sources)
-    # 提取答案中的年份和数字
-    numbers = re.findall(r"\b(19|20)\d{2}\b", answer)
-    for n in numbers:
-        if n not in source_text:
-            return True
-    return False
+    """占位函数：当前不参与 composite 计算（权重已降为 0）。
+
+    旧实现只检测年份数字，纯文本幻觉完全漏检。二轮调优中不计入综合分，
+    仅在报告中记录供人工审查。后续可替换为 LLM 幻觉检测。
+    """
+    return False  # 已弃用，不再产生假阳性信号
 
 
 async def evaluate_one(
@@ -202,7 +257,30 @@ async def evaluate_one(
     p: RagParams,
 ) -> dict:
     """评估单条 QA"""
-    resume_id = id_map[qa["resume_file"]]
+    # resume_id=0 的跨简历题不在 tuning 集，跳过
+    if qa.get("resume_id", 0) == 0:
+        return {
+            "qa_id": qa["id"],
+            "answer": "",
+            "is_reject": False,
+            "should_answer": qa.get("should_answer", True),
+            "reject_correct": False,
+            "score": 0,
+            "skip": True,
+            "error": "cross-resume question (resume_id=0), not evaluated here",
+        }
+    resume_id = id_map.get(qa["resume_file"], 0)
+    if resume_id == 0:
+        return {
+            "qa_id": qa["id"],
+            "answer": "",
+            "is_reject": False,
+            "should_answer": qa.get("should_answer", True),
+            "reject_correct": False,
+            "score": 0,
+            "skip": True,
+            "error": f"unknown resume_file: {qa.get('resume_file', '')}",
+        }
     question = qa["question"]
 
     start = time.perf_counter()
@@ -213,8 +291,9 @@ async def evaluate_one(
     should_answer = qa.get("should_answer", True)
 
     result = {
-        "qa_id": qa["qa_id"],
-        "answer_type": qa["answer_type"],
+        "qa_id": qa["id"],
+        "answer_type": qa.get("category", "unknown"),
+        "answer": answer,  # 保存答案文本，便于坏案例回溯分析
         "latency_ms": latency_ms,
         "timings": timings,
         "is_reject": is_reject,
@@ -223,7 +302,7 @@ async def evaluate_one(
     }
 
     if should_answer and not is_reject:
-        score = await judge_answer(answer, qa["gold_answer"], qa["answer_type"])
+        score = await judge_answer(answer, qa.get("reference_answer", qa.get("gold_answer", "")), qa.get("category", "unknown"))
         hallucination = check_hallucination(answer, sources)
         result["score"] = score
         result["hallucination"] = hallucination
@@ -238,6 +317,10 @@ async def evaluate_one(
     return result
 
 
+# QA 并发数（run_experiment 默认值）
+_CONCURRENCY = 8
+
+
 async def run_experiment(
     golden_set: list[dict],
     id_map: dict[str, int],
@@ -245,8 +328,9 @@ async def run_experiment(
     p: RagParams,
     label: str = "",
     rebuild: bool = True,
+    concurrency: int | None = None,
 ) -> tuple[dict, list[dict]]:
-    """给定一组参数，跑全量 Golden Set 评估。返回 (aggregate, per_qa_details)"""
+    """给定一组参数，并发跑全量 Golden Set 评估。返回 (aggregate, per_qa_details)"""
     errors = p.validate()
     if errors:
         return {"error": "; ".join(errors), "label": label, "params": str(p)}, []
@@ -254,22 +338,44 @@ async def run_experiment(
     if rebuild:
         await rebuild_all_indices(resume_texts, id_map, p)
 
-    results = []
-    for i, qa in enumerate(golden_set):
-        r = await evaluate_one(qa, id_map, p)
-        results.append(r)
-        # 进度输出
-        if (i + 1) % 10 == 0 or (i + 1) == len(golden_set):
-            avg = sum(x["score"] for x in results) / max(len(results), 1)
-            print(f"  [{i+1}/{len(golden_set)}] avg={avg:.2f}", end="", flush=True)
-            print()
+    sem = asyncio.Semaphore(concurrency or _CONCURRENCY)
+    results: list[dict | None] = [None] * len(golden_set)
 
-    agg = aggregate_metrics(results, label, p)
-    return agg, results
+    async def _eval(idx: int, qa: dict):
+        async with sem:
+            try:
+                r = await evaluate_one(qa, id_map, p)
+                return idx, r
+            except Exception as e:
+                return idx, {"skip": True, "error": str(e)}
+
+    # 用 as_completed 实现进度输出。
+    # 注意：as_completed 产出的是「等待下一个完成」的协程，并非原始 future，
+    # 无法以其为 key 回查 idx。改为「任务返回 (idx, result)」，await 后直接解包。
+    tasks = [asyncio.ensure_future(_eval(i, qa)) for i, qa in enumerate(golden_set)]
+    done_count = 0
+    for fut in asyncio.as_completed(tasks):
+        idx, r = await fut
+        results[idx] = r
+        done_count += 1
+        if r.get("skip"):
+            print(f"  [WARN] QA {golden_set[idx].get('id', idx)} failed: {r.get('error')}", flush=True)
+        if done_count % 10 == 0 or done_count == len(golden_set):
+            valid_tmp = [x for x in results if isinstance(x, dict) and not x.get("skip")]
+            avg_tmp = sum(x.get("score", 0) for x in valid_tmp) / max(len(valid_tmp), 1) if valid_tmp else 0
+            print(f"  [{done_count}/{len(golden_set)}] avg={avg_tmp:.3f}", flush=True)
+
+    valid = [r for r in results if isinstance(r, dict) and not r.get("skip")]
+
+    agg = aggregate_metrics(valid, label, p)
+    return agg, valid
 
 
 def aggregate_metrics(results: list[dict], label: str = "", p: RagParams = None) -> dict:
-    """汇总评估指标"""
+    """汇总评估指标（跳过 skip=True 的条目）"""
+    total = len(results)
+    skipped = len([r for r in results if r.get("skip", False)])
+    results = [r for r in results if not r.get("skip", False)]
     answered = [r for r in results if not r["is_reject"]]
     rejected = [r for r in results if r["is_reject"]]
     should_reject = [r for r in results if not r["should_answer"]]
@@ -303,14 +409,33 @@ def aggregate_metrics(results: list[dict], label: str = "", p: RagParams = None)
     p50 = latencies[len(latencies) // 2] if latencies else 0
     p95 = latencies[int(len(latencies) * 0.95)] if latencies else 0
 
-    # 综合分数：归一化平均分(0-1) + 拒答F1 + 延迟惩罚
+    # 综合分数：答案质量(0-1归一化) × 0.75 + 拒答决策质量 × 0.25
+    # 权重匹配 tuning 集问题分布（rejection 类占 20%，非 rejection 占 80%）
+    # 避免拒答类过度加权导致选出的参数牺牲事实回答能力
     norm_score = avg_score / 2.0  # avg_score 范围 0-2，归一化到 0-1
-    composite = 0.5 * norm_score + 0.3 * reject_f1 + 0.1 * (1 - hallucination_rate) + 0.1 * (1 - min(p95 / 15000, 1))
+    composite = 0.75 * norm_score + 0.25 * reject_f1
+
+    # 按类别分解
+    categories = {}
+    for r in results:
+        cat = r.get("answer_type", "unknown")
+        categories.setdefault(cat, []).append(r)
+    category_metrics = {}
+    for cat, cat_results in categories.items():
+        cat_scores = [r["score"] for r in cat_results if not r["is_reject"] and "score" in r]
+        cat_avg = statistics.mean(cat_scores) if cat_scores else 0
+        cat_count = len(cat_results)
+        category_metrics[cat] = {
+            "count": cat_count,
+            "avg_score": round(cat_avg, 3),
+        }
 
     return {
         "label": label,
         "params": p.__dict__ if p else {},
-        "total": len(results),
+        "total": total,
+        "skipped": skipped,
+        "per_category": category_metrics,
         "answered_count": len(answered),
         "rejected_count": len(rejected),
         "avg_score": round(avg_score, 3),
@@ -329,9 +454,14 @@ def aggregate_metrics(results: list[dict], label: str = "", p: RagParams = None)
 # ───────────────────── 各 Phase 执行器 ─────────────────────
 
 def _resume_id_map(golden_set: list[dict]) -> dict[str, int]:
-    """从 Golden Set 构建 filename→id 映射（用 hash 做稳定 ID）"""
-    files = sorted(set(qa["resume_file"] for qa in golden_set))
-    return {f: i + 1 for i, f in enumerate(files)}
+    """从 Golden Set 构建 filename→id 映射（使用数据集中定义的 resume_id）"""
+    files_ids = {}
+    for qa in golden_set:
+        fname = qa.get("resume_file", "")
+        rid = qa.get("resume_id", 0)
+        if fname and rid > 0:
+            files_ids[fname] = rid
+    return files_ids
 
 
 async def run_baseline(golden_set, id_map, resume_texts):
@@ -340,7 +470,7 @@ async def run_baseline(golden_set, id_map, resume_texts):
     print(f"\n{'='*60}")
     print(f"BASELINE — 默认参数: {p}")
     print(f"{'='*60}")
-    agg, details = await run_experiment(golden_set, id_map, resume_texts, p, label="baseline")
+    agg, details = await run_experiment(golden_set, id_map, resume_texts, p, label="baseline", concurrency=3)
     print_metrics(agg)
     save_results("baseline", [agg])
     save_details("baseline", details)
@@ -363,13 +493,13 @@ async def run_phase1(golden_set, id_map, resume_texts):
         p = replace(RagParams(), chunk_size=cs, overlap=ov)
         label = f"cs{cs}_ov{ov}"
         print(f"\n[{i+1}/{total}] {label} ...", end=" ", flush=True)
-        agg, details = await run_experiment(golden_set, id_map, resume_texts, p, label=label)
+        agg, details = await run_experiment(golden_set, id_map, resume_texts, p, label=label, concurrency=3)
         results.append(agg)
+        save_details(f"phase1_{label}", details)
         print(f"acc={agg.get('accuracy_2', 0):.3f}  rej_f1={agg.get('reject_f1', 0):.3f}  p95={agg.get('p95_latency_ms', 0):.0f}ms")
 
     results.sort(key=lambda r: r.get("composite", 0), reverse=True)
     save_results("phase1", results)
-    # Save details for best combo
     print_table(results, "Phase 1 结果排序")
     return results
 
@@ -402,6 +532,7 @@ async def run_phase2(golden_set, id_map, resume_texts):
             agg, details = await run_experiment(golden_set, id_map, resume_texts, p, label=label, rebuild=False)
             results.append(agg)
             all_results.append(agg)
+            save_details(f"phase2_{label}", details)
             print(f"acc={agg.get('accuracy_2', 0):.3f}  rej_f1={agg.get('reject_f1', 0):.3f}")
 
         save_results(f"phase2_{param_name}", results)
@@ -436,6 +567,7 @@ async def run_phase3(golden_set, id_map, resume_texts):
         print(f"[{i+1}/{total}] {label} ...", end=" ", flush=True)
         agg, details = await run_experiment(golden_set, id_map, resume_texts, p, label=label, rebuild=False)
         results.append(agg)
+        save_details(f"phase3_{label}", details)
         print(f"acc={agg.get('accuracy_2', 0):.3f}  rej_f1={agg.get('reject_f1', 0):.3f}")
 
     results.sort(key=lambda r: r.get("composite", 0), reverse=True)
@@ -465,6 +597,7 @@ async def run_phase4(golden_set, id_map, resume_texts):
         print(f"[{i+1}/{len(PHASE4_THRESHOLDS)}] {label} ...", end=" ", flush=True)
         agg, details = await run_experiment(golden_set, id_map, resume_texts, p, label=label, rebuild=False)
         results.append(agg)
+        save_details(f"phase4_{label}", details)
         print(f"acc={agg.get('accuracy_2', 0):.3f}  rej_f1={agg.get('reject_f1', 0):.3f}  rej_rate={agg.get('rejected_count', 0)}/{agg.get('total', 0)}")
 
     results.sort(key=lambda r: r.get("composite", 0), reverse=True)
@@ -494,6 +627,7 @@ async def run_phase6(golden_set, id_map, resume_texts):
         print(f"[{i+1}/{len(PHASE6_TEMPERATURES)}] {label} ...", end=" ", flush=True)
         agg, details = await run_experiment(golden_set, id_map, resume_texts, p, label=label, rebuild=False)
         results.append(agg)
+        save_details(f"phase6_{label}", details)
         print(f"acc={agg.get('accuracy_2', 0):.3f}  rej_f1={agg.get('reject_f1', 0):.3f}")
 
     results.sort(key=lambda r: r.get("composite", 0), reverse=True)
@@ -523,8 +657,9 @@ async def run_phase5(golden_set, id_map, resume_texts):
     all_runs = []
     for run_i in range(3):
         print(f"\n--- 第 {run_i+1}/3 次 ---")
-        agg, details = await run_experiment(golden_set, id_map, resume_texts, base_p, label=f"best_run{run_i+1}")
+        agg, details = await run_experiment(golden_set, id_map, resume_texts, base_p, label=f"best_run{run_i+1}", concurrency=3)
         all_runs.append(agg)
+        save_details(f"phase5_run{run_i+1}", details)
         print_metrics(agg)
 
     # 统计均值 ± 标准差
@@ -622,6 +757,13 @@ def print_metrics(result: dict):
     print(f"  幻觉率: {result['hallucination_rate']:.3f}")
     print(f"  延迟: P50={result['p50_latency_ms']:.0f}ms  P95={result['p95_latency_ms']:.0f}ms")
     print(f"  综合分: {result['composite']:.4f}")
+    # 按题型分解
+    if "per_category" in result and result["per_category"]:
+        cats = result["per_category"]
+        parts = [f"  {k}: avg={v['avg_score']:.3f}(n={v['count']})" for k, v in sorted(cats.items())]
+        print("  题型分解:")
+        for p in parts:
+            print(p)
 
 
 def print_table(results: list[dict], title: str = ""):
@@ -649,13 +791,23 @@ async def main():
     parser.add_argument("--upload-dir", type=str, default="./uploads", help="简历文件目录")
     args = parser.parse_args()
 
-    # 加载数据
+    # 加载数据（留出 eval 集：tuning 用于调参，eval 用于 Phase 5 验证）
     print("[LOAD] Loading Golden Set ...")
-    golden_set = load_golden_set(args.golden_set)
-    print(f"   共 {len(golden_set)} 条 QA")
+    golden_set_all = load_golden_set(args.golden_set)
+    golden_set = [s for s in golden_set_all if s.get("split") == "tuning"]
+    golden_set_eval = [s for s in golden_set_all if s.get("split") == "eval"]
+    print(f"   Tuning: {len(golden_set)} QA  |  Eval: {len(golden_set_eval)} QA (held-out)")
 
-    resume_files = sorted(set(qa["resume_file"] for qa in golden_set))
+    resume_files = sorted(set(qa.get("resume_file", "") for qa in golden_set))
+    resume_files = [f for f in resume_files if f]
+    if not resume_files:
+        print("[FATAL] No resume files found in golden set -- check --upload-dir or dataset")
+        sys.exit(1)
     resume_texts = load_resume_texts(resume_files, args.upload_dir)
+    if not resume_texts:
+        print(f"[FATAL] Could not load any resume files from {args.upload_dir}")
+        print(f"  Expected files: {resume_files}")
+        sys.exit(1)
     print(f"   共 {len(resume_texts)} 份简历")
 
     # 保存模型元数据（每次运行自动记录，便于溯源）
@@ -674,7 +826,9 @@ async def main():
     elif args.phase == 4:
         await run_phase4(golden_set, id_map, resume_texts)
     elif args.phase == 5:
-        await run_phase5(golden_set, id_map, resume_texts)
+        # Phase 5：使用 held-out eval 集做最终验证
+        print(f"[INFO] Phase 5: using eval set ({len(golden_set_eval)} QA) for final verification")
+        await run_phase5(golden_set_eval, id_map, resume_texts)
     elif args.phase == 6:
         await run_phase6(golden_set, id_map, resume_texts)
     elif args.single:

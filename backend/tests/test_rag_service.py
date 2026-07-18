@@ -47,6 +47,58 @@ LONG_SECTION_RESUME = """
 """.strip()
 
 
+MD_RESUME = """
+## 个人信息
+姓名：张三 | 邮箱: zhangsan@email.com
+
+## 教育背景
+2018-2022  清华大学  计算机科学与技术  本科
+GPA 3.8/4.0，英语六级 528
+
+## Work Experience
+2022-2024  ByteDance  Software Engineer
+Responsible for order fulfillment system development.
+
+## 专业技能
+精通 Python、Java、FastAPI、Spring Boot
+
+## Projects
+- Online Exam System: Spring Boot + Redis + RabbitMQ
+- Blog Platform: Spring Boot + Thymeleaf
+
+## Certifications
+- AWS Certified Solutions Architect
+- 全国大学生算法竞赛铜奖
+
+## 自我评价
+热爱技术，持续学习。
+""".strip()
+
+ENGLISH_RESUME = """
+SUMMARY
+Senior software engineer with 8 years of experience in backend systems.
+
+EDUCATION
+Master of Science in Computer Science, Zhejiang University, 2018
+
+Work Experience
+Company A - Senior Engineer (2020-present)
+Led the architecture redesign of the payment system.
+
+Technical Skills
+Java, Python, Go, Kubernetes, Docker, Redis
+
+PROJECTS
+- Payment Gateway: Designed high-throughput payment processing system
+- Monitoring Platform: Built Prometheus + Grafana stack
+
+Certifications
+- AWS Solutions Architect Professional
+
+PUBLICATIONS
+- Paper on distributed systems at IEEE TPDS
+""".strip()
+
 # ── chunk_by_sections ────────────────────────────────────
 
 class TestChunkBySections:
@@ -95,6 +147,59 @@ class TestChunkBySections:
             # 由于分隔符查找可能略超，给 30% 容忍度
             assert len(c["text"]) <= 300 * 1.3, \
                 f"chunk idx={c['chunk_index']} 长度 {len(c['text'])} 远超 300"
+
+
+    def test_markdown_section_detection(self):
+        """Markdown 格式的节段 (## 教育背景) 应被正确识别并保留节段名"""
+        chunks = chunk_by_sections(MD_RESUME, chunk_size=500)
+        sections = {c["section"] for c in chunks}
+        assert "教育背景" in sections, f"Markdown 中文节段未被识别，实际有: {sections}"
+        assert "Work Experience" in sections, f"Markdown 英文节段未被识别，实际有: {sections}"
+        assert "Projects" in sections, f"Markdown Projects 节段未被识别，实际有: {sections}"
+        assert "Certifications" in sections, f"Markdown Certifications 节段未被识别，实际有: {sections}"
+
+    def test_english_section_detection(self):
+        """纯英文简历的节段（含全大写形式如 SUMMARY/EDUCATION）应被正确识别"""
+        chunks = chunk_by_sections(ENGLISH_RESUME, chunk_size=500)
+        sections = {c["section"] for c in chunks}
+        # 节段名保留原文格式（SUMMARY 全大写即 "SUMMARY"）
+        assert "SUMMARY" in sections, f"未识别 SUMMARY 节段: {sections}"
+        assert "EDUCATION" in sections, f"未识别 EDUCATION 节段: {sections}"
+        assert "Work Experience" in sections, f"未识别工作经历节段: {sections}"
+        assert "Technical Skills" in sections or "Skills" in sections, \
+            f"未识别技能节段: {sections}"
+        assert "Certifications" in sections, f"未识别 Certifications 节段: {sections}"
+        # 所有节段都被识别，无遗漏
+        assert len(sections) >= 7, f"期望至少 7 个节段，实际 {len(sections)}: {sections}"
+
+    def test_mixed_format_no_false_positive(self):
+        """纯文本行首的普通句子不应被误判为节段标题"""
+        text = """
+        这是一段普通介绍。
+        Skills development is essential for career growth.
+        教育背景很重要但不是标题。
+        Education system in China has unique characteristics.
+        """
+        chunks = chunk_by_sections(text.strip(), chunk_size=500)
+        # 以上应全部归入"正文"，因为"教育背景"后跟的不是换行而是"很重要"
+        assert len(chunks) == 1
+        assert chunks[0]["section"] == "正文"
+
+    def test_plain_text_header_without_markdown(self):
+        """纯文本格式的中文节段（不加 ##）仍需正常识别"""
+        chunks = chunk_by_sections(SHORT_RESUME, chunk_size=500)
+        sections = {c["section"] for c in chunks}
+        assert "教育背景" in sections
+
+    def test_all_caps_english_header(self):
+        """全大写英文节段如 SUMMARY、EDUCATION 应被识别（节段名保留原文格式）"""
+        text = "SUMMARY\n5 years experience\n\nEDUCATION\nTsinghua University"
+        chunks = chunk_by_sections(text, chunk_size=500)
+        sections = {c["section"] for c in chunks}
+        assert "SUMMARY" in sections, f"全大写 SUMMARY 未被识别: {sections}"
+        assert "EDUCATION" in sections, f"全大写 EDUCATION 未被识别: {sections}"
+        # 文本以 SUMMARY 开头，无前导文本 → 不出 "基本信息"（空段被跳过）
+        assert len(sections) == 2, f"期望 2 个节段（SUMMARY+EDUCATION），实际 {sections}"
 
 
 # ── fixed_chunk ──────────────────────────────────────────

@@ -160,7 +160,15 @@ async def test_judge_client_handles_code_fence(monkeypatch):
 
 # ───────────────────── ③ golden_set.json 可解析/字段齐全/条目数达标/维度覆盖 ─────────────────────
 
+# 旧 golden_set.json 已删除，数据集迁移至 eval_data/golden_set_v2.json，由 v2 框架 (eval/) 取代。
+# 以下测试保留作回归保护，但数据集不存在时自动跳过。
+_skip_no_golden = pytest.mark.skipif(
+    not GOLDEN_SET_PATH.exists(),
+    reason="旧 golden_set.json 已迁移至 eval_data/golden_set_v2.json，由 v2 框架 (eval/) 取代",
+)
 
+
+@_skip_no_golden
 def test_golden_set_file_exists_and_is_json():
     assert GOLDEN_SET_PATH.exists(), f"缺少 {GOLDEN_SET_PATH}"
     data = json.loads(GOLDEN_SET_PATH.read_text(encoding="utf-8"))
@@ -168,6 +176,7 @@ def test_golden_set_file_exists_and_is_json():
     assert "resumes" in data and "qa" in data
 
 
+@_skip_no_golden
 def test_validate_golden_set_passes():
     """校验函数应通过现有数据集，并返回解析结果。"""
     data = validate_golden_set(GOLDEN_SET_PATH)
@@ -175,6 +184,7 @@ def test_validate_golden_set_passes():
     assert len(data["resumes"]) >= 1
 
 
+@_skip_no_golden
 def test_golden_set_entry_fields_complete():
     """每条 qa 必含 id/resume_id/category/question/reference_answer，且 resume_id 存在。"""
     data = json.loads(GOLDEN_SET_PATH.read_text(encoding="utf-8"))
@@ -185,6 +195,7 @@ def test_golden_set_entry_fields_complete():
         assert str(e["resume_id"]) in resume_ids, f"resume_id 未匹配：{e['resume_id']}"
 
 
+@_skip_no_golden
 def test_golden_set_covers_multiple_dimensions():
     """维度覆盖需 ≥ 4（避免评测偏科）。"""
     data = json.loads(GOLDEN_SET_PATH.read_text(encoding="utf-8"))
@@ -192,6 +203,7 @@ def test_golden_set_covers_multiple_dimensions():
     assert len(categories) >= 4, f"维度覆盖不足：{categories}"
 
 
+@_skip_no_golden
 def test_golden_set_entry_count_meets_minimum():
     """条目数需 ≥ 10（计划要求）。"""
     data = json.loads(GOLDEN_SET_PATH.read_text(encoding="utf-8"))

@@ -50,7 +50,7 @@
 
 | 层级 | 技术 | 选型理由 |
 |------|------|----------|
-| Chat 模型 | DeepSeek V4 Pro | 中文理解能力强于同等规格开源模型，OpenAI 兼容协议 |
+| Chat 模型 | Xiaomi MiMo `mimo-v2.5` | 小米自研推理模型，中文理解与 Agentic 规划能力强，OpenAI 兼容协议 |
 | Embedding | 百炼 text-embedding-v4 | 中文检索效果优，1024 维 |
 | Rerank | 百炼 qwen3-vl-rerank | 专用 Rerank API，比 Chat-based 更便宜更快 |
 | 向量库 | ChromaDB | 轻量级，本地持久化，无需 Milvus 集群 |
@@ -280,10 +280,10 @@ docker compose -f docker-compose.yml -f docker-compose.monitor.yml up -d
 ## 环境变量
 
 ```bash
-# ── Chat 模型 (DeepSeek) ──
+# ── Chat 模型 (Xiaomi MiMo) ──
 CHAT_API_KEY=sk-xxx
-CHAT_BASE_URL=https://api.deepseek.com/v1
-CHAT_MODEL=deepseek-v4-pro
+CHAT_BASE_URL=https://api.xiaomimimo.com/v1
+CHAT_MODEL=mimo-v2.5
 
 # ── Embedding 模型 (百炼) ──
 EMBEDDING_API_KEY=sk-xxx

@@ -11,6 +11,7 @@ import jieba
 logger = logging.getLogger(__name__)
 
 SECTION_HEADERS = [
+    # ── 中文 ──
     # 教育
     "教育背景", "教育经历", "学历", "教育", "学习经历",
     # 工作 / 实习
@@ -23,10 +24,55 @@ SECTION_HEADERS = [
     "自我评价", "个人总结", "自我介绍", "个人评价", "自我总结",
     # 其他
     "开源贡献", "开源", "证书", "获奖", "荣誉", "证书与奖项",
+    # 扩展中文变体
+    "个人简介", "个人概况", "基本资料",
+    "职业经历", "从业经历",
+    "技术总结", "技术特长",
+    "校园经历", "社团活动", "社会实践",
+    "培训经历", "进修经历",
+    "研究成果", "科研经历",
+    "语言能力", "外语水平",
+    "兴趣爱好", "特长",
+    "作品集", "个人作品",
+    # ── 英文（多词组优先，单字词仅限上下文安全的高频标题）──
+    # 教育
+    "Education Background", "Education Experience", "Educational Background",
+    # 工作
+    "Work Experience", "Professional Experience", "Employment History",
+    "Career History", "Work History",
+    # 技能
+    "Technical Skills", "Professional Skills", "Core Skills", "Core Competencies",
+    "Areas of Expertise",
+    # 项目
+    "Project Experience", "Key Projects",
+    # 总结
+    "Professional Summary", "Career Summary", "Executive Summary",
+    "Personal Profile",
+    # 证书 / 荣誉
+    "Honors and Awards", "Awards and Honors",
+    # 其他多词
+    "Volunteer Experience", "Community Experience",
+    "Research Experience",
+    "Leadership Experience",
+    "Additional Information",
+    "Language Skills",
+    "Personal Information",
+    # 安全单字词：出现在行首 + 紧跟换行的概率远高于被误读
+    "Education",
+    "Summary",
+    "Certifications", "Certificates",
+    "Publications",
+    "References",
+    "Projects",
+    "Skills",
+    "Experience",
+    "Awards",
 ]
-# 行首 + 可选的序号（一/1.） + 标题 + 冒号 + 换行
+# 行首 + 可选的 Markdown 标题前缀(#{1,6}) + 可选的序号（一/1.） + 标题 + 冒号 + 换行
+# 注意：实际简历文件使用 ## 教育背景 格式，测试用例使用纯文本 教育背景 格式，
+# 两者都必须匹配。
 SECTION_PATTERN = re.compile(
-    r"(?:^|\n)\s*(?:(?:[一二三四五六七八九十]+|\d+)[、.）\)]?\s*)?("
+    r"(?:^|\n)\s*(?:#{1,6}\s*)?(?:(?:[一二三四五六七八九十]+|\d+)[、.）\)]?\s*)?("
     + "|".join(re.escape(h) for h in SECTION_HEADERS)
     + r")[\s:：]*\n",
     re.IGNORECASE,
@@ -84,7 +130,7 @@ def _make_chunk(text: str, section: str, index: int, offset: int) -> dict:
     }
 
 
-def chunk_by_sections(text: str, chunk_size: int = 1200, overlap: int = 50) -> list[dict]:
+def chunk_by_sections(text: str, chunk_size: int = 300, overlap: int = 50) -> list[dict]:
     """结构感知分块：先按节段切，超长节段内部再递归细分"""
     sections = _split_by_sections(text)
     chunks = []

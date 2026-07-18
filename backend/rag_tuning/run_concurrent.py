@@ -23,7 +23,7 @@ from core.rag_params import (
 )
 from rag_tuning.evaluate import (
     load_golden_set, load_resume_texts, _resume_id_map,
-    evaluate_one, aggregate_metrics, save_results, print_metrics, print_table, _load_best, _load_results_list,
+    evaluate_one, aggregate_metrics, save_results, save_details, print_metrics, print_table, _load_best, _load_results_list,
     rebuild_all_indices,
 )
 
@@ -50,10 +50,17 @@ async def run_experiment_concurrent(
             results[idx] = r
 
     tasks = [_eval_one(i, qa) for i, qa in enumerate(golden_set)]
-    await asyncio.gather(*tasks)
+    await asyncio.gather(*tasks, return_exceptions=True)
+
+    # 记录失败的 QA（不中断实验）
+    for i, r in enumerate(results):
+        if isinstance(r, Exception):
+            print(f"  [WARN] QA {golden_set[i].get('id', i)} failed: {r}")
+            results[i] = {"skip": True, "error": str(r)}
 
     # 进度输出
-    answered = sum(1 for r in results if r and not r["is_reject"])
+    results = [r for r in results if isinstance(r, dict) and not r.get("skip")]
+    answered = sum(1 for r in results if r and not r.get("is_reject", True))
     avg = sum(r["score"] for r in results if r) / max(len(results), 1)
     print(f"  done: avg={avg:.3f}  answered={answered}/{len(results)}")
 
@@ -73,7 +80,7 @@ async def run_phase3_concurrent(golden_set, id_map, resume_texts):
     done_labels = {r["label"] for r in results}
     combos = [(ri, rf) for ri, rf in itertools.product(
         PHASE3_GRID["rerank_input_top_k"], PHASE3_GRID["rerank_final_top_k"]
-    ) if rf <= ri]
+    ) if ri == 0 or rf <= ri]  # ri=0 是 bypass 模式，rf 不限
 
     print(f"\n{'='*60}")
     print(f"Phase 3: rerank_input x rerank_final ({len(combos)} combos, concurrency={CONCURRENCY})")
@@ -90,6 +97,7 @@ async def run_phase3_concurrent(golden_set, id_map, resume_texts):
             golden_set, id_map, resume_texts, p, label=label, rebuild=False,
         )
         results.append(agg)
+        save_details(f"phase3_{label}", details)
         save_results("phase3", results)
         print_metrics(agg)
 
@@ -126,6 +134,7 @@ async def run_phase4_concurrent(golden_set, id_map, resume_texts):
             golden_set, id_map, resume_texts, p, label=label, rebuild=False,
         )
         results.append(agg)
+        save_details(f"phase4_{label}", details)
         save_results("phase4", results)
         print_metrics(agg)
 
@@ -162,6 +171,7 @@ async def run_phase6_concurrent(golden_set, id_map, resume_texts):
             golden_set, id_map, resume_texts, p, label=label, rebuild=False,
         )
         results.append(agg)
+        save_details(f"phase6_{label}", details)
         save_results("phase6", results)
         print_metrics(agg)
 
@@ -175,14 +185,25 @@ async def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--phase", type=int, choices=[3, 4, 5, 6])
     parser.add_argument("--concurrency", type=int, default=10)
+    parser.add_argument("--golden-set", type=str, default="eval_data/golden_set_v2.json")
+    parser.add_argument("--upload-dir", type=str, default="eval_data/resumes")
     args = parser.parse_args()
 
     global CONCURRENCY
     CONCURRENCY = args.concurrency
 
-    golden_set = load_golden_set()
-    resume_files = sorted(set(qa["resume_file"] for qa in golden_set))
-    resume_texts = load_resume_texts(resume_files)
+    golden_set_all = load_golden_set(args.golden_set)
+    golden_set = [s for s in golden_set_all if s.get("split") == "tuning"]
+    print(f"   Tuning: {len(golden_set)} QA  |  Eval: {len([s for s in golden_set_all if s.get('split')=='eval'])} QA (held-out)")
+    resume_files = sorted(set(qa.get("resume_file", "") for qa in golden_set))
+    resume_files = [f for f in resume_files if f]
+    if not resume_files:
+        print("[FATAL] No resume files found in golden set")
+        sys.exit(1)
+    resume_texts = load_resume_texts(resume_files, args.upload_dir)
+    if not resume_texts:
+        print(f"[FATAL] Could not load any resume files from {args.upload_dir}")
+        sys.exit(1)
     id_map = _resume_id_map(golden_set)
 
     if args.phase == 3:

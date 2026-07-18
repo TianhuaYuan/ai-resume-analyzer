@@ -1,0 +1,45 @@
+# =============================================================================
+# P1-G 实验配置：BM25 消融实验（Ablation）
+# =============================================================================
+# 目的：量化 BM25 稀疏检索对 composite 的贡献（vs 纯稠密检索）。
+# 方法：对照组用 P0 最优参数（含 BM25, sparse_top_k=20），实验组最小化 BM25
+#       （sparse_top_k=1，仅 1 条 BM25 结果参与 RRF 融合，近似纯稠密）。
+# 预算：2 组 × 64 tuning QA × 3 Judge = 384 LLM 调用，~$0.1，~15min
+# 前置条件：P0 实验完成，已确定最优参数
+# =============================================================================
+
+name: p1g_bm25_ablation
+dataset: ../eval_data/golden_set_v2.json
+strategy: grid
+seed: 42
+notes: |
+  BM25 消融：对比"混合检索（稠密+BM25）"vs"近似纯稠密检索"对 composite 的影响。
+  sparse_top_k=20（P0 最优，BM25 充分参与）vs sparse_top_k=1（BM25 仅 1 条，近似纯稠密）。
+  注意：完全关闭 BM25（sparse_top_k=0）可能导致 RRF 融合异常，故用 1 近似。
+
+# TODO: P0 完成后替换为 P0 最优参数
+baseline_params:
+  chunk_size: 1200
+  overlap: 50
+  dense_top_k: 20
+  sparse_top_k: 20
+  hybrid_top_k: 20
+  rrf_k: 100
+  rerank_input_top_k: 20
+  rerank_final_top_k: 5
+  rerank_truncation: 400
+  reject_threshold: 0.3
+  generate_temperature: 0.3
+
+phases:
+  - name: with_bm25
+    description: 混合检索（稠密+BM25，sparse_top_k=20，P0 最优配置）
+    strategy: single
+    parameters:
+      sparse_top_k: 20
+
+  - name: without_bm25
+    description: 近似纯稠密检索（sparse_top_k=1，BM25 仅贡献 1 条）
+    strategy: single
+    parameters:
+      sparse_top_k: 1

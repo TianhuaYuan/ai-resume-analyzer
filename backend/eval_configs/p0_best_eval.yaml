@@ -1,0 +1,38 @@
+# =============================================================================
+# 终评配置：P0 最优参数在 eval split（30 条）上的最终评估
+# =============================================================================
+# 使用方法：P0 实验完成后，将 baseline_params 替换为 P0 排名第一的参数组合，
+# 然后运行：python -m eval.run_experiment --real --config eval_configs/p0_best_eval.yaml --split eval
+#
+# 预算：1 组 × 30 eval QA × 3 Judge = 90 LLM 调用，~$0.03，~5min
+# =============================================================================
+
+name: p0_best_eval
+dataset: ../eval_data/golden_set_v2.json
+strategy: single
+seed: 42
+notes: |
+  终评：用 P0 最优参数在 eval split 上跑最终评估。
+  P0 完成后替换 baseline_params 为排名第一的参数组合。
+
+# TODO: P0 完成后替换为最优参数
+baseline_params:
+  chunk_size: 1200
+  overlap: 50
+  dense_top_k: 20
+  sparse_top_k: 20
+  hybrid_top_k: 20
+  rrf_k: 100
+  rerank_input_top_k: 20
+  rerank_final_top_k: 5
+  rerank_truncation: 400
+  reject_threshold: 0.3
+  generate_temperature: 0.3
+
+phases:
+  - name: best_eval
+    description: P0 最优参数终评（eval split）
+    strategy: single
+    parameters:
+      chunk_size: 1200
+      overlap: 50

@@ -5,6 +5,7 @@
 """
 import asyncio
 import logging
+from typing import Any
 
 from core.config import settings
 from core.rag_params import RagParams
@@ -16,6 +17,7 @@ from services.rag.clients import (
     get_chat_client,
     get_chroma_client,
     reconnect_chroma,
+    with_chroma,
 )
 from services.rag.retrieval import (
     _bm25_indexes,
@@ -137,7 +139,8 @@ async def process_resume(resume_id: int, text: str) -> int:
     texts = [c["text"] for c in chunks]
     embeddings = await get_embeddings(texts, resume_id)
 
-    await asyncio.to_thread(_sync_chroma_ops)
+    # Bug 3 修复：Chroma 操作通过全局 with_chroma 锁串行化
+    await with_chroma(_sync_chroma_ops)
 
     _bm25_indexes.pop(resume_id, None)
     return len(chunks)
@@ -179,12 +182,23 @@ async def ask_question(resume_id: int, question: str) -> tuple[str, list[dict]]:
 
 async def _retrieve_p(
     resume_id: int, question: str, p: RagParams, timer: StepTimer,
+    collection_name: str | None = None, bm25_key: Any | None = None,
 ) -> tuple[str, list[dict]]:
-    """参数化版检索链路"""
+    """参数化版检索链路。collection_name / bm25_key 用于参数化实验隔离（Model C）。"""
     rewritten = await timer.run("rewrite", rewrite_query(question))
-    chunks = await timer.run("hybrid", hybrid_search_p(resume_id, rewritten, p))
+    chunks = await timer.run(
+        "hybrid",
+        hybrid_search_p(resume_id, rewritten, p, collection_name=collection_name, bm25_key=bm25_key),
+    )
     if not chunks:
         return rewritten, []
+    chunks = chunks[: p.rerank_input_top_k] if p.rerank_input_top_k > 0 else chunks
+    if p.rerank_input_top_k == 0:
+        # rerank_input_top_k=0 哨兵值：跳过 Rerank，直接使用 hybrid 结果
+        # 用于验证 Rerank 是否真的提升质量（Phase 3 ablation）
+        if reject_if_low_score(chunks, threshold=p.reject_threshold):
+            return rewritten, []
+        return rewritten, chunks
     reranked = await timer.run("rerank", rerank_p(rewritten, chunks, p))
     if reject_if_low_score(reranked, threshold=p.reject_threshold):
         return rewritten, []
@@ -193,11 +207,17 @@ async def _retrieve_p(
 
 async def ask_question_p(
     resume_id: int, question: str, p: RagParams,
+    collection_name: str | None = None, bm25_key: Any | None = None,
 ) -> tuple[str, list[dict], dict]:
-    """参数化版 RAG 全链路，返回 (answer, sources, timings)"""
+    """参数化版 RAG 全链路，返回 (answer, sources, timings)。
+    collection_name / bm25_key 为可选项，用于参数化实验隔离（Model C）；
+    省略时行为不变（沿用 resume_{resume_id} 集合与默认 BM25 键）。
+    """
     timer = StepTimer()
 
-    rewritten, reranked = await _retrieve_p(resume_id, question, p, timer)
+    rewritten, reranked = await _retrieve_p(
+        resume_id, question, p, timer, collection_name=collection_name, bm25_key=bm25_key,
+    )
     if not reranked:
         timer.log()
         return ("抱歉，简历中未提及该信息。", [], timer.steps)
@@ -260,9 +280,8 @@ async def ask_question_stream(resume_id: int, question: str):
 async def clear_resume_vectors(resume_id: int) -> None:
     """删 Chroma collection + 清 BM25 内存缓存"""
     try:
-        await asyncio.to_thread(
-            get_chroma_client().delete_collection, _collection_name(resume_id)
-        )
+        # Bug 3 修复：Chroma 删除操作也走全局锁
+        await with_chroma(get_chroma_client().delete_collection, _collection_name(resume_id))
     except Exception:
         logger.warning("Failed to delete Chroma collection for resume %d, reconnecting", resume_id)
         reconnect_chroma()  # N2：ChromaDB 重连

@@ -45,6 +45,9 @@ backend/rag_tuning/uploads/
 backend/rag_tuning/golden_set.json
 backend/rag_tuning/bad_case_analysis.md
 backend/rag_eval_legacy/archive/
+backend/experiment_results/
+backend/eval_results/
+backend/eval_data/
 
 # 部署
 deploy/.rollback-info

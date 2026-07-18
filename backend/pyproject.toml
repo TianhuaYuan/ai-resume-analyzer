@@ -13,6 +13,11 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+# 把 backend/ 加入 sys.path，使 `from core...` / `from eval...` / `from main...` 可解析
+pythonpath = ["."]
+markers = [
+    "integration: marks tests that require external services (ChromaDB/LLM/API keys)",
+]
 
 # =============================================================================
 # Alembic 配置
@@ -106,4 +111,6 @@ exclude = ["archive"]
 [tool.ruff.lint.per-file-ignores]
 "alembic/*" = ["E402"]
 "rag_tuning/run_concurrent.py" = ["E402"]
+# eval/protocol.py 把 RagParams 从 core.rag_params 重导出（框架统一入口），F401 为预期的再导出模式
+"eval/protocol.py" = ["F401"]
 

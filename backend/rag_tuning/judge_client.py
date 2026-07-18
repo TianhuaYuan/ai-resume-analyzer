@@ -100,7 +100,8 @@ def _get_client() -> AsyncOpenAI:
         _client = AsyncOpenAI(
             api_key=settings.JUDGE_API_KEY,
             base_url=settings.JUDGE_BASE_URL,
-            timeout=60.0,
+            timeout=120.0,
+            max_retries=5,
         )
     return _client
 

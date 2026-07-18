@@ -3,6 +3,7 @@
 阶段11 从 rag_service.py 拆出：这些是与"外部服务连接"相关的全局状态与工厂，
 独立于检索/分块/编排逻辑，单独成模块便于单测与复用。
 """
+import asyncio
 import logging
 import os
 import shutil
@@ -14,6 +15,24 @@ from openai import AsyncOpenAI
 from core.config import settings
 
 logger = logging.getLogger(__name__)
+
+# 全局 Chroma 操作锁：PersistentClient 非线程安全，并发写（delete/create/add）
+# 与并发读（query/get）会损坏 HNSW 索引文件（Bug 3）。
+# 所有 Chroma 操作必须通过 with_chroma 串行化。
+_chroma_lock = asyncio.Lock()
+
+
+async def with_chroma(func, *args, **kwargs):
+    """在全局锁保护下 + 线程隔离中执行 Chroma 操作。
+
+    PersistentClient 内部使用 SQLite + HNSW 文件，非线程安全。
+    多个 asyncio Task 通过 asyncio.to_thread 并发访问同一 client 会导致
+    ``InternalError: Error creating hnsw segment reader: Nothing found on disk``。
+
+    本函数确保所有 Chroma 操作（读/写）串行执行，彻底消除并发损坏。
+    """
+    async with _chroma_lock:
+        return await asyncio.to_thread(func, *args, **kwargs)
 
 # 单次调用超时（秒）：Embedding/LLM 为网络上游，必须设超时以防无限挂起（阶段1 加固）
 _CHAT_TIMEOUT = 60.0
