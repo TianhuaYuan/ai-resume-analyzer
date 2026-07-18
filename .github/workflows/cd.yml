@@ -33,8 +33,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  DOCKER_REGISTRY: docker.io
-  DOCKER_REPO: ${{ secrets.DOCKER_USERNAME }}/ai-resume-analyzer
+  DOCKER_REGISTRY: ${{ secrets.DOCKER_REGISTRY || 'docker.io' }}
+  DOCKER_REPO: ${{ secrets.DOCKER_REPO || format('{0}/ai-resume-analyzer', secrets.DOCKER_USERNAME) }}
   IMAGE_TAG: ${{ inputs.image_tag || github.sha }}
 
 jobs:
@@ -225,8 +225,28 @@ jobs:
             fi
 
             echo "Pulling images..."
-            docker pull "${DOCKER_REGISTRY}/${DOCKER_REPO}-backend:${IMAGE_TAG}"
-            docker pull "${DOCKER_REGISTRY}/${DOCKER_REPO}-frontend:${IMAGE_TAG}"
+            # 先登录私有仓库
+            echo "${{ secrets.ACR_PASSWORD }}" | docker login \
+              "${{ secrets.DOCKER_REGISTRY }}" \
+              -u "${{ secrets.ACR_USERNAME }}" \
+              --password-stdin 2>/dev/null || echo "Login skipped (public images only)"
+
+            _pull_with_retry() {
+              local img="$1" max=3 i=0 delay=15
+              while [ $i -lt $max ]; do
+                if docker pull "$img"; then
+                  return 0
+                fi
+                i=$((i + 1))
+                echo "Pull failed (attempt $i/$max), retrying in ${delay}s..."
+                sleep $delay
+                delay=$((delay * 2))
+              done
+              echo "ERROR: Failed to pull $img after $max attempts"
+              return 1
+            }
+            _pull_with_retry "${DOCKER_REGISTRY}/${DOCKER_REPO}-backend:${IMAGE_TAG}" || exit 1
+            _pull_with_retry "${DOCKER_REGISTRY}/${DOCKER_REPO}-frontend:${IMAGE_TAG}" || exit 1
 
             OLD_BACKEND=$(docker inspect --format='{{.Config.Image}}' resume-backend 2>/dev/null || echo "none")
             OLD_FRONTEND=$(docker inspect --format='{{.Config.Image}}' resume-frontend 2>/dev/null || echo "none")
