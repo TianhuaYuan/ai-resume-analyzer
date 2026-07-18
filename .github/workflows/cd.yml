@@ -101,7 +101,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.14"
+          python-version: "3.13"
           cache: pip
           cache-dependency-path: backend/requirements.txt
 
@@ -111,22 +111,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pytest pytest-asyncio httpx aiosqlite
-
-          cat > .env.test << 'EOF'
-          CHAT_API_KEY=test
-          CHAT_BASE_URL=https://api.xiaomimimo.com/v1
-          CHAT_MODEL=mimo-v2.5
-          EMBEDDING_API_KEY=test
-          EMBEDDING_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-          EMBEDDING_MODEL=text-embedding-v4
-          RERANK_API_KEY=test
-          RERANK_BASE_URL=https://example.com
-          RERANK_MODEL=test
-          DATABASE_URL=sqlite+aiosqlite:///:memory:
-          CHROMA_PERSIST_DIR=./chroma_data
-          JWT_SECRET_KEY=test-secret-key-for-cd-this-is-32-chars-long
-          UPLOAD_DIR=./uploads
-          EOF
 
           python -m pytest tests/ -v --tb=short
         env:
