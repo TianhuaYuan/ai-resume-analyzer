@@ -185,8 +185,8 @@ async def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--phase", type=int, choices=[3, 4, 5, 6])
     parser.add_argument("--concurrency", type=int, default=10)
-    parser.add_argument("--golden-set", type=str, default="eval_data/golden_set_v2.json")
-    parser.add_argument("--upload-dir", type=str, default="eval_data/resumes")
+    parser.add_argument("--golden-set", type=str, default="tuning_archive/data/golden_set_v2.json")
+    parser.add_argument("--upload-dir", type=str, default="tuning_archive/data/resumes")
     args = parser.parse_args()
 
     global CONCURRENCY

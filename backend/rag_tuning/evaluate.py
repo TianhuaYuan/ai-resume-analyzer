@@ -422,7 +422,7 @@ def aggregate_metrics(results: list[dict], label: str = "", p: RagParams = None)
         categories.setdefault(cat, []).append(r)
     category_metrics = {}
     for cat, cat_results in categories.items():
-        cat_scores = [r["score"] for r in cat_results if not r["is_reject"] and "score" in r]
+        cat_scores = [r["score"] for r in cat_results if "score" in r]
         cat_avg = statistics.mean(cat_scores) if cat_scores else 0
         cat_count = len(cat_results)
         category_metrics[cat] = {
@@ -787,8 +787,8 @@ async def main():
     parser.add_argument("--phase", type=int, choices=[1, 2, 3, 4, 5, 6], help="运行指定 Phase")
     parser.add_argument("--baseline", action="store_true", help="跑基线")
     parser.add_argument("--single", type=str, help="单组参数测试，如 chunk_size=800,overlap=100")
-    parser.add_argument("--golden-set", type=str, default="golden_set.json", help="Golden Set 路径")
-    parser.add_argument("--upload-dir", type=str, default="./uploads", help="简历文件目录")
+    parser.add_argument("--golden-set", type=str, default="tuning_archive/data/golden_set_v2.json", help="Golden Set 路径")
+    parser.add_argument("--upload-dir", type=str, default="tuning_archive/data/resumes", help="简历文件目录")
     args = parser.parse_args()
 
     # 加载数据（留出 eval 集：tuning 用于调参，eval 用于 Phase 5 验证）
@@ -798,7 +798,10 @@ async def main():
     golden_set_eval = [s for s in golden_set_all if s.get("split") == "eval"]
     print(f"   Tuning: {len(golden_set)} QA  |  Eval: {len(golden_set_eval)} QA (held-out)")
 
-    resume_files = sorted(set(qa.get("resume_file", "") for qa in golden_set))
+    # 注意：必须从 golden_set_all（tuning+eval 并集）构建简历清单与 id_map，
+    # 否则 Phase 5 的 held-out eval 集若引用 tuning 集未覆盖的简历（如 resume_pm.txt）
+    # 会因其未被加载而在 evaluate_one 中 skip（"unknown resume_file"）。
+    resume_files = sorted(set(qa.get("resume_file", "") for qa in golden_set_all))
     resume_files = [f for f in resume_files if f]
     if not resume_files:
         print("[FATAL] No resume files found in golden set -- check --upload-dir or dataset")
@@ -813,7 +816,7 @@ async def main():
     # 保存模型元数据（每次运行自动记录，便于溯源）
     save_model_metadata()
 
-    id_map = _resume_id_map(golden_set)
+    id_map = _resume_id_map(golden_set_all)
 
     if args.baseline:
         await run_baseline(golden_set, id_map, resume_texts)
