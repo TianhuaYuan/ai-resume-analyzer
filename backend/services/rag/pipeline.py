@@ -86,6 +86,8 @@ async def _llm_generate_stream(
         stream=True,
     )
     async for chunk in stream:
+        if not chunk.choices:
+            continue  # DeepSeek 流式 API 偶发空 choices 的信号 chunk
         delta = chunk.choices[0].delta.content
         if delta:
             yield delta

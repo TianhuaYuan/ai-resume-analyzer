@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { Link } from "react-router-dom";
+import { Sparkles, ListBullets } from "@phosphor-icons/react";
 import {
   listResumes,
   uploadResume,
@@ -7,6 +8,8 @@ import {
   getResume,
   type ResumeItem,
 } from "../api/resumes";
+import AnalysisModal from "../components/AnalysisModal";
+import ChunksModal from "../components/ChunksModal";
 
 // ── 骨架屏 ──────────────────────────────────────────────
 
@@ -157,6 +160,8 @@ export default function ResumeListPage() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [newCardId, setNewCardId] = useState<number | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ResumeItem | null>(null);
+  const [analyzeTarget, setAnalyzeTarget] = useState<ResumeItem | null>(null);
+  const [chunksTarget, setChunksTarget] = useState<ResumeItem | null>(null);
 
   const fetchResumes = async () => {
     setLoading(true);
@@ -384,6 +389,40 @@ export default function ResumeListPage() {
                   {/* 右侧 */}
                   <div className="flex items-center gap-3 ml-4 shrink-0">
                     <StatusBadge status={r.status} />
+                    {r.status === "ready" && (
+                      <>
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setChunksTarget(r);
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs
+                            text-slate-400 hover:text-sky-300
+                            hover:bg-sky-500/10 rounded-lg
+                            active:scale-[0.98] motion-reduce:active:scale-100
+                            transition-all cursor-pointer"
+                        >
+                          <ListBullets size={13} weight="bold" aria-hidden="true" />
+                          分块
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setAnalyzeTarget(r);
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs
+                            text-slate-400 hover:text-indigo-300
+                            hover:bg-indigo-500/10 rounded-lg
+                            active:scale-[0.98] motion-reduce:active:scale-100
+                            transition-all cursor-pointer"
+                        >
+                          <Sparkles size={13} weight="bold" aria-hidden="true" />
+                          分析
+                        </button>
+                      </>
+                    )}
                     <button
                       onClick={(e) => {
                         e.preventDefault();
@@ -411,6 +450,22 @@ export default function ResumeListPage() {
           onCancel={() => setDeleteTarget(null)}
         />
       )}
+
+      {/* ── 简历分析弹窗 ── */}
+      <AnalysisModal
+        resumeId={analyzeTarget?.id ?? 0}
+        resumeFilename={analyzeTarget?.filename ?? ""}
+        open={analyzeTarget !== null}
+        onClose={() => setAnalyzeTarget(null)}
+      />
+
+      {/* ── 分块预览弹窗 ── */}
+      <ChunksModal
+        resumeId={chunksTarget?.id ?? 0}
+        resumeFilename={chunksTarget?.filename ?? ""}
+        open={chunksTarget !== null}
+        onClose={() => setChunksTarget(null)}
+      />
     </div>
   );
 }

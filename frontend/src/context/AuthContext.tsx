@@ -24,7 +24,7 @@ interface AuthCtx {
     password: string,
     password_confirm: string
   ) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthCtx | undefined>(undefined);
@@ -75,8 +75,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await registerApi(username, email, password, password_confirm);
   };
 
-  const logout = () => {
-    clearTokens();
+  const logout = async () => {
+    await clearTokens();
     setUser(null);
   };
 

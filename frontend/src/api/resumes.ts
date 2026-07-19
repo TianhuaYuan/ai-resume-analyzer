@@ -35,3 +35,38 @@ export async function getResume(id: number) {
 export async function deleteResume(id: number) {
   return api.delete(`/api/v1/resumes/${id}`);
 }
+
+export type AnalysisType = "summary" | "skills" | "experience";
+
+export interface AnalyzeResult {
+  resume_id: number;
+  analysis_type: string;
+  analysis: string;
+}
+
+export async function analyzeResume(
+  id: number,
+  analysisType: AnalysisType
+): Promise<AnalyzeResult> {
+  return api.post(`/api/v1/resumes/${id}/analyze`, {
+    analysis_type: analysisType,
+  }) as Promise<AnalyzeResult>;
+}
+
+export interface ChunkItem {
+  chunk_index: number;
+  section: string;
+  text: string;
+  start_char: number;
+  end_char: number;
+}
+
+export interface ChunksResult {
+  resume_id: number;
+  total: number;
+  chunks: ChunkItem[];
+}
+
+export async function getChunks(id: number): Promise<ChunksResult> {
+  return api.get(`/api/v1/resumes/${id}/chunks`) as Promise<ChunksResult>;
+}

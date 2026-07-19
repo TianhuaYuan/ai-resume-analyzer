@@ -1,4 +1,4 @@
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Header, Response, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Header, HTTPException, Response, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -6,8 +6,17 @@ from api.deps import get_current_user
 from core.database import get_db
 from models.resume import Resume
 from models.user import User
-from schemas.resume import ResumeListResponse, ResumeResponse, UploadAsyncResponse
-from services import resume_service
+from schemas.resume import (
+    AnalyzeRequest,
+    AnalyzeResponse,
+    ChunkItem,
+    ChunksResponse,
+    ResumeListResponse,
+    ResumeResponse,
+    UploadAsyncResponse,
+)
+from services import analyze_service, resume_service
+from services.rag import chunks_service
 
 router = APIRouter(prefix="/resumes", tags=["resumes"])
 
@@ -103,3 +112,59 @@ async def delete_resume(
     """删简历。先删 MySQL（CASCADE 清历史）→ 清 Chroma → 删文件 → 清 Embedding 缓存。"""
     await resume_service.delete_resume(db, resume_id, current_user.id)
     return None
+
+
+@router.post("/{resume_id}/analyze", response_model=AnalyzeResponse)
+async def post_analyze_resume(
+    resume_id: int,
+    body: AnalyzeRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """分析简历内容（summary / skills / experience 三选一）。
+
+    包装 analyze_service.analyze_resume。错误码：
+    - 401 未登录
+    - 404 简历不存在或非本人
+    - 409 简历未就绪（status != ready）
+    - 422 非法 analysis_type（Pydantic Literal 拦截）或简历内容为空
+    - 500 LLM 调用失败
+    """
+    result = await analyze_service.analyze_resume(
+        db, current_user.id, resume_id, body.analysis_type
+    )
+    return AnalyzeResponse(**result)
+
+
+@router.get("/{resume_id}/chunks", response_model=ChunksResponse)
+async def get_resume_chunks(
+    resume_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """查简历的所有分块（chunks）。
+
+    归属校验走 MySQL，chunk 数据走 ChromaDB。
+    错误码：
+    - 401 未登录
+    - 404 简历不存在或非本人
+    - 409 简历未就绪（status != ready）或 Chroma collection 不存在
+    """
+    # 归属校验（不存在或非本人 → 404）
+    resume = await resume_service.get_resume(db, resume_id, current_user.id)
+
+    # 状态校验（未就绪 → 409）
+    if resume.status != "ready":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"简历未就绪（当前状态: {resume.status}）",
+        )
+
+    # 读 ChromaDB（collection 不存在 → 409）
+    chunks_data = await chunks_service.get_chunks_by_resume(resume_id)
+
+    return ChunksResponse(
+        resume_id=resume_id,
+        total=len(chunks_data),
+        chunks=[ChunkItem(**c) for c in chunks_data],
+    )
