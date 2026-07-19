@@ -1,14 +1,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { askQuestionStream, shouldSkipEvent, type SSEEvent } from "./qa";
+import { askQuestionStream, shouldSkipEvent, getHistory, clearHistory, deleteQa, type SSEEvent } from "./qa";
 
-// 拦截 client 的刷新/跳转，避免真实网络与页面跳转
-vi.mock("./client", () => ({
-  api: { post: vi.fn(), get: vi.fn(), delete: vi.fn() },
-  refreshToken: vi.fn(),
-  clearSessionAndRedirect: vi.fn(),
-}));
+// 拦截 client 的刷新，避免真实网络；保留 notifySessionExpired 原实现（只是 dispatch 事件）
+vi.mock("./client", async () => {
+  const actual = await vi.importActual<typeof import("./client")>("./client");
+  return {
+    ...actual,
+    api: { post: vi.fn(), get: vi.fn(), delete: vi.fn() },
+    refreshToken: vi.fn(),
+  };
+});
 
-import { refreshToken, clearSessionAndRedirect } from "./client";
+import { api } from "./client";
+import { refreshToken } from "./client";
 
 function makeSSE(chunks: string[]): ReadableStream<Uint8Array> {
   return new ReadableStream<Uint8Array>({
@@ -25,7 +29,8 @@ const ev = (e: Partial<SSEEvent> & { type: SSEEvent["type"] }) =>
 beforeEach(() => {
   localStorage.setItem("access_token", "x");
   vi.mocked(refreshToken).mockReset();
-  vi.mocked(clearSessionAndRedirect).mockReset();
+  vi.mocked(api.get).mockReset();
+  vi.mocked(api.delete).mockReset();
 });
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -74,10 +79,13 @@ describe("askQuestionStream", () => {
     expect(events.map((e) => e.type)).toEqual(["token", "done"]);
   });
 
-  it("H10: 刷新失败则跳转登录页并抛错", async () => {
+  it("H10: 刷新失败则触发 session:expired 事件并抛错", async () => {
     const fetchMock = vi.fn(async () => new Response("", { status: 401 }));
     vi.stubGlobal("fetch", fetchMock);
     vi.mocked(refreshToken).mockResolvedValue(false);
+
+    const handler = vi.fn();
+    window.addEventListener("session:expired", handler);
 
     const errs: Error[] = [];
     await new Promise<void>((resolve) => {
@@ -93,8 +101,9 @@ describe("askQuestionStream", () => {
       );
     });
 
-    expect(clearSessionAndRedirect).toHaveBeenCalledTimes(1);
+    expect(handler).toHaveBeenCalledTimes(1);
     expect(errs[0].message).toBe("登录已过期");
+    window.removeEventListener("session:expired", handler);
   });
 
   it("C2: 流正常结束但缺 done 事件，onDone 仍被调用、onError 不被调用", async () => {
@@ -140,5 +149,58 @@ describe("askQuestionStream", () => {
     const tokens = events.filter((e) => e.type === "token");
     expect(tokens).toHaveLength(1); // 去重后只收到一次
     expect(events.map((e) => e.type)).toEqual(["token", "done"]);
+  });
+});
+
+describe("getHistory (Task 4 keyword 搜索)", () => {
+  it("无 keyword 时只带 limit/offset 参数", async () => {
+    vi.mocked(api.get).mockResolvedValue({ items: [], total: 0 });
+    await getHistory(42, 20, 0);
+    expect(api.get).toHaveBeenCalledWith(
+      "/api/v1/qa/history/42?limit=20&offset=0"
+    );
+  });
+
+  it("有 keyword 时拼到 query string", async () => {
+    vi.mocked(api.get).mockResolvedValue({ items: [], total: 0 });
+    await getHistory(42, 20, 0, "Python");
+    expect(api.get).toHaveBeenCalledWith(
+      "/api/v1/qa/history/42?limit=20&offset=0&keyword=Python"
+    );
+  });
+
+  it("keyword 是空白字符串时不拼参数（避免空搜索）", async () => {
+    vi.mocked(api.get).mockResolvedValue({ items: [], total: 0 });
+    await getHistory(42, 20, 0, "   ");
+    expect(api.get).toHaveBeenCalledWith(
+      "/api/v1/qa/history/42?limit=20&offset=0"
+    );
+  });
+});
+
+describe("clearHistory (Task 4 清空历史)", () => {
+  it("DELETE /api/v1/qa/history/{id} 带正确路径", async () => {
+    vi.mocked(api.delete).mockResolvedValue({ deleted_count: 5 });
+    const result = await clearHistory(42);
+    expect(api.delete).toHaveBeenCalledWith("/api/v1/qa/history/42");
+    expect(result.deleted_count).toBe(5);
+  });
+
+  it("后端返回 404 时抛 Error（简历不存在）", async () => {
+    vi.mocked(api.delete).mockRejectedValue(new Error("简历不存在"));
+    await expect(clearHistory(99999)).rejects.toThrow("简历不存在");
+  });
+});
+
+describe("deleteQa (Task 4 删单条)", () => {
+  it("DELETE /api/v1/qa/{qa_id} 带正确路径", async () => {
+    vi.mocked(api.delete).mockResolvedValue(undefined);
+    await deleteQa(123);
+    expect(api.delete).toHaveBeenCalledWith("/api/v1/qa/123");
+  });
+
+  it("后端返回 404 时抛 Error（qa 不存在）", async () => {
+    vi.mocked(api.delete).mockRejectedValue(new Error("问答记录不存在"));
+    await expect(deleteQa(99999)).rejects.toThrow("问答记录不存在");
   });
 });

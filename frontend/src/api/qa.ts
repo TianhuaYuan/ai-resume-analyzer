@@ -1,5 +1,5 @@
 import { api } from "./client";
-import { refreshToken, clearSessionAndRedirect } from "./client";
+import { refreshToken, notifySessionExpired } from "./client";
 
 export interface AnswerResponse {
   id: number;
@@ -74,11 +74,11 @@ export function askQuestionStream(
       });
 
       // H10：流式接口原本不走 client.request，不会自动刷新 token。
-      // 这里补上：401 先刷新再重试；刷新失败则踢回登录页。
+      // 这里补上：401 先刷新再重试；刷新失败则弹过期提示。
       if (res.status === 401) {
         const ok = await refreshToken();
         if (!ok) {
-          clearSessionAndRedirect();
+          notifySessionExpired();
           throw new Error("登录已过期");
         }
         res = await fetch("/api/v1/qa/ask/stream", {
@@ -141,9 +141,32 @@ export function askQuestionStream(
 export async function getHistory(
   resume_id: number,
   limit = 20,
-  offset = 0
+  offset = 0,
+  keyword?: string
 ) {
+  const params = new URLSearchParams();
+  params.set("limit", String(limit));
+  params.set("offset", String(offset));
+  if (keyword && keyword.trim()) {
+    params.set("keyword", keyword.trim());
+  }
   return api.get(
-    `/api/v1/qa/history/${resume_id}?limit=${limit}&offset=${offset}`
+    `/api/v1/qa/history/${resume_id}?${params.toString()}`
   ) as Promise<{ items: AnswerResponse[]; total: number }>;
+}
+
+export interface QADeleteResult {
+  deleted_count: number;
+}
+
+/** 清空指定简历的所有问答历史，返回被删除的记录数。 */
+export async function clearHistory(resume_id: number): Promise<QADeleteResult> {
+  return api.delete(
+    `/api/v1/qa/history/${resume_id}`
+  ) as Promise<QADeleteResult>;
+}
+
+/** 删单条问答记录。后端返回 204，前端不解析 body。 */
+export async function deleteQa(qa_id: number): Promise<void> {
+  await api.delete(`/api/v1/qa/${qa_id}`);
 }

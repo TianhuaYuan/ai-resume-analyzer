@@ -33,3 +33,8 @@ class AnswerResponse(BaseModel):
 class QAHistoryResponse(BaseModel):
     items: list[AnswerResponse]
     total: int
+
+
+class QADeleteResponse(BaseModel):
+    """清空历史问答的响应：返回被删除的记录数。"""
+    deleted_count: int
