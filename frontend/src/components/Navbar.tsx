@@ -5,8 +5,10 @@ export default function Navbar() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    // await 后端撤销 JTI，再导航。POST 失败也被 auth.ts 静默吞掉，
+    // 用户体感登出成功，最坏情况 token 30min 后自然过期。
+    await logout();
     navigate("/login");
   };
 

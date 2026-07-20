@@ -1,7 +1,7 @@
 import json
 import logging
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,7 +11,7 @@ from core.database import get_db
 from core.limiter import limiter
 from core.security import detect_prompt_injection, redact_pii
 from models.user import User
-from schemas.qa import AnswerResponse, QuestionRequest, QAHistoryResponse
+from schemas.qa import AnswerResponse, QADeleteResponse, QuestionRequest, QAHistoryResponse
 from services import qa_service, resume_service
 from services.rag.pipeline import ask_question_stream as _ask_question_stream
 
@@ -181,13 +181,18 @@ async def get_history(
     resume_id: int,
     limit: int = 20,
     offset: int = 0,
+    keyword: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """分页查某份简历的问答历史。"""
+    """分页查某份简历的问答历史。
+
+    可选 keyword 参数：在 question / answer 上做模糊匹配（不区分大小写）。
+    空字符串或 None → 不过滤。
+    """
     await resume_service.get_resume(db, resume_id, current_user.id)
     items, total = await qa_service.get_history(
-        db, current_user.id, resume_id, limit, offset
+        db, current_user.id, resume_id, limit, offset, keyword=keyword
     )
     return QAHistoryResponse(
         items=[
@@ -202,3 +207,40 @@ async def get_history(
         ],
         total=total,
     )
+
+
+@router.delete("/history/{resume_id}", response_model=QADeleteResponse)
+async def delete_history(
+    resume_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """清空指定简历的所有问答历史。
+
+    归属校验：resume_id 必须属于当前用户（不存在或非本人 → 404）。
+    返回被删除的记录数。
+    """
+    await resume_service.get_resume(db, resume_id, current_user.id)
+    deleted_count = await qa_service.delete_history_by_resume(
+        db, current_user.id, resume_id
+    )
+    return QADeleteResponse(deleted_count=deleted_count)
+
+
+@router.delete("/{qa_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_qa(
+    qa_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """删单条问答记录。
+
+    user_id 隔离：非本人记录视为不存在（返回 404）。
+    """
+    deleted = await qa_service.delete_qa_by_id(db, current_user.id, qa_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="问答记录不存在或无权访问",
+        )
+    return None

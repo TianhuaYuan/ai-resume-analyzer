@@ -52,6 +52,28 @@ export function refreshToken(): Promise<boolean> {
   return refreshPromise;
 }
 
+/**
+ * 触发「登录已过期」全局事件。
+ *
+ * 不在此直接跳登录页，而是发事件给 AuthProvider 处理——
+ * 这样可以先弹 SessionExpiredDialog 友好提示，再由用户点按钮跳转，
+ * 避免"秒退"体验。
+ *
+ * 如果调用方确实需要立即跳转（如登出成功后），使用 clearSessionAndRedirect。
+ */
+export function notifySessionExpired() {
+  window.dispatchEvent(new CustomEvent("session:expired"));
+}
+
+/**
+ * 触发「登录即将过期」全局事件。detail 里带剩余秒数。
+ */
+export function notifySessionWarning(remainingSeconds: number) {
+  window.dispatchEvent(
+    new CustomEvent("session:warning", { detail: { remainingSeconds } })
+  );
+}
+
 export function clearSessionAndRedirect() {
   localStorage.clear();
   window.location.href = "/login";
@@ -92,7 +114,8 @@ async function request(
         handleResponse
       );
     }
-    clearSessionAndRedirect();
+    // 刷新失败：弹全局过期提示，由用户点「去登录」再跳转
+    notifySessionExpired();
     throw new Error("登录已过期");
   }
 

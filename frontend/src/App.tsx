@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from "./context/AuthContext";
 import type { ReactNode } from "react";
 import Navbar from "./components/Navbar";
 import ErrorBoundary from "./components/ErrorBoundary";
+import SessionExpiredDialog from "./components/SessionExpiredDialog";
 import LoginPage from "./pages/LoginPage";
 import ResumeListPage from "./pages/ResumeListPage";
 import QAPage from "./pages/QAPage";
@@ -23,10 +24,29 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 }
 
 function AppLayout({ children }: { children: ReactNode }) {
+  const {
+    sessionDialog,
+    sessionRemainingSeconds,
+    sessionExtending,
+    handleSessionGoLogin,
+    handleSessionExtend,
+    handleSessionIgnore,
+  } = useAuth();
+
   return (
     <>
       <Navbar />
       {children}
+      <SessionExpiredDialog
+        open={sessionDialog !== null}
+        mode={sessionDialog ?? "expired"}
+        remainingSeconds={sessionRemainingSeconds}
+        loading={sessionExtending}
+        onPrimary={
+          sessionDialog === "warning" ? handleSessionExtend : handleSessionGoLogin
+        }
+        onIgnore={handleSessionIgnore}
+      />
     </>
   );
 }
