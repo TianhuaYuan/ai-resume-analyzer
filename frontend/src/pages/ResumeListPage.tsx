@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { Link } from "react-router-dom";
-import { Sparkles, ListBullets } from "@phosphor-icons/react";
+import { Sparkle, ListBullets } from "@phosphor-icons/react";
 import {
   listResumes,
   uploadResume,
@@ -418,7 +418,7 @@ export default function ResumeListPage() {
                             active:scale-[0.98] motion-reduce:active:scale-100
                             transition-all cursor-pointer"
                         >
-                          <Sparkles size={13} weight="bold" aria-hidden="true" />
+                          <Sparkle size={13} weight="bold" aria-hidden="true" />
                           分析
                         </button>
                       </>

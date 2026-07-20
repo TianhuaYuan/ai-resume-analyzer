@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { login as loginApi, register as registerApi, logout as clearTokens } from "../api/auth";
-import { refreshToken, clearSessionAndRedirect, notifySessionWarning } from "../api/client";
+import { refreshToken, clearSessionAndRedirect, notifySessionExpired, notifySessionWarning } from "../api/client";
 import { safeDecodeJwt } from "../utils/jwt";
 
 interface User {
