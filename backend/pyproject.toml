@@ -111,4 +111,3 @@ exclude = ["archive"]
 [tool.ruff.lint.per-file-ignores]
 "alembic/*" = ["E402"]
 "rag_tuning/run_concurrent.py" = ["E402"]
-

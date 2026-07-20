@@ -270,7 +270,7 @@ jobs:
               set +a
             fi
 
-            docker compose -f docker-compose.prod.yml up -d --remove-orphans
+            docker compose -f docker-compose.prod.yml up -d --pull never --remove-orphans
 
             echo "Waiting for backend health check..."
             MAX_WAIT=120
@@ -302,7 +302,7 @@ jobs:
               fi
               IMAGE_TAG="${OLD_BACKEND_TAG:-$IMAGE_TAG}"
               export IMAGE_TAG
-              docker compose -f docker-compose.prod.yml up -d
+              docker compose -f docker-compose.prod.yml up -d --pull never
               exit 1
             fi
 
