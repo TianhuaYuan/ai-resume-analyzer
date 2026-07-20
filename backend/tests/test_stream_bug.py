@@ -61,9 +61,10 @@ async def test_llm_generate_stream_skips_empty_choices():
             collected.append(token)
 
     # 空 choices chunk 应该被跳过，不影响前后正常内容
-    assert collected == ["你好", "世界"], (
-        f"期望跳过空 choices chunk 得到 ['你好', '世界']，实际 {collected}"
-    )
+    assert collected == [
+        "你好",
+        "世界",
+    ], f"期望跳过空 choices chunk 得到 ['你好', '世界']，实际 {collected}"
 
 
 @pytest.mark.asyncio

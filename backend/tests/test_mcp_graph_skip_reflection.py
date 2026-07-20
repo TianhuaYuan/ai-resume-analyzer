@@ -14,9 +14,9 @@ def test_h5_mcp_graph_should_route_to_self_reflection():
     has_reflection_in_std = "SELF_REFLECTION" in src_std
 
     assert has_reflection_in_std, "标准 Graph 应包含 SELF_REFLECTION 路由（前置条件）"
-    assert has_reflection_in_mcp, (
-        "MCP Graph 应包含 SELF_REFLECTION 路由，但当前直接跳回 MCP_SEARCH_NODE 跳过了反思步骤"
-    )
+    assert (
+        has_reflection_in_mcp
+    ), "MCP Graph 应包含 SELF_REFLECTION 路由，但当前直接跳回 MCP_SEARCH_NODE 跳过了反思步骤"
 
 
 def test_h5_mcp_route_retry_should_not_skip_reflection():
@@ -32,6 +32,6 @@ def test_h5_mcp_route_retry_should_not_skip_reflection():
     retry_pattern = re.search(r"should_retry.*?search_round.*?return\s+(\w+)", src_mcp)
     if retry_pattern:
         target = retry_pattern.group(1)
-        assert "SELF_REFLECTION" in target, (
-            f"重试时路由目标应为 SELF_REFLECTION_NODE，当前为 {target}"
-        )
+        assert (
+            "SELF_REFLECTION" in target
+        ), f"重试时路由目标应为 SELF_REFLECTION_NODE，当前为 {target}"

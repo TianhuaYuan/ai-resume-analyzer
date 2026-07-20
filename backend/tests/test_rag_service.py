@@ -136,9 +136,9 @@ class TestChunkBySections:
         chunks = chunk_by_sections(LONG_SECTION_RESUME, chunk_size=300)
         for c in chunks:
             # 由于分隔符查找可能略超，给 30% 容忍度
-            assert len(c["text"]) <= 300 * 1.3, (
-                f"chunk idx={c['chunk_index']} 长度 {len(c['text'])} 远超 300"
-            )
+            assert (
+                len(c["text"]) <= 300 * 1.3
+            ), f"chunk idx={c['chunk_index']} 长度 {len(c['text'])} 远超 300"
 
     def test_markdown_section_detection(self):
         """Markdown 格式的节段 (## 教育背景) 应被正确识别并保留节段名"""
@@ -147,9 +147,9 @@ class TestChunkBySections:
         assert "教育背景" in sections, f"Markdown 中文节段未被识别，实际有: {sections}"
         assert "Work Experience" in sections, f"Markdown 英文节段未被识别，实际有: {sections}"
         assert "Projects" in sections, f"Markdown Projects 节段未被识别，实际有: {sections}"
-        assert "Certifications" in sections, (
-            f"Markdown Certifications 节段未被识别，实际有: {sections}"
-        )
+        assert (
+            "Certifications" in sections
+        ), f"Markdown Certifications 节段未被识别，实际有: {sections}"
 
     def test_english_section_detection(self):
         """纯英文简历的节段（含全大写形式如 SUMMARY/EDUCATION）应被正确识别"""

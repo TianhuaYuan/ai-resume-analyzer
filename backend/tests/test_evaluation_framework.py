@@ -227,6 +227,6 @@ def test_evaluate_module_does_not_import_graph_at_top_level():
     ]
     assert import_lines, "graph 导入应存在于 _run_graph 函数体内"
     # 所有出现都必须带缩进（在函数内），不允许出现在模块顶层（列0）
-    assert all(ln.startswith((" ", "\t")) for ln in import_lines), (
-        "graph 导入必须在函数体内缩进，不能在模块顶层"
-    )
+    assert all(
+        ln.startswith((" ", "\t")) for ln in import_lines
+    ), "graph 导入必须在函数体内缩进，不能在模块顶层"
