@@ -280,6 +280,8 @@ jobs:
               HEALTH=$(docker inspect --format='{{.State.Health.Status}}' resume-backend 2>/dev/null || echo "unknown")
               if [ "$HEALTH" = "healthy" ]; then
                 echo "Backend healthy after ${ELAPSED}s"
+                echo "Running database migrations..."
+                docker compose -f docker-compose.prod.yml exec -T backend alembic upgrade head || echo "WARNING: Migration failed (will retry on next deploy)"
                 break
               fi
               sleep 5
