@@ -9,6 +9,7 @@
 节点与 degraded 路由、阶段2 加的 mcp 节点。两图共享 direct_answer_node /
 output_node / _route_after_evaluate（逻辑一致）。
 """
+
 import json
 import logging
 
@@ -78,8 +79,11 @@ async def output_node(state: AgenticRAGState) -> dict:
 
     logger.info(
         "output_node: answer=%d chars, sources=%d, rounds=%d, eval=%.2f, reflections=%d",
-        len(answer), len(final_sources), state.get("search_round", 0),
-        state.get("eval_score", 0.0), state.get("reflection_round", 0),
+        len(answer),
+        len(final_sources),
+        state.get("search_round", 0),
+        state.get("eval_score", 0.0),
+        state.get("reflection_round", 0),
     )
 
     return {

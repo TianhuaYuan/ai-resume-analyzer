@@ -20,6 +20,7 @@ from services.agentic_rag.state import AgenticRAGState
 
 # ── 辅助 ──────────────────────────────────────────────────
 
+
 def _make_state(**overrides) -> AgenticRAGState:
     """构造最小 AgenticRAGState。"""
     base: AgenticRAGState = {
@@ -28,7 +29,12 @@ def _make_state(**overrides) -> AgenticRAGState:
         "rewritten_query": "候选人的专业技能有哪些",
         "route_decision": "search",
         "chunks": [
-            {"text": "精通 Python、FastAPI", "section": "专业技能", "chunk_index": 0, "rerank_score": 0.9},
+            {
+                "text": "精通 Python、FastAPI",
+                "section": "专业技能",
+                "chunk_index": 0,
+                "rerank_score": 0.9,
+            },
             {"text": "3年开发经验", "section": "工作经历", "chunk_index": 1, "rerank_score": 0.7},
         ],
         "search_round": 1,
@@ -53,6 +59,7 @@ def _make_state(**overrides) -> AgenticRAGState:
 
 
 # ── _extract_sources ──────────────────────────────────────
+
 
 class TestExtractSources:
     """_extract_sources 纯逻辑测试。"""
@@ -90,6 +97,7 @@ class TestExtractSources:
 
 
 # ── _parse_eval_response ──────────────────────────────────
+
 
 class TestParseEvalResponse:
     """_parse_eval_response 防御性解析测试（细粒度评分）。"""
@@ -132,7 +140,9 @@ class TestParseEvalResponse:
 
     def test_malformed_json(self):
         """损坏的 JSON 应降级。"""
-        completeness, accuracy, source_credibility, composite, _ = _parse_eval_response("{broken json")
+        completeness, accuracy, source_credibility, composite, _ = _parse_eval_response(
+            "{broken json"
+        )
         assert 0.0 <= completeness <= 1.0
         assert 0.0 <= accuracy <= 1.0
         assert 0.0 <= source_credibility <= 1.0
@@ -155,6 +165,7 @@ class TestParseEvalResponse:
 
 
 # ── _build_eval_user ──────────────────────────────────────
+
 
 class TestBuildEvalUser:
     """_build_eval_user 构建 prompt 测试。"""
@@ -182,6 +193,7 @@ class TestBuildEvalUser:
 
 
 # ── generate_node ─────────────────────────────────────────
+
 
 class TestGenerateNode:
     """generate_node — mock LLM 调用。"""
@@ -220,9 +232,11 @@ class TestGenerateNode:
     @pytest.mark.asyncio
     async def test_low_rerank_score_returns_rejection(self):
         """rerank 分数过低 → 拒答。"""
-        state = _make_state(chunks=[
-            {"text": "内容", "section": "测试", "chunk_index": 0, "rerank_score": 0.1},
-        ])
+        state = _make_state(
+            chunks=[
+                {"text": "内容", "section": "测试", "chunk_index": 0, "rerank_score": 0.1},
+            ]
+        )
         with patch(
             "services.agentic_rag.generate.llm_generate",
             new_callable=AsyncMock,
@@ -249,13 +263,16 @@ class TestGenerateNode:
     async def test_uses_rewritten_query(self):
         """应使用 rewritten_query 而非 question。"""
         state = _make_state(question="他", rewritten_query="候选人的技能")
-        with patch(
-            "services.agentic_rag.generate.build_prompt",
-            return_value={"system": "s", "user": "u"},
-        ) as mock_build, patch(
-            "services.agentic_rag.generate.llm_generate",
-            new_callable=AsyncMock,
-            return_value="答案",
+        with (
+            patch(
+                "services.agentic_rag.generate.build_prompt",
+                return_value={"system": "s", "user": "u"},
+            ) as mock_build,
+            patch(
+                "services.agentic_rag.generate.llm_generate",
+                new_callable=AsyncMock,
+                return_value="答案",
+            ),
         ):
             await generate_node(state)
 
@@ -311,6 +328,7 @@ class TestGenerateNode:
 
 
 # ── evaluate_node ─────────────────────────────────────────
+
 
 class TestEvaluateNode:
     """evaluate_node — mock LLM 调用（细粒度评分）。"""
@@ -503,6 +521,7 @@ class TestEvaluateNode:
 
 
 # ── Generate + Evaluate 联动 ──────────────────────────────
+
 
 class TestGenerateEvaluatePipeline:
     """generate_node → evaluate_node 全流程状态应正确流转。"""

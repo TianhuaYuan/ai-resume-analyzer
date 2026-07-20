@@ -3,6 +3,7 @@
 用法：python run_phase1_single.py --index 5   # 运行第 5 个组合
       python run_phase1_single.py --all        # 逐个运行全部（跳过已完成）
 """
+
 import argparse
 import asyncio
 import itertools
@@ -19,16 +20,22 @@ if sys.platform == "win32":
 
 from core.rag_params import PHASE1_GRID, RagParams
 from rag_tuning.evaluate import (
-    load_golden_set, load_resume_texts, _resume_id_map,
-    run_experiment, save_details, print_metrics,
+    load_golden_set,
+    load_resume_texts,
+    _resume_id_map,
+    run_experiment,
+    save_details,
+    print_metrics,
     RESULTS_DIR,
 )
 
 
 def get_combos():
-    return [(cs, ov) for cs, ov in itertools.product(
-        PHASE1_GRID["chunk_size"], PHASE1_GRID["overlap"]
-    ) if ov < cs]
+    return [
+        (cs, ov)
+        for cs, ov in itertools.product(PHASE1_GRID["chunk_size"], PHASE1_GRID["overlap"])
+        if ov < cs
+    ]
 
 
 def load_existing():
@@ -49,7 +56,7 @@ def save_incremental(all_results):
 async def run_one(index: int, golden_set, id_map, resume_texts):
     combos = get_combos()
     if index < 0 or index >= len(combos):
-        print(f"Index {index} out of range (0-{len(combos)-1})")
+        print(f"Index {index} out of range (0-{len(combos) - 1})")
         return
 
     cs, ov = combos[index]
@@ -81,8 +88,9 @@ async def run_all(golden_set, id_map, resume_texts):
     existing = load_existing()
     done_labels = {r["label"] for r in existing}
 
-    remaining = [(i, cs, ov) for i, (cs, ov) in enumerate(combos)
-                 if f"cs{cs}_ov{ov}" not in done_labels]
+    remaining = [
+        (i, cs, ov) for i, (cs, ov) in enumerate(combos) if f"cs{cs}_ov{ov}" not in done_labels
+    ]
 
     if not remaining:
         print("All combinations already done!")
@@ -93,7 +101,7 @@ async def run_all(golden_set, id_map, resume_texts):
     for i, cs, ov in remaining:
         label = f"cs{cs}_ov{ov}"
         p = replace(RagParams(), chunk_size=cs, overlap=ov)
-        print(f"\n[RUN] {label} ({i+1}/{len(combos)})")
+        print(f"\n[RUN] {label} ({i + 1}/{len(combos)})")
 
         agg, details = await run_experiment(golden_set, id_map, resume_texts, p, label=label)
         print_metrics(agg)
@@ -108,7 +116,9 @@ async def run_all(golden_set, id_map, resume_texts):
     save_incremental(existing)
     print("\n=== Phase 1 Final Results ===")
     for r in existing:
-        print(f"  {r['label']:<20} comp={r.get('composite',0):.4f}  avg={r.get('avg_score',0):.3f}  rej={r.get('reject_f1',0):.3f}")
+        print(
+            f"  {r['label']:<20} comp={r.get('composite', 0):.4f}  avg={r.get('avg_score', 0):.3f}  rej={r.get('reject_f1', 0):.3f}"
+        )
 
 
 async def main():

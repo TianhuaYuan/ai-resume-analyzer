@@ -1,4 +1,14 @@
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Header, HTTPException, Response, UploadFile, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    Header,
+    HTTPException,
+    Response,
+    UploadFile,
+    status,
+)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,9 +36,7 @@ async def _find_resume_by_idempotency_key(
 ) -> Resume | None:
     """按 (用户, idempotency_key) 查已有简历，用于幂等去重。"""
     result = await db.execute(
-        select(Resume).where(
-            Resume.user_id == user_id, Resume.idempotency_key == idempotency_key
-        )
+        select(Resume).where(Resume.user_id == user_id, Resume.idempotency_key == idempotency_key)
     )
     return result.scalar_one_or_none()
 
@@ -59,9 +67,7 @@ async def upload_resume(
             )
 
     file_path, filename = await resume_service.save_upload_file(file)
-    resume = await resume_service.create_resume_quick(
-        db, current_user.id, filename, file_path
-    )
+    resume = await resume_service.create_resume_quick(db, current_user.id, filename, file_path)
     # 把幂等键落库，供后续同 key 请求命中
     if idempotency_key:
         resume.idempotency_key = idempotency_key
@@ -87,9 +93,7 @@ async def list_resumes(
     current_user: User = Depends(get_current_user),
 ):
     """分页查当前用户的简历列表。"""
-    items, total = await resume_service.get_user_resumes(
-        db, current_user.id, limit, offset
-    )
+    items, total = await resume_service.get_user_resumes(db, current_user.id, limit, offset)
     return ResumeListResponse(items=items, total=total)
 
 

@@ -57,35 +57,83 @@ class TestE2ECompleteQAPipeline:
         graph = create_mcp_agentic_rag_graph()
 
         mock_search_results = [
-            {"text": "在某公司担任Python开发工程师3年", "chunk_index": 0, "section": "工作经历", "score": 0.92},
-            {"text": "负责后端微服务架构设计与实现", "chunk_index": 1, "section": "工作经历", "score": 0.85},
+            {
+                "text": "在某公司担任Python开发工程师3年",
+                "chunk_index": 0,
+                "section": "工作经历",
+                "score": 0.92,
+            },
+            {
+                "text": "负责后端微服务架构设计与实现",
+                "chunk_index": 1,
+                "section": "工作经历",
+                "score": 0.85,
+            },
         ]
         mock_rerank_results = [
-            {"text": "在某公司担任Python开发工程师3年", "chunk_index": 0, "section": "工作经历", "rerank_score": 0.96},
-            {"text": "负责后端微服务架构设计与实现", "chunk_index": 1, "section": "工作经历", "rerank_score": 0.88},
+            {
+                "text": "在某公司担任Python开发工程师3年",
+                "chunk_index": 0,
+                "section": "工作经历",
+                "rerank_score": 0.96,
+            },
+            {
+                "text": "负责后端微服务架构设计与实现",
+                "chunk_index": 1,
+                "section": "工作经历",
+                "rerank_score": 0.88,
+            },
         ]
         mock_generate_result = {
             "answer": "候选人拥有3年Python开发经验，在某公司担任开发工程师，负责后端微服务架构的设计与实现。",
             "sources": [
-                {"chunk_index": 0, "text": "在某公司担任Python开发工程师3年", "section": "工作经历", "rerank_score": 0.96},
-                {"chunk_index": 1, "text": "负责后端微服务架构设计与实现", "section": "工作经历", "rerank_score": 0.88},
+                {
+                    "chunk_index": 0,
+                    "text": "在某公司担任Python开发工程师3年",
+                    "section": "工作经历",
+                    "rerank_score": 0.96,
+                },
+                {
+                    "chunk_index": 1,
+                    "text": "负责后端微服务架构设计与实现",
+                    "section": "工作经历",
+                    "rerank_score": 0.88,
+                },
             ],
             "rejected": False,
         }
 
         with (
-            patch("services.agentic_rag.rewrite.with_retry", new_callable=AsyncMock,
-                  return_value="候选人有哪些工作经历和经验"),
-            patch("services.agentic_rag.rewrite._classify_route", new_callable=AsyncMock,
-                  return_value="search"),
-            patch("services.agentic_rag.mcp_nodes.mcp_search", new_callable=AsyncMock,
-                  return_value=mock_search_results),
-            patch("services.agentic_rag.mcp_nodes.mcp_rerank", new_callable=AsyncMock,
-                  return_value=mock_rerank_results),
-            patch("services.agentic_rag.mcp_nodes.mcp_generate", new_callable=AsyncMock,
-                  return_value=mock_generate_result),
-            patch("services.agentic_rag.generate.with_retry", new_callable=AsyncMock,
-                  return_value='{"completeness": 9, "accuracy": 9, "source_credibility": 9, "feedback": "回答准确，引用了简历原文"}'),
+            patch(
+                "services.agentic_rag.rewrite.with_retry",
+                new_callable=AsyncMock,
+                return_value="候选人有哪些工作经历和经验",
+            ),
+            patch(
+                "services.agentic_rag.rewrite._classify_route",
+                new_callable=AsyncMock,
+                return_value="search",
+            ),
+            patch(
+                "services.agentic_rag.mcp_nodes.mcp_search",
+                new_callable=AsyncMock,
+                return_value=mock_search_results,
+            ),
+            patch(
+                "services.agentic_rag.mcp_nodes.mcp_rerank",
+                new_callable=AsyncMock,
+                return_value=mock_rerank_results,
+            ),
+            patch(
+                "services.agentic_rag.mcp_nodes.mcp_generate",
+                new_callable=AsyncMock,
+                return_value=mock_generate_result,
+            ),
+            patch(
+                "services.agentic_rag.generate.with_retry",
+                new_callable=AsyncMock,
+                return_value='{"completeness": 9, "accuracy": 9, "source_credibility": 9, "feedback": "回答准确，引用了简历原文"}',
+            ),
         ):
             result = await graph.ainvoke(
                 _make_initial_state("工作经历是什么？"),
@@ -117,28 +165,51 @@ class TestE2ECompleteQAPipeline:
         graph = create_mcp_agentic_rag_graph()
 
         mock_search = [{"text": "相关片段", "chunk_index": 0, "section": "工作经历", "score": 0.85}]
-        mock_rerank = [{"text": "相关片段", "chunk_index": 0, "section": "工作经历", "rerank_score": 0.9}]
+        mock_rerank = [
+            {"text": "相关片段", "chunk_index": 0, "section": "工作经历", "rerank_score": 0.9}
+        ]
         mock_generate = {
             "answer": "候选人有相关工作经验。",
-            "sources": [{"chunk_index": 0, "text": "相关片段", "section": "工作经历", "rerank_score": 0.9}],
+            "sources": [
+                {"chunk_index": 0, "text": "相关片段", "section": "工作经历", "rerank_score": 0.9}
+            ],
             "rejected": False,
         }
 
         with (
-            patch("services.agentic_rag.rewrite.with_retry", new_callable=AsyncMock,
-                  return_value="查询内容"),
-            patch("services.agentic_rag.rewrite._classify_route", new_callable=AsyncMock,
-                  return_value="search"),
-            patch("services.agentic_rag.mcp_nodes.mcp_search", new_callable=AsyncMock,
-                  return_value=mock_search),
-            patch("services.agentic_rag.mcp_nodes.mcp_rerank", new_callable=AsyncMock,
-                  return_value=mock_rerank),
-            patch("services.agentic_rag.mcp_nodes.mcp_generate", new_callable=AsyncMock,
-                  return_value=mock_generate),
-            patch("services.agentic_rag.generate.with_retry", new_callable=AsyncMock, side_effect=[
-                '{"completeness": 3, "accuracy": 3, "source_credibility": 3, "feedback": "回答过于简略"}',   # eval round 1 → retry
-                '{"completeness": 8, "accuracy": 8, "source_credibility": 8, "feedback": "回答准确"}',        # eval round 2 → pass
-            ]),
+            patch(
+                "services.agentic_rag.rewrite.with_retry",
+                new_callable=AsyncMock,
+                return_value="查询内容",
+            ),
+            patch(
+                "services.agentic_rag.rewrite._classify_route",
+                new_callable=AsyncMock,
+                return_value="search",
+            ),
+            patch(
+                "services.agentic_rag.mcp_nodes.mcp_search",
+                new_callable=AsyncMock,
+                return_value=mock_search,
+            ),
+            patch(
+                "services.agentic_rag.mcp_nodes.mcp_rerank",
+                new_callable=AsyncMock,
+                return_value=mock_rerank,
+            ),
+            patch(
+                "services.agentic_rag.mcp_nodes.mcp_generate",
+                new_callable=AsyncMock,
+                return_value=mock_generate,
+            ),
+            patch(
+                "services.agentic_rag.generate.with_retry",
+                new_callable=AsyncMock,
+                side_effect=[
+                    '{"completeness": 3, "accuracy": 3, "source_credibility": 3, "feedback": "回答过于简略"}',  # eval round 1 → retry
+                    '{"completeness": 8, "accuracy": 8, "source_credibility": 8, "feedback": "回答准确"}',  # eval round 2 → pass
+                ],
+            ),
         ):
             result = await graph.ainvoke(
                 _make_initial_state("项目经历？"),
@@ -157,20 +228,31 @@ class TestE2ECompleteQAPipeline:
         graph = create_mcp_agentic_rag_graph()
 
         with (
-            patch("services.agentic_rag.rewrite.with_retry", new_callable=AsyncMock,
-                  return_value="航天经历"),
-            patch("services.agentic_rag.rewrite._classify_route", new_callable=AsyncMock,
-                  return_value="search"),
-            patch("services.agentic_rag.mcp_nodes.mcp_search", new_callable=AsyncMock,
-                  return_value=[]),
-            patch("services.agentic_rag.mcp_nodes.mcp_rerank", new_callable=AsyncMock,
-                  return_value=[]),
-            patch("services.agentic_rag.mcp_nodes.mcp_generate", new_callable=AsyncMock,
-                  return_value={
-                      "answer": "抱歉，简历中未提及该信息。",
-                      "sources": [],
-                      "rejected": True,
-                  }),
+            patch(
+                "services.agentic_rag.rewrite.with_retry",
+                new_callable=AsyncMock,
+                return_value="航天经历",
+            ),
+            patch(
+                "services.agentic_rag.rewrite._classify_route",
+                new_callable=AsyncMock,
+                return_value="search",
+            ),
+            patch(
+                "services.agentic_rag.mcp_nodes.mcp_search", new_callable=AsyncMock, return_value=[]
+            ),
+            patch(
+                "services.agentic_rag.mcp_nodes.mcp_rerank", new_callable=AsyncMock, return_value=[]
+            ),
+            patch(
+                "services.agentic_rag.mcp_nodes.mcp_generate",
+                new_callable=AsyncMock,
+                return_value={
+                    "answer": "抱歉，简历中未提及该信息。",
+                    "sources": [],
+                    "rejected": True,
+                },
+            ),
         ):
             result = await graph.ainvoke(
                 _make_initial_state("航天经历？"),
@@ -184,15 +266,24 @@ class TestE2ECompleteQAPipeline:
     @pytest.mark.asyncio
     async def test_direct_answer_greeting(self):
         """问候 → direct_answer → 模板回复。"""
-        from services.agentic_rag.mcp_graph import create_mcp_agentic_rag_graph, _DIRECT_ANSWER_REPLY
+        from services.agentic_rag.mcp_graph import (
+            create_mcp_agentic_rag_graph,
+            _DIRECT_ANSWER_REPLY,
+        )
 
         graph = create_mcp_agentic_rag_graph()
 
         with (
-            patch("services.agentic_rag.rewrite.with_retry", new_callable=AsyncMock,
-                  return_value="你好"),
-            patch("services.agentic_rag.rewrite._classify_route", new_callable=AsyncMock,
-                  return_value="direct_answer"),
+            patch(
+                "services.agentic_rag.rewrite.with_retry",
+                new_callable=AsyncMock,
+                return_value="你好",
+            ),
+            patch(
+                "services.agentic_rag.rewrite._classify_route",
+                new_callable=AsyncMock,
+                return_value="direct_answer",
+            ),
         ):
             result = await graph.ainvoke(
                 _make_initial_state("你好"),
@@ -216,14 +307,26 @@ class TestE2ECompleteQAPipeline:
         mock_rerank = [{"text": "内容", "chunk_index": 0, "section": "其他", "rerank_score": 0.1}]
 
         with (
-            patch("services.agentic_rag.rewrite.with_retry", new_callable=AsyncMock,
-                  return_value="查询"),
-            patch("services.agentic_rag.rewrite._classify_route", new_callable=AsyncMock,
-                  return_value="search"),
-            patch("services.agentic_rag.mcp_nodes.mcp_search", new_callable=AsyncMock,
-                  return_value=mock_search),
-            patch("services.agentic_rag.mcp_nodes.mcp_rerank", new_callable=AsyncMock,
-                  return_value=mock_rerank),
+            patch(
+                "services.agentic_rag.rewrite.with_retry",
+                new_callable=AsyncMock,
+                return_value="查询",
+            ),
+            patch(
+                "services.agentic_rag.rewrite._classify_route",
+                new_callable=AsyncMock,
+                return_value="search",
+            ),
+            patch(
+                "services.agentic_rag.mcp_nodes.mcp_search",
+                new_callable=AsyncMock,
+                return_value=mock_search,
+            ),
+            patch(
+                "services.agentic_rag.mcp_nodes.mcp_rerank",
+                new_callable=AsyncMock,
+                return_value=mock_rerank,
+            ),
         ):
             result = await graph.ainvoke(
                 _make_initial_state("航天经历？"),
@@ -268,7 +371,9 @@ class TestE2EStreamingMCP:
         mock_http.post = AsyncMock(return_value=mock_response)
         client._client = mock_http
 
-        result = await client.call_tool("generate_answer", {"question": "test", "context": "test", "resume_id": "1"})
+        result = await client.call_tool(
+            "generate_answer", {"question": "test", "context": "test", "resume_id": "1"}
+        )
         assert "content" in result
 
     @pytest.mark.asyncio
@@ -425,10 +530,16 @@ class TestE2EMultiTurnDialogue:
         # 两个并发调用使用不同 thread_id
         async def run_graph(thread_id: str, question: str):
             with (
-                patch("services.agentic_rag.rewrite.with_retry", new_callable=AsyncMock,
-                      return_value=question),
-                patch("services.agentic_rag.rewrite._classify_route", new_callable=AsyncMock,
-                      return_value="direct_answer"),
+                patch(
+                    "services.agentic_rag.rewrite.with_retry",
+                    new_callable=AsyncMock,
+                    return_value=question,
+                ),
+                patch(
+                    "services.agentic_rag.rewrite._classify_route",
+                    new_callable=AsyncMock,
+                    return_value="direct_answer",
+                ),
             ):
                 return await graph.ainvoke(
                     _make_initial_state(question),
@@ -436,6 +547,7 @@ class TestE2EMultiTurnDialogue:
                 )
 
         import asyncio
+
         r1, r2 = await asyncio.gather(
             run_graph("thread-1", "你好"),
             run_graph("thread-2", "再见"),
@@ -456,29 +568,52 @@ class TestE2EMultiTurnDialogue:
         graph = create_mcp_agentic_rag_graph()
 
         mock_search = [{"text": "片段", "chunk_index": 0, "section": "工作经历", "score": 0.8}]
-        mock_rerank = [{"text": "片段", "chunk_index": 0, "section": "工作经历", "rerank_score": 0.9}]
+        mock_rerank = [
+            {"text": "片段", "chunk_index": 0, "section": "工作经历", "rerank_score": 0.9}
+        ]
         mock_generate = {
             "answer": "答案",
-            "sources": [{"chunk_index": 0, "text": "片段", "section": "工作经历", "rerank_score": 0.9}],
+            "sources": [
+                {"chunk_index": 0, "text": "片段", "section": "工作经历", "rerank_score": 0.9}
+            ],
             "rejected": False,
         }
 
         with (
-            patch("services.agentic_rag.rewrite.with_retry", new_callable=AsyncMock,
-                  return_value="查询"),
-            patch("services.agentic_rag.rewrite._classify_route", new_callable=AsyncMock,
-                  return_value="search"),
-            patch("services.agentic_rag.mcp_nodes.mcp_search", new_callable=AsyncMock,
-                  return_value=mock_search),
-            patch("services.agentic_rag.mcp_nodes.mcp_rerank", new_callable=AsyncMock,
-                  return_value=mock_rerank),
-            patch("services.agentic_rag.mcp_nodes.mcp_generate", new_callable=AsyncMock,
-                  return_value=mock_generate),
-            patch("services.agentic_rag.generate.with_retry", new_callable=AsyncMock, side_effect=[
-                '{"completeness": 4, "accuracy": 4, "source_credibility": 4, "feedback": "第1轮不够详细"}',
-                '{"completeness": 3, "accuracy": 3, "source_credibility": 3, "feedback": "第2轮仍不理想"}',
-                '{"completeness": 9, "accuracy": 9, "source_credibility": 9, "feedback": "第3轮很好"}',  # search_round=3 时 evaluate_node 强制通过
-            ]),
+            patch(
+                "services.agentic_rag.rewrite.with_retry",
+                new_callable=AsyncMock,
+                return_value="查询",
+            ),
+            patch(
+                "services.agentic_rag.rewrite._classify_route",
+                new_callable=AsyncMock,
+                return_value="search",
+            ),
+            patch(
+                "services.agentic_rag.mcp_nodes.mcp_search",
+                new_callable=AsyncMock,
+                return_value=mock_search,
+            ),
+            patch(
+                "services.agentic_rag.mcp_nodes.mcp_rerank",
+                new_callable=AsyncMock,
+                return_value=mock_rerank,
+            ),
+            patch(
+                "services.agentic_rag.mcp_nodes.mcp_generate",
+                new_callable=AsyncMock,
+                return_value=mock_generate,
+            ),
+            patch(
+                "services.agentic_rag.generate.with_retry",
+                new_callable=AsyncMock,
+                side_effect=[
+                    '{"completeness": 4, "accuracy": 4, "source_credibility": 4, "feedback": "第1轮不够详细"}',
+                    '{"completeness": 3, "accuracy": 3, "source_credibility": 3, "feedback": "第2轮仍不理想"}',
+                    '{"completeness": 9, "accuracy": 9, "source_credibility": 9, "feedback": "第3轮很好"}',  # search_round=3 时 evaluate_node 强制通过
+                ],
+            ),
         ):
             result = await graph.ainvoke(
                 _make_initial_state("详细工作经历？"),
@@ -594,15 +729,21 @@ class TestE2EConditionalEdges:
         }
 
         # 低分 → should_retry=True
-        with patch("services.agentic_rag.generate.with_retry", new_callable=AsyncMock,
-                   return_value='{"completeness": 3, "accuracy": 3, "source_credibility": 3, "feedback": "不理想"}'):
+        with patch(
+            "services.agentic_rag.generate.with_retry",
+            new_callable=AsyncMock,
+            return_value='{"completeness": 3, "accuracy": 3, "source_credibility": 3, "feedback": "不理想"}',
+        ):
             result = await evaluate_node(state)
             assert result["should_retry"] is True
             assert abs(result["eval_score"] - 0.3) < 1e-6
 
         # 高分 → should_retry=False
-        with patch("services.agentic_rag.generate.with_retry", new_callable=AsyncMock,
-                   return_value='{"completeness": 9, "accuracy": 9, "source_credibility": 9, "feedback": "准确"}'):
+        with patch(
+            "services.agentic_rag.generate.with_retry",
+            new_callable=AsyncMock,
+            return_value='{"completeness": 9, "accuracy": 9, "source_credibility": 9, "feedback": "准确"}',
+        ):
             result = await evaluate_node(state)
             assert result["should_retry"] is False
             assert abs(result["eval_score"] - 0.9) < 1e-6

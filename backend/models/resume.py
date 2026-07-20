@@ -17,7 +17,9 @@ class Resume(Base):
     file_path: Mapped[str] = mapped_column(String(512), nullable=False)
     parsed_text: Mapped[str] = mapped_column(Text, nullable=False)
     chunk_count: Mapped[int] = mapped_column(Integer, default=0)
-    status: Mapped[str] = mapped_column(String(20), default="processing")  # processing / ready / failed
+    status: Mapped[str] = mapped_column(
+        String(20), default="processing"
+    )  # processing / ready / failed
     status_message: Mapped[str] = mapped_column(String(255), default="")
     # 幂等上传键：由客户端在 Idempotency-Key 头提供，按用户维度去重（普通索引列，业务层判重）
     idempotency_key: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)

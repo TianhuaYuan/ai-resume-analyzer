@@ -7,6 +7,7 @@
 - 旧的 llm_generate 打分路径不再被使用
 - 输出格式与 Cross-Encoder 结果一致
 """
+
 import json
 
 import pytest
@@ -30,7 +31,9 @@ async def test_rerank_reuses_rag_service_rerank():
             patch("services.rag.pipeline.llm_generate", new_callable=AsyncMock) as mock_llm,
         ):
             result = await rerank_results(
-                "查询", '[{"text":"A"},{"text":"B"}]', top_k=2,
+                "查询",
+                '[{"text":"A"},{"text":"B"}]',
+                top_k=2,
             )
         # 关键：必须调用已有的 Cross-Encoder rerank，而非 LLM 打分
         # （mock_llm 未被 await 说明旧路径已移除）
@@ -57,12 +60,20 @@ async def test_rerank_passes_query_chunks_topk():
             captured["query"] = query
             captured["chunks"] = chunks
             captured["top_k"] = top_k
-            return [{"text": c.get("text", ""), "rerank_score": 1.0,
-                    "section": c.get("section", ""), "chunk_index": i}
-                   for i, c in enumerate(chunks)][:top_k]
+            return [
+                {
+                    "text": c.get("text", ""),
+                    "rerank_score": 1.0,
+                    "section": c.get("section", ""),
+                    "chunk_index": i,
+                }
+                for i, c in enumerate(chunks)
+            ][:top_k]
 
         with patch("services.rag.retrieval.rerank", side_effect=_fake_rerank):
-            await rerank_results("我的技能", '[{"text":"X","section":"s","chunk_index":0}]', top_k=3)
+            await rerank_results(
+                "我的技能", '[{"text":"X","section":"s","chunk_index":0}]', top_k=3
+            )
 
         assert captured["query"] == "我的技能"
         assert captured["top_k"] == 3

@@ -1,4 +1,5 @@
 """H3: rerank 函数原地修改输入 chunks"""
+
 import inspect
 from services.rag.retrieval import rerank
 
@@ -8,7 +9,7 @@ def test_h3_rerank_should_not_mutate_input_chunks():
     src = inspect.getsource(rerank)
 
     # 检查是否有原地修改的代码模式
-    mutates_inplace = "c[\"rerank_score\"]" in src
+    mutates_inplace = 'c["rerank_score"]' in src
 
     assert not mutates_inplace, (
         "rerank 不应原地修改输入 chunks（c['rerank_score'] = ...）。"

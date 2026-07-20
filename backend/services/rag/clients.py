@@ -3,6 +3,7 @@
 阶段11 从 rag_service.py 拆出：这些是与"外部服务连接"相关的全局状态与工厂，
 独立于检索/分块/编排逻辑，单独成模块便于单测与复用。
 """
+
 import asyncio
 import logging
 import os
@@ -33,6 +34,7 @@ async def with_chroma(func, *args, **kwargs):
     """
     async with _chroma_lock:
         return await asyncio.to_thread(func, *args, **kwargs)
+
 
 # 单次调用超时（秒）：Embedding/LLM 为网络上游，必须设超时以防无限挂起（阶段1 加固）
 _CHAT_TIMEOUT = 60.0

@@ -35,10 +35,10 @@ if sys.platform == "win32":
 # 确保能导入 backend 包
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI  # noqa: E402
 
-from core.config import settings
-from core.rag_params import (
+from core.config import settings  # noqa: E402
+from core.rag_params import (  # noqa: E402
     PHASE1_GRID,
     PHASE2_SWEEP,
     PHASE3_GRID,
@@ -46,10 +46,10 @@ from core.rag_params import (
     PHASE6_TEMPERATURES,
     RagParams,
 )
-from services.rag.pipeline import ask_question_p
-from services.rag.chunking import chunk_by_sections
-from services.rag.retrieval import get_embeddings
-from services.rag.clients import _collection_name, get_chroma_client
+from services.rag.pipeline import ask_question_p  # noqa: E402
+from services.rag.chunking import chunk_by_sections  # noqa: E402
+from services.rag.retrieval import get_embeddings  # noqa: E402
+from services.rag.clients import _collection_name, get_chroma_client  # noqa: E402
 
 
 def get_model_metadata() -> dict:
@@ -79,6 +79,7 @@ def save_model_metadata():
 
 # ───────────────────── 数据加载 ─────────────────────
 
+
 def load_golden_set(path: str = "golden_set.json", split: str | None = None) -> list[dict]:
     """加载评测数据集，可选按 split 过滤。
 
@@ -104,7 +105,9 @@ def load_golden_set(path: str = "golden_set.json", split: str | None = None) -> 
     return samples
 
 
-def load_resume_texts(resume_files: list[str], upload_dir: str = "./rag_tuning/uploads") -> dict[str, str]:
+def load_resume_texts(
+    resume_files: list[str], upload_dir: str = "./rag_tuning/uploads"
+) -> dict[str, str]:
     """读取简历原文，返回 {filename: text}"""
     texts = {}
     for fname in resume_files:
@@ -116,6 +119,7 @@ def load_resume_texts(resume_files: list[str], upload_dir: str = "./rag_tuning/u
 
 
 # ───────────────────── 索引重建 ─────────────────────
+
 
 async def rebuild_index(
     resume_filename: str,
@@ -215,7 +219,9 @@ async def _judge_llm_generate(system: str, user: str) -> str:
 
 
 async def judge_answer(
-    system_answer: str, reference_answer: str, answer_type: str,
+    system_answer: str,
+    reference_answer: str,
+    answer_type: str,
 ) -> int:
     """LLM-as-Judge 打分（使用 JUDGE_* 配置的独立模型），返回 0/1/2"""
     prompt = (
@@ -299,7 +305,11 @@ async def evaluate_one(
     }
 
     if should_answer and not is_reject:
-        score = await judge_answer(answer, qa.get("reference_answer", qa.get("gold_answer", "")), qa.get("category", "unknown"))
+        score = await judge_answer(
+            answer,
+            qa.get("reference_answer", qa.get("gold_answer", "")),
+            qa.get("category", "unknown"),
+        )
         hallucination = check_hallucination(answer, sources)
         result["score"] = score
         result["hallucination"] = hallucination
@@ -356,10 +366,16 @@ async def run_experiment(
         results[idx] = r
         done_count += 1
         if r.get("skip"):
-            print(f"  [WARN] QA {golden_set[idx].get('id', idx)} failed: {r.get('error')}", flush=True)
+            print(
+                f"  [WARN] QA {golden_set[idx].get('id', idx)} failed: {r.get('error')}", flush=True
+            )
         if done_count % 10 == 0 or done_count == len(golden_set):
             valid_tmp = [x for x in results if isinstance(x, dict) and not x.get("skip")]
-            avg_tmp = sum(x.get("score", 0) for x in valid_tmp) / max(len(valid_tmp), 1) if valid_tmp else 0
+            avg_tmp = (
+                sum(x.get("score", 0) for x in valid_tmp) / max(len(valid_tmp), 1)
+                if valid_tmp
+                else 0
+            )
             print(f"  [{done_count}/{len(golden_set)}] avg={avg_tmp:.3f}", flush=True)
 
     valid = [r for r in results if isinstance(r, dict) and not r.get("skip")]
@@ -450,6 +466,7 @@ def aggregate_metrics(results: list[dict], label: str = "", p: RagParams = None)
 
 # ───────────────────── 各 Phase 执行器 ─────────────────────
 
+
 def _resume_id_map(golden_set: list[dict]) -> dict[str, int]:
     """从 Golden Set 构建 filename→id 映射（使用数据集中定义的 resume_id）"""
     files_ids = {}
@@ -464,10 +481,12 @@ def _resume_id_map(golden_set: list[dict]) -> dict[str, int]:
 async def run_baseline(golden_set, id_map, resume_texts):
     """跑当前默认参数作为基线"""
     p = RagParams()
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"BASELINE — 默认参数: {p}")
-    print(f"{'='*60}")
-    agg, details = await run_experiment(golden_set, id_map, resume_texts, p, label="baseline", concurrency=3)
+    print(f"{'=' * 60}")
+    agg, details = await run_experiment(
+        golden_set, id_map, resume_texts, p, label="baseline", concurrency=3
+    )
     print_metrics(agg)
     save_results("baseline", [agg])
     save_details("baseline", details)
@@ -480,20 +499,24 @@ async def run_phase1(golden_set, id_map, resume_texts):
     combos = list(itertools.product(PHASE1_GRID["chunk_size"], PHASE1_GRID["overlap"]))
     total = len([c for c in combos if c[1] < c[0]])
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Phase 1: chunk_size × overlap 网格 ({total} 组合)")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     for i, (cs, ov) in enumerate(combos):
         if ov >= cs:
             continue
         p = replace(RagParams(), chunk_size=cs, overlap=ov)
         label = f"cs{cs}_ov{ov}"
-        print(f"\n[{i+1}/{total}] {label} ...", end=" ", flush=True)
-        agg, details = await run_experiment(golden_set, id_map, resume_texts, p, label=label, concurrency=3)
+        print(f"\n[{i + 1}/{total}] {label} ...", end=" ", flush=True)
+        agg, details = await run_experiment(
+            golden_set, id_map, resume_texts, p, label=label, concurrency=3
+        )
         results.append(agg)
         save_details(f"phase1_{label}", details)
-        print(f"acc={agg.get('accuracy_2', 0):.3f}  rej_f1={agg.get('reject_f1', 0):.3f}  p95={agg.get('p95_latency_ms', 0):.0f}ms")
+        print(
+            f"acc={agg.get('accuracy_2', 0):.3f}  rej_f1={agg.get('reject_f1', 0):.3f}  p95={agg.get('p95_latency_ms', 0):.0f}ms"
+        )
 
     results.sort(key=lambda r: r.get("composite", 0), reverse=True)
     save_results("phase1", results)
@@ -509,14 +532,16 @@ async def run_phase2(golden_set, id_map, resume_texts):
     best = _load_best("phase1")
     base_p = RagParams()
     if best:
-        base_p = replace(base_p, chunk_size=best["params"]["chunk_size"], overlap=best["params"]["overlap"])
+        base_p = replace(
+            base_p, chunk_size=best["params"]["chunk_size"], overlap=best["params"]["overlap"]
+        )
         print(f"Phase 2 使用 Phase 1 最优: cs={base_p.chunk_size}, ov={base_p.overlap}")
 
     for param_name, values in PHASE2_SWEEP.items():
         results = []
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"Phase 2: 扫描 {param_name} = {values}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
         for i, val in enumerate(values):
             if param_name == "rerank_truncation" and val == 0:
@@ -524,9 +549,11 @@ async def run_phase2(golden_set, id_map, resume_texts):
             kwargs = {param_name: val}
             p = replace(base_p, **kwargs)
             label = f"{param_name}={val}"
-            print(f"[{i+1}/{len(values)}] {label} ...", end=" ", flush=True)
+            print(f"[{i + 1}/{len(values)}] {label} ...", end=" ", flush=True)
             # 检索参数变了不需要重建索引（除非 chunk_size/overlap 变了）
-            agg, details = await run_experiment(golden_set, id_map, resume_texts, p, label=label, rebuild=False)
+            agg, details = await run_experiment(
+                golden_set, id_map, resume_texts, p, label=label, rebuild=False
+            )
             results.append(agg)
             all_results.append(agg)
             save_details(f"phase2_{label}", details)
@@ -549,20 +576,24 @@ async def run_phase3(golden_set, id_map, resume_texts):
                 base_p = replace(base_p, **{k: best["params"][k]})
 
     results = []
-    combos = list(itertools.product(PHASE3_GRID["rerank_input_top_k"], PHASE3_GRID["rerank_final_top_k"]))
+    combos = list(
+        itertools.product(PHASE3_GRID["rerank_input_top_k"], PHASE3_GRID["rerank_final_top_k"])
+    )
     total = len([c for c in combos if c[1] <= c[0]])
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Phase 3: rerank_input × rerank_final ({total} 组合)")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     for i, (ri, rf) in enumerate(combos):
         if rf > ri:
             continue
         p = replace(base_p, rerank_input_top_k=ri, rerank_final_top_k=rf)
         label = f"ri{ri}_rf{rf}"
-        print(f"[{i+1}/{total}] {label} ...", end=" ", flush=True)
-        agg, details = await run_experiment(golden_set, id_map, resume_texts, p, label=label, rebuild=False)
+        print(f"[{i + 1}/{total}] {label} ...", end=" ", flush=True)
+        agg, details = await run_experiment(
+            golden_set, id_map, resume_texts, p, label=label, rebuild=False
+        )
         results.append(agg)
         save_details(f"phase3_{label}", details)
         print(f"acc={agg.get('accuracy_2', 0):.3f}  rej_f1={agg.get('reject_f1', 0):.3f}")
@@ -578,24 +609,35 @@ async def run_phase4(golden_set, id_map, resume_texts):
     best = _load_best("phase3") or _load_best("phase2") or _load_best("phase1")
     base_p = RagParams()
     if best:
-        for k in ["chunk_size", "overlap", "rrf_k", "hybrid_top_k", "rerank_truncation",
-                   "rerank_input_top_k", "rerank_final_top_k"]:
+        for k in [
+            "chunk_size",
+            "overlap",
+            "rrf_k",
+            "hybrid_top_k",
+            "rerank_truncation",
+            "rerank_input_top_k",
+            "rerank_final_top_k",
+        ]:
             if k in best["params"]:
                 base_p = replace(base_p, **{k: best["params"][k]})
 
     results = []
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Phase 4: reject_threshold 扫描 {PHASE4_THRESHOLDS}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     for i, thresh in enumerate(PHASE4_THRESHOLDS):
         p = replace(base_p, reject_threshold=thresh)
         label = f"thresh={thresh}"
-        print(f"[{i+1}/{len(PHASE4_THRESHOLDS)}] {label} ...", end=" ", flush=True)
-        agg, details = await run_experiment(golden_set, id_map, resume_texts, p, label=label, rebuild=False)
+        print(f"[{i + 1}/{len(PHASE4_THRESHOLDS)}] {label} ...", end=" ", flush=True)
+        agg, details = await run_experiment(
+            golden_set, id_map, resume_texts, p, label=label, rebuild=False
+        )
         results.append(agg)
         save_details(f"phase4_{label}", details)
-        print(f"acc={agg.get('accuracy_2', 0):.3f}  rej_f1={agg.get('reject_f1', 0):.3f}  rej_rate={agg.get('rejected_count', 0)}/{agg.get('total', 0)}")
+        print(
+            f"acc={agg.get('accuracy_2', 0):.3f}  rej_f1={agg.get('reject_f1', 0):.3f}  rej_rate={agg.get('rejected_count', 0)}/{agg.get('total', 0)}"
+        )
 
     results.sort(key=lambda r: r.get("composite", 0), reverse=True)
     save_results("phase4", results)
@@ -608,21 +650,31 @@ async def run_phase6(golden_set, id_map, resume_texts):
     best = _load_best("phase4") or _load_best("phase3")
     base_p = RagParams()
     if best:
-        for k in ["chunk_size", "overlap", "rrf_k", "hybrid_top_k", "rerank_truncation",
-                   "rerank_input_top_k", "rerank_final_top_k", "reject_threshold"]:
+        for k in [
+            "chunk_size",
+            "overlap",
+            "rrf_k",
+            "hybrid_top_k",
+            "rerank_truncation",
+            "rerank_input_top_k",
+            "rerank_final_top_k",
+            "reject_threshold",
+        ]:
             if k in best["params"]:
                 base_p = replace(base_p, **{k: best["params"][k]})
 
     results = []
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Phase 6: temperature 扫描 {PHASE6_TEMPERATURES}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     for i, temp in enumerate(PHASE6_TEMPERATURES):
         p = replace(base_p, generate_temperature=temp)
         label = f"temp={temp}"
-        print(f"[{i+1}/{len(PHASE6_TEMPERATURES)}] {label} ...", end=" ", flush=True)
-        agg, details = await run_experiment(golden_set, id_map, resume_texts, p, label=label, rebuild=False)
+        print(f"[{i + 1}/{len(PHASE6_TEMPERATURES)}] {label} ...", end=" ", flush=True)
+        agg, details = await run_experiment(
+            golden_set, id_map, resume_texts, p, label=label, rebuild=False
+        )
         results.append(agg)
         save_details(f"phase6_{label}", details)
         print(f"acc={agg.get('accuracy_2', 0):.3f}  rej_f1={agg.get('reject_f1', 0):.3f}")
@@ -636,7 +688,9 @@ async def run_phase6(golden_set, id_map, resume_texts):
 async def run_phase5(golden_set, id_map, resume_texts):
     """Phase 5: Top-3 参数组合全量验证（3 次重复取均值±标准差）"""
     # 收集各 Phase 最优
-    best_overall = _load_best("phase4") or _load_best("phase3") or _load_best("phase2") or _load_best("phase1")
+    best_overall = (
+        _load_best("phase4") or _load_best("phase3") or _load_best("phase2") or _load_best("phase1")
+    )
     if not best_overall:
         print("没有找到之前的实验结果，请先跑 Phase 1-4")
         return []
@@ -646,17 +700,19 @@ async def run_phase5(golden_set, id_map, resume_texts):
         if hasattr(base_p, k):
             base_p = replace(base_p, **{k: v})
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("Phase 5: 最优参数 3 次重复验证")
     print(f"参数: {base_p}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     all_runs = []
     for run_i in range(3):
-        print(f"\n--- 第 {run_i+1}/3 次 ---")
-        agg, details = await run_experiment(golden_set, id_map, resume_texts, base_p, label=f"best_run{run_i+1}", concurrency=3)
+        print(f"\n--- 第 {run_i + 1}/3 次 ---")
+        agg, details = await run_experiment(
+            golden_set, id_map, resume_texts, base_p, label=f"best_run{run_i + 1}", concurrency=3
+        )
         all_runs.append(agg)
-        save_details(f"phase5_run{run_i+1}", details)
+        save_details(f"phase5_run{run_i + 1}", details)
         print_metrics(agg)
 
     # 统计均值 ± 标准差
@@ -748,16 +804,22 @@ def print_metrics(result: dict):
     if "error" in result:
         print(f"  [ERROR] {result['error']}")
         return
-    print(f"  总题数: {result['total']}  回答: {result['answered_count']}  拒答: {result['rejected_count']}")
+    print(
+        f"  总题数: {result['total']}  回答: {result['answered_count']}  拒答: {result['rejected_count']}"
+    )
     print(f"  准确率(2分): {result['accuracy_2']:.3f}  平均分: {result['avg_score']:.3f}")
-    print(f"  拒答F1: {result['reject_f1']:.3f}  (P={result['reject_precision']:.3f} R={result['reject_recall']:.3f})")
+    print(
+        f"  拒答F1: {result['reject_f1']:.3f}  (P={result['reject_precision']:.3f} R={result['reject_recall']:.3f})"
+    )
     print(f"  幻觉率: {result['hallucination_rate']:.3f}")
     print(f"  延迟: P50={result['p50_latency_ms']:.0f}ms  P95={result['p95_latency_ms']:.0f}ms")
     print(f"  综合分: {result['composite']:.4f}")
     # 按题型分解
     if "per_category" in result and result["per_category"]:
         cats = result["per_category"]
-        parts = [f"  {k}: avg={v['avg_score']:.3f}(n={v['count']})" for k, v in sorted(cats.items())]
+        parts = [
+            f"  {k}: avg={v['avg_score']:.3f}(n={v['count']})" for k, v in sorted(cats.items())
+        ]
         print("  题型分解:")
         for p in parts:
             print(p)
@@ -773,19 +835,29 @@ def print_table(results: list[dict], title: str = ""):
         if "error" in r:
             print(f"{r['label']:<25} ERROR: {r['error']}")
             continue
-        print(f"{r['label']:<25} {r['accuracy_2']:>6.3f} {r['reject_f1']:>6.3f} "
-              f"{r['hallucination_rate']:>7.3f} {r['p95_latency_ms']:>7.0f} {r['composite']:>7.4f}")
+        print(
+            f"{r['label']:<25} {r['accuracy_2']:>6.3f} {r['reject_f1']:>6.3f} "
+            f"{r['hallucination_rate']:>7.3f} {r['p95_latency_ms']:>7.0f} {r['composite']:>7.4f}"
+        )
 
 
 # ───────────────────── 主入口 ─────────────────────
+
 
 async def main():
     parser = argparse.ArgumentParser(description="RAG 参数调优实验框架")
     parser.add_argument("--phase", type=int, choices=[1, 2, 3, 4, 5, 6], help="运行指定 Phase")
     parser.add_argument("--baseline", action="store_true", help="跑基线")
     parser.add_argument("--single", type=str, help="单组参数测试，如 chunk_size=800,overlap=100")
-    parser.add_argument("--golden-set", type=str, default="tuning_archive/data/golden_set_v2.json", help="Golden Set 路径")
-    parser.add_argument("--upload-dir", type=str, default="tuning_archive/data/resumes", help="简历文件目录")
+    parser.add_argument(
+        "--golden-set",
+        type=str,
+        default="tuning_archive/data/golden_set_v2.json",
+        help="Golden Set 路径",
+    )
+    parser.add_argument(
+        "--upload-dir", type=str, default="tuning_archive/data/resumes", help="简历文件目录"
+    )
     args = parser.parse_args()
 
     # 加载数据（留出 eval 集：tuning 用于调参，eval 用于 Phase 5 验证）

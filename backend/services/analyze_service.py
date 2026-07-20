@@ -3,6 +3,7 @@
 从 mcp_server/tools/analyze.py 抽取的共享逻辑，供 MCP 工具和 REST 端点复用。
 MCP 工具捕获 HTTPException 转 TextContent 错误 JSON，REST 端点直接抛出。
 """
+
 import logging
 from typing import Literal
 
@@ -87,9 +88,7 @@ async def analyze_resume(
         try:
             from utils.file_parser import parse_resume
 
-            parsed_text = await with_retry(
-                lambda: parse_resume(resume.file_path), fallback=""
-            )
+            parsed_text = await with_retry(lambda: parse_resume(resume.file_path), fallback="")
         except Exception as e:
             logger.warning("Failed to parse resume file %s: %s", resume.file_path, e)
             raise HTTPException(

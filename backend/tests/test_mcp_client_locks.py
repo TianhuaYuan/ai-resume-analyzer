@@ -12,6 +12,7 @@
 
 运行: python -m pytest tests/test_mcp_client_locks.py -v
 """
+
 import asyncio
 
 import httpx
@@ -32,6 +33,7 @@ def _as_tuple(t: httpx.Timeout):
 
 
 # ── 2.5 双重检查锁 ─────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_double_checked_lock_single_creation():
@@ -69,6 +71,7 @@ async def test_close_then_get_creates_new():
 
 
 # ── 2.6 MCP 工具加超时 ─────────────────────────────────
+
 
 def test_client_default_timeout_is_httpx_timeout():
     """mcp_client 的默认超时应为 httpx.Timeout(30, connect=10)。"""

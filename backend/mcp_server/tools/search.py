@@ -1,4 +1,5 @@
 """MCP Tool: search_knowledge_base — 混合检索 + Rerank 精排。"""
+
 import json
 import logging
 
@@ -44,18 +45,28 @@ async def search_knowledge_base(
         resume = result.scalar_one_or_none()
 
     if resume is None:
-        return [TextContent(type="text", text=f'{{"error": "Resume {resume_id} not found or access denied"}}')]
+        return [
+            TextContent(
+                type="text", text=f'{{"error": "Resume {resume_id} not found or access denied"}}'
+            )
+        ]
 
     if resume.status != "ready":
-        return [TextContent(
-            type="text",
-            text=f'{{"error": "Resume {resume_id} is not ready (status: {resume.status})"}}',
-        )]
+        return [
+            TextContent(
+                type="text",
+                text=f'{{"error": "Resume {resume_id} is not ready (status: {resume.status})"}}',
+            )
+        ]
 
     try:
         chunks = await hybrid_search(resume_id_int, query, top_k=20)
         if not chunks:
-            return [TextContent(type="text", text='{"results": [], "message": "No matching content found"}')]
+            return [
+                TextContent(
+                    type="text", text='{"results": [], "message": "No matching content found"}'
+                )
+            ]
 
         reranked = await rerank(query, chunks, top_k=top_k)
 

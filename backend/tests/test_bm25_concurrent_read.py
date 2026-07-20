@@ -1,4 +1,5 @@
 """H2: BM25 索引字典无锁读取"""
+
 import inspect
 from services.rag.retrieval import _keyword_search
 

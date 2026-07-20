@@ -2,6 +2,7 @@
 简历模块测试：认证校验 / 列表 / 详情。
 上传和删除涉及文件系统和 ChromaDB，放在集成测试中验证。
 """
+
 import pytest
 from httpx import AsyncClient
 
@@ -26,7 +27,9 @@ async def test_get_resume_without_auth(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_upload_without_auth(client: AsyncClient):
     """未登录上传简历 → 401。"""
-    resp = await client.post("/api/v1/resumes", files={"file": ("test.pdf", b"fake", "application/pdf")})
+    resp = await client.post(
+        "/api/v1/resumes", files={"file": ("test.pdf", b"fake", "application/pdf")}
+    )
     assert resp.status_code == 401
 
 

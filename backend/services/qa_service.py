@@ -51,9 +51,7 @@ async def get_history(
         )
 
     total_result = await db.execute(
-        select(func.count())
-        .select_from(QAHistory)
-        .where(*base_filters)
+        select(func.count()).select_from(QAHistory).where(*base_filters)
     )
     total = total_result.scalar_one()
 
@@ -86,8 +84,7 @@ async def delete_history_by_resume(
 
     # 执行删除
     await db.execute(
-        delete(QAHistory)
-        .where(QAHistory.user_id == user_id, QAHistory.resume_id == resume_id)
+        delete(QAHistory).where(QAHistory.user_id == user_id, QAHistory.resume_id == resume_id)
     )
     await db.commit()
     return count
@@ -104,8 +101,7 @@ async def delete_qa_by_id(
     返回是否删除成功。
     """
     result = await db.execute(
-        delete(QAHistory)
-        .where(QAHistory.id == qa_id, QAHistory.user_id == user_id)
+        delete(QAHistory).where(QAHistory.id == qa_id, QAHistory.user_id == user_id)
     )
     await db.commit()
     # rowcount 表示实际删除的行数

@@ -1,6 +1,7 @@
 """
 MCP Server 测试：认证中间件 + Tool/Resource 单元测试。
 """
+
 import json
 
 import pytest
@@ -94,8 +95,9 @@ class TestMCPServerInit:
 async def test_mcp_no_auth_returns_401():
     """无 Authorization header → 401。"""
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test",
-                           follow_redirects=False) as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test", follow_redirects=False
+    ) as client:
         resp = await client.post(
             "/mcp/",
             content=b'{"jsonrpc":"2.0","method":"tools/list","id":1}',
@@ -110,8 +112,9 @@ async def test_mcp_no_auth_returns_401():
 async def test_mcp_invalid_token_returns_401():
     """无效 token → 401。"""
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test",
-                           follow_redirects=False) as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test", follow_redirects=False
+    ) as client:
         resp = await client.post(
             "/mcp/",
             content=b'{"jsonrpc":"2.0","method":"tools/list","id":1}',
@@ -135,6 +138,7 @@ async def test_mcp_initialize():
     mcp_instance.streamable_http_app()
 
     async with mcp_instance.session_manager.run():
+
         class _MCPTestASGI:
             def __init__(self, sm):
                 self._sm = sm
@@ -150,20 +154,23 @@ async def test_mcp_initialize():
         )
 
         transport = ASGITransport(app=test_app)
-        async with AsyncClient(transport=transport, base_url="http://localhost:8000",
-                               follow_redirects=False) as client:
+        async with AsyncClient(
+            transport=transport, base_url="http://localhost:8000", follow_redirects=False
+        ) as client:
             resp = await client.post(
                 "/mcp/",
-                content=json.dumps({
-                    "jsonrpc": "2.0",
-                    "method": "initialize",
-                    "id": 1,
-                    "params": {
-                        "protocolVersion": "2025-03-26",
-                        "capabilities": {},
-                        "clientInfo": {"name": "test", "version": "0.1"},
-                    },
-                }).encode(),
+                content=json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "method": "initialize",
+                        "id": 1,
+                        "params": {
+                            "protocolVersion": "2025-03-26",
+                            "capabilities": {},
+                            "clientInfo": {"name": "test", "version": "0.1"},
+                        },
+                    }
+                ).encode(),
                 headers={
                     "Content-Type": "application/json",
                     "Accept": "application/json, text/event-stream",

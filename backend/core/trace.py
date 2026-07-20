@@ -60,9 +60,7 @@ class TraceMiddleware(BaseHTTPMiddleware):
     - 在响应头回写 X-Trace-ID，方便前端 / 网关在出错时回带运单号。
     """
 
-    async def dispatch(
-        self, request: Request, call_next: RequestResponseEndpoint
-    ) -> Response:
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         # 直接读请求头而非依赖顺序：即使中间件装配顺序变化也能拿到运单号。
         trace_id = request.headers.get(REQUEST_ID_HEADER) or str(uuid4())
         token = _trace_id_ctx.set(trace_id)

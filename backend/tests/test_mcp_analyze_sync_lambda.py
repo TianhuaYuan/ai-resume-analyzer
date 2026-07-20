@@ -1,4 +1,5 @@
 """C3: MCP analyze_resume sync lambda 传给 async with_retry → TypeError"""
+
 import tempfile
 import os
 import pytest
@@ -10,9 +11,7 @@ from core.retry import with_retry
 async def test_c3_parse_resume_with_retry_should_not_raise_typeerror():
     """with_retry 应该能正常调用 parse_resume 并返回 str，不应抛出 TypeError"""
     content = "Python is a programming language. " * 30
-    with tempfile.NamedTemporaryFile(
-        suffix=".txt", mode="w", delete=False, encoding="utf-8"
-    ) as f:
+    with tempfile.NamedTemporaryFile(suffix=".txt", mode="w", delete=False, encoding="utf-8") as f:
         f.write(content)
         tmp_path = f.name
 

@@ -19,6 +19,7 @@ from services.agentic_rag.state import AgenticRAGState
 
 # ── 辅助 ──────────────────────────────────────────────────
 
+
 def _make_state(**overrides) -> AgenticRAGState:
     """构造最小 AgenticRAGState。"""
     base: AgenticRAGState = {
@@ -27,7 +28,12 @@ def _make_state(**overrides) -> AgenticRAGState:
         "rewritten_query": "候选人的专业技能有哪些",
         "route_decision": "search",
         "chunks": [
-            {"text": "精通 Python、FastAPI", "section": "专业技能", "chunk_index": 0, "rerank_score": 0.9},
+            {
+                "text": "精通 Python、FastAPI",
+                "section": "专业技能",
+                "chunk_index": 0,
+                "rerank_score": 0.9,
+            },
         ],
         "search_round": 1,
         "answer": "候选人精通 Python",
@@ -51,6 +57,7 @@ def _make_state(**overrides) -> AgenticRAGState:
 
 
 # ── _parse_reflection_response ─────────────────────────────
+
 
 class TestParseReflectionResponse:
     """_parse_reflection_response 防御性解析测试。"""
@@ -93,6 +100,7 @@ class TestParseReflectionResponse:
     def test_limits_supplement_queries(self):
         """最多 _MAX_SUPPLEMENT_QUERIES 个查询。"""
         import json
+
         queries = [f"查询{i}" for i in range(10)]
         raw = json.dumps({"reflection": "test", "missing_info": [], "supplement_queries": queries})
         _, _, result_queries = _parse_reflection_response(raw)
@@ -106,6 +114,7 @@ class TestParseReflectionResponse:
 
 
 # ── _build_reflection_user ─────────────────────────────────
+
 
 class TestBuildReflectionUser:
     """_build_reflection_user 构建 prompt 测试。"""
@@ -184,6 +193,7 @@ class TestBuildReflectionUser:
 
 
 # ── self_reflection_node ───────────────────────────────────
+
 
 class TestSelfReflectionNode:
     """self_reflection_node — mock LLM 调用。"""
@@ -317,6 +327,7 @@ class TestSelfReflectionNode:
 
 
 # ── Reflexion 完整流程 ─────────────────────────────────────
+
 
 class TestReflexionPipeline:
     """Reflexion 完整流程：evaluate → self_reflection → search。"""

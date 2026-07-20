@@ -1,4 +1,5 @@
 """MCP Tool: generate_answer — 基于检索上下文生成答案。"""
+
 import json
 import logging
 
@@ -31,13 +32,15 @@ async def generate_answer(
     try:
         _user_id = get_current_user_id()
     except LookupError:
-        return [TextContent(
-            type="text",
-            text=json.dumps(
-                {"error": "authentication required: missing user context"},
-                ensure_ascii=False,
-            ),
-        )]
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps(
+                    {"error": "authentication required: missing user context"},
+                    ensure_ascii=False,
+                ),
+            )
+        ]
 
     import asyncio
 
@@ -48,20 +51,36 @@ async def generate_answer(
         return [TextContent(type="text", text='{"error": "question cannot be empty"}')]
 
     if not context.strip():
-        return [TextContent(type="text", text=json.dumps({
-            "answer": "抱歉，简历中未提及该信息。",
-            "sources": [],
-            "rejected": True,
-        }, ensure_ascii=False))]
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps(
+                    {
+                        "answer": "抱歉，简历中未提及该信息。",
+                        "sources": [],
+                        "rejected": True,
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+        ]
 
     chunks = _parse_context_to_chunks(context)
 
     if reject_if_low_score(chunks):
-        return [TextContent(type="text", text=json.dumps({
-            "answer": "抱歉，简历中未提及该信息。",
-            "sources": [],
-            "rejected": True,
-        }, ensure_ascii=False))]
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps(
+                    {
+                        "answer": "抱歉，简历中未提及该信息。",
+                        "sources": [],
+                        "rejected": True,
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+        ]
 
     context_texts = [c.get("text", "") for c in chunks]
     prompt = build_prompt(context_texts, question)
@@ -88,20 +107,36 @@ async def generate_answer(
             for i, c in enumerate(chunks)
         ]
 
-        return [TextContent(type="text", text=json.dumps({
-            "answer": answer,
-            "sources": sources,
-            "rejected": False,
-            "chunk_count": len(chunks),
-        }, ensure_ascii=False))]
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps(
+                    {
+                        "answer": answer,
+                        "sources": sources,
+                        "rejected": False,
+                        "chunk_count": len(chunks),
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+        ]
 
     except Exception:
         logger.exception("generate_answer failed for resume %s", resume_id)
-        return [TextContent(type="text", text=json.dumps({
-            "answer": "服务暂时不可用，请稍后重试。",
-            "sources": [],
-            "rejected": True,
-        }, ensure_ascii=False))]
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps(
+                    {
+                        "answer": "服务暂时不可用，请稍后重试。",
+                        "sources": [],
+                        "rejected": True,
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+        ]
 
 
 def _parse_context_to_chunks(context: str) -> list[dict]:

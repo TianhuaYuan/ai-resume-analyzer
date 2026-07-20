@@ -35,7 +35,11 @@ async def mcp_search_node(state: AgenticRAGState) -> dict:
 
     logger.info(
         "mcp_search_node: resume=%d round=%d query='%s' → %d chunks (%.2fs)",
-        resume_id, round_num, query[:50], len(chunks), elapsed,
+        resume_id,
+        round_num,
+        query[:50],
+        len(chunks),
+        elapsed,
     )
 
     trace = dict(state.get("trace", {}))
@@ -84,7 +88,9 @@ async def mcp_rerank_node(state: AgenticRAGState) -> dict:
 
     logger.info(
         "mcp_rerank_node: %d → %d chunks (%.2fs)",
-        len(chunks), len(reranked), elapsed,
+        len(chunks),
+        len(reranked),
+        elapsed,
     )
 
     trace = dict(state.get("trace", {}))
@@ -143,7 +149,10 @@ async def mcp_generate_node(state: AgenticRAGState) -> dict:
 
     logger.info(
         "mcp_generate_node: query='%s' → %d chars, %d sources (%.2fs)",
-        query[:50], len(answer), len(chunks), elapsed,
+        query[:50],
+        len(answer),
+        len(chunks),
+        elapsed,
     )
 
     trace = dict(state.get("trace", {}))

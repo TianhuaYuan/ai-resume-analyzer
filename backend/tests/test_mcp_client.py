@@ -14,6 +14,7 @@ from mcp_client.client import MCPClient, MCPClientError, get_mcp_client, close_m
 
 # ── MCPClient 基础测试 ─────────────────────────────────────
 
+
 class TestMCPClientInit:
     """MCPClient 初始化测试。"""
 
@@ -230,6 +231,7 @@ class TestMCPClientReadResource:
 
 # ── 单例管理测试 ───────────────────────────────────────────
 
+
 class TestMCPSingleton:
     """get_mcp_client / close_mcp_client 测试。"""
 
@@ -253,6 +255,7 @@ class TestMCPSingleton:
 
 
 # ── _parse_tool_result 测试 ────────────────────────────────
+
 
 class TestParseToolResult:
     """_parse_tool_result 辅助函数测试。"""

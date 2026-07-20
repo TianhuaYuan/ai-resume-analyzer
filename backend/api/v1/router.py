@@ -1,4 +1,5 @@
 """v1 路由汇总：auth + resumes + qa。"""
+
 from fastapi import APIRouter
 
 from api.auth import router as auth_router

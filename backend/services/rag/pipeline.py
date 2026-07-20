@@ -3,6 +3,7 @@
 阶段11 从 rag_service.py 拆出：把"分块/检索/重排"这些零件串成完整问答链路，
 并承载与 LLM 交互的生成逻辑。用到 core.trace.StepTimer 做分步计时（契约不变）。
 """
+
 import asyncio
 import logging
 from typing import Any
@@ -47,13 +48,21 @@ async def rewrite_query(question: str) -> str:
         "改写后的问题："
     )
     rewritten = await with_retry(
-        llm_generate, system, user, temperature=0.1, max_tokens=200, fallback=question,
+        llm_generate,
+        system,
+        user,
+        temperature=0.1,
+        max_tokens=200,
+        fallback=question,
     )
     return rewritten or question
 
 
 async def llm_generate(
-    system: str, user: str, temperature: float = 0.1, max_tokens: int | None = None,
+    system: str,
+    user: str,
+    temperature: float = 0.1,
+    max_tokens: int | None = None,
 ) -> str:
     """调 Chat API 生成回答（模型由 settings.CHAT_MODEL 决定），抽出来方便加不同的 temperature 和重试"""
     client = get_chat_client()
@@ -72,7 +81,9 @@ async def llm_generate(
 
 
 async def _llm_generate_stream(
-    system: str, user: str, temperature: float = 0.1,
+    system: str,
+    user: str,
+    temperature: float = 0.1,
 ):
     """流式调 Chat API（模型由 settings.CHAT_MODEL 决定），逐 token yield delta text"""
     client = get_chat_client()
@@ -95,9 +106,7 @@ async def _llm_generate_stream(
 
 def build_prompt(context_chunks: list[str], question: str) -> dict:
     """组装 System Prompt + 来源上下文"""
-    context = "\n\n".join(
-        f"[段落 {i + 1}]\n{text}" for i, text in enumerate(context_chunks)
-    )
+    context = "\n\n".join(f"[段落 {i + 1}]\n{text}" for i, text in enumerate(context_chunks))
     system = (
         "你是一个简历分析助手。请根据下面的简历内容回答问题。"
         "如果简历中没有直接相关信息，请明确说未提及，不要推测。"
@@ -148,9 +157,7 @@ async def process_resume(resume_id: int, text: str) -> int:
     return len(chunks)
 
 
-async def _retrieve(
-    resume_id: int, question: str, timer: StepTimer
-) -> tuple[str, list[dict]]:
+async def _retrieve(resume_id: int, question: str, timer: StepTimer) -> tuple[str, list[dict]]:
     """检索链路：改写 → 混合检索(20) → Rerank(5) → 拒答判断。
     返回 (rewritten_question, reranked_chunks)。检索失败时 reranked_chunks 为空。"""
     rewritten = await timer.run("rewrite", rewrite_query(question))
@@ -183,14 +190,20 @@ async def ask_question(resume_id: int, question: str) -> tuple[str, list[dict]]:
 
 
 async def _retrieve_p(
-    resume_id: int, question: str, p: RagParams, timer: StepTimer,
-    collection_name: str | None = None, bm25_key: Any | None = None,
+    resume_id: int,
+    question: str,
+    p: RagParams,
+    timer: StepTimer,
+    collection_name: str | None = None,
+    bm25_key: Any | None = None,
 ) -> tuple[str, list[dict]]:
     """参数化版检索链路。collection_name / bm25_key 用于参数化实验隔离（Model C）。"""
     rewritten = await timer.run("rewrite", rewrite_query(question))
     chunks = await timer.run(
         "hybrid",
-        hybrid_search_p(resume_id, rewritten, p, collection_name=collection_name, bm25_key=bm25_key),
+        hybrid_search_p(
+            resume_id, rewritten, p, collection_name=collection_name, bm25_key=bm25_key
+        ),
     )
     if not chunks:
         return rewritten, []
@@ -208,8 +221,11 @@ async def _retrieve_p(
 
 
 async def ask_question_p(
-    resume_id: int, question: str, p: RagParams,
-    collection_name: str | None = None, bm25_key: Any | None = None,
+    resume_id: int,
+    question: str,
+    p: RagParams,
+    collection_name: str | None = None,
+    bm25_key: Any | None = None,
 ) -> tuple[str, list[dict], dict]:
     """参数化版 RAG 全链路，返回 (answer, sources, timings)。
     collection_name / bm25_key 为可选项，用于参数化实验隔离（Model C）；
@@ -218,7 +234,12 @@ async def ask_question_p(
     timer = StepTimer()
 
     rewritten, reranked = await _retrieve_p(
-        resume_id, question, p, timer, collection_name=collection_name, bm25_key=bm25_key,
+        resume_id,
+        question,
+        p,
+        timer,
+        collection_name=collection_name,
+        bm25_key=bm25_key,
     )
     if not reranked:
         timer.log()
@@ -228,8 +249,11 @@ async def ask_question_p(
     answer = await timer.run(
         "generate",
         with_retry(
-            llm_generate, prompt["system"], prompt["user"],
-            temperature=p.generate_temperature, fallback=FALLBACK_MESSAGE,
+            llm_generate,
+            prompt["system"],
+            prompt["user"],
+            temperature=p.generate_temperature,
+            fallback=FALLBACK_MESSAGE,
         ),
     )
 
@@ -263,7 +287,10 @@ async def ask_question_stream(resume_id: int, question: str):
         # 流式失败 → 降级为非流式重试一次
         logger.exception("Streaming failed, falling back to non-streaming")
         fallback = await with_retry(
-            llm_generate, prompt["system"], prompt["user"], fallback=FALLBACK_MESSAGE,
+            llm_generate,
+            prompt["system"],
+            prompt["user"],
+            fallback=FALLBACK_MESSAGE,
         )
         full = fallback
         yield {"type": "token", "content": fallback}

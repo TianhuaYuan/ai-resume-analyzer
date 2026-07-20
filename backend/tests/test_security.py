@@ -30,9 +30,7 @@ async def test_refresh_rate_limited(client, registered_user, monkeypatch):
 
     statuses = []
     for _ in range(6):  # RATE_LIMIT_REFRESH 默认 5/minute，第 6 次应被拦
-        r = await client.post(
-            "/api/v1/auth/refresh", json={"refresh_token": refresh_token}
-        )
+        r = await client.post("/api/v1/auth/refresh", json={"refresh_token": refresh_token})
         statuses.append(r.status_code)
 
     assert 429 in statuses, f"期望出现 429，实际: {statuses}"
@@ -143,6 +141,7 @@ async def test_pii_redaction_applied_on_ask(client, auth_headers, monkeypatch):
     import services.resume_service as _rs
 
     monkeypatch.setattr(settings, "REDACT_PII_OUTPUT", True)
+
     # 跳过简历归属校验（测试库无该简历），直奔答案生成
     async def _fake_get_resume(*a, **k):
         return None
@@ -169,9 +168,7 @@ async def test_pii_redaction_applied_on_ask(client, auth_headers, monkeypatch):
 async def test_oversized_body_rejected(client, monkeypatch):
     monkeypatch.setattr(settings, "MAX_REQUEST_BODY_MB", 1)  # 1MB
     huge = "x" * (2 * 1024 * 1024)  # 2MB
-    r = await client.post(
-        "/api/v1/auth/login", json={"email": huge, "password": "x"}
-    )
+    r = await client.post("/api/v1/auth/login", json={"email": huge, "password": "x"})
     assert r.status_code == 413
 
 

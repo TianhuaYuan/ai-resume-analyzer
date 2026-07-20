@@ -68,9 +68,7 @@ async def mcp_generate(
     client = await get_mcp_client()
     await client.connect()
 
-    context = "\n\n".join(
-        f"[段落 {i + 1}] {c.get('text', '')}" for i, c in enumerate(chunks)
-    )
+    context = "\n\n".join(f"[段落 {i + 1}] {c.get('text', '')}" for i, c in enumerate(chunks))
 
     try:
         result = await client.call_tool(

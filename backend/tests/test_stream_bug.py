@@ -1,6 +1,7 @@
 """
 测试流式 LLM 生成中的空 choices 问题（debugging 专用，后续并入 test_rag_service）
 """
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from services.rag.pipeline import _llm_generate_stream
@@ -8,12 +9,14 @@ from services.rag.pipeline import _llm_generate_stream
 
 class MockChunk:
     """模拟 OpenAI 流式 chunk"""
+
     def __init__(self, choices):
         self.choices = choices
 
 
 class MockChoice:
     """模拟 choices[0]"""
+
     def __init__(self, content: str | None):
         self.delta = MagicMock()
         self.delta.content = content
@@ -87,13 +90,34 @@ async def test_rag_pipeline_handles_empty_choices_gracefully():
 
     patches = [
         patch("services.rag.pipeline.get_chat_client", return_value=mock_client),
-        patch("services.rag.pipeline.rewrite_query", new_callable=AsyncMock, return_value="测试问题"),
-        patch("services.rag.pipeline.hybrid_search", new_callable=AsyncMock, return_value=[
-            {"chunk_index": 0, "text": "一段简历内容", "score": 0.8, "source": "dense", "section": "基本信息"},
-        ]),
-        patch("services.rag.pipeline.rerank", new_callable=AsyncMock, return_value=[
-            {"chunk_index": 0, "text": "一段简历内容", "rerank_score": 0.9, "section": "基本信息"},
-        ]),
+        patch(
+            "services.rag.pipeline.rewrite_query", new_callable=AsyncMock, return_value="测试问题"
+        ),
+        patch(
+            "services.rag.pipeline.hybrid_search",
+            new_callable=AsyncMock,
+            return_value=[
+                {
+                    "chunk_index": 0,
+                    "text": "一段简历内容",
+                    "score": 0.8,
+                    "source": "dense",
+                    "section": "基本信息",
+                },
+            ],
+        ),
+        patch(
+            "services.rag.pipeline.rerank",
+            new_callable=AsyncMock,
+            return_value=[
+                {
+                    "chunk_index": 0,
+                    "text": "一段简历内容",
+                    "rerank_score": 0.9,
+                    "section": "基本信息",
+                },
+            ],
+        ),
         patch("services.rag.pipeline.reject_if_low_score", return_value=False),
     ]
 

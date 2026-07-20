@@ -2,6 +2,7 @@
 
 严格按计划 RED→GREEN 编写，仅跑本文件，不影响 MySQL 环境测试。
 """
+
 import pytest
 from httpx import AsyncClient
 
@@ -48,9 +49,7 @@ async def test_metrics_requires_auth_without_token(client: AsyncClient, monkeypa
 
 async def test_metrics_ok_with_valid_token(client: AsyncClient, monkeypatch):
     monkeypatch.setattr(settings, "METRICS_TOKEN", "secret-metrics-token")
-    resp = await client.get(
-        "/metrics", headers={"Authorization": "Bearer secret-metrics-token"}
-    )
+    resp = await client.get("/metrics", headers={"Authorization": "Bearer secret-metrics-token"})
     # 认证通过即不应再是 403（指标生成本身依赖运行时注册表，不在此断言）
     assert resp.status_code != 403
 
@@ -86,7 +85,8 @@ async def test_idempotent_upload_returns_existing(
 
     monkeypatch.setattr(resume_service, "save_upload_file", _fake_save)
     monkeypatch.setattr(
-        resume_service, "process_resume_background",
+        resume_service,
+        "process_resume_background",
         lambda *a, **k: None,
     )
 

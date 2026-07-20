@@ -8,6 +8,7 @@
 TDD 红：端点尚未实现，应返回 405 Method Not Allowed 或 422/404。
 TDD 绿：实现端点后所有用例通过。
 """
+
 import pytest
 from httpx import AsyncClient
 
@@ -65,9 +66,7 @@ async def test_delete_history_without_auth(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_delete_history_nonexistent_resume(
-    client: AsyncClient, auth_headers: dict
-):
+async def test_delete_history_nonexistent_resume(client: AsyncClient, auth_headers: dict):
     """清空不存在的 resume → 404（归属校验先于删除）。"""
     resp = await client.delete("/api/v1/qa/history/99999", headers=auth_headers)
     assert resp.status_code == 404
@@ -84,17 +83,13 @@ async def test_delete_history_success(
     await _insert_qa(user_id, resume_id, question="Q2", answer="A2")
     await _insert_qa(user_id, resume_id, question="Q3", answer="A3")
 
-    resp = await client.delete(
-        f"/api/v1/qa/history/{resume_id}", headers=auth_headers
-    )
+    resp = await client.delete(f"/api/v1/qa/history/{resume_id}", headers=auth_headers)
     assert resp.status_code == 200
     data = resp.json()
     assert data["deleted_count"] == 3
 
     # 再查历史应该是空
-    resp2 = await client.get(
-        f"/api/v1/qa/history/{resume_id}", headers=auth_headers
-    )
+    resp2 = await client.get(f"/api/v1/qa/history/{resume_id}", headers=auth_headers)
     assert resp2.json()["total"] == 0
 
 
@@ -126,9 +121,7 @@ async def test_delete_history_cross_user_404(
     headers_b = {"Authorization": f"Bearer {login_b.json()['access_token']}"}
 
     # 用户 B 尝试清用户 A 的简历历史（resume_id 属于 A）
-    resp = await client.delete(
-        f"/api/v1/qa/history/{resume_a}", headers=headers_b
-    )
+    resp = await client.delete(f"/api/v1/qa/history/{resume_a}", headers=headers_b)
     assert resp.status_code == 404
 
 
@@ -143,18 +136,14 @@ async def test_delete_qa_without_auth(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_delete_qa_nonexistent(
-    client: AsyncClient, auth_headers: dict
-):
+async def test_delete_qa_nonexistent(client: AsyncClient, auth_headers: dict):
     """删不存在的 qa_id → 404。"""
     resp = await client.delete("/api/v1/qa/99999", headers=auth_headers)
     assert resp.status_code == 404
 
 
 @pytest.mark.asyncio
-async def test_delete_qa_success(
-    client: AsyncClient, auth_headers: dict, registered_user: dict
-):
+async def test_delete_qa_success(client: AsyncClient, auth_headers: dict, registered_user: dict):
     """成功删单条 → 204。"""
     user_id = registered_user["id"]
     resume_id = await _insert_resume(user_id)
@@ -164,9 +153,7 @@ async def test_delete_qa_success(
     assert resp.status_code == 204
 
     # 再查历史，total 应该是 0
-    resp2 = await client.get(
-        f"/api/v1/qa/history/{resume_id}", headers=auth_headers
-    )
+    resp2 = await client.get(f"/api/v1/qa/history/{resume_id}", headers=auth_headers)
     assert resp2.json()["total"] == 0
 
 

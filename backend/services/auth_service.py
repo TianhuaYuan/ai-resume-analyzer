@@ -64,13 +64,17 @@ async def refresh_token(db: AsyncSession, token_str: str) -> TokenResponse:
     """
     payload = decode_token(token_str)
     if payload is None or payload.get("type") != "refresh":
-        logger.warning("refresh token 无效: type=%s", payload.get("type") if payload else "decode_failed")
+        logger.warning(
+            "refresh token 无效: type=%s", payload.get("type") if payload else "decode_failed"
+        )
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="无效或过期的刷新凭证")
 
     # SEC-005：撤销名单校验（登出/改密后旧 refresh 失效）
     if is_token_revoked(payload.get("jti")):
         logger.warning("refresh token 已撤销: jti=%s", payload.get("jti"))
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="刷新凭证已失效，请重新登录")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="刷新凭证已失效，请重新登录"
+        )
 
     user_id_str = payload.get("sub")
     if user_id_str is None:

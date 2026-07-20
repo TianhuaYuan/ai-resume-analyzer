@@ -1,4 +1,5 @@
 """MCP Resource: resume_list — 当前用户简历列表。"""
+
 import json
 import logging
 
@@ -19,19 +20,20 @@ async def get_resume_list() -> str:
 
     async with AsyncSessionLocal() as db:
         result = await db.execute(
-            select(Resume)
-            .where(Resume.user_id == user_id)
-            .order_by(Resume.created_at.desc())
+            select(Resume).where(Resume.user_id == user_id).order_by(Resume.created_at.desc())
         )
         resumes = result.scalars().all()
 
-    return json.dumps([
-        {
-            "id": r.id,
-            "filename": r.filename,
-            "status": r.status,
-            "chunk_count": r.chunk_count,
-            "created_at": r.created_at.isoformat() if r.created_at else None,
-        }
-        for r in resumes
-    ], ensure_ascii=False)
+    return json.dumps(
+        [
+            {
+                "id": r.id,
+                "filename": r.filename,
+                "status": r.status,
+                "chunk_count": r.chunk_count,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in resumes
+        ],
+        ensure_ascii=False,
+    )

@@ -87,8 +87,9 @@ async def test_auth_middleware_rejects_no_token():
     from main import app
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test",
-                           follow_redirects=False) as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test", follow_redirects=False
+    ) as client:
         resp = await client.post(
             "/mcp/",
             content=b'{"jsonrpc":"2.0","method":"tools/list","id":1}',
@@ -105,8 +106,9 @@ async def test_auth_middleware_rejects_invalid_token():
     from main import app
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test",
-                           follow_redirects=False) as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test", follow_redirects=False
+    ) as client:
         resp = await client.post(
             "/mcp/",
             content=b'{"jsonrpc":"2.0","method":"tools/list","id":1}',
@@ -127,8 +129,9 @@ async def test_auth_middleware_rejects_refresh_token():
 
     token = create_refresh_token({"sub": "1"})
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test",
-                           follow_redirects=False) as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test", follow_redirects=False
+    ) as client:
         resp = await client.post(
             "/mcp/",
             content=b'{"jsonrpc":"2.0","method":"tools/list","id":1}',
@@ -224,10 +227,12 @@ async def test_rerank_results_tool_small_batch():
 
     token = _current_user_id.set(1)
     try:
-        chunks = json.dumps([
-            {"text": "内容1", "section": "工作经历"},
-            {"text": "内容2", "section": "教育背景"},
-        ])
+        chunks = json.dumps(
+            [
+                {"text": "内容1", "section": "工作经历"},
+                {"text": "内容2", "section": "教育背景"},
+            ]
+        )
         result = await rerank_results(query="test", chunks=chunks, top_k=5)
         data = json.loads(result[0].text)
         # rerank 返回格式：list of {text, rerank_score, section, chunk_index}
@@ -424,9 +429,16 @@ async def test_mcp_tools_module_search_integration():
     from mcp_client.tools import mcp_search
 
     mock_result = {
-        "content": [{"type": "text", "text": json.dumps([
-            {"text": "工作经历", "score": 0.9, "section": "工作经历", "chunk_index": 0},
-        ])}],
+        "content": [
+            {
+                "type": "text",
+                "text": json.dumps(
+                    [
+                        {"text": "工作经历", "score": 0.9, "section": "工作经历", "chunk_index": 0},
+                    ]
+                ),
+            }
+        ],
     }
 
     with patch("mcp_client.tools.get_mcp_client") as mock_get:
@@ -474,11 +486,18 @@ async def test_mcp_tools_module_generate_integration():
     from mcp_client.tools import mcp_generate
 
     mock_result = {
-        "content": [{"type": "text", "text": json.dumps({
-            "answer": "候选人有3年工作经验",
-            "sources": [{"text": "工作经验", "section": "工作经历"}],
-            "rejected": False,
-        })}],
+        "content": [
+            {
+                "type": "text",
+                "text": json.dumps(
+                    {
+                        "answer": "候选人有3年工作经验",
+                        "sources": [{"text": "工作经验", "section": "工作经历"}],
+                        "rejected": False,
+                    }
+                ),
+            }
+        ],
     }
 
     with patch("mcp_client.tools.get_mcp_client") as mock_get:
@@ -689,35 +708,63 @@ async def test_mcp_graph_end_to_end_search_path():
     ]
     mock_generate = {
         "answer": "候选人有3年工作经验。",
-        "sources": [{"chunk_index": 0, "text": "工作经历", "section": "工作经历", "rerank_score": 0.95}],
+        "sources": [
+            {"chunk_index": 0, "text": "工作经历", "section": "工作经历", "rerank_score": 0.95}
+        ],
         "rejected": False,
     }
 
     with (
-        patch("services.agentic_rag.rewrite.with_retry", new_callable=AsyncMock, return_value="工作经历"),
-        patch("services.agentic_rag.rewrite._classify_route", new_callable=AsyncMock, return_value="search"),
-        patch("services.agentic_rag.mcp_nodes.mcp_search", new_callable=AsyncMock, return_value=mock_search),
-        patch("services.agentic_rag.mcp_nodes.mcp_rerank", new_callable=AsyncMock, return_value=mock_rerank),
-        patch("services.agentic_rag.mcp_nodes.mcp_generate", new_callable=AsyncMock, return_value=mock_generate),
-        patch("services.agentic_rag.generate.with_retry", new_callable=AsyncMock,
-              return_value='{"completeness": 8, "accuracy": 8, "source_credibility": 8, "feedback": "准确"}'),
+        patch(
+            "services.agentic_rag.rewrite.with_retry",
+            new_callable=AsyncMock,
+            return_value="工作经历",
+        ),
+        patch(
+            "services.agentic_rag.rewrite._classify_route",
+            new_callable=AsyncMock,
+            return_value="search",
+        ),
+        patch(
+            "services.agentic_rag.mcp_nodes.mcp_search",
+            new_callable=AsyncMock,
+            return_value=mock_search,
+        ),
+        patch(
+            "services.agentic_rag.mcp_nodes.mcp_rerank",
+            new_callable=AsyncMock,
+            return_value=mock_rerank,
+        ),
+        patch(
+            "services.agentic_rag.mcp_nodes.mcp_generate",
+            new_callable=AsyncMock,
+            return_value=mock_generate,
+        ),
+        patch(
+            "services.agentic_rag.generate.with_retry",
+            new_callable=AsyncMock,
+            return_value='{"completeness": 8, "accuracy": 8, "source_credibility": 8, "feedback": "准确"}',
+        ),
     ):
-        result = await graph.ainvoke({
-            "question": "工作经历是什么？",
-            "resume_id": 1,
-            "rewritten_query": "",
-            "route_decision": "",
-            "chunks": [],
-            "search_round": 0,
-            "answer": "",
-            "sources": [],
-            "eval_score": 0.0,
-            "eval_feedback": "",
-            "should_retry": False,
-            "final_answer": "",
-            "final_sources": [],
-            "trace": {},
-        }, config={"configurable": {"thread_id": "test-integration-e2e"}})
+        result = await graph.ainvoke(
+            {
+                "question": "工作经历是什么？",
+                "resume_id": 1,
+                "rewritten_query": "",
+                "route_decision": "",
+                "chunks": [],
+                "search_round": 0,
+                "answer": "",
+                "sources": [],
+                "eval_score": 0.0,
+                "eval_feedback": "",
+                "should_retry": False,
+                "final_answer": "",
+                "final_sources": [],
+                "trace": {},
+            },
+            config={"configurable": {"thread_id": "test-integration-e2e"}},
+        )
 
     assert result["route_decision"] == "search"
     assert result["final_answer"] == "候选人有3年工作经验。"
@@ -734,25 +781,34 @@ async def test_mcp_graph_end_to_end_direct_path():
     graph = create_mcp_agentic_rag_graph()
 
     with (
-        patch("services.agentic_rag.rewrite.with_retry", new_callable=AsyncMock, return_value="你好"),
-        patch("services.agentic_rag.rewrite._classify_route", new_callable=AsyncMock, return_value="direct_answer"),
+        patch(
+            "services.agentic_rag.rewrite.with_retry", new_callable=AsyncMock, return_value="你好"
+        ),
+        patch(
+            "services.agentic_rag.rewrite._classify_route",
+            new_callable=AsyncMock,
+            return_value="direct_answer",
+        ),
     ):
-        result = await graph.ainvoke({
-            "question": "你好",
-            "resume_id": 1,
-            "rewritten_query": "",
-            "route_decision": "",
-            "chunks": [],
-            "search_round": 0,
-            "answer": "",
-            "sources": [],
-            "eval_score": 0.0,
-            "eval_feedback": "",
-            "should_retry": False,
-            "final_answer": "",
-            "final_sources": [],
-            "trace": {},
-        }, config={"configurable": {"thread_id": "test-integration-direct"}})
+        result = await graph.ainvoke(
+            {
+                "question": "你好",
+                "resume_id": 1,
+                "rewritten_query": "",
+                "route_decision": "",
+                "chunks": [],
+                "search_round": 0,
+                "answer": "",
+                "sources": [],
+                "eval_score": 0.0,
+                "eval_feedback": "",
+                "should_retry": False,
+                "final_answer": "",
+                "final_sources": [],
+                "trace": {},
+            },
+            config={"configurable": {"thread_id": "test-integration-direct"}},
+        )
 
     assert result["route_decision"] == "direct_answer"
     assert result["final_answer"] != ""
@@ -833,10 +889,12 @@ class TestMCPHTTPEndpoint:
         """POST /mcp/ 缺少 method 字段 → JSON-RPC error 或错误响应。"""
         resp = await client.post(
             "/mcp/",
-            content=json.dumps({
-                "jsonrpc": "2.0",
-                "id": "t6",
-            }).encode(),
+            content=json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": "t6",
+                }
+            ).encode(),
             headers={**auth_headers, "Content-Type": "application/json"},
         )
         # 缺少 method 应返回错误（MCP session 未建立可能返回 404）
@@ -1039,7 +1097,8 @@ class TestMCPClientServerCollaboration:
         mock_response.status_code = 200
         mock_response.headers = {"content-type": "application/json"}
         mock_response.json.return_value = {
-            "jsonrpc": "2.0", "id": "1",
+            "jsonrpc": "2.0",
+            "id": "1",
             "result": {"content": [{"type": "text", "text": '{"ok": true}'}]},
         }
         mock_response.raise_for_status = MagicMock()

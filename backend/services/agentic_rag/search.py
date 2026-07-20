@@ -44,11 +44,13 @@ async def search_node(state: AgenticRAGState) -> dict:
             # 某个检索子步骤（稠密向量 / 稀疏 BM25 融合）失败：
             # 记录而非抛出，保证其余查询仍能返回结果，实现「部分降级」而非全盘失败。
             logger.warning("search_node: hybrid_search failed for query=%r: %s", q, exc)
-            tool_errors.append({
-                "tool": "hybrid_search",
-                "query": q,
-                "error": str(exc)[:300],
-            })
+            tool_errors.append(
+                {
+                    "tool": "hybrid_search",
+                    "query": q,
+                    "error": str(exc)[:300],
+                }
+            )
             continue
         all_chunks.extend(chunks)
 
@@ -58,7 +60,11 @@ async def search_node(state: AgenticRAGState) -> dict:
 
     logger.info(
         "search_node: resume=%d round=%d queries=%d → %d unique chunks (%.2fs)",
-        resume_id, round_num, len(queries_to_search), len(unique_chunks), elapsed,
+        resume_id,
+        round_num,
+        len(queries_to_search),
+        len(unique_chunks),
+        elapsed,
     )
 
     trace = dict(state.get("trace", {}))
@@ -97,17 +103,21 @@ async def rerank_node(state: AgenticRAGState) -> dict:
     except Exception as exc:
         # rerank 失败：降级为原始顺序（不重排），并记录工具错误，让下游感知「精排缺失」。
         logger.warning("rerank_node: rerank failed, falling back to original order: %s", exc)
-        tool_errors.append({
-            "tool": "rerank",
-            "query": query,
-            "error": str(exc)[:300],
-        })
+        tool_errors.append(
+            {
+                "tool": "rerank",
+                "query": query,
+                "error": str(exc)[:300],
+            }
+        )
         reranked = chunks
     elapsed = time.monotonic() - timer_start
 
     logger.info(
         "rerank_node: %d → %d chunks (%.2fs)",
-        len(chunks), len(reranked), elapsed,
+        len(chunks),
+        len(reranked),
+        elapsed,
     )
 
     trace = dict(state.get("trace", {}))

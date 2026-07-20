@@ -50,8 +50,13 @@ async def login(
     user = await authenticate_user(db, data.email, data.password)
     tokens = create_tokens(user)
     a_max, r_max = _cookie_max_age()
-    set_auth_cookies(response, tokens.access_token, tokens.refresh_token,
-                     access_max_age=a_max, refresh_max_age=r_max)
+    set_auth_cookies(
+        response,
+        tokens.access_token,
+        tokens.refresh_token,
+        access_max_age=a_max,
+        refresh_max_age=r_max,
+    )
     return tokens
 
 
@@ -67,8 +72,13 @@ async def login_form(
     user = await authenticate_user(db, form.username, form.password)
     tokens = create_tokens(user)
     a_max, r_max = _cookie_max_age()
-    set_auth_cookies(response, tokens.access_token, tokens.refresh_token,
-                     access_max_age=a_max, refresh_max_age=r_max)
+    set_auth_cookies(
+        response,
+        tokens.access_token,
+        tokens.refresh_token,
+        access_max_age=a_max,
+        refresh_max_age=r_max,
+    )
     return tokens
 
 
@@ -86,8 +96,13 @@ async def refresh(
     """
     tokens = await refresh_token(db, data.refresh_token)
     a_max, r_max = _cookie_max_age()
-    set_auth_cookies(response, tokens.access_token, tokens.refresh_token,
-                     access_max_age=a_max, refresh_max_age=r_max)
+    set_auth_cookies(
+        response,
+        tokens.access_token,
+        tokens.refresh_token,
+        access_max_age=a_max,
+        refresh_max_age=r_max,
+    )
     return tokens
 
 

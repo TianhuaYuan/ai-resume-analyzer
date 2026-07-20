@@ -131,9 +131,7 @@ app.add_middleware(
 async def security_headers(request: Request, call_next):
     response: Response = await call_next(request)
     # 3.1 SEC-006：HSTS（仅 HTTPS 生效，HTTP 下浏览器忽略）+ 严格 CSP
-    response.headers["Strict-Transport-Security"] = (
-        "max-age=31536000; includeSubDomains; preload"
-    )
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
     response.headers["Content-Security-Policy"] = (
         "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
     )

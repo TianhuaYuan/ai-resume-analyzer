@@ -6,6 +6,7 @@
 - 缺失用户上下文（contextvar 未设置）→ 按现有错误格式拒绝，不静默放行
 - 存在用户上下文 → 正常调用底层服务
 """
+
 import json
 
 import pytest
@@ -15,6 +16,7 @@ from mcp_server.server import _current_user_id
 
 
 # ── 无用户上下文：应拒绝 ─────────────────────────────────
+
 
 def _ensure_no_user_context():
     """显式清空 contextvar，确保构造出『缺失用户上下文』场景。"""
@@ -71,6 +73,7 @@ async def test_rerank_rejects_without_user_context():
 
 # ── 有用户上下文：正常执行 ───────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_rewrite_works_with_user_context():
     from mcp_server.tools.rewrite import rewrite_query
@@ -97,7 +100,9 @@ async def test_rerank_works_with_user_context():
         fake_reranked = [
             {"text": "片段", "rerank_score": 0.9, "section": "经历", "chunk_index": 0},
         ]
-        with patch("services.rag.retrieval.rerank", new_callable=AsyncMock, return_value=fake_reranked):
+        with patch(
+            "services.rag.retrieval.rerank", new_callable=AsyncMock, return_value=fake_reranked
+        ):
             result = await rerank_results("查询", '[{"text": "片段", "chunk_index": 0}]')
         data = json.loads(result[0].text)
         assert isinstance(data, list)

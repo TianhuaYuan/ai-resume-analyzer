@@ -125,7 +125,9 @@ class MCPClient:
             logger.info("MCP client disconnected")
 
     async def _parse_sse_response(
-        self, response: httpx.Response, request_id: str,
+        self,
+        response: httpx.Response,
+        request_id: str,
     ) -> dict:
         last_data = None
         async for line in response.aiter_lines():
@@ -162,7 +164,8 @@ _client_lock: asyncio.Lock = asyncio.Lock()
 
 
 async def get_mcp_client(
-    base_url: str = _DEFAULT_BASE_URL, token: str = "",
+    base_url: str = _DEFAULT_BASE_URL,
+    token: str = "",
 ) -> MCPClient:
     global _client_instance
     # 第一次检查（无锁，快速路径）

@@ -6,6 +6,7 @@
 且 pytest-asyncio 0.25+ 已弃用该自定义 fixture。
 使用默认的 function-scoped 事件循环，每个测试独立隔离。
 """
+
 from collections.abc import AsyncGenerator
 
 import pytest
@@ -75,10 +76,13 @@ async def registered_user(client: AsyncClient) -> dict:
 @pytest.fixture
 async def auth_headers(client: AsyncClient, registered_user: dict) -> dict:
     """登录并返回带 Authorization 的请求头。"""
-    resp = await client.post("/api/v1/auth/login", json={
-        "email": registered_user["email"],
-        "password": registered_user["password"],
-    })
+    resp = await client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": registered_user["email"],
+            "password": registered_user["password"],
+        },
+    )
     assert resp.status_code == 200
     token = resp.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}

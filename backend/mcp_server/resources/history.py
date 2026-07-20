@@ -1,4 +1,5 @@
 """MCP Resource: qa_history — 指定简历的问答历史。"""
+
 import json
 import logging
 
@@ -41,13 +42,16 @@ async def get_qa_history(resume_id: str) -> str:
         )
         records = result.scalars().all()
 
-    return json.dumps([
-        {
-            "id": r.id,
-            "question": r.question,
-            "answer": r.answer,
-            "sources": r.sources,
-            "created_at": r.created_at.isoformat() if r.created_at else None,
-        }
-        for r in records
-    ], ensure_ascii=False)
+    return json.dumps(
+        [
+            {
+                "id": r.id,
+                "question": r.question,
+                "answer": r.answer,
+                "sources": r.sources,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in records
+        ],
+        ensure_ascii=False,
+    )

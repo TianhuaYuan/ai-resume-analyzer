@@ -20,11 +20,11 @@ _REFLECTION_SYSTEM = (
     "2. **识别缺失**：哪些关键信息没有找到？\n"
     "3. **生成查询**：应该搜索什么来补充这些信息？\n\n"
     "请严格按以下 JSON 格式返回（不要包含其他文字）：\n"
-    '{\n'
+    "{\n"
     '  "reflection": "<分析答案为什么不好的具体原因>",\n'
     '  "missing_info": ["<缺失信息1>", "<缺失信息2>", ...],\n'
     '  "supplement_queries": ["<补充查询1>", "<补充查询2>", ...]\n'
-    '}\n\n'
+    "}\n\n"
     "注意：\n"
     "- supplement_queries 应该是具体的搜索查询，而不是笼统的描述\n"
     "- 每个查询应该针对一个具体的缺失信息\n"
@@ -49,9 +49,8 @@ def _build_reflection_user(
 
     prev_reflections_text = ""
     if previous_reflections:
-        prev_reflections_text = (
-            "\n\n**之前的反思（避免重复）**：\n"
-            + "\n".join(f"- {r}" for r in previous_reflections[-2:])
+        prev_reflections_text = "\n\n**之前的反思（避免重复）**：\n" + "\n".join(
+            f"- {r}" for r in previous_reflections[-2:]
         )
 
     return (
@@ -151,7 +150,10 @@ async def self_reflection_node(state: AgenticRAGState) -> dict:
 
     logger.info(
         "self_reflection_node: round=%d, missing=%d, queries=%d (%.2fs)",
-        new_round, len(missing_info), len(supplement_queries), elapsed,
+        new_round,
+        len(missing_info),
+        len(supplement_queries),
+        elapsed,
     )
 
     trace = dict(state.get("trace", {}))

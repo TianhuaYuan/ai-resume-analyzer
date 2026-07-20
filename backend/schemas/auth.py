@@ -4,7 +4,7 @@ from pydantic import BaseModel, EmailStr, field_validator
 
 class RegisterRequest(BaseModel):
     username: str
-    email: EmailStr                         # 自动校验邮箱格式
+    email: EmailStr  # 自动校验邮箱格式
     password: str
     password_confirm: str
 
@@ -55,4 +55,4 @@ class UserResponse(BaseModel):
     email: str
     created_at: datetime
 
-    model_config = {"from_attributes": True}   # 允许直接从ORM对象构建
+    model_config = {"from_attributes": True}  # 允许直接从ORM对象构建

@@ -15,6 +15,7 @@ from services.agentic_rag.mcp_nodes import mcp_search_node, mcp_rerank_node, mcp
 
 # ── 辅助 ──────────────────────────────────────────────────
 
+
 def _make_state(question: str = "工作经历是什么？", **overrides) -> AgenticRAGState:
     """构造最小 AgenticRAGState。"""
     base: AgenticRAGState = {
@@ -38,6 +39,7 @@ def _make_state(question: str = "工作经历是什么？", **overrides) -> Agen
 
 
 # ── mcp_search_node 测试 ───────────────────────────────────
+
 
 class TestMCPSearchNode:
     """mcp_search_node 测试。"""
@@ -136,6 +138,7 @@ class TestMCPSearchNode:
 
 # ── mcp_rerank_node 测试 ───────────────────────────────────
 
+
 class TestMCPRerankNode:
     """mcp_rerank_node 测试。"""
 
@@ -205,6 +208,7 @@ class TestMCPRerankNode:
 
 
 # ── mcp_generate_node 测试 ─────────────────────────────────
+
 
 class TestMCPGenerateNode:
     """mcp_generate_node 测试。"""
@@ -294,7 +298,9 @@ class TestMCPGenerateNode:
             new_callable=AsyncMock,
             return_value=mock_result,
         ):
-            chunks = [{"text": "来源", "section": "工作经历", "chunk_index": 0, "rerank_score": 0.9}]
+            chunks = [
+                {"text": "来源", "section": "工作经历", "chunk_index": 0, "rerank_score": 0.9}
+            ]
             state = _make_state(chunks=chunks, rewritten_query="test")
             result = await mcp_generate_node(state)
             # 使用 _extract_sources 生成的来源

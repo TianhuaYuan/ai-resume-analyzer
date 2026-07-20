@@ -3,6 +3,7 @@
 阶段11 从 rag_service.py 拆出：纯文本处理，无外部依赖（除 jieba 分词），
 是整条 RAG 链路里最易单测、最不该被网络 IO 污染的部分。
 """
+
 import logging
 import re
 
@@ -13,45 +14,95 @@ logger = logging.getLogger(__name__)
 SECTION_HEADERS = [
     # ── 中文 ──
     # 教育
-    "教育背景", "教育经历", "学历", "教育", "学习经历",
+    "教育背景",
+    "教育经历",
+    "学历",
+    "教育",
+    "学习经历",
     # 工作 / 实习
-    "工作经历", "工作经验", "实习经历", "实习经验", "工作", "实习",
+    "工作经历",
+    "工作经验",
+    "实习经历",
+    "实习经验",
+    "工作",
+    "实习",
     # 项目
-    "项目经历", "项目经验", "项目展示", "项目",
+    "项目经历",
+    "项目经验",
+    "项目展示",
+    "项目",
     # 技能
-    "专业技能", "技能", "技术栈", "技术能力", "个人技能", "掌握技能",
+    "专业技能",
+    "技能",
+    "技术栈",
+    "技术能力",
+    "个人技能",
+    "掌握技能",
     # 评价 / 总结
-    "自我评价", "个人总结", "自我介绍", "个人评价", "自我总结",
+    "自我评价",
+    "个人总结",
+    "自我介绍",
+    "个人评价",
+    "自我总结",
     # 其他
-    "开源贡献", "开源", "证书", "获奖", "荣誉", "证书与奖项",
+    "开源贡献",
+    "开源",
+    "证书",
+    "获奖",
+    "荣誉",
+    "证书与奖项",
     # 扩展中文变体
-    "个人简介", "个人概况", "基本资料",
-    "职业经历", "从业经历",
-    "技术总结", "技术特长",
-    "校园经历", "社团活动", "社会实践",
-    "培训经历", "进修经历",
-    "研究成果", "科研经历",
-    "语言能力", "外语水平",
-    "兴趣爱好", "特长",
-    "作品集", "个人作品",
+    "个人简介",
+    "个人概况",
+    "基本资料",
+    "职业经历",
+    "从业经历",
+    "技术总结",
+    "技术特长",
+    "校园经历",
+    "社团活动",
+    "社会实践",
+    "培训经历",
+    "进修经历",
+    "研究成果",
+    "科研经历",
+    "语言能力",
+    "外语水平",
+    "兴趣爱好",
+    "特长",
+    "作品集",
+    "个人作品",
     # ── 英文（多词组优先，单字词仅限上下文安全的高频标题）──
     # 教育
-    "Education Background", "Education Experience", "Educational Background",
+    "Education Background",
+    "Education Experience",
+    "Educational Background",
     # 工作
-    "Work Experience", "Professional Experience", "Employment History",
-    "Career History", "Work History",
+    "Work Experience",
+    "Professional Experience",
+    "Employment History",
+    "Career History",
+    "Work History",
     # 技能
-    "Technical Skills", "Professional Skills", "Core Skills", "Core Competencies",
+    "Technical Skills",
+    "Professional Skills",
+    "Core Skills",
+    "Core Competencies",
     "Areas of Expertise",
     # 项目
-    "Project Experience", "Key Projects",
+    "Project Experience",
+    "Key Projects",
     # 总结
-    "Professional Summary", "Career Summary", "Executive Summary",
+    "Professional Summary",
+    "Career Summary",
+    "Executive Summary",
     "Personal Profile",
     # 证书 / 荣誉
-    "Honors and Awards", "Awards and Honors",
+    "Honors and Awards",
+    "Awards and Honors",
     # 其他多词
-    "Volunteer Experience", "Community Experience",
+    "Volunteer Experience",
+    "Community Experience",
     "Research Experience",
     "Leadership Experience",
     "Additional Information",
@@ -60,7 +111,8 @@ SECTION_HEADERS = [
     # 安全单字词：出现在行首 + 紧跟换行的概率远高于被误读
     "Education",
     "Summary",
-    "Certifications", "Certificates",
+    "Certifications",
+    "Certificates",
     "Publications",
     "References",
     "Projects",
@@ -114,7 +166,7 @@ def _recursive_split(text: str, chunk_size: int, overlap: int) -> list[str]:
     while len(current) > chunk_size:
         split_pos = _find_split(current, chunk_size, separators)
         result.append(current[:split_pos])
-        current = current[max(0, split_pos - overlap):]
+        current = current[max(0, split_pos - overlap) :]
     if current.strip():
         result.append(current)
     return result

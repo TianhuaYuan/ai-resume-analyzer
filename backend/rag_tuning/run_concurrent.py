@@ -3,6 +3,7 @@
 用法：python run_concurrent.py --phase 4
       python run_concurrent.py --phase 3 --resume  # 从断点续跑
 """
+
 import argparse
 import asyncio
 import itertools
@@ -19,11 +20,22 @@ if sys.platform == "win32":
 
 from core.rag_params import (
     PHASE3_GRID,
-    PHASE4_THRESHOLDS, PHASE6_TEMPERATURES, RagParams,
+    PHASE4_THRESHOLDS,
+    PHASE6_TEMPERATURES,
+    RagParams,
 )
 from rag_tuning.evaluate import (
-    load_golden_set, load_resume_texts, _resume_id_map,
-    evaluate_one, aggregate_metrics, save_results, save_details, print_metrics, print_table, _load_best, _load_results_list,
+    load_golden_set,
+    load_resume_texts,
+    _resume_id_map,
+    evaluate_one,
+    aggregate_metrics,
+    save_results,
+    save_details,
+    print_metrics,
+    print_table,
+    _load_best,
+    _load_results_list,
     rebuild_all_indices,
 )
 
@@ -31,7 +43,12 @@ CONCURRENCY = 10  # 同时跑 10 条 QA
 
 
 async def run_experiment_concurrent(
-    golden_set, id_map, resume_texts, p, label="", rebuild=True,
+    golden_set,
+    id_map,
+    resume_texts,
+    p,
+    label="",
+    rebuild=True,
 ):
     """并发版实验：用 semaphore 限制并发数"""
     errors = p.validate()
@@ -78,23 +95,32 @@ async def run_phase3_concurrent(golden_set, id_map, resume_texts):
 
     results = _load_results_list("phase3")
     done_labels = {r["label"] for r in results}
-    combos = [(ri, rf) for ri, rf in itertools.product(
-        PHASE3_GRID["rerank_input_top_k"], PHASE3_GRID["rerank_final_top_k"]
-    ) if ri == 0 or rf <= ri]  # ri=0 是 bypass 模式，rf 不限
+    combos = [
+        (ri, rf)
+        for ri, rf in itertools.product(
+            PHASE3_GRID["rerank_input_top_k"], PHASE3_GRID["rerank_final_top_k"]
+        )
+        if ri == 0 or rf <= ri
+    ]  # ri=0 是 bypass 模式，rf 不限
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Phase 3: rerank_input x rerank_final ({len(combos)} combos, concurrency={CONCURRENCY})")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     for i, (ri, rf) in enumerate(combos):
         label = f"ri{ri}_rf{rf}"
         if label in done_labels:
-            print(f"[{i+1}/{len(combos)}] {label} SKIP")
+            print(f"[{i + 1}/{len(combos)}] {label} SKIP")
             continue
         p = replace(base_p, rerank_input_top_k=ri, rerank_final_top_k=rf)
-        print(f"[{i+1}/{len(combos)}] {label} ...", flush=True)
+        print(f"[{i + 1}/{len(combos)}] {label} ...", flush=True)
         agg, details = await run_experiment_concurrent(
-            golden_set, id_map, resume_texts, p, label=label, rebuild=False,
+            golden_set,
+            id_map,
+            resume_texts,
+            p,
+            label=label,
+            rebuild=False,
         )
         results.append(agg)
         save_details(f"phase3_{label}", details)
@@ -111,27 +137,41 @@ async def run_phase4_concurrent(golden_set, id_map, resume_texts):
     best = _load_best("phase3") or _load_best("phase2") or _load_best("phase1")
     base_p = RagParams()
     if best:
-        for k in ["chunk_size", "overlap", "rrf_k", "hybrid_top_k", "rerank_truncation",
-                   "rerank_input_top_k", "rerank_final_top_k"]:
+        for k in [
+            "chunk_size",
+            "overlap",
+            "rrf_k",
+            "hybrid_top_k",
+            "rerank_truncation",
+            "rerank_input_top_k",
+            "rerank_final_top_k",
+        ]:
             if k in best.get("params", {}):
                 base_p = replace(base_p, **{k: best["params"][k]})
 
     results = _load_results_list("phase4")
     done_labels = {r["label"] for r in results}
 
-    print(f"\n{'='*60}")
-    print(f"Phase 4: reject_threshold scan ({len(PHASE4_THRESHOLDS)} values, concurrency={CONCURRENCY})")
-    print(f"{'='*60}")
+    print(f"\n{'=' * 60}")
+    print(
+        f"Phase 4: reject_threshold scan ({len(PHASE4_THRESHOLDS)} values, concurrency={CONCURRENCY})"
+    )
+    print(f"{'=' * 60}")
 
     for i, thresh in enumerate(PHASE4_THRESHOLDS):
         label = f"thresh={thresh}"
         if label in done_labels:
-            print(f"[{i+1}/{len(PHASE4_THRESHOLDS)}] {label} SKIP")
+            print(f"[{i + 1}/{len(PHASE4_THRESHOLDS)}] {label} SKIP")
             continue
         p = replace(base_p, reject_threshold=thresh)
-        print(f"[{i+1}/{len(PHASE4_THRESHOLDS)}] {label} ...", flush=True)
+        print(f"[{i + 1}/{len(PHASE4_THRESHOLDS)}] {label} ...", flush=True)
         agg, details = await run_experiment_concurrent(
-            golden_set, id_map, resume_texts, p, label=label, rebuild=False,
+            golden_set,
+            id_map,
+            resume_texts,
+            p,
+            label=label,
+            rebuild=False,
         )
         results.append(agg)
         save_details(f"phase4_{label}", details)
@@ -148,27 +188,40 @@ async def run_phase6_concurrent(golden_set, id_map, resume_texts):
     best = _load_best("phase4") or _load_best("phase3")
     base_p = RagParams()
     if best:
-        for k in ["chunk_size", "overlap", "rrf_k", "hybrid_top_k", "rerank_truncation",
-                   "rerank_input_top_k", "rerank_final_top_k", "reject_threshold"]:
+        for k in [
+            "chunk_size",
+            "overlap",
+            "rrf_k",
+            "hybrid_top_k",
+            "rerank_truncation",
+            "rerank_input_top_k",
+            "rerank_final_top_k",
+            "reject_threshold",
+        ]:
             if k in best.get("params", {}):
                 base_p = replace(base_p, **{k: best["params"][k]})
 
     results = _load_results_list("phase6")
     done_labels = {r["label"] for r in results}
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Phase 6: temperature scan ({PHASE6_TEMPERATURES}, concurrency={CONCURRENCY})")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     for i, temp in enumerate(PHASE6_TEMPERATURES):
         label = f"temp={temp}"
         if label in done_labels:
-            print(f"[{i+1}/{len(PHASE6_TEMPERATURES)}] {label} SKIP")
+            print(f"[{i + 1}/{len(PHASE6_TEMPERATURES)}] {label} SKIP")
             continue
         p = replace(base_p, generate_temperature=temp)
-        print(f"[{i+1}/{len(PHASE6_TEMPERATURES)}] {label} ...", flush=True)
+        print(f"[{i + 1}/{len(PHASE6_TEMPERATURES)}] {label} ...", flush=True)
         agg, details = await run_experiment_concurrent(
-            golden_set, id_map, resume_texts, p, label=label, rebuild=False,
+            golden_set,
+            id_map,
+            resume_texts,
+            p,
+            label=label,
+            rebuild=False,
         )
         results.append(agg)
         save_details(f"phase6_{label}", details)
@@ -194,7 +247,9 @@ async def main():
 
     golden_set_all = load_golden_set(args.golden_set)
     golden_set = [s for s in golden_set_all if s.get("split") == "tuning"]
-    print(f"   Tuning: {len(golden_set)} QA  |  Eval: {len([s for s in golden_set_all if s.get('split')=='eval'])} QA (held-out)")
+    print(
+        f"   Tuning: {len(golden_set)} QA  |  Eval: {len([s for s in golden_set_all if s.get('split') == 'eval'])} QA (held-out)"
+    )
     resume_files = sorted(set(qa.get("resume_file", "") for qa in golden_set))
     resume_files = [f for f in resume_files if f]
     if not resume_files:

@@ -7,6 +7,7 @@
 - collection 可能不存在（简历 status=processing 或向量未建好）→ 抛 409
 - chunks 不在 MySQL，归属校验由调用方（端点）通过 resume_service.get_resume 完成
 """
+
 import logging
 from typing import Any
 

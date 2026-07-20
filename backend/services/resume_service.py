@@ -55,7 +55,7 @@ async def save_upload_file(file: UploadFile) -> tuple[str, str]:
     if file.size and file.size > max_bytes:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"文件大小 {file.size / (1024*1024):.1f}MB 超过限制 {settings.MAX_UPLOAD_SIZE_MB}MB",
+            detail=f"文件大小 {file.size / (1024 * 1024):.1f}MB 超过限制 {settings.MAX_UPLOAD_SIZE_MB}MB",
         )
 
     # 4. 流式写入 + 实时大小检查
@@ -78,7 +78,9 @@ async def save_upload_file(file: UploadFile) -> tuple[str, str]:
     return str(save_path), original
 
 
-async def create_resume_quick(db: AsyncSession, user_id: int, filename: str, file_path: str) -> Resume:
+async def create_resume_quick(
+    db: AsyncSession, user_id: int, filename: str, file_path: str
+) -> Resume:
     """快速创建 resume 行（status=processing），不阻塞等 RAG 处理"""
     resume = Resume(
         user_id=user_id,
@@ -142,9 +144,7 @@ async def get_resume(db: AsyncSession, resume_id: int, user_id: int) -> Resume:
     )
     resume = result.scalar_one_or_none()
     if resume is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="简历不存在"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="简历不存在")
     return resume
 
 

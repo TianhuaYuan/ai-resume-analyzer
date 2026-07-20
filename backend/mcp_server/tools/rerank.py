@@ -3,6 +3,7 @@
 H6/M6 修复：原先使用 LLM 打分（llm_generate）做精排，属于重复实现且不稳定。
 现改为直接复用 services.rag_service.rerank 中已有的 Cross-Encoder 精排能力。
 """
+
 import json
 import logging
 
@@ -35,13 +36,15 @@ async def rerank_results(
     try:
         _user_id = get_current_user_id()
     except LookupError:
-        return [TextContent(
-            type="text",
-            text=json.dumps(
-                {"error": "authentication required: missing user context"},
-                ensure_ascii=False,
-            ),
-        )]
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps(
+                    {"error": "authentication required: missing user context"},
+                    ensure_ascii=False,
+                ),
+            )
+        ]
 
     import asyncio
 
@@ -67,8 +70,7 @@ async def rerank_results(
         logger.warning("rerank_results Cross-Encoder failed: %s", e)
         # 降级：保留原始顺序，给出保底分数，不向上抛异常。
         reranked = [
-            {**c, "rerank_score": max(0.0, 1.0 - i * 0.1)}
-            for i, c in enumerate(chunk_list)
+            {**c, "rerank_score": max(0.0, 1.0 - i * 0.1)} for i, c in enumerate(chunk_list)
         ][:top_k]
 
     results = [

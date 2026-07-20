@@ -27,6 +27,7 @@ async def set_embedding(text: str, vector: list[float], resume_id: int | None = 
         if resume_id is not None:
             _resume_texts.setdefault(resume_id, set()).add(text)
 
+
 # 删除 resume（resumeid）的缓存未同（不够优雅）
 async def clear_resume(resume_id: int) -> int:
     async with _lock:

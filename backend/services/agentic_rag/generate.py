@@ -104,7 +104,10 @@ async def generate_node(state: AgenticRAGState) -> dict:
 
     logger.info(
         "generate_node: query='%s' → %d chars, %d sources (%.2fs)",
-        query[:50], len(answer), len(chunks), elapsed,
+        query[:50],
+        len(answer),
+        len(chunks),
+        elapsed,
     )
 
     trace = dict(state.get("trace", {}))
@@ -274,7 +277,12 @@ async def evaluate_node(state: AgenticRAGState) -> dict:
     elapsed = time.monotonic() - timer_start
     logger.info(
         "evaluate_node: completeness=%.2f accuracy=%.2f source=%.2f composite=%.2f retry=%s (%.2fs)",
-        completeness, accuracy, source_credibility, composite, should_retry, elapsed,
+        completeness,
+        accuracy,
+        source_credibility,
+        composite,
+        should_retry,
+        elapsed,
     )
 
     trace = dict(state.get("trace", {}))

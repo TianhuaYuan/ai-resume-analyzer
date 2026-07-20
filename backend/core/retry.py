@@ -37,7 +37,7 @@ class RetryBudget:
         self.attempts = 0
 
     def delay_for(self, attempt: int) -> float:
-        return self.base_delay * (2 ** attempt)
+        return self.base_delay * (2**attempt)
 
     def remaining(self) -> int:
         return max(0, self.max_retries - self.attempts)
@@ -76,10 +76,8 @@ async def with_retry(
         except Exception as e:
             last_error = e
             if attempt < max_retries:
-                delay = base_delay * (2 ** attempt)
-                logger.warning(
-                    "retry %d/%d after %.1fs: %s", attempt + 1, max_retries, delay, e
-                )
+                delay = base_delay * (2**attempt)
+                logger.warning("retry %d/%d after %.1fs: %s", attempt + 1, max_retries, delay, e)
                 await asyncio.sleep(delay)
             else:
                 logger.error("all %d retries exhausted: %s", max_retries, e)

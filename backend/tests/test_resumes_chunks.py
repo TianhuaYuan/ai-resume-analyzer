@@ -14,7 +14,8 @@ mock 策略：
 - ChromaDB 路径用 patch get_chroma_client + with_chroma
 - 归属校验仍走真实 SQLite + Resume 表
 """
-from unittest.mock import patch, AsyncMock, MagicMock
+
+from unittest.mock import patch, MagicMock
 
 import pytest
 from httpx import AsyncClient
@@ -160,9 +161,7 @@ async def test_chunks_ready_but_collection_missing_returns_409(
 
 
 @pytest.mark.asyncio
-async def test_chunks_success(
-    client: AsyncClient, auth_headers: dict, registered_user: dict
-):
+async def test_chunks_success(client: AsyncClient, auth_headers: dict, registered_user: dict):
     """成功 → 200 + chunks 列表。"""
     resume_id = await _insert_resume(registered_user["id"], status="ready")
 
@@ -228,9 +227,7 @@ async def test_chunks_empty_collection_returns_200(
     client: AsyncClient, auth_headers: dict, registered_user: dict
 ):
     """status=ready 但 Chroma collection 空（无 chunks）→ 200 + total=0。"""
-    resume_id = await _insert_resume(
-        registered_user["id"], status="ready", chunk_count=0
-    )
+    resume_id = await _insert_resume(registered_user["id"], status="ready", chunk_count=0)
 
     fake_client = MagicMock()
     fake_client.get_collection.return_value = _fake_chroma_collection(chunks=[])

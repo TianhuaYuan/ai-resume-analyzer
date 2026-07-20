@@ -1,4 +1,4 @@
-FROM python:3.11-slim-bullseye AS builder
+FROM python:3.11-slim-bookworm AS builder
 
 WORKDIR /app
 
@@ -13,7 +13,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 RUN pip install --no-cache-dir --upgrade pip -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com && \
     pip install --no-cache-dir -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com
 
-FROM python:3.11-slim-bullseye AS runtime
+FROM python:3.11-slim-bookworm AS runtime
 
 WORKDIR /app
 

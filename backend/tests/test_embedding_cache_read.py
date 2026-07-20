@@ -1,4 +1,5 @@
 """M1: embedding cache get_embedding 无锁读取"""
+
 import inspect
 from core.cache import get_embedding
 

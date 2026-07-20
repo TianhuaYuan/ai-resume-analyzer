@@ -10,18 +10,39 @@ from datetime import datetime, timezone
 from core.request_id import get_request_id
 
 _PII_PATTERNS: list[tuple[re.Pattern, str]] = [
-    (re.compile(r"([a-zA-Z0-9._%+-]{1,2})[a-zA-Z0-9._%+-]*@([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})"), r"\1***@\2"),
+    (
+        re.compile(r"([a-zA-Z0-9._%+-]{1,2})[a-zA-Z0-9._%+-]*@([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})"),
+        r"\1***@\2",
+    ),
     (re.compile(r"(1[3-9]\d)\d{4}(\d{4})"), r"\1****\2"),
     (re.compile(r"(\d{6})\d{8}(\d{3}[\dXx])"), r"\1********\2"),
-    (re.compile(r"(api[_-]?key|secret|token|password|passwd|pwd)\s*[:=]\s*[\"']?([a-zA-Z0-9._\-]{4})[a-zA-Z0-9._\-]+", re.IGNORECASE), r"\1=\2****"),
+    (
+        re.compile(
+            r"(api[_-]?key|secret|token|password|passwd|pwd)\s*[:=]\s*[\"']?([a-zA-Z0-9._\-]{4})[a-zA-Z0-9._\-]+",
+            re.IGNORECASE,
+        ),
+        r"\1=\2****",
+    ),
     (re.compile(r"Bearer\s+([a-zA-Z0-9._\-]{4})[a-zA-Z0-9._\-]+", re.IGNORECASE), r"Bearer \1****"),
 ]
 
-_PII_FIELD_NAMES = frozenset({
-    "email", "phone", "mobile", "id_card", "identity",
-    "password", "passwd", "secret", "api_key", "token",
-    "authorization", "access_token", "refresh_token",
-})
+_PII_FIELD_NAMES = frozenset(
+    {
+        "email",
+        "phone",
+        "mobile",
+        "id_card",
+        "identity",
+        "password",
+        "passwd",
+        "secret",
+        "api_key",
+        "token",
+        "authorization",
+        "access_token",
+        "refresh_token",
+    }
+)
 
 
 def _filter_pii(text: str) -> str:
@@ -100,10 +121,28 @@ class JSONFormatter(logging.Formatter):
             log_entry["exception"] = self.formatException(record.exc_info)
 
         _builtin_keys = {
-            "name", "msg", "args", "created", "relativeCreated", "exc_info",
-            "exc_text", "stack_info", "lineno", "funcName", "pathname", "filename",
-            "module", "levelname", "levelno", "msecs", "thread", "threadName",
-            "process", "processName", "message", "taskName",
+            "name",
+            "msg",
+            "args",
+            "created",
+            "relativeCreated",
+            "exc_info",
+            "exc_text",
+            "stack_info",
+            "lineno",
+            "funcName",
+            "pathname",
+            "filename",
+            "module",
+            "levelname",
+            "levelno",
+            "msecs",
+            "thread",
+            "threadName",
+            "process",
+            "processName",
+            "message",
+            "taskName",
         }
         extra_data = {}
         for key, value in record.__dict__.items():

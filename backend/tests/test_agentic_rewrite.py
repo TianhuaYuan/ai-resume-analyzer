@@ -19,6 +19,7 @@ from services.agentic_rag.state import AgenticRAGState
 
 # ── 辅助 ──────────────────────────────────────────────────
 
+
 def _make_state(question: str, **overrides) -> AgenticRAGState:
     """构造最小 AgenticRAGState。"""
     base: AgenticRAGState = {
@@ -43,30 +44,49 @@ def _make_state(question: str, **overrides) -> AgenticRAGState:
 
 # ── _is_trivial_greeting ─────────────────────────────────
 
+
 class TestIsTrivialGreeting:
     """关键词匹配 — 纯逻辑，无 LLM。"""
 
-    @pytest.mark.parametrize("query", [
-        "你好", "您好", "hi", "Hello", "HI", "hey",
-        "早上好", "下午好", "晚上好",
-        "谢谢", "拜拜", "再见", "bye",
-        "在吗", "你是谁",
-    ])
+    @pytest.mark.parametrize(
+        "query",
+        [
+            "你好",
+            "您好",
+            "hi",
+            "Hello",
+            "HI",
+            "hey",
+            "早上好",
+            "下午好",
+            "晚上好",
+            "谢谢",
+            "拜拜",
+            "再见",
+            "bye",
+            "在吗",
+            "你是谁",
+        ],
+    )
     def test_greetings_detected(self, query: str):
         assert _is_trivial_greeting(query) is True
 
-    @pytest.mark.parametrize("query", [
-        "这个人的教育背景是什么",  # 正常问题
-        "你好，请问他的工作经历有哪些",  # 问候+实质问题
-        "帮我分析一下简历",  # 实质请求
-        "",  # 空字符串
-        "   ",  # 纯空格
-    ])
+    @pytest.mark.parametrize(
+        "query",
+        [
+            "这个人的教育背景是什么",  # 正常问题
+            "你好，请问他的工作经历有哪些",  # 问候+实质问题
+            "帮我分析一下简历",  # 实质请求
+            "",  # 空字符串
+            "   ",  # 纯空格
+        ],
+    )
     def test_non_greetings_pass(self, query: str):
         assert _is_trivial_greeting(query) is False
 
 
 # ── rewrite_node ─────────────────────────────────────────
+
 
 class TestRewriteNode:
     """rewrite_node — mock LLM 调用。"""
@@ -132,6 +152,7 @@ class TestRewriteNode:
 
 
 # ── route_node ───────────────────────────────────────────
+
 
 class TestRouteNode:
     """route_node — mock LLM 分类。"""

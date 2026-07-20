@@ -3,6 +3,7 @@
 阶段11 从 rag_service.py 拆出：所有与"从简历里找出相关段落"相关的能力都集中于此，
 是自包含、可直接单测的核心检索层。
 """
+
 import asyncio
 import logging
 from typing import Any
@@ -15,7 +16,12 @@ from core.config import settings
 from core.rag_params import RagParams
 from core.retry import with_retry
 from services.rag.chunking import _tokenize
-from services.rag.clients import _collection_name, get_chroma_client, get_embedding_client, with_chroma
+from services.rag.clients import (
+    _collection_name,
+    get_chroma_client,
+    get_embedding_client,
+    with_chroma,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -42,10 +48,11 @@ async def get_embeddings(texts: list[str], resume_id: int | None = None) -> list
     if uncached:
         client = get_embedding_client()
         for batch_start in range(0, len(uncached), 10):
-            batch_texts = uncached[batch_start:batch_start + 10]
-            batch_idx = uncached_idx[batch_start:batch_start + 10]
+            batch_texts = uncached[batch_start : batch_start + 10]
+            batch_idx = uncached_idx[batch_start : batch_start + 10]
             response = await client.embeddings.create(
-                model=settings.EMBEDDING_MODEL, input=batch_texts,
+                model=settings.EMBEDDING_MODEL,
+                input=batch_texts,
             )
             for j, item in enumerate(response.data):
                 idx = batch_idx[j]
@@ -82,11 +89,13 @@ async def _load_bm25_index(
         return False
     chunks = []
     for doc, meta in zip(data["documents"], data["metadatas"]):
-        chunks.append({
-            "text": doc,
-            "chunk_index": meta["chunk_index"],
-            "section": meta["section"],
-        })
+        chunks.append(
+            {
+                "text": doc,
+                "chunk_index": meta["chunk_index"],
+                "section": meta["section"],
+            }
+        )
     if not chunks:
         return False
     tokenized = [_tokenize(c["text"]) for c in chunks]
@@ -112,7 +121,9 @@ async def _keyword_search(
     store_key = bm25_key if bm25_key is not None else resume_id
     async with _bm25_lock:
         if store_key not in _bm25_indexes:
-            if not await _load_bm25_index(resume_id, collection_name=collection_name, bm25_key=bm25_key):
+            if not await _load_bm25_index(
+                resume_id, collection_name=collection_name, bm25_key=bm25_key
+            ):
                 return []
         # H2 修复：将 _bm25_indexes.get() 的读取纳入锁临界区，
         # 避免与 clear_resume_vectors 的 pop 产生数据竞争
@@ -130,12 +141,16 @@ async def _keyword_search(
             "section": chunks[i]["section"],
             "source": "sparse",
         }
-        for i in top_indices if scores[i] > 0
+        for i in top_indices
+        if scores[i] > 0
     ]
 
 
 async def _vector_search(
-    resume_id: int, question: str, top_k: int, collection_name: str | None = None,
+    resume_id: int,
+    question: str,
+    top_k: int,
+    collection_name: str | None = None,
 ) -> list[dict]:
     """稠密向量检索：问题转向量 → Chroma 余弦相似度查询，collection 不存在时返回空。
     collection_name 为可选项，用于参数化实验隔离（默认 resume_{resume_id}）。
@@ -162,13 +177,16 @@ async def _vector_search(
     chunks = []
     for i in range(len(results["ids"][0])):
         meta = results["metadatas"][0][i]
-        chunks.append({
-            "text": results["documents"][0][i],
-            "score": 1.0 - results["distances"][0][i],  # cosine distance 0..2 → similarity -1..1
-            "chunk_index": meta["chunk_index"],
-            "section": meta["section"],
-            "source": "dense",
-        })
+        chunks.append(
+            {
+                "text": results["documents"][0][i],
+                "score": 1.0
+                - results["distances"][0][i],  # cosine distance 0..2 → similarity -1..1
+                "chunk_index": meta["chunk_index"],
+                "section": meta["section"],
+                "source": "dense",
+            }
+        )
     return chunks
 
 
@@ -182,13 +200,22 @@ async def hybrid_search(resume_id: int, question: str, top_k: int = 5) -> list[d
 
 
 async def hybrid_search_p(
-    resume_id: int, question: str, p: RagParams,
-    collection_name: str | None = None, bm25_key: Any | None = None,
+    resume_id: int,
+    question: str,
+    p: RagParams,
+    collection_name: str | None = None,
+    bm25_key: Any | None = None,
 ) -> list[dict]:
     """参数化版混合检索。collection_name / bm25_key 用于参数化实验隔离（Model C）。"""
     dense, sparse = await asyncio.gather(
         _vector_search(resume_id, question, top_k=p.dense_top_k, collection_name=collection_name),
-        _keyword_search(resume_id, question, top_k=p.sparse_top_k, bm25_key=bm25_key, collection_name=collection_name),
+        _keyword_search(
+            resume_id,
+            question,
+            top_k=p.sparse_top_k,
+            bm25_key=bm25_key,
+            collection_name=collection_name,
+        ),
     )
     return _merge_results(dense, sparse, top_k=p.hybrid_top_k, k=p.rrf_k)
 
@@ -293,14 +320,14 @@ async def rerank_p(question: str, chunks: list[dict], p: RagParams) -> list[dict
     except Exception as e:
         logger.warning("Rerank API failed: %s, falling back to original order", e)
         # H3 修复：返回带 rerank_score 的副本，不原地修改输入 chunks
-        return [{**c, "rerank_score": 0.5} for c in chunks][:p.rerank_final_top_k]
+        return [{**c, "rerank_score": 0.5} for c in chunks][: p.rerank_final_top_k]
 
     score_map: dict[int, float] = {r["index"]: r["relevance_score"] for r in results}
     scored = [{**c, "rerank_score": score_map.get(i, 0.0)} for i, c in enumerate(chunks)]
 
     # H3 修复：使用 sorted 返回新列表，而非对入参原地排序
     scored_sorted = sorted(scored, key=lambda c: c.get("rerank_score", 0), reverse=True)
-    return scored_sorted[:p.rerank_final_top_k]
+    return scored_sorted[: p.rerank_final_top_k]
 
 
 def reject_if_low_score(chunks: list[dict], threshold: float = 0.3) -> bool:

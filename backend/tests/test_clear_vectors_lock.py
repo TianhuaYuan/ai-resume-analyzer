@@ -1,4 +1,5 @@
 """M5: clear_resume_vectors 无锁操作 _bm25_indexes.pop()"""
+
 import inspect
 from services.rag.pipeline import clear_resume_vectors
 

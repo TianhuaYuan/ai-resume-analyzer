@@ -104,14 +104,15 @@ async def rebuild_all(resume_texts, id_map, p):
     clear_all_collections()
 
     client = get_chroma_client()
-    print(f"  [REBUILD] rebuilding {len(resume_texts)} indices (chunk_size={p.chunk_size})...", flush=True)
+    print(
+        f"  [REBUILD] rebuilding {len(resume_texts)} indices (chunk_size={p.chunk_size})...",
+        flush=True,
+    )
     for fname, text in resume_texts.items():
         rid = id_map[fname]
         name = _collection_name(rid)
 
-        collection = client.get_or_create_collection(
-            name=name, metadata={"hnsw:space": "cosine"}
-        )
+        collection = client.get_or_create_collection(name=name, metadata={"hnsw:space": "cosine"})
         chunks = chunk_by_sections(text, chunk_size=p.chunk_size, overlap=p.overlap)
         if not chunks:
             continue
@@ -166,9 +167,15 @@ def compute_stats(runs: list[dict]) -> dict:
     """计算均值 ± 标准差"""
     stats = {}
     for metric in [
-        "composite", "avg_score", "accuracy_2", "reject_f1",
-        "reject_precision", "reject_recall", "hallucination_rate",
-        "p50_latency_ms", "p95_latency_ms",
+        "composite",
+        "avg_score",
+        "accuracy_2",
+        "reject_f1",
+        "reject_precision",
+        "reject_recall",
+        "hallucination_rate",
+        "p50_latency_ms",
+        "p95_latency_ms",
     ]:
         vals = [r[metric] for r in runs if metric in r]
         if vals:
@@ -188,18 +195,30 @@ async def main():
             "desc": "全最优参数 (cs=1200 rrf_k=100 rf=5 thresh=0.3 temp=0.1)",
             "params": replace(
                 RagParams(),
-                chunk_size=1200, overlap=50, rrf_k=100, hybrid_top_k=20,
-                rerank_truncation=400, rerank_input_top_k=20, rerank_final_top_k=5,
-                reject_threshold=0.3, generate_temperature=0.1,
+                chunk_size=1200,
+                overlap=50,
+                rrf_k=100,
+                hybrid_top_k=20,
+                rerank_truncation=400,
+                rerank_input_top_k=20,
+                rerank_final_top_k=5,
+                reject_threshold=0.3,
+                generate_temperature=0.1,
             ),
         },
         {
             "id": "B_Baseline",
             "desc": "原始默认参数 (cs=500 rrf_k=60 rf=8 thresh=0.5 temp=0.3)",
             "params": RagParams(
-                chunk_size=500, overlap=50, rrf_k=60, hybrid_top_k=20,
-                rerank_truncation=400, rerank_input_top_k=20, rerank_final_top_k=8,
-                reject_threshold=0.5, generate_temperature=0.3,
+                chunk_size=500,
+                overlap=50,
+                rrf_k=60,
+                hybrid_top_k=20,
+                rerank_truncation=400,
+                rerank_input_top_k=20,
+                rerank_final_top_k=8,
+                reject_threshold=0.5,
+                generate_temperature=0.3,
             ),
         },
         {
@@ -207,9 +226,15 @@ async def main():
             "desc": "全最优但温度未优化 (temp=0.3)",
             "params": replace(
                 RagParams(),
-                chunk_size=1200, overlap=50, rrf_k=100, hybrid_top_k=20,
-                rerank_truncation=400, rerank_input_top_k=20, rerank_final_top_k=5,
-                reject_threshold=0.3, generate_temperature=0.3,
+                chunk_size=1200,
+                overlap=50,
+                rrf_k=100,
+                hybrid_top_k=20,
+                rerank_truncation=400,
+                rerank_input_top_k=20,
+                rerank_final_top_k=5,
+                reject_threshold=0.3,
+                generate_temperature=0.3,
             ),
         },
     ]
@@ -310,13 +335,19 @@ async def main():
                 base_val = base.get(f"{metric}_mean", 0)
                 delta = opt_val - base_val
                 pct = (delta / abs(base_val)) * 100 if base_val != 0 else 0
-                print(f"  {metric:<22s} {opt_val:>12.4f} {base_val:>12.4f} {delta:>+10.4f} {pct:>+8.1f}%")
+                print(
+                    f"  {metric:<22s} {opt_val:>12.4f} {base_val:>12.4f} {delta:>+10.4f} {pct:>+8.1f}%"
+                )
 
     # ── 变异系数 ──
     print("\n  ── 稳定性检验 (CV%) ──")
     for r in final_results:
         vals = [run["composite"] for run in r["runs"]]
-        cv = statistics.stdev(vals) / statistics.mean(vals) * 100 if statistics.mean(vals) != 0 else 0
+        cv = (
+            statistics.stdev(vals) / statistics.mean(vals) * 100
+            if statistics.mean(vals) != 0
+            else 0
+        )
         print(f"  {r['config_id']}: composite CV = {cv:.2f}% (n={len(vals)})")
 
     # ── 持久化 ──

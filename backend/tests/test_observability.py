@@ -16,7 +16,6 @@ TDD 纪律：先写测试（RED），再实现 core/metrics.py 增强 + 新建 c
 
 import time
 
-import pytest
 import pytest_asyncio
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
@@ -176,4 +175,3 @@ def test_step_timer_records_steps_and_metrics():
     from core.metrics import rag_step_duration
 
     assert rag_step_duration is not None
-

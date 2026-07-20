@@ -1,4 +1,5 @@
 """MCP Tool: rewrite_query — 改写查询以提高检索效果。"""
+
 import json
 import logging
 
@@ -28,13 +29,15 @@ async def rewrite_query(
     try:
         _user_id = get_current_user_id()
     except LookupError:
-        return [TextContent(
-            type="text",
-            text=json.dumps(
-                {"error": "authentication required: missing user context"},
-                ensure_ascii=False,
-            ),
-        )]
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps(
+                    {"error": "authentication required: missing user context"},
+                    ensure_ascii=False,
+                ),
+            )
+        ]
 
     import asyncio
 
@@ -48,14 +51,30 @@ async def rewrite_query(
             rag_rewrite(question),
             timeout=MCP_HTTP_TIMEOUT.read,
         )
-        return [TextContent(type="text", text=json.dumps({
-            "original": question,
-            "rewritten": rewritten,
-        }, ensure_ascii=False))]
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps(
+                    {
+                        "original": question,
+                        "rewritten": rewritten,
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+        ]
     except Exception as e:
         logger.exception("rewrite_query failed")
-        return [TextContent(type="text", text=json.dumps({
-            "original": question,
-            "rewritten": question,
-            "error": f"Rewrite failed, returning original: {e}",
-        }, ensure_ascii=False))]
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps(
+                    {
+                        "original": question,
+                        "rewritten": question,
+                        "error": f"Rewrite failed, returning original: {e}",
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+        ]

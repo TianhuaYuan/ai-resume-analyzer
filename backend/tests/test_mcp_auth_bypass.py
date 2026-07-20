@@ -20,6 +20,7 @@ async def _post(client, path, with_token=False):
     headers = {"Content-Type": "application/json"}
     if with_token:
         from core.security import create_access_token
+
         token = create_access_token({"sub": "1"})
         headers["Authorization"] = f"Bearer {token}"
     return await client.post(
@@ -33,8 +34,9 @@ async def _post(client, path, with_token=False):
 async def test_mcp_root_requires_auth():
     """/mcp 无 token → 401。"""
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test",
-                           follow_redirects=False) as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test", follow_redirects=False
+    ) as client:
         resp = await _post(client, "/mcp/")
         assert resp.status_code == 401
         assert "error" in resp.json()
@@ -44,8 +46,9 @@ async def test_mcp_root_requires_auth():
 async def test_mcp_subpath_also_requires_auth():
     """SEC-001 核心：/mcp 拼接子路径不再绕过鉴权 → 401。"""
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test",
-                           follow_redirects=False) as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test", follow_redirects=False
+    ) as client:
         for sub in ("/mcp/foo", "/mcp/session/abc", "/mcp/x/y/z"):
             resp = await _post(client, sub)
             assert resp.status_code == 401, f"子路径 {sub} 未被鉴权保护（路径绕过！）"
@@ -65,8 +68,9 @@ async def test_non_mcp_path_not_blocked_by_mcp_auth():
 async def test_mcp_with_valid_token_passes():
     """持有合法 token 时 /mcp 通过鉴权（不返回 401）。"""
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test",
-                           follow_redirects=False) as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test", follow_redirects=False
+    ) as client:
         resp = await _post(client, "/mcp/", with_token=True)
         # 合法 token 不应被 401 拒绝（后续由 MCP 协议层处理，状态码非 401）。
         assert resp.status_code != 401

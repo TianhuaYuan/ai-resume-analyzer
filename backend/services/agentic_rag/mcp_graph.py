@@ -6,12 +6,12 @@
 
 ⚠️ 移除本 shim 前：把 importer 的 `mcp_graph` 改为 `graph` 即可。
 """
+
 from services.agentic_rag.graph import (
     DIRECT_ANSWER_NODE,
     MCP_GENERATE_NODE,
     MCP_RERANK_NODE,
     MCP_SEARCH_NODE,
-    _DIRECT_ANSWER_REPLY,
     _route_after_evaluate,
     _route_after_reflection_mcp as _route_after_reflection,
     _route_after_route_mcp as _route_after_route,

@@ -43,6 +43,7 @@ def _get_agentic_graph():
     global _AGENTIC_GRAPH
     if _AGENTIC_GRAPH is None:
         from services.agentic_rag.graph import create_agentic_rag_graph
+
         _AGENTIC_GRAPH = create_agentic_rag_graph()
     return _AGENTIC_GRAPH
 
@@ -115,7 +116,10 @@ async def ask_question(
         data.resume_id,
         data.question,
         answer,
-        [{"chunk_id": s["chunk_index"], "text": s["text"], "section": s["section"]} for s in sources],
+        [
+            {"chunk_id": s["chunk_index"], "text": s["text"], "section": s["section"]}
+            for s in sources
+        ],
     )
     return AnswerResponse(
         id=record.id,
@@ -150,12 +154,20 @@ async def ask_question_stream(
                     sources_data = event.get("sources", [])
                     # sources_data 现在是 [{"chunk_index":..., "text":..., "section":...}]
                     sources_for_db = [
-                        {"chunk_id": s.get("chunk_index", i), "text": s["text"], "section": s.get("section", "")}
+                        {
+                            "chunk_id": s.get("chunk_index", i),
+                            "text": s["text"],
+                            "section": s.get("section", ""),
+                        }
                         for i, s in enumerate(sources_data)
                     ]
                     record = await qa_service.save_qa(
-                        db, current_user.id, data.resume_id,
-                        data.question, full_answer, sources_for_db,
+                        db,
+                        current_user.id,
+                        data.resume_id,
+                        data.question,
+                        full_answer,
+                        sources_for_db,
                     )
                     sources_texts = [s["text"] for s in sources_data]
                     yield f"data: {json.dumps({'type': 'done', 'sources': sources_texts, 'qa_id': record.id}, ensure_ascii=False)}\n\n"
@@ -221,9 +233,7 @@ async def delete_history(
     返回被删除的记录数。
     """
     await resume_service.get_resume(db, resume_id, current_user.id)
-    deleted_count = await qa_service.delete_history_by_resume(
-        db, current_user.id, resume_id
-    )
+    deleted_count = await qa_service.delete_history_by_resume(db, current_user.id, resume_id)
     return QADeleteResponse(deleted_count=deleted_count)
 
 

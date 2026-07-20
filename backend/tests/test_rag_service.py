@@ -4,7 +4,6 @@ rag_service 单元测试 — 覆盖不依赖外部 API 的纯逻辑函数。
 运行: python -m pytest tests/test_rag_service.py -v
 """
 
-
 from services.rag.chunking import chunk_by_sections, fixed_chunk, _tokenize
 from services.rag.pipeline import build_prompt, reject_if_low_score
 from services.rag.retrieval import _merge_results
@@ -92,6 +91,7 @@ PUBLICATIONS
 
 # ── chunk_by_sections ────────────────────────────────────
 
+
 class TestChunkBySections:
     def test_short_resume_one_chunk_per_section(self):
         """短简历：每个节段不足 chunk_size，不触发细分"""
@@ -136,9 +136,9 @@ class TestChunkBySections:
         chunks = chunk_by_sections(LONG_SECTION_RESUME, chunk_size=300)
         for c in chunks:
             # 由于分隔符查找可能略超，给 30% 容忍度
-            assert len(c["text"]) <= 300 * 1.3, \
+            assert len(c["text"]) <= 300 * 1.3, (
                 f"chunk idx={c['chunk_index']} 长度 {len(c['text'])} 远超 300"
-
+            )
 
     def test_markdown_section_detection(self):
         """Markdown 格式的节段 (## 教育背景) 应被正确识别并保留节段名"""
@@ -147,7 +147,9 @@ class TestChunkBySections:
         assert "教育背景" in sections, f"Markdown 中文节段未被识别，实际有: {sections}"
         assert "Work Experience" in sections, f"Markdown 英文节段未被识别，实际有: {sections}"
         assert "Projects" in sections, f"Markdown Projects 节段未被识别，实际有: {sections}"
-        assert "Certifications" in sections, f"Markdown Certifications 节段未被识别，实际有: {sections}"
+        assert "Certifications" in sections, (
+            f"Markdown Certifications 节段未被识别，实际有: {sections}"
+        )
 
     def test_english_section_detection(self):
         """纯英文简历的节段（含全大写形式如 SUMMARY/EDUCATION）应被正确识别"""
@@ -157,8 +159,7 @@ class TestChunkBySections:
         assert "SUMMARY" in sections, f"未识别 SUMMARY 节段: {sections}"
         assert "EDUCATION" in sections, f"未识别 EDUCATION 节段: {sections}"
         assert "Work Experience" in sections, f"未识别工作经历节段: {sections}"
-        assert "Technical Skills" in sections or "Skills" in sections, \
-            f"未识别技能节段: {sections}"
+        assert "Technical Skills" in sections or "Skills" in sections, f"未识别技能节段: {sections}"
         assert "Certifications" in sections, f"未识别 Certifications 节段: {sections}"
         # 所有节段都被识别，无遗漏
         assert len(sections) >= 7, f"期望至少 7 个节段，实际 {len(sections)}: {sections}"
@@ -195,6 +196,7 @@ class TestChunkBySections:
 
 # ── fixed_chunk ──────────────────────────────────────────
 
+
 class TestFixedChunk:
     def test_short_text_single_chunk(self):
         chunks = fixed_chunk("Hello World", chunk_size=500)
@@ -223,6 +225,7 @@ class TestFixedChunk:
 
 # ── build_prompt ─────────────────────────────────────────
 
+
 class TestBuildPrompt:
     def test_basic_structure(self):
         chunks = ["张三精通 Python", "他有 3 年工作经验"]
@@ -248,6 +251,7 @@ class TestBuildPrompt:
 
 
 # ── reject_if_low_score ──────────────────────────────────
+
 
 class TestRejectIfLowScore:
     def test_all_low_scores_reject(self):
@@ -283,6 +287,7 @@ class TestRejectIfLowScore:
 
 
 # ── _merge_results (RRF) ────────────────────────────────
+
 
 class TestMergeResults:
     def test_dense_only(self):
@@ -320,15 +325,17 @@ class TestMergeResults:
         assert 2 in indices
 
     def test_top_k_truncation(self):
-        dense = [{"chunk_index": i, "text": str(i), "score": 0.5, "source": "dense"}
-                for i in range(10)]
+        dense = [
+            {"chunk_index": i, "text": str(i), "score": 0.5, "source": "dense"} for i in range(10)
+        ]
         merged = _merge_results(dense, [], top_k=3)
         assert len(merged) == 3
 
     def test_rrf_k_parameter(self):
         """k=60 (论文常用值) 保证合理排序"""
-        dense = [{"chunk_index": i, "text": str(i), "score": 0.5, "source": "dense"}
-                for i in range(5)]
+        dense = [
+            {"chunk_index": i, "text": str(i), "score": 0.5, "source": "dense"} for i in range(5)
+        ]
         merged = _merge_results(dense, [], top_k=5, k=60)
         assert len(merged) == 5
         # 排名应保持输入顺序（同源时 RRF 分数就是 1/(k+rank+1) 递减）
@@ -336,6 +343,7 @@ class TestMergeResults:
 
 
 # ── _tokenize ────────────────────────────────────────────
+
 
 class TestTokenize:
     def test_chinese_tokenization(self):
@@ -356,6 +364,7 @@ class TestTokenize:
 
 
 # ── chunk_by_sections 边界场景 ────────────────────────────
+
 
 class TestChunkEdgeCases:
     def test_overlap_between_sub_chunks(self):

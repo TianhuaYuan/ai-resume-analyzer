@@ -46,9 +46,7 @@ GenerateFn = Callable[[dict], Awaitable[tuple[str, list[dict]]]]
 
 
 # ───────────────────── 纯打分逻辑（测试主战场）─────────────────────
-def compute_composite(
-    completeness: float, accuracy: float, source_credibility: float
-) -> float:
+def compute_composite(completeness: float, accuracy: float, source_credibility: float) -> float:
     """三维度加权综合分：完整性0.4 + 准确性0.4 + 来源可信度0.2。"""
     return (
         completeness * WEIGHTS["completeness"]
@@ -121,12 +119,8 @@ async def evaluate_entry(
 
     answer/sources 由调用方提供（真实跑图 或 测试注入），本函数只负责评估。
     """
-    result = await judge_fn(
-        entry["question"], answer, entry["reference_answer"], sources
-    )
-    composite = compute_composite(
-        result.completeness, result.accuracy, result.source_credibility
-    )
+    result = await judge_fn(entry["question"], answer, entry["reference_answer"], sources)
+    composite = compute_composite(result.completeness, result.accuracy, result.source_credibility)
     return {
         "id": entry["id"],
         "category": entry.get("category"),
@@ -215,9 +209,7 @@ def validate_golden_set(path: Path = GOLDEN_SET_PATH) -> dict:
         if missing:
             raise ValueError(f"第 {i} 条（id={e.get('id')}）缺少字段：{missing}")
         if str(e["resume_id"]) not in {str(k) for k in resumes.keys()}:
-            raise ValueError(
-                f"第 {i} 条 resume_id={e['resume_id']} 在 resumes 中不存在"
-            )
+            raise ValueError(f"第 {i} 条 resume_id={e['resume_id']} 在 resumes 中不存在")
 
     categories = {e.get("category") for e in qa}
     if len(categories) < 4:
@@ -291,21 +283,15 @@ async def run_evaluation(
 
 
 def save_report(report: dict, path: Path = REPORT_PATH) -> None:
-    path.write_text(
-        json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"[SAVE] 评估报告已写出：{path}")
 
 
 # ───────────────────── CLI 入口 ─────────────────────
 async def main() -> None:
     parser = argparse.ArgumentParser(description="阶段7 LLM-as-Judge 评估器")
-    parser.add_argument(
-        "--golden-set", type=str, default=str(GOLDEN_SET_PATH), help="评测集路径"
-    )
-    parser.add_argument(
-        "--report", type=str, default=str(REPORT_PATH), help="评估报告输出路径"
-    )
+    parser.add_argument("--golden-set", type=str, default=str(GOLDEN_SET_PATH), help="评测集路径")
+    parser.add_argument("--report", type=str, default=str(REPORT_PATH), help="评估报告输出路径")
     parser.add_argument(
         "--no-graph",
         action="store_true",
@@ -333,7 +319,9 @@ async def main() -> None:
         )
 
     judge_fn: JudgeFn = _local_heuristic_judge if args.fake_judge else judge_client.judge
-    print(f"[RUN] 评估（run_graph={run_graph}, judge={'fake' if args.fake_judge else 'deepseek'}）...")
+    print(
+        f"[RUN] 评估（run_graph={run_graph}, judge={'fake' if args.fake_judge else 'deepseek'}）..."
+    )
     report = await run_evaluation(data, judge_fn=judge_fn, run_graph=run_graph)
     save_report(report, Path(args.report))
 
@@ -341,7 +329,7 @@ async def main() -> None:
     print("\n========== 评估汇总 ==========")
     print(f"  评测项: {s['entry_count']}")
     print(f"  平均 composite: {s['avg_composite']}")
-    print(f"  需 Reflexion: {s['reflexion_count']} 条（{s['reflexion_rate']*100:.1f}%）")
+    print(f"  需 Reflexion: {s['reflexion_count']} 条（{s['reflexion_rate'] * 100:.1f}%）")
     print(f"  维度分布: {s['by_category']}")
 
 

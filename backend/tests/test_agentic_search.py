@@ -4,7 +4,6 @@ Agentic RAG search/rerank 节点单元测试 — 覆盖节点逻辑，mock 外�
 运行: python -m pytest tests/test_agentic_search.py -v
 """
 
-
 import pytest
 from unittest.mock import AsyncMock, patch
 
@@ -14,9 +13,27 @@ from services.agentic_rag.search import search_node, rerank_node
 # ── 测试数据 ──────────────────────────────────────────────
 
 SAMPLE_CHUNKS = [
-    {"text": "精通 Python", "score": 0.9, "chunk_index": 0, "section": "专业技能", "source": "dense"},
-    {"text": "3年 FastAPI 经验", "score": 0.7, "chunk_index": 1, "section": "工作经历", "source": "sparse"},
-    {"text": "清华大学本科", "score": 0.5, "chunk_index": 2, "section": "教育背景", "source": "dense"},
+    {
+        "text": "精通 Python",
+        "score": 0.9,
+        "chunk_index": 0,
+        "section": "专业技能",
+        "source": "dense",
+    },
+    {
+        "text": "3年 FastAPI 经验",
+        "score": 0.7,
+        "chunk_index": 1,
+        "section": "工作经历",
+        "source": "sparse",
+    },
+    {
+        "text": "清华大学本科",
+        "score": 0.5,
+        "chunk_index": 2,
+        "section": "教育背景",
+        "source": "dense",
+    },
 ]
 
 
@@ -36,6 +53,7 @@ def _make_state(**overrides):
 
 
 # ── Search Node ──────────────────────────────────────────
+
 
 class TestSearchNode:
     @pytest.mark.asyncio
@@ -100,6 +118,7 @@ class TestSearchNode:
 
 # ── Rerank Node ──────────────────────────────────────────
 
+
 class TestRerankNode:
     @pytest.mark.asyncio
     async def test_returns_reranked_chunks(self):
@@ -159,6 +178,7 @@ class TestRerankNode:
 
 # ── Search + Rerank 联动 ─────────────────────────────────
 
+
 class TestSearchRerankPipeline:
     @pytest.mark.asyncio
     async def test_full_pipeline_state_flow(self):
@@ -168,8 +188,12 @@ class TestSearchRerankPipeline:
             {**SAMPLE_CHUNKS[1], "rerank_score": 0.80},
         ]
 
-        with patch("services.agentic_rag.search.hybrid_search", new_callable=AsyncMock) as mock_search, \
-             patch("services.agentic_rag.search.rerank", new_callable=AsyncMock) as mock_rerank:
+        with (
+            patch(
+                "services.agentic_rag.search.hybrid_search", new_callable=AsyncMock
+            ) as mock_search,
+            patch("services.agentic_rag.search.rerank", new_callable=AsyncMock) as mock_rerank,
+        ):
             mock_search.return_value = SAMPLE_CHUNKS
             mock_rerank.return_value = reranked_chunks
 

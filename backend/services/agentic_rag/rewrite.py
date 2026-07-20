@@ -24,7 +24,11 @@ async def rewrite_node(state: AgenticRAGState) -> dict:
     logger.info("rewrite_node: '%s' → '%s' (%.2fs)", question, rewritten, elapsed)
 
     trace = dict(state.get("trace", {}))
-    trace["rewrite"] = {"elapsed_ms": int(elapsed * 1000), "original": question, "rewritten": rewritten}
+    trace["rewrite"] = {
+        "elapsed_ms": int(elapsed * 1000),
+        "original": question,
+        "rewritten": rewritten,
+    }
 
     return {
         "rewritten_query": rewritten,
@@ -59,9 +63,26 @@ async def _classify_route(query: str) -> str:
 
 
 _GREETING_KEYWORDS = {
-    "你好", "您好", "hi", "hello", "hey", "早上好", "下午好", "晚上好",
-    "在吗", "在不在", "你是谁", "你是谁啊", "干嘛", "干什么",
-    "谢谢", "感谢", "多谢", "拜拜", "再见", "bye",
+    "你好",
+    "您好",
+    "hi",
+    "hello",
+    "hey",
+    "早上好",
+    "下午好",
+    "晚上好",
+    "在吗",
+    "在不在",
+    "你是谁",
+    "你是谁啊",
+    "干嘛",
+    "干什么",
+    "谢谢",
+    "感谢",
+    "多谢",
+    "拜拜",
+    "再见",
+    "bye",
 }
 
 

@@ -206,6 +206,7 @@ try:
         return normalized
 
 except ImportError:
+
     def _normalize_endpoint(path: str) -> str:  # type: ignore[misc]
         return path
 
@@ -213,9 +214,7 @@ except ImportError:
 class MetricsMiddleware(BaseHTTPMiddleware):
     _HEALTH_PATHS = frozenset({"/", "/health", "/health/verbose"})
 
-    async def dispatch(
-        self, request: Request, call_next: RequestResponseEndpoint
-    ) -> Response:
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         method = request.method
         path = request.url.path
         endpoint = _normalize_endpoint(path)
@@ -323,8 +322,10 @@ def record_token_usage(model: str, prompt_tokens: int, completion_tokens: int) -
 
 
 def initialize_app_info(version: str, environment: str, python_version: str) -> None:
-    app_info.info({
-        "version": version,
-        "environment": environment,
-        "python_version": python_version,
-    })
+    app_info.info(
+        {
+            "version": version,
+            "environment": environment,
+            "python_version": python_version,
+        }
+    )

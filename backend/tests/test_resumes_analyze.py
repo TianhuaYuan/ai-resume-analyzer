@@ -10,6 +10,7 @@
 TDD 红：端点尚未实现，所有路由调用应返回 404。
 TDD 绿：实现端点后所有用例通过。
 """
+
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -75,9 +76,7 @@ async def test_analyze_processing_resume_returns_409(
     client: AsyncClient, auth_headers: dict, registered_user: dict
 ):
     """status == 'processing' → 409。"""
-    resume_id = await _insert_resume(
-        registered_user["id"], status="processing", parsed_text=""
-    )
+    resume_id = await _insert_resume(registered_user["id"], status="processing", parsed_text="")
     resp = await client.post(
         f"/api/v1/resumes/{resume_id}/analyze",
         json={"analysis_type": "summary"},
@@ -91,9 +90,7 @@ async def test_analyze_failed_resume_returns_409(
     client: AsyncClient, auth_headers: dict, registered_user: dict
 ):
     """status == 'failed' → 409。"""
-    resume_id = await _insert_resume(
-        registered_user["id"], status="failed", parsed_text=""
-    )
+    resume_id = await _insert_resume(registered_user["id"], status="failed", parsed_text="")
     resp = await client.post(
         f"/api/v1/resumes/{resume_id}/analyze",
         json={"analysis_type": "summary"},

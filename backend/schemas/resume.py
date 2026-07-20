@@ -41,6 +41,7 @@ class ChunkItem(BaseModel):
     字段对齐 services/rag/chunking.py 的 _make_chunk 输出，
     数据源是 ChromaDB collection resume_{id} 的 metadata + document。
     """
+
     chunk_index: int
     section: str
     text: str

@@ -3,6 +3,7 @@
 所有参数都有默认值（与当前 rag_service.py 硬编码一致），
 实验时通过 dataclasses.replace() 覆盖即可。
 """
+
 from dataclasses import dataclass
 
 
@@ -18,22 +19,22 @@ class RagParams:
     """
 
     # ── 分块 ──
-    chunk_size: int = 300       # 分块目标大小（字符），简历节段中位数 180
-    overlap: int = 50           # 相邻块重叠字符数
+    chunk_size: int = 300  # 分块目标大小（字符），简历节段中位数 180
+    overlap: int = 50  # 相邻块重叠字符数
 
     # ── 混合检索 ──
-    dense_top_k: int = 25       # 稠密向量检索返回数（覆盖 cs=200 的最多 27 块）
-    sparse_top_k: int = 25      # BM25 关键词检索返回数（确保 RRF 有足够候选池）
-    hybrid_top_k: int = 10      # RRF 融合后保留数（上限 15，超出的都是重复）
-    rrf_k: int = 60             # RRF 平滑常数（论文原始值 60）
+    dense_top_k: int = 25  # 稠密向量检索返回数（覆盖 cs=200 的最多 27 块）
+    sparse_top_k: int = 25  # BM25 关键词检索返回数（确保 RRF 有足够候选池）
+    hybrid_top_k: int = 10  # RRF 融合后保留数（上限 15，超出的都是重复）
+    rrf_k: int = 60  # RRF 平滑常数（论文原始值 60）
 
     # ── Rerank 精排 ──
-    rerank_input_top_k: int = 10    # 送入 Rerank 的候选数（从 hybrid 结果截断）
-    rerank_final_top_k: int = 3     # Rerank 后保留数
-    rerank_truncation: int = 400    # Rerank 输入截断长度（字符）
+    rerank_input_top_k: int = 10  # 送入 Rerank 的候选数（从 hybrid 结果截断）
+    rerank_final_top_k: int = 3  # Rerank 后保留数
+    rerank_truncation: int = 400  # Rerank 输入截断长度（字符）
 
     # ── 拒答 ──
-    reject_threshold: float = 0.3   # Rerank 最高分低于此值则拒答
+    reject_threshold: float = 0.3  # Rerank 最高分低于此值则拒答
 
     # ── 生成 ──
     generate_temperature: float = 0.3  # LLM 生成温度
@@ -44,9 +45,13 @@ class RagParams:
         if self.overlap >= self.chunk_size:
             errors.append(f"overlap ({self.overlap}) must < chunk_size ({self.chunk_size})")
         if self.rerank_input_top_k != 0 and self.rerank_final_top_k > self.rerank_input_top_k:
-            errors.append(f"rerank_final ({self.rerank_final_top_k}) must <= rerank_input ({self.rerank_input_top_k})")
+            errors.append(
+                f"rerank_final ({self.rerank_final_top_k}) must <= rerank_input ({self.rerank_input_top_k})"
+            )
         if self.rerank_input_top_k > self.hybrid_top_k and self.rerank_input_top_k != 0:
-            errors.append(f"rerank_input ({self.rerank_input_top_k}) must <= hybrid_top_k ({self.hybrid_top_k})")
+            errors.append(
+                f"rerank_input ({self.rerank_input_top_k}) must <= hybrid_top_k ({self.hybrid_top_k})"
+            )
         if not (0.0 <= self.reject_threshold <= 1.0):
             errors.append(f"reject_threshold must be in [0, 1], got {self.reject_threshold}")
         if not (0.0 <= self.generate_temperature <= 2.0):
@@ -72,26 +77,26 @@ PHASE1_GRID = {
     #
     # 去掉 800/1200：cs=800→2-4 块，cs=1200→1-3 块，块数太少时
     # dense 和 sparse 返回相同的候选集，RRF 融合和检索参数扫描失效。
-    "overlap":    [30, 60, 100],
+    "overlap": [30, 60, 100],
     # 30: 最小边界保护（对 cs=200 ≈15%，对 cs=500 =6%）
     # 60: 行业 10-20% overlap 中值（对 cs=200 ≈30%，对 cs=500 ≈12%）
     # 100: 保守边界保护（对 cs=200 ≈50%，对 cs=500 ≈20%）
 }
 
 PHASE2_SWEEP = {
-    "rrf_k":              [10, 30, 60, 100, 200],
+    "rrf_k": [10, 30, 60, 100, 200],
     # 10: 头部极度占优（dense rank1 权重是 rank10 的 1.8 倍）
     # 30: 温和头部优势
     # 60: RRF 论文原始默认值，Elastic/Pinecone/Vespa 全部使用
     # 100: 行业常见替代值
     # 200: 几乎扁平，排名几乎不影响融合（验证 k 的敏感性下限）
-    "hybrid_top_k":       [3, 5, 8, 12, 15],
+    "hybrid_top_k": [3, 5, 8, 12, 15],
     # 上限 15 而非 20/25：cs=200 时最多 18 块，cs=500 时最多 8 块。
     # 超过 15 后 dense/sparse 必然返回高度重叠的候选集，
     # hybrid_top_k 再大也只是重复消费同样的 chunk。
     # 3/5/8 对所有 chunk_size 都有意义；12/15 仅对 cs=200/300 有意义，
     # 对 cs=500 会退化为"全量返回"（但无害）。
-    "rerank_truncation":  [200, 0],
+    "rerank_truncation": [200, 0],
     # 200: 重截断——每块只留 200 字符给 reranker（测极简输入是否够用）
     # 0: 不截断——reranker 看到完整 chunk 内容
     # 去掉了 300/400/500：cs=200 时它们与 0 无区别（块≤200），
@@ -99,11 +104,11 @@ PHASE2_SWEEP = {
 }
 
 PHASE3_GRID = {
-    "rerank_input_top_k":  [0, 3, 5, 8, 12],
+    "rerank_input_top_k": [0, 3, 5, 8, 12],
     # 0: 哨兵值，跳过 Rerank，验证 Rerank 是否提升质量（phase ablation）
     # 3/5/8/12: 正常 Rerank 模式，必须 ≤ hybrid_top_k（约束校验拦截非法组合）。
     # 上限 12：cs=200 时最多 18 块，但 rerank 送入 12 条已覆盖 70%。
-    "rerank_final_top_k":  [2, 3, 5],
+    "rerank_final_top_k": [2, 3, 5],
     # 2: 极度压缩，LLM 视野最窄
     # 3: 适度压缩基线
     # 5: 全面覆盖（对 cs=500 的 8 块已覆盖 >60%）

@@ -10,6 +10,7 @@
 运行（仅本文件，避免触发 MySQL 集成测试）：
   cd /d/Project/ai-resume-analyzer/backend && .venv/Scripts/python.exe -m pytest tests/test_error_transparency.py -p no:cacheprovider -q
 """
+
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -21,6 +22,7 @@ from services.agentic_rag.generate import generate_node
 
 # ── 4.1 State 字段 ──────────────────────────────────────────
 
+
 class TestStateToolErrorsField:
     def test_tool_errors_in_annotations(self):
         """AgenticRAGState 应声明 tool_errors: list[dict]。"""
@@ -31,8 +33,13 @@ class TestStateToolErrorsField:
     async def test_tool_errors_default_empty_at_runtime(self):
         """运行时构造的 state 即使不带 tool_errors，节点也应安全以空列表处理。"""
         state = {
-            "question": "q", "resume_id": 1, "rewritten_query": "q",
-            "route_decision": "search", "chunks": [], "search_round": 0, "trace": {},
+            "question": "q",
+            "resume_id": 1,
+            "rewritten_query": "q",
+            "route_decision": "search",
+            "chunks": [],
+            "search_round": 0,
+            "trace": {},
         }
         # nodes 使用 state.get("tool_errors", [])，不应因缺字段而 KeyError
         with patch("services.agentic_rag.search.hybrid_search", new_callable=AsyncMock) as m:
@@ -44,16 +51,32 @@ class TestStateToolErrorsField:
 # ── 4.2 search_node / rerank_node 错误透传 ───────────────────
 
 SAMPLE_CHUNKS = [
-    {"text": "精通 Python", "score": 0.9, "chunk_index": 0, "section": "专业技能", "source": "dense"},
-    {"text": "3年 FastAPI 经验", "score": 0.7, "chunk_index": 1, "section": "工作经历", "source": "sparse"},
+    {
+        "text": "精通 Python",
+        "score": 0.9,
+        "chunk_index": 0,
+        "section": "专业技能",
+        "source": "dense",
+    },
+    {
+        "text": "3年 FastAPI 经验",
+        "score": 0.7,
+        "chunk_index": 1,
+        "section": "工作经历",
+        "source": "sparse",
+    },
 ]
 
 
 def _base_search_state(**overrides):
     state = {
-        "question": "候选人技术栈", "resume_id": 1,
-        "rewritten_query": "候选人的技术栈", "route_decision": "search",
-        "chunks": [], "search_round": 0, "trace": {},
+        "question": "候选人技术栈",
+        "resume_id": 1,
+        "rewritten_query": "候选人的技术栈",
+        "route_decision": "search",
+        "chunks": [],
+        "search_round": 0,
+        "trace": {},
     }
     state.update(overrides)
     return state
@@ -151,14 +174,25 @@ class TestRerankNodeToolErrors:
 
 # ── 4.3 generate_node 降级 prompt 注入 ───────────────────────
 
+
 def _base_generate_state(**overrides):
     base = {
-        "question": "候选人技能", "resume_id": 1,
-        "rewritten_query": "候选人的专业技能", "route_decision": "search",
+        "question": "候选人技能",
+        "resume_id": 1,
+        "rewritten_query": "候选人的专业技能",
+        "route_decision": "search",
         "chunks": [
-            {"text": "精通 Python、FastAPI", "section": "专业技能", "chunk_index": 0, "rerank_score": 0.9},
+            {
+                "text": "精通 Python、FastAPI",
+                "section": "专业技能",
+                "chunk_index": 0,
+                "rerank_score": 0.9,
+            },
         ],
-        "search_round": 1, "answer": "", "sources": [], "trace": {},
+        "search_round": 1,
+        "answer": "",
+        "sources": [],
+        "trace": {},
         "tool_errors": [],
     }
     base.update(overrides)
@@ -170,7 +204,9 @@ class TestGenerateDegradationPrompt:
     async def test_prompt_injects_degradation_note_when_tool_errors(self):
         """tool_errors 非空 → 传给 LLM 的 prompt 包含降级说明，且不伪造来源。"""
         state = _base_generate_state(
-            tool_errors=[{"tool": "hybrid_search", "query": "候选人的技能", "error": "vector DB timeout"}],
+            tool_errors=[
+                {"tool": "hybrid_search", "query": "候选人的技能", "error": "vector DB timeout"}
+            ],
         )
         captured = {}
 
@@ -209,25 +245,44 @@ class TestGenerateDegradationPrompt:
 
 # ── 4.4 qa API degraded 标记 ─────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_ask_degraded_true_when_tool_errors(client, auth_headers):
     """tool_errors 非空 → AnswerResponse.degraded == True。"""
     from api import qa as qa_module
 
     fake_record = SimpleNamespace(
-        id=1, question="候选人技能", answer="基于已有信息，候选人精通 Python。",
+        id=1,
+        question="候选人技能",
+        answer="基于已有信息，候选人精通 Python。",
         sources=[{"text": "精通 Python、FastAPI", "section": "专业技能", "chunk_index": 0}],
         created_at="2026-01-01T00:00:00",
     )
 
-    with patch.object(qa_module, "_run_agentic_rag", new_callable=AsyncMock,
-                      return_value=("答案", [{"text": "x", "section": "技能", "chunk_index": 0}],
-                                    [{"tool": "hybrid_search", "error": "boom"}])), \
-         patch("services.resume_service.get_resume", new_callable=AsyncMock), \
-         patch.object(qa_module.qa_service, "save_qa", new_callable=AsyncMock, return_value=fake_record):
-        resp = await client.post("/api/v1/qa/ask", json={
-            "resume_id": 1, "question": "候选人的技能",
-        }, headers=auth_headers)
+    with (
+        patch.object(
+            qa_module,
+            "_run_agentic_rag",
+            new_callable=AsyncMock,
+            return_value=(
+                "答案",
+                [{"text": "x", "section": "技能", "chunk_index": 0}],
+                [{"tool": "hybrid_search", "error": "boom"}],
+            ),
+        ),
+        patch("services.resume_service.get_resume", new_callable=AsyncMock),
+        patch.object(
+            qa_module.qa_service, "save_qa", new_callable=AsyncMock, return_value=fake_record
+        ),
+    ):
+        resp = await client.post(
+            "/api/v1/qa/ask",
+            json={
+                "resume_id": 1,
+                "question": "候选人的技能",
+            },
+            headers=auth_headers,
+        )
 
     assert resp.status_code == 200
     body = resp.json()
@@ -242,18 +297,33 @@ async def test_ask_degraded_false_when_no_tool_errors(client, auth_headers):
     from api import qa as qa_module
 
     fake_record = SimpleNamespace(
-        id=2, question="候选人技能", answer="候选人精通 Python。",
+        id=2,
+        question="候选人技能",
+        answer="候选人精通 Python。",
         sources=[{"text": "精通 Python", "section": "专业技能", "chunk_index": 0}],
         created_at="2026-01-01T00:00:00",
     )
 
-    with patch.object(qa_module, "_run_agentic_rag", new_callable=AsyncMock,
-                      return_value=("答案", [{"text": "x", "section": "技能", "chunk_index": 0}], [])), \
-         patch("services.resume_service.get_resume", new_callable=AsyncMock), \
-         patch.object(qa_module.qa_service, "save_qa", new_callable=AsyncMock, return_value=fake_record):
-        resp = await client.post("/api/v1/qa/ask", json={
-            "resume_id": 1, "question": "候选人的技能",
-        }, headers=auth_headers)
+    with (
+        patch.object(
+            qa_module,
+            "_run_agentic_rag",
+            new_callable=AsyncMock,
+            return_value=("答案", [{"text": "x", "section": "技能", "chunk_index": 0}], []),
+        ),
+        patch("services.resume_service.get_resume", new_callable=AsyncMock),
+        patch.object(
+            qa_module.qa_service, "save_qa", new_callable=AsyncMock, return_value=fake_record
+        ),
+    ):
+        resp = await client.post(
+            "/api/v1/qa/ask",
+            json={
+                "resume_id": 1,
+                "question": "候选人的技能",
+            },
+            headers=auth_headers,
+        )
 
     assert resp.status_code == 200
     assert resp.json()["degraded"] is False

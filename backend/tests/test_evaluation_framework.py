@@ -150,7 +150,9 @@ async def test_judge_client_handles_code_fence(monkeypatch):
     """DeepSeek 偶尔用 ```json 围栏包裹，解析需鲁棒。"""
 
     async def fake_call(prompt: str) -> str:
-        return '```json\n{"completeness":1,"accuracy":1,"source_credibility":1,"rationale":"x"}\n```'
+        return (
+            '```json\n{"completeness":1,"accuracy":1,"source_credibility":1,"rationale":"x"}\n```'
+        )
 
     monkeypatch.setattr(judge_client, "_call_deepseek", fake_call)
     result = await judge_client.judge("q", "a", "r", None)
@@ -219,11 +221,12 @@ def test_evaluate_module_does_not_import_graph_at_top_level():
     src = inspect.getsource(mod)
     # 只匹配真正的 import 语句行（排除 docstring 里的同名文字说明）
     import_lines = [
-        ln for ln in src.splitlines()
+        ln
+        for ln in src.splitlines()
         if ln.strip().startswith("from services.agentic_rag.graph import")
     ]
     assert import_lines, "graph 导入应存在于 _run_graph 函数体内"
     # 所有出现都必须带缩进（在函数内），不允许出现在模块顶层（列0）
-    assert all(
-        ln.startswith((" ", "\t")) for ln in import_lines
-    ), "graph 导入必须在函数体内缩进，不能在模块顶层"
+    assert all(ln.startswith((" ", "\t")) for ln in import_lines), (
+        "graph 导入必须在函数体内缩进，不能在模块顶层"
+    )

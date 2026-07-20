@@ -40,7 +40,13 @@ REPETITIONS = 3
 
 
 async def run_experiment_concurrent(
-    golden_set, id_map, resume_texts, p, label="", rebuild=True, sem=None,
+    golden_set,
+    id_map,
+    resume_texts,
+    p,
+    label="",
+    rebuild=True,
+    sem=None,
 ):
     """并发版实验：用 semaphore 限制并发数"""
     if sem is None:
@@ -178,9 +184,15 @@ async def main():
             "runs": config_runs,
         }
         for metric in [
-            "composite", "avg_score", "accuracy_2", "reject_f1",
-            "reject_precision", "reject_recall", "hallucination_rate",
-            "p50_latency_ms", "p95_latency_ms",
+            "composite",
+            "avg_score",
+            "accuracy_2",
+            "reject_f1",
+            "reject_precision",
+            "reject_recall",
+            "hallucination_rate",
+            "p50_latency_ms",
+            "p95_latency_ms",
         ]:
             vals = [r[metric] for r in config_runs if metric in r]
             if vals:
@@ -214,14 +226,18 @@ async def main():
     for config in all_phase5_results:
         cid = config["config_id"]
         vals = [r["composite"] for r in config["runs"]]
-        cv = statistics.stdev(vals) / statistics.mean(vals) * 100 if statistics.mean(vals) != 0 else 0
+        cv = (
+            statistics.stdev(vals) / statistics.mean(vals) * 100
+            if statistics.mean(vals) != 0
+            else 0
+        )
         print(f"  {cid}: composite CV = {cv:.2f}% (n={len(vals)})")
 
     # ── 持久化 ──
     save_results("phase5", all_phase5_results)
 
     total_elapsed = time.perf_counter() - total_start
-    print(f"\n[DONE] Phase 5 总耗时: {total_elapsed:.1f}s ({total_elapsed/60:.1f}min)")
+    print(f"\n[DONE] Phase 5 总耗时: {total_elapsed:.1f}s ({total_elapsed / 60:.1f}min)")
 
 
 if __name__ == "__main__":

@@ -3,13 +3,14 @@
 薄包装：调 analyze_service.analyze_resume，捕获 HTTPException 转 TextContent 错误 JSON。
 行为与重构前完全一致。
 """
+
 import json
 import logging
 
 from mcp.types import TextContent
 
 from mcp_server.server import get_current_user_id, mcp
-from services.analyze_service import analyze_resume, _ANALYSIS_PROMPTS
+from services.analyze_service import analyze_resume as service_analyze_resume, _ANALYSIS_PROMPTS
 from core.database import AsyncSessionLocal
 
 logger = logging.getLogger(__name__)
@@ -35,14 +36,18 @@ async def analyze_resume(
 
     if analysis_type not in _ANALYSIS_PROMPTS:
         valid = ", ".join(_ANALYSIS_PROMPTS.keys())
-        return [TextContent(
-            type="text",
-            text=json.dumps({"error": f"Invalid analysis_type: {analysis_type}. Valid types: {valid}"}),
-        )]
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps(
+                    {"error": f"Invalid analysis_type: {analysis_type}. Valid types: {valid}"}
+                ),
+            )
+        ]
 
     async with AsyncSessionLocal() as db:
         try:
-            result = await analyze_resume(db, user_id, resume_id_int, analysis_type)
+            result = await service_analyze_resume(db, user_id, resume_id_int, analysis_type)
         except Exception as e:
             # service 抛 HTTPException 或其他异常，统一转 MCP 错误格式
             detail = getattr(e, "detail", str(e))
