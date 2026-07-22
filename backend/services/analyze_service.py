@@ -5,6 +5,7 @@ MCP 工具捕获 HTTPException 转 TextContent 错误 JSON，REST 端点直接�
 """
 
 import logging
+import re
 from typing import Literal
 
 from fastapi import HTTPException, status
@@ -13,11 +14,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.retry import with_retry
 from models.resume import Resume
+from schemas.resume import ScoreDetail
 from services.rag.pipeline import llm_generate
 
 logger = logging.getLogger(__name__)
 
-AnalysisType = Literal["summary", "skills", "experience"]
+AnalysisType = Literal["summary", "skills", "experience", "score"]
 
 _ANALYSIS_PROMPTS: dict[str, str] = {
     "summary": (
@@ -42,7 +44,39 @@ _ANALYSIS_PROMPTS: dict[str, str] = {
         "每段经历包括：公司/组织名称、职位、时间段、主要职责和成就。\n"
         "如果简历中没有工作经历，请说明。"
     ),
+    "score": (
+        "你是一个专业的简历评分专家。请从以下四个维度对简历进行量化评分：\n\n"
+        "1. **ATS 匹配率**（0-100）：简历结构是否清晰、关键词是否丰富、"
+        "格式是否 ATS（Applicant Tracking System）友好\n"
+        "2. **关键词覆盖率**（0-100）：技术关键词、行业术语的覆盖广度\n"
+        "3. **技能密度**（0-100）：技能的深度和广度，是否有跨领域技能\n"
+        "4. **综合评价**（0-100）：综合以上维度的加权评分\n\n"
+        "请严格按以下格式输出：\n\n"
+        "## 综合评分\n\n"
+        "### ATS 匹配率: XX/100\n（简要分析）\n\n"
+        "### 关键词覆盖率: XX/100\n（简要分析）\n\n"
+        "### 技能密度: XX/100\n（简要分析）\n\n"
+        "### 综合评价: XX/100\n（简要分析）\n"
+    ),
 }
+
+
+def _parse_scores(analysis: str) -> ScoreDetail | None:
+    """从 LLM 返回的评分文本中提取量化分数。
+
+    使用正则匹配 "XXX/100" 格式，按顺序对应
+    ats_match, keyword_coverage, skill_density, overall。
+    """
+    # 匹配 "XX/100" 或 "XXX/100" 格式的分数
+    matches = re.findall(r"(\d{1,3})/100", analysis)
+    if len(matches) >= 4:
+        return ScoreDetail(
+            ats_match=int(matches[0]),
+            keyword_coverage=int(matches[1]),
+            skill_density=int(matches[2]),
+            overall=int(matches[3]),
+        )
+    return None
 
 
 async def analyze_resume(
@@ -116,8 +150,16 @@ async def analyze_resume(
             detail=f"分析失败: {e}",
         )
 
-    return {
+    result: dict = {
         "resume_id": resume_id,
         "analysis_type": analysis_type,
         "analysis": analysis,
     }
+
+    # score 类型：解析量化分数
+    if analysis_type == "score":
+        scores = _parse_scores(analysis)
+        if scores is not None:
+            result["scores"] = scores
+
+    return result

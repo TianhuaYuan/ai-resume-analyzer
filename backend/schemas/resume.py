@@ -6,6 +6,7 @@ from pydantic import BaseModel
 class ResumeResponse(BaseModel):
     id: int
     filename: str
+    parsed_text: str
     chunk_count: int
     status: str
     status_message: str
@@ -26,13 +27,23 @@ class UploadAsyncResponse(BaseModel):
 
 
 class AnalyzeRequest(BaseModel):
-    analysis_type: Literal["summary", "skills", "experience"]
+    analysis_type: Literal["summary", "skills", "experience", "score"]
+
+
+class ScoreDetail(BaseModel):
+    """量化评分维度。"""
+
+    ats_match: int
+    keyword_coverage: int
+    skill_density: int
+    overall: int
 
 
 class AnalyzeResponse(BaseModel):
     resume_id: int
     analysis_type: str
     analysis: str
+    scores: ScoreDetail | None = None
 
 
 class ChunkItem(BaseModel):
@@ -53,3 +64,12 @@ class ChunksResponse(BaseModel):
     resume_id: int
     total: int
     chunks: list[ChunkItem]
+
+
+class MatchJDRequest(BaseModel):
+    jd_text: str
+
+
+class MatchJDResponse(BaseModel):
+    resume_id: int
+    analysis: str

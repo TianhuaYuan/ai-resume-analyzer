@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { Link } from "react-router-dom";
-import { Sparkle, ListBullets } from "@phosphor-icons/react";
+import { Sparkle, ListBullets, FileText, Target } from "@phosphor-icons/react";
 import {
   listResumes,
   uploadResume,
@@ -10,6 +10,8 @@ import {
 } from "../api/resumes";
 import AnalysisModal from "../components/AnalysisModal";
 import ChunksModal from "../components/ChunksModal";
+import ResumeViewer from "../components/ResumeViewer";
+import MatchJDModal from "../components/MatchJDModal";
 
 // ── 骨架屏 ──────────────────────────────────────────────
 
@@ -162,6 +164,9 @@ export default function ResumeListPage() {
   const [deleteTarget, setDeleteTarget] = useState<ResumeItem | null>(null);
   const [analyzeTarget, setAnalyzeTarget] = useState<ResumeItem | null>(null);
   const [chunksTarget, setChunksTarget] = useState<ResumeItem | null>(null);
+  const [viewerTarget, setViewerTarget] = useState<ResumeItem | null>(null);
+  const [jdMatchTarget, setJdMatchTarget] = useState<ResumeItem | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   const fetchResumes = async () => {
     setLoading(true);
@@ -237,26 +242,76 @@ export default function ResumeListPage() {
 
     setError("");
     setUploading(true);
+
+    // 拖拽上传后，清空 input 值允许重复上传同一文件
+    if (fileInputRef.current) fileInputRef.current.value = "";
+
     try {
       const result = await uploadResume(file);
-      const placeholder: ResumeItem = {
-        id: result.id,
-        filename: result.filename,
-        chunk_count: 0,
-        status: "processing",
-        status_message: "",
-        created_at: new Date().toISOString(),
-      };
-      setResumes((prev) => [placeholder, ...prev]);
-      setTotal((prev) => prev + 1);
       setNewCardId(result.id);
+      setResumes((prev) => [
+        {
+          id: result.id,
+          filename: result.filename,
+          parsed_text: "",
+          chunk_count: 0,
+          status: result.status,
+          status_message: "解析中...",
+          created_at: new Date().toISOString(),
+        },
+        ...prev,
+      ]);
       startPoll(result.id);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "上传失败");
+    } catch {
+      setError("上传失败，请重试");
     } finally {
       setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
     }
+  };
+
+  const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+    if (file.type !== "application/pdf") {
+      setError("仅支持 PDF 文件");
+      return;
+    }
+    // 复用 handleUpload 的逻辑
+    setError("");
+    setUploading(true);
+    try {
+      const result = await uploadResume(file);
+      setNewCardId(result.id);
+      setResumes((prev) => [
+        {
+          id: result.id,
+          filename: result.filename,
+          parsed_text: "",
+          chunk_count: 0,
+          status: result.status,
+          status_message: "解析中...",
+          created_at: new Date().toISOString(),
+        },
+        ...prev,
+      ]);
+      startPoll(result.id);
+    } catch {
+      setError("上传失败，请重试");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
   };
 
   const handleDelete = async () => {
@@ -273,7 +328,14 @@ export default function ResumeListPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0f172a]">
+    <div
+      className={`min-h-screen bg-[#0f172a] drop-zone transition-all ${
+        isDragging ? "ring-4 ring-indigo-500 ring-inset bg-indigo-500/5" : ""
+      }`}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
       <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
         {/* ── 顶部栏 ── */}
         <div className="flex items-center justify-between mb-8">
@@ -395,6 +457,21 @@ export default function ResumeListPage() {
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
+                            setViewerTarget(r);
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs
+                            text-slate-400 hover:text-emerald-300
+                            hover:bg-emerald-500/10 rounded-lg
+                            active:scale-[0.98] motion-reduce:active:scale-100
+                            transition-all cursor-pointer"
+                        >
+                          <FileText size={13} weight="bold" aria-hidden="true" />
+                          预览
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
                             setChunksTarget(r);
                           }}
                           className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs
@@ -420,6 +497,21 @@ export default function ResumeListPage() {
                         >
                           <Sparkle size={13} weight="bold" aria-hidden="true" />
                           分析
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setJdMatchTarget(r);
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs
+                            text-slate-400 hover:text-purple-300
+                            hover:bg-purple-500/10 rounded-lg
+                            active:scale-[0.98] motion-reduce:active:scale-100
+                            transition-all cursor-pointer"
+                        >
+                          <Target size={13} weight="bold" aria-hidden="true" />
+                          JD匹配
                         </button>
                       </>
                     )}
@@ -465,6 +557,22 @@ export default function ResumeListPage() {
         resumeFilename={chunksTarget?.filename ?? ""}
         open={chunksTarget !== null}
         onClose={() => setChunksTarget(null)}
+      />
+
+      {/* ── 简历原文预览弹窗 ── */}
+      <ResumeViewer
+        resumeId={viewerTarget?.id ?? 0}
+        resumeFilename={viewerTarget?.filename ?? ""}
+        open={viewerTarget !== null}
+        onClose={() => setViewerTarget(null)}
+      />
+
+      {/* ── JD 匹配分析弹窗 ── */}
+      <MatchJDModal
+        resumeId={jdMatchTarget?.id ?? 0}
+        resumeFilename={jdMatchTarget?.filename ?? ""}
+        open={jdMatchTarget !== null}
+        onClose={() => setJdMatchTarget(null)}
       />
     </div>
   );

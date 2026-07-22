@@ -3,6 +3,7 @@ import { api } from "./client";
 export interface ResumeItem {
   id: number;
   filename: string;
+  parsed_text: string;
   chunk_count: number;
   status: string;
   status_message: string;
@@ -36,12 +37,20 @@ export async function deleteResume(id: number) {
   return api.delete(`/api/v1/resumes/${id}`);
 }
 
-export type AnalysisType = "summary" | "skills" | "experience";
+export type AnalysisType = "summary" | "skills" | "experience" | "score";
+
+export interface ScoreDetail {
+  ats_match: number;
+  keyword_coverage: number;
+  skill_density: number;
+  overall: number;
+}
 
 export interface AnalyzeResult {
   resume_id: number;
   analysis_type: string;
   analysis: string;
+  scores: ScoreDetail | null;
 }
 
 export async function analyzeResume(
@@ -69,4 +78,30 @@ export interface ChunksResult {
 
 export async function getChunks(id: number): Promise<ChunksResult> {
   return api.get(`/api/v1/resumes/${id}/chunks`) as Promise<ChunksResult>;
+}
+
+export interface MatchJDResult {
+  resume_id: number;
+  analysis: string;
+}
+
+export async function matchJD(
+  id: number,
+  jdText: string
+): Promise<MatchJDResult> {
+  return api.post(`/api/v1/resumes/${id}/match-jd`, {
+    jd_text: jdText,
+  }) as Promise<MatchJDResult>;
+}
+
+export async function exportResume(
+  id: number,
+  format: string = "markdown"
+): Promise<string> {
+  const resp = await fetch(
+    `/api/v1/resumes/${id}/export?format=${format}`,
+    { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } }
+  );
+  if (!resp.ok) throw new Error(`导出失败: ${resp.status}`);
+  return resp.text();
 }

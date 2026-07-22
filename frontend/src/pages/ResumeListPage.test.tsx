@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, fireEvent, act } from "@testing-library/react";
+import { render, fireEvent, act, waitFor, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import ResumeListPage from "./ResumeListPage";
 
@@ -60,5 +60,71 @@ describe("ResumeListPage 轮询定时器 (H8)", () => {
     expect(setIntervalSpy).toHaveBeenCalledTimes(2);
     // 修复后：第二次 startPoll 先 clearInterval 旧的，避免定时器泄漏
     expect(clearIntervalSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── B2 拖拽上传测试 ──
+
+describe("ResumeListPage 拖拽上传 (B2)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("拖拽文件到页面触发上传", async () => {
+    const { container } = render(
+      <MemoryRouter>
+        <ResumeListPage />
+      </MemoryRouter>
+    );
+
+    const dropZone = container.querySelector(".drop-zone") as HTMLElement;
+    const file = new File(["test"], "test.pdf", { type: "application/pdf" });
+
+    // 模拟 dragover + drop
+    await act(async () => {
+      fireEvent.dragOver(dropZone);
+    });
+
+    await act(async () => {
+      const dataTransfer = { files: [file] };
+      fireEvent.drop(dropZone, { dataTransfer });
+    });
+
+    await waitFor(() => {
+      expect(uploadResume).toHaveBeenCalled();
+    });
+  });
+
+  it("拖拽时显示高亮样式", async () => {
+    const { container } = render(
+      <MemoryRouter>
+        <ResumeListPage />
+      </MemoryRouter>
+    );
+
+    const dropZone = container.querySelector(".drop-zone") as HTMLElement;
+
+    // 初始无高亮
+    expect(dropZone.classList.contains("ring-indigo-500")).toBe(false);
+
+    await act(async () => {
+      fireEvent.dragOver(dropZone);
+    });
+
+    await waitFor(() => {
+      expect(dropZone.classList.contains("ring-indigo-500")).toBe(true);
+    });
+
+    await act(async () => {
+      fireEvent.dragLeave(dropZone);
+    });
+
+    await waitFor(() => {
+      expect(dropZone.classList.contains("ring-indigo-500")).toBe(false);
+    });
   });
 });

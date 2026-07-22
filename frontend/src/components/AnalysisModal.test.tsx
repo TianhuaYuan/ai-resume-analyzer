@@ -3,15 +3,18 @@ import { render, fireEvent, act, waitFor, screen } from "@testing-library/react"
 
 vi.mock("../api/resumes", () => ({
   analyzeResume: vi.fn(),
+  exportResume: vi.fn(),
 }));
 
 import AnalysisModal from "./AnalysisModal";
-import { analyzeResume } from "../api/resumes";
+import { analyzeResume, exportResume } from "../api/resumes";
 
 const mockAnalyze = vi.mocked(analyzeResume);
+const mockExport = vi.mocked(exportResume);
 
 beforeEach(() => {
   mockAnalyze.mockReset();
+  mockExport.mockReset();
 });
 
 afterEach(() => {
@@ -34,21 +37,22 @@ describe("AnalysisModal (Task 2 前端)", () => {
     expect(screen.queryByText(/test-resume\.pdf/)).toBeNull();
   });
 
-  it("open=true 时显示标题（含 filename）和三个 Tab", async () => {
+  it("open=true 时显示标题（含 filename）和四个 Tab", async () => {
     mockAnalyze.mockResolvedValue({
       resume_id: 42,
       analysis_type: "summary",
       analysis: "结果",
+      scores: null,
     });
     renderModal();
 
-    // 等待 useEffect 触发的异步加载完成，避免 act 警告
     await waitFor(() => expect(mockAnalyze).toHaveBeenCalled());
 
     expect(screen.getByText(/test-resume\.pdf/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /总结/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /技能/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /经历/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /评分/ })).toBeInTheDocument();
   });
 
   it("open=true 自动调 analyzeResume(id, summary)", async () => {
@@ -56,6 +60,7 @@ describe("AnalysisModal (Task 2 前端)", () => {
       resume_id: 42,
       analysis_type: "summary",
       analysis: "候选人精通 Python。",
+      scores: null,
     });
     renderModal();
 
@@ -65,15 +70,12 @@ describe("AnalysisModal (Task 2 前端)", () => {
   });
 
   it("Loading 态显示 skeleton（结果未到时）", async () => {
-    // 用永不 resolve 的 promise 锁定 loading 态
     mockAnalyze.mockReturnValue(new Promise(() => {}));
     renderModal();
 
-    // skeleton 容器存在
     await waitFor(() => {
       expect(mockAnalyze).toHaveBeenCalled();
     });
-    // 用 animate-skeleton class 检测
     const skeletons = document.querySelectorAll(".animate-skeleton");
     expect(skeletons.length).toBeGreaterThanOrEqual(3);
   });
@@ -84,6 +86,7 @@ describe("AnalysisModal (Task 2 前端)", () => {
       resume_id: 42,
       analysis_type: "summary",
       analysis: "重试成功",
+      scores: null,
     });
     renderModal();
 
@@ -107,6 +110,7 @@ describe("AnalysisModal (Task 2 前端)", () => {
       resume_id: 42,
       analysis_type: "summary",
       analysis: "候选人精通 Python 和 FastAPI，3 年后端经验。",
+      scores: null,
     });
     renderModal();
 
@@ -120,6 +124,7 @@ describe("AnalysisModal (Task 2 前端)", () => {
       resume_id: 42,
       analysis_type: "summary",
       analysis: "结果",
+      scores: null,
     });
     renderModal();
 
@@ -132,6 +137,7 @@ describe("AnalysisModal (Task 2 前端)", () => {
       resume_id: 42,
       analysis_type: "skills",
       analysis: "Python, FastAPI",
+      scores: null,
     });
 
     await act(async () => {
@@ -148,6 +154,7 @@ describe("AnalysisModal (Task 2 前端)", () => {
       resume_id: 42,
       analysis_type: "summary",
       analysis: "x",
+      scores: null,
     });
     const onClose = vi.fn();
     renderModal({ onClose });
@@ -165,6 +172,7 @@ describe("AnalysisModal (Task 2 前端)", () => {
       resume_id: 42,
       analysis_type: "summary",
       analysis: "x",
+      scores: null,
     });
     const onClose = vi.fn();
     renderModal({ onClose });
@@ -181,11 +189,11 @@ describe("AnalysisModal (Task 2 前端)", () => {
       resume_id: 42,
       analysis_type: "summary",
       analysis: "x",
+      scores: null,
     });
     const onClose = vi.fn();
     const { container } = renderModal({ onClose });
 
-    // overlay 是最外层 fixed inset-0 的 div
     const overlay = container.firstElementChild as HTMLElement;
     await act(async () => {
       fireEvent.click(overlay);
@@ -199,15 +207,129 @@ describe("AnalysisModal (Task 2 前端)", () => {
       resume_id: 42,
       analysis_type: "summary",
       analysis: "x",
+      scores: null,
     });
     const onClose = vi.fn();
     renderModal({ onClose });
 
-    // 点标题（卡片内部元素）不应触发 onClose
     await act(async () => {
       fireEvent.click(screen.getByText(/test-resume\.pdf/));
     });
 
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  // ── P1.1 评分 Tab 测试 ──
+
+  it("切换到评分 Tab 调用 analyzeResume(id, score)", async () => {
+    mockAnalyze.mockResolvedValue({
+      resume_id: 42,
+      analysis_type: "summary",
+      analysis: "结果",
+      scores: null,
+    });
+    renderModal();
+
+    await waitFor(() => expect(mockAnalyze).toHaveBeenCalled());
+    mockAnalyze.mockClear();
+
+    mockAnalyze.mockResolvedValue({
+      resume_id: 42,
+      analysis_type: "score",
+      analysis: "### ATS 匹配率: 75/100\n### 关键词覆盖率: 68/100",
+      scores: { ats_match: 75, keyword_coverage: 68, skill_density: 72, overall: 72 },
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /评分/ }));
+    });
+
+    await waitFor(() => {
+      expect(mockAnalyze).toHaveBeenCalledWith(42, "score");
+    });
+  });
+
+  it("评分 Tab 成功后显示量化分数", async () => {
+    mockAnalyze.mockResolvedValue({
+      resume_id: 42,
+      analysis_type: "score",
+      analysis: "### ATS 匹配率: 75/100",
+      scores: { ats_match: 75, keyword_coverage: 68, skill_density: 72, overall: 72 },
+    });
+    renderModal({ open: true });
+
+    // 直接切到评分
+    await waitFor(() => expect(mockAnalyze).toHaveBeenCalled());
+
+    // 检查分数显示
+    await waitFor(() => {
+      expect(screen.getByText(/75/)).toBeInTheDocument();
+    });
+  });
+
+  // ── P1.2 导出按钮测试 ──
+
+  it("Success 态显示导出按钮", async () => {
+    mockAnalyze.mockResolvedValue({
+      resume_id: 42,
+      analysis_type: "summary",
+      analysis: "分析结果",
+      scores: null,
+    });
+    renderModal();
+
+    await waitFor(() => {
+      expect(screen.getByText(/分析结果/)).toBeInTheDocument();
+    });
+
+    expect(screen.getByRole("button", { name: /导出/ })).toBeInTheDocument();
+  });
+
+  it("点导出按钮调用 exportResume 并触发下载", async () => {
+    mockAnalyze.mockResolvedValue({
+      resume_id: 42,
+      analysis_type: "summary",
+      analysis: "分析结果",
+      scores: null,
+    });
+    mockExport.mockResolvedValue("# 简历分析报告\n\n内容");
+    renderModal();
+
+    await waitFor(() => {
+      expect(screen.getByText(/分析结果/)).toBeInTheDocument();
+    });
+
+    // Mock URL.createObjectURL
+    const mockUrl = "blob:mock-url";
+    const origCreateObjectURL = globalThis.URL.createObjectURL;
+    const origRevokeObjectURL = globalThis.URL.revokeObjectURL;
+    globalThis.URL.createObjectURL = vi.fn(() => mockUrl);
+    globalThis.URL.revokeObjectURL = vi.fn();
+
+    // Mock document.createElement to track <a> click
+    const mockClick = vi.fn();
+    const origCreateElement = document.createElement.bind(document);
+    vi.spyOn(document, "createElement").mockImplementation((tag: string) => {
+      if (tag === "a") {
+        const el = origCreateElement(tag);
+        el.click = mockClick;
+        return el;
+      }
+      return origCreateElement(tag);
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /导出/ }));
+    });
+
+    await waitFor(() => {
+      expect(mockExport).toHaveBeenCalledWith(42, "markdown");
+      expect(mockClick).toHaveBeenCalled();
+    });
+
+    // Cleanup
+    globalThis.URL.createObjectURL = origCreateObjectURL;
+    globalThis.URL.revokeObjectURL = origRevokeObjectURL;
+    vi.restoreAllMocks();
   });
 });

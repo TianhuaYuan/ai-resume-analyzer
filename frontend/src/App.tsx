@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import Navbar from "./components/Navbar";
 import ErrorBoundary from "./components/ErrorBoundary";
 import SessionExpiredDialog from "./components/SessionExpiredDialog";
+import { ToastProvider, ToastContainer } from "./components/Toast";
 import LoginPage from "./pages/LoginPage";
 import ResumeListPage from "./pages/ResumeListPage";
 import QAPage from "./pages/QAPage";
@@ -85,7 +86,10 @@ export default function App() {
     <ErrorBoundary>
       <BrowserRouter>
         <AuthProvider>
-          <AppRoutes />
+          <ToastProvider>
+            <AppRoutes />
+            <ToastContainer />
+          </ToastProvider>
         </AuthProvider>
       </BrowserRouter>
     </ErrorBoundary>

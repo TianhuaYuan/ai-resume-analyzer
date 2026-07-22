@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { X, ArrowClockwise } from "@phosphor-icons/react";
+import { X, ArrowClockwise, Download } from "@phosphor-icons/react";
 import {
   analyzeResume,
+  exportResume,
   type AnalysisType,
+  type ScoreDetail,
 } from "../api/resumes";
 
 interface AnalysisModalProps {
@@ -16,9 +18,29 @@ const TABS: { key: AnalysisType; label: string }[] = [
   { key: "summary", label: "总结" },
   { key: "skills", label: "技能" },
   { key: "experience", label: "经历" },
+  { key: "score", label: "评分" },
 ];
 
 type Status = "loading" | "error" | "success";
+
+function ScoreBar({ label, value }: { label: string; value: number }) {
+  const color =
+    value >= 80 ? "bg-emerald-500" : value >= 60 ? "bg-yellow-500" : "bg-red-500";
+  return (
+    <div className="space-y-1">
+      <div className="flex justify-between text-xs">
+        <span className="text-slate-400">{label}</span>
+        <span className="text-slate-200 font-medium">{value}/100</span>
+      </div>
+      <div className="h-2 rounded-full bg-white/8 overflow-hidden">
+        <div
+          className={`h-full rounded-full ${color} transition-all`}
+          style={{ width: `${value}%` }}
+        />
+      </div>
+    </div>
+  );
+}
 
 export default function AnalysisModal({
   resumeId,
@@ -29,8 +51,8 @@ export default function AnalysisModal({
   const [activeTab, setActiveTab] = useState<AnalysisType>("summary");
   const [status, setStatus] = useState<Status>("loading");
   const [result, setResult] = useState("");
+  const [scores, setScores] = useState<ScoreDetail | null>(null);
   const [error, setError] = useState("");
-  // 用于在组件 unmount 后避免 setState 警告
   const cancelledRef = useRef(false);
 
   const load = useCallback(
@@ -38,10 +60,12 @@ export default function AnalysisModal({
       cancelledRef.current = false;
       setStatus("loading");
       setError("");
+      setScores(null);
       try {
         const res = await analyzeResume(resumeId, type);
         if (cancelledRef.current) return;
         setResult(res.analysis);
+        setScores(res.scores);
         setStatus("success");
       } catch (err: unknown) {
         if (cancelledRef.current) return;
@@ -52,12 +76,12 @@ export default function AnalysisModal({
     [resumeId]
   );
 
-  // open=true 时自动加载 summary
   useEffect(() => {
     if (!open) return;
     setActiveTab("summary");
     setStatus("loading");
     setResult("");
+    setScores(null);
     setError("");
     load("summary");
     return () => {
@@ -65,7 +89,6 @@ export default function AnalysisModal({
     };
   }, [open, load]);
 
-  // Esc 关闭
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -84,8 +107,24 @@ export default function AnalysisModal({
   const handleRetry = () => load(activeTab);
 
   const handleOverlayClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    // 只在点击 overlay 本身（非冒泡）时关闭
     if (e.target === e.currentTarget) onClose();
+  };
+
+  const handleExport = async () => {
+    try {
+      const md = await exportResume(resumeId, "markdown");
+      const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `resume_${resumeId}_report.md`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      // 导出失败静默处理，不影响分析体验
+    }
   };
 
   if (!open) return null;
@@ -186,12 +225,39 @@ export default function AnalysisModal({
           )}
 
           {status === "success" && (
-            <div
-              className="text-sm text-slate-300 leading-relaxed whitespace-pre-wrap"
-              aria-live="polite"
-            >
-              {result}
-            </div>
+            <>
+              {/* 评分 Tab：先显示分数条，再显示文字分析 */}
+              {activeTab === "score" && scores && (
+                <div className="mb-5 space-y-3">
+                  <ScoreBar label="ATS 匹配率" value={scores.ats_match} />
+                  <ScoreBar label="关键词覆盖率" value={scores.keyword_coverage} />
+                  <ScoreBar label="技能密度" value={scores.skill_density} />
+                  <ScoreBar label="综合评价" value={scores.overall} />
+                </div>
+              )}
+              <div
+                className="text-sm text-slate-300 leading-relaxed whitespace-pre-wrap"
+                aria-live="polite"
+              >
+                {result}
+              </div>
+              {/* 导出按钮 */}
+              <div className="mt-4 pt-4 border-t border-white/8 flex justify-end">
+                <button
+                  onClick={handleExport}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5
+                    text-xs font-medium rounded-lg
+                    bg-white/5 hover:bg-white/10
+                    border border-white/10
+                    text-slate-300
+                    active:scale-[0.98] motion-reduce:active:scale-100
+                    transition-all cursor-pointer"
+                >
+                  <Download size={14} weight="bold" aria-hidden="true" />
+                  导出
+                </button>
+              </div>
+            </>
           )}
         </div>
       </div>

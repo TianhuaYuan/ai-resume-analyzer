@@ -9,6 +9,7 @@ from fastapi import (
     UploadFile,
     status,
 )
+from fastapi.responses import PlainTextResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,11 +22,13 @@ from schemas.resume import (
     AnalyzeResponse,
     ChunkItem,
     ChunksResponse,
+    MatchJDRequest,
+    MatchJDResponse,
     ResumeListResponse,
     ResumeResponse,
     UploadAsyncResponse,
 )
-from services import analyze_service, resume_service
+from services import analyze_service, match_jd_service, resume_service
 from services.rag import chunks_service
 
 router = APIRouter(prefix="/resumes", tags=["resumes"])
@@ -171,4 +174,87 @@ async def get_resume_chunks(
         resume_id=resume_id,
         total=len(chunks_data),
         chunks=[ChunkItem(**c) for c in chunks_data],
+    )
+
+
+@router.post("/{resume_id}/match-jd", response_model=MatchJDResponse)
+async def post_match_jd(
+    resume_id: int,
+    body: MatchJDRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """将简历与 JD 文本进行匹配分析。
+
+    返回 LLM 生成的匹配分数、匹配点、差距分析和改进建议。
+    错误码：
+    - 401 未登录
+    - 404 简历不存在或非本人
+    - 409 简历未就绪（status != ready）
+    - 422 JD 文本为空或简历内容为空
+    - 500 LLM 调用失败
+    """
+    result = await match_jd_service.match_jd(
+        db, current_user.id, resume_id, body.jd_text
+    )
+    return MatchJDResponse(**result)
+
+
+@router.get("/{resume_id}/export", response_class=PlainTextResponse)
+async def export_resume(
+    resume_id: int,
+    format: str = "markdown",
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """导出简历分析报告。
+
+    当前仅支持 format=markdown。
+    返回包含简历原文 + 评分的 Markdown 报告。
+    错误码：
+    - 401 未登录
+    - 404 简历不存在或非本人
+    - 409 简历未就绪
+    """
+    resume = await resume_service.get_resume(db, resume_id, current_user.id)
+
+    if resume.status != "ready":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"简历未就绪（当前状态: {resume.status}）",
+        )
+
+    if format != "markdown":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"不支持的导出格式: {format}，目前仅支持 markdown",
+        )
+
+    # 构建 Markdown 报告
+    lines = [
+        f"# 简历分析报告",
+        "",
+        f"**文件名**: {resume.filename}",
+        f"**创建时间**: {resume.created_at.strftime('%Y-%m-%d %H:%M')}",
+        f"**分块数量**: {resume.chunk_count}",
+        "",
+        "---",
+        "",
+        "## 简历原文",
+        "",
+        resume.parsed_text or "（空）",
+        "",
+        "---",
+        "",
+        "*报告由 AI Resume Analyzer 自动生成*",
+    ]
+
+    content = "\n".join(lines)
+    # Content-Disposition 文件名只使用 ASCII 安全字符，中文用 resume_id 代替
+    return PlainTextResponse(
+        content=content,
+        media_type="text/markdown; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="resume_{resume_id}_report.md"'
+        },
     )

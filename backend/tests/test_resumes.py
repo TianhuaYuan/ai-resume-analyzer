@@ -6,6 +6,30 @@
 import pytest
 from httpx import AsyncClient
 
+from models.resume import Resume
+from tests.conftest import AsyncSessionTest
+
+
+async def _insert_resume(
+    user_id: int,
+    *,
+    parsed_text: str = "Python 后端工程师，3年 FastAPI 开发经验。",
+    status: str = "ready",
+) -> int:
+    """直接插入 Resume 记录，返回 id。"""
+    async with AsyncSessionTest() as session:
+        resume = Resume(
+            user_id=user_id,
+            filename="test.pdf",
+            file_path="/tmp/test.pdf",
+            parsed_text=parsed_text,
+            status=status,
+        )
+        session.add(resume)
+        await session.commit()
+        await session.refresh(resume)
+        return resume.id
+
 
 # ── 认证校验 ──────────────────────────────────────────
 
@@ -54,6 +78,34 @@ async def test_get_nonexistent_resume(client: AsyncClient, auth_headers: dict):
     """访问不存在的简历 → 404。"""
     resp = await client.get("/api/v1/resumes/99999", headers=auth_headers)
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_resume_returns_parsed_text(
+    client: AsyncClient, auth_headers: dict, registered_user: dict
+):
+    """GET /api/v1/resumes/{id} 应返回 parsed_text 字段，供前端预览原文。"""
+    text = "张三\nPython后端工程师\n3年FastAPI开发经验\n熟悉Docker和CI/CD"
+    resume_id = await _insert_resume(registered_user["id"], parsed_text=text)
+    resp = await client.get(f"/api/v1/resumes/{resume_id}", headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "parsed_text" in data
+    assert data["parsed_text"] == text
+
+
+@pytest.mark.asyncio
+async def test_get_resume_returns_empty_parsed_text(
+    client: AsyncClient, auth_headers: dict, registered_user: dict
+):
+    """processing 状态的简历 parsed_text 为空字符串，也应正常返回。"""
+    resume_id = await _insert_resume(
+        registered_user["id"], parsed_text="", status="processing"
+    )
+    resp = await client.get(f"/api/v1/resumes/{resume_id}", headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["parsed_text"] == ""
 
 
 # ── 删除 ──────────────────────────────────────────────
