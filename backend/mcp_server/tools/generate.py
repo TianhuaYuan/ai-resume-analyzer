@@ -1,18 +1,18 @@
 """MCP Tool: generate_answer — 基于检索上下文生成答案。"""
 
+import asyncio
 import json
 import logging
 
 import httpx
 from mcp.types import TextContent
 
+from core.config import settings
 from mcp_server.server import get_current_user_id, mcp
 
 logger = logging.getLogger(__name__)
 
-_GENERATE_TEMPERATURE = 0.3
-# 远端 LLM 调用的总超时上限（对齐阶段1：30s 总时限 / 10s 连接）
-MCP_HTTP_TIMEOUT = httpx.Timeout(30, connect=10)
+MCP_HTTP_TIMEOUT = httpx.Timeout(settings.MCP_HTTP_TIMEOUT_TOTAL, connect=settings.MCP_HTTP_TIMEOUT_CONNECT)
 
 
 @mcp.tool()
@@ -42,10 +42,9 @@ async def generate_answer(
             )
         ]
 
-    import asyncio
-
     from core.retry import with_retry
-    from services.rag.pipeline import build_prompt, llm_generate, reject_if_low_score
+    from services.rag.pipeline import build_prompt, llm_generate
+    from services.rag.retrieval import reject_if_low_score
 
     if not question.strip():
         return [TextContent(type="text", text='{"error": "question cannot be empty"}')]
@@ -91,7 +90,7 @@ async def generate_answer(
                 llm_generate,
                 prompt["system"],
                 prompt["user"],
-                temperature=_GENERATE_TEMPERATURE,
+                temperature=settings.DEFAULT_GENERATE_TEMPERATURE,
                 fallback="服务暂时不可用，请稍后重试。",
             ),
             timeout=MCP_HTTP_TIMEOUT.read,

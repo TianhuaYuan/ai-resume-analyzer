@@ -74,8 +74,17 @@ export function notifySessionWarning(remainingSeconds: number) {
   );
 }
 
+/**
+ * 应用自身使用的 localStorage key 白名单。
+ * 清理会话时只删除这些 key，避免影响同域名下其他应用的数据。
+ */
+const APP_STORAGE_KEYS = ["access_token", "refresh_token"];
+
 export function clearSessionAndRedirect() {
-  localStorage.clear();
+  // P1-20：不能用 localStorage.clear()，否则会清空同域名下其他应用的数据
+  for (const key of APP_STORAGE_KEYS) {
+    localStorage.removeItem(key);
+  }
   window.location.href = "/login";
 }
 

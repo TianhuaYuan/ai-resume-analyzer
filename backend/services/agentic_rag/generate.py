@@ -3,15 +3,26 @@ import logging
 import time
 import re
 
+from core.config import settings
 from core.retry import with_retry
 from services.agentic_rag.state import AgenticRAGState
-from services.rag.pipeline import llm_generate, build_prompt, reject_if_low_score
+from services.rag.pipeline import llm_generate, build_prompt
+from services.rag.retrieval import reject_if_low_score
 
 logger = logging.getLogger(__name__)
 
-_GENERATE_TEMPERATURE = 0.3
 _EVAL_PASS_THRESHOLD = 0.6
 _EVAL_MAX_RETRIES = 2
+
+
+def _clamp_score(value: float) -> float:
+    """将评分限制在 [0, 1] 范围内。"""
+    return max(0.0, min(1.0, value))
+
+
+def _compute_composite(completeness: float, accuracy: float, source_credibility: float) -> float:
+    """计算综合评分：完整性 40% + 准确性 40% + 来源可信度 20%。"""
+    return completeness * 0.4 + accuracy * 0.4 + source_credibility * 0.2
 
 
 def _extract_sources(chunks: list[dict]) -> list[dict]:
@@ -95,7 +106,7 @@ async def generate_node(state: AgenticRAGState) -> dict:
         llm_generate,
         prompt["system"],
         prompt["user"],
-        temperature=_GENERATE_TEMPERATURE,
+        temperature=settings.DEFAULT_GENERATE_TEMPERATURE,
         fallback="服务暂时不可用，请稍后重试。",
     )
 
@@ -175,17 +186,11 @@ def _parse_eval_response(raw: str) -> tuple[float, float, float, float, str]:
 
     try:
         data = json.loads(raw.strip())
-        completeness = float(data.get("completeness", 5)) / 10.0
-        accuracy = float(data.get("accuracy", 5)) / 10.0
-        source_credibility = float(data.get("source_credibility", 5)) / 10.0
+        completeness = _clamp_score(float(data.get("completeness", 5)) / 10.0)
+        accuracy = _clamp_score(float(data.get("accuracy", 5)) / 10.0)
+        source_credibility = _clamp_score(float(data.get("source_credibility", 5)) / 10.0)
         feedback = str(data.get("feedback", ""))
-
-        completeness = max(0.0, min(1.0, completeness))
-        accuracy = max(0.0, min(1.0, accuracy))
-        source_credibility = max(0.0, min(1.0, source_credibility))
-
-        composite = completeness * 0.4 + accuracy * 0.4 + source_credibility * 0.2
-
+        composite = _compute_composite(completeness, accuracy, source_credibility)
         return completeness, accuracy, source_credibility, composite, feedback
     except (json.JSONDecodeError, ValueError, TypeError):
         pass
@@ -195,19 +200,12 @@ def _parse_eval_response(raw: str) -> tuple[float, float, float, float, str]:
     source_match = re.search(r'"source_credibility"\s*:\s*(\d+(?:\.\d+)?)', raw)
 
     if completeness_match and accuracy_match and source_match:
-        completeness = float(completeness_match.group(1)) / 10.0
-        accuracy = float(accuracy_match.group(1)) / 10.0
-        source_credibility = float(source_match.group(1)) / 10.0
-
-        completeness = max(0.0, min(1.0, completeness))
-        accuracy = max(0.0, min(1.0, accuracy))
-        source_credibility = max(0.0, min(1.0, source_credibility))
-
-        composite = completeness * 0.4 + accuracy * 0.4 + source_credibility * 0.2
-
+        completeness = _clamp_score(float(completeness_match.group(1)) / 10.0)
+        accuracy = _clamp_score(float(accuracy_match.group(1)) / 10.0)
+        source_credibility = _clamp_score(float(source_match.group(1)) / 10.0)
+        composite = _compute_composite(completeness, accuracy, source_credibility)
         feedback_match = re.search(r'"feedback"\s*:\s*"([^"]*)"', raw)
         feedback = feedback_match.group(1) if feedback_match else ""
-
         return completeness, accuracy, source_credibility, composite, feedback
 
     logger.warning("evaluate_node: failed to parse eval response: %s", raw[:100])
@@ -239,6 +237,7 @@ async def evaluate_node(state: AgenticRAGState) -> dict:
             "completeness_score": 0.0,
             "accuracy_score": 0.0,
             "source_credibility_score": 0.0,
+            "eval_forced": False,
             "trace": trace,
         }
 
@@ -258,6 +257,7 @@ async def evaluate_node(state: AgenticRAGState) -> dict:
             "completeness_score": 0.5,
             "accuracy_score": 0.5,
             "source_credibility_score": 0.5,
+            "eval_forced": True,
             "trace": trace,
         }
 
@@ -303,5 +303,6 @@ async def evaluate_node(state: AgenticRAGState) -> dict:
         "completeness_score": completeness,
         "accuracy_score": accuracy,
         "source_credibility_score": source_credibility,
+        "eval_forced": False,
         "trace": trace,
     }

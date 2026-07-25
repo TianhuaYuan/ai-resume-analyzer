@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
+import { ThemeProvider } from "./context/ThemeContext";
 import type { ReactNode } from "react";
 import Navbar from "./components/Navbar";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -14,7 +15,7 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#0f172a] text-slate-400 text-sm">
+      <div className="min-h-screen flex items-center justify-center bg-[var(--color-bg)] text-[var(--color-text-secondary)] text-sm">
         加载中...
       </div>
     );
@@ -84,14 +85,16 @@ function AppRoutes() {
 export default function App() {
   return (
     <ErrorBoundary>
-      <BrowserRouter>
-        <AuthProvider>
-          <ToastProvider>
-            <AppRoutes />
-            <ToastContainer />
-          </ToastProvider>
-        </AuthProvider>
-      </BrowserRouter>
+      <ThemeProvider>
+        <BrowserRouter>
+          <AuthProvider>
+            <ToastProvider>
+              <AppRoutes />
+              <ToastContainer />
+            </ToastProvider>
+          </AuthProvider>
+        </BrowserRouter>
+      </ThemeProvider>
     </ErrorBoundary>
   );
 }

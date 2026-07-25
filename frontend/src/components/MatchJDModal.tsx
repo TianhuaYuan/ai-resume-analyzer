@@ -22,16 +22,26 @@ export default function MatchJDModal({
   const [result, setResult] = useState("");
   const [error, setError] = useState("");
   const cancelledRef = useRef(false);
+  const dialogRef = useRef<HTMLDialogElement>(null);
 
-  // Esc 关闭
+  // P3-6：使用原生 <dialog>，showModal/close 控制，Esc 原生支持
   useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    if (open) {
+      try {
+        dialog.showModal();
+      } catch {
+        dialog.open = true;
+      }
+    } else {
+      try {
+        dialog.close();
+      } catch {
+        dialog.open = false;
+      }
+    }
+  }, [open]);
 
   // open 变化时重置状态
   useEffect(() => {
@@ -64,42 +74,46 @@ export default function MatchJDModal({
 
   const handleRetry = () => handleMatch();
 
-  const handleOverlayClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.target === e.currentTarget) onClose();
+  const handleCancel = (e: React.FormEvent<HTMLDialogElement>) => {
+    e.preventDefault();
+    onClose();
   };
 
   if (!open) return null;
 
   return (
-    <div
-      onClick={handleOverlayClick}
-      className="fixed inset-0 z-50 flex items-center justify-center
+    <dialog
+      ref={dialogRef}
+      onCancel={handleCancel}
+      onClose={handleCancel}
+      className="fixed inset-0 z-50 m-0 w-full h-full p-0
         bg-black/60 backdrop-blur-sm motion-reduce:backdrop-blur-none"
       role="dialog"
       aria-modal="true"
       aria-label={`JD 匹配分析: ${resumeFilename}`}
     >
       <div
-        className="bg-[#1e293b] border border-white/10 rounded-2xl
+        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2
+          bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl
           max-w-2xl w-full mx-4 shadow-2xl
           animate-fade-in-up motion-reduce:animate-none
           flex flex-col max-h-[85dvh]"
       >
         {/* 头部 */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/8 shrink-0">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--color-border)] shrink-0">
           <div className="min-w-0 flex-1">
-            <h3 className="text-base font-semibold text-slate-100 truncate">
+            <h3 className="text-base font-semibold text-[var(--color-text)] truncate">
               JD 匹配分析
             </h3>
-            <p className="text-xs text-slate-500 truncate mt-0.5">
+            <p className="text-xs text-[var(--color-text-muted)] truncate mt-0.5">
               {resumeFilename}
             </p>
           </div>
           <button
             onClick={onClose}
             aria-label="关闭"
-            className="ml-3 p-1.5 rounded-lg text-slate-400
-              hover:text-slate-100 hover:bg-white/8
+            className="ml-3 p-1.5 rounded-lg text-[var(--color-text-secondary)]
+              hover:text-[var(--color-text)] hover:bg-white/8
               active:scale-[0.95] motion-reduce:active:scale-100
               transition-all cursor-pointer shrink-0"
           >
@@ -112,7 +126,7 @@ export default function MatchJDModal({
           {/* idle / loading: 显示输入框 */}
           {(status === "idle" || status === "loading") && (
             <>
-              <label className="block text-sm text-slate-400 mb-2">
+              <label className="block text-sm text-[var(--color-text-secondary)] mb-2">
                 职位描述（JD）
               </label>
               <textarea
@@ -121,9 +135,9 @@ export default function MatchJDModal({
                 placeholder="粘贴职位描述（JD）文本..."
                 disabled={status === "loading"}
                 rows={6}
-                className="w-full px-3 py-2.5 text-sm text-slate-200
-                  bg-white/5 border border-white/10 rounded-lg
-                  placeholder:text-slate-600
+                className="w-full px-3 py-2.5 text-sm text-[var(--color-text)]
+                  bg-white/5 border border-[var(--color-border)] rounded-lg
+                  placeholder:text-[var(--color-text-muted)]
                   focus:outline-none focus:border-indigo-500/50
                   resize-y disabled:opacity-50
                   transition-colors"
@@ -173,7 +187,7 @@ export default function MatchJDModal({
           {status === "success" && (
             <>
               <div
-                className="text-sm text-slate-300 leading-relaxed whitespace-pre-wrap"
+                className="text-sm text-[var(--color-text-secondary)] leading-relaxed whitespace-pre-wrap"
                 aria-live="polite"
               >
                 {result}
@@ -185,8 +199,8 @@ export default function MatchJDModal({
                 }}
                 className="mt-4 inline-flex items-center gap-1.5 px-3 py-1.5
                   text-xs font-medium rounded-lg
-                  bg-white/5 border border-white/10
-                  text-slate-400 hover:text-slate-200
+                  bg-white/5 border border-[var(--color-border)]
+                  text-[var(--color-text-secondary)] hover:text-[var(--color-text)]
                   active:scale-[0.98] motion-reduce:active:scale-100
                   transition-all cursor-pointer"
               >
@@ -196,6 +210,6 @@ export default function MatchJDModal({
           )}
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }

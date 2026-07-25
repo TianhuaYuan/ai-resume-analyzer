@@ -20,17 +20,26 @@ class AppException(Exception):
         super().__init__(detail)
 
 
-def _error_response(status_code: int, code: str, message: str) -> JSONResponse:
-    return JSONResponse(
-        status_code=status_code,
-        content={
-            "error": {
-                "code": code,
-                "message": message,
-                "request_id": get_request_id(),
-            }
-        },
-    )
+def _error_response(status_code: int, code: str, message: str, details: list | None = None) -> JSONResponse:
+    """统一错误响应构造。
+
+    Args:
+        status_code: HTTP 状态码
+        code: 业务错误码（如 VALIDATION_ERROR）
+        message: 人类可读的主错误消息（向后兼容）
+        details: P3-11 完整错误列表，每个元素含 {loc, msg, type}，
+                 前端可逐字段渲染错误提示。仅校验类错误填充。
+    """
+    body: dict = {
+        "error": {
+            "code": code,
+            "message": message,
+            "request_id": get_request_id(),
+        }
+    }
+    if details:
+        body["error"]["details"] = details
+    return JSONResponse(status_code=status_code, content=body)
 
 
 def register_exception_handlers(app: FastAPI) -> None:
@@ -49,15 +58,23 @@ def register_exception_handlers(app: FastAPI) -> None:
     async def validation_exception_handler(
         request: Request, exc: RequestValidationError
     ) -> JSONResponse:
-        errors = exc.errors()
-        if errors:
-            first = errors[0]
-            loc = " -> ".join(str(part) for part in first.get("loc", []))
-            msg = f"{loc}: {first.get('msg', '参数校验失败')}"
+        # P3-11: 返回完整错误列表而非仅第一个，前端可逐字段展示
+        raw_errors = exc.errors()
+        details: list[dict] = []
+        for err in raw_errors:
+            loc = " -> ".join(str(part) for part in err.get("loc", []))
+            details.append({
+                "loc": loc,
+                "msg": err.get("msg", "参数校验失败"),
+                "type": err.get("type", ""),
+            })
+        # message 取第一个错误的消息作为主消息（向后兼容旧前端只读 message 的逻辑）
+        if details:
+            message = f"{details[0]['loc']}: {details[0]['msg']}"
         else:
-            msg = "参数校验失败"
-        logger.warning("ValidationError: %s", msg)
-        return _error_response(422, "VALIDATION_ERROR", msg)
+            message = "参数校验失败"
+        logger.warning("ValidationError: %d 个错误，首个: %s", len(details), message)
+        return _error_response(422, "VALIDATION_ERROR", message, details=details)
 
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:

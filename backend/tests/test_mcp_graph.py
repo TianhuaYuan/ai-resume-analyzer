@@ -18,6 +18,7 @@ from services.agentic_rag.mcp_graph import (
     DIRECT_ANSWER_NODE,
     MCP_SEARCH_NODE,
     SELF_REFLECTION_NODE,
+    OUTPUT_NODE,
 )
 
 
@@ -76,9 +77,9 @@ class TestMCPRouteAfterEvaluate:
         state = _make_state(should_retry=True, search_round=1)
         assert _route_after_evaluate(state) == SELF_REFLECTION_NODE
 
-    def test_retry_at_limit_goes_to_self_reflection(self):
+    def test_retry_at_limit_goes_to_output(self):
         state = _make_state(should_retry=True, search_round=2)
-        assert _route_after_evaluate(state) == SELF_REFLECTION_NODE
+        assert _route_after_evaluate(state) == OUTPUT_NODE
 
     def test_retry_exceeds_limit_goes_to_output(self):
         state = _make_state(should_retry=True, search_round=3)
@@ -380,7 +381,7 @@ class TestMCPEdgeCases:
 
     def test_route_after_evaluate_retry_at_boundary(self):
         state = _make_state(should_retry=True, search_round=2)
-        assert _route_after_evaluate(state) == SELF_REFLECTION_NODE
+        assert _route_after_evaluate(state) == OUTPUT_NODE
 
     def test_route_after_evaluate_retry_over_boundary(self):
         state = _make_state(should_retry=True, search_round=3)

@@ -13,7 +13,7 @@ from services.agentic_rag.graph import (
     create_agentic_rag_graph,
     direct_answer_node,
     output_node,
-    _route_after_route,
+    _route_after_route_standard as _route_after_route,
     _route_after_evaluate,
     DIRECT_ANSWER_NODE,
 )
@@ -86,10 +86,10 @@ class TestRouteAfterEvaluate:
         state = _make_state(should_retry=True, search_round=1)
         assert _route_after_evaluate(state) == "self_reflection"
 
-    def test_retry_at_limit_2_goes_to_self_reflection(self):
-        """round=2 时仍允许反思（evaluate_node 内部会在 round>2 时强制 should_retry=False）。"""
+    def test_retry_at_limit_2_goes_to_output(self):
+        """round=2 时已达最大重试次数，应输出（_EVAL_MAX_RETRIES=2，search_round < 2 才允许重试）。"""
         state = _make_state(should_retry=True, search_round=2)
-        assert _route_after_evaluate(state) == "self_reflection"
+        assert _route_after_evaluate(state) == "output"
 
     def test_retry_exceeds_limit_goes_to_output(self):
         """round>2 时即使 should_retry=True 也输出（安全兜底）。"""
@@ -470,9 +470,9 @@ class TestEdgeCases:
     """边界条件测试。"""
 
     def test_route_after_evaluate_retry_at_boundary(self):
-        """round=2, should_retry=True → 进入 self_reflection（Reflexion核心）。"""
+        """round=2, should_retry=True → 输出（_EVAL_MAX_RETRIES=2，已达上限）。"""
         state = _make_state(should_retry=True, search_round=2)
-        assert _route_after_evaluate(state) == "self_reflection"
+        assert _route_after_evaluate(state) == "output"
 
     def test_route_after_evaluate_retry_over_boundary(self):
         """round=3, should_retry=True → 输出（安全兜底）。"""

@@ -53,9 +53,10 @@ async def mcp_rerank(
         )
     except MCPClientError as e:
         logger.error("MCP rerank_results failed: %s", e)
-        for c in chunks:
-            c.setdefault("rerank_score", 0.5)
-        return chunks[:top_k]
+        return [
+            {**c, "rerank_score": c.get("rerank_score", 0.5)}
+            for c in chunks[:top_k]
+        ]
 
     return _parse_tool_result(result)
 

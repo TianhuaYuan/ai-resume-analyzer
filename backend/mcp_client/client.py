@@ -10,7 +10,7 @@ import httpx
 logger = logging.getLogger(__name__)
 
 _DEFAULT_BASE_URL = "http://127.0.0.1:8000/mcp"
-# 2.6 N1：对外 HTTP 调用统一超时（对齐阶段1：30s 总时限 / 10s 连接）
+# 对外 HTTP 调用统一超时（对齐阶段1：30s 总时限 / 10s 连接）
 _DEFAULT_TIMEOUT = httpx.Timeout(30, connect=10)
 
 

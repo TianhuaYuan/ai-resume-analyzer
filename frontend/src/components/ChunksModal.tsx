@@ -22,6 +22,7 @@ export default function ChunksModal({
   const [error, setError] = useState("");
   const [expandedSet, setExpandedSet] = useState<Set<number>>(new Set());
   const cancelledRef = useRef(false);
+  const dialogRef = useRef<HTMLDialogElement>(null);
 
   const load = useCallback(async () => {
     cancelledRef.current = false;
@@ -50,15 +51,24 @@ export default function ChunksModal({
     };
   }, [open, load]);
 
-  // Esc 关闭
+  // P3-6：使用原生 <dialog>，showModal/close 控制，Esc 原生支持
   useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    if (open) {
+      try {
+        dialog.showModal();
+      } catch {
+        dialog.open = true;
+      }
+    } else {
+      try {
+        dialog.close();
+      } catch {
+        dialog.open = false;
+      }
+    }
+  }, [open]);
 
   const handleRetry = () => load();
 
@@ -74,38 +84,42 @@ export default function ChunksModal({
     });
   };
 
-  const handleOverlayClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.target === e.currentTarget) onClose();
+  const handleCancel = (e: React.FormEvent<HTMLDialogElement>) => {
+    e.preventDefault();
+    onClose();
   };
 
   if (!open) return null;
 
   return (
-    <div
-      onClick={handleOverlayClick}
-      className="fixed inset-0 z-50 flex items-center justify-center
+    <dialog
+      ref={dialogRef}
+      onCancel={handleCancel}
+      onClose={handleCancel}
+      className="fixed inset-0 z-50 m-0 w-full h-full p-0
         bg-black/60 backdrop-blur-sm motion-reduce:backdrop-blur-none"
       role="dialog"
       aria-modal="true"
       aria-label={`简历分块预览: ${resumeFilename}`}
     >
       <div
-        className="bg-[#1e293b] border border-white/10 rounded-2xl
+        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2
+          bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl
           max-w-2xl w-full mx-4 shadow-2xl
           animate-fade-in-up motion-reduce:animate-none
           flex flex-col max-h-[85dvh]"
       >
         {/* 头部 */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/8 shrink-0">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--color-border)] shrink-0">
           <div className="min-w-0 flex-1">
-            <h3 className="text-base font-semibold text-slate-100 truncate">
+            <h3 className="text-base font-semibold text-[var(--color-text)] truncate">
               分块预览
             </h3>
-            <p className="text-xs text-slate-500 truncate mt-0.5">
+            <p className="text-xs text-[var(--color-text-muted)] truncate mt-0.5">
               {resumeFilename}
               {status === "success" && (
-                <span className="ml-2 text-slate-400">
-                  共 <span className="text-slate-200 font-medium">{chunks.length}</span> 个分块
+                <span className="ml-2 text-[var(--color-text-secondary)]">
+                  共 <span className="text-[var(--color-text)] font-medium">{chunks.length}</span> 个分块
                 </span>
               )}
             </p>
@@ -113,8 +127,8 @@ export default function ChunksModal({
           <button
             onClick={onClose}
             aria-label="关闭"
-            className="ml-3 p-1.5 rounded-lg text-slate-400
-              hover:text-slate-100 hover:bg-white/8
+            className="ml-3 p-1.5 rounded-lg text-[var(--color-text-secondary)]
+              hover:text-[var(--color-text)] hover:bg-white/8
               active:scale-[0.95] motion-reduce:active:scale-100
               transition-all cursor-pointer shrink-0"
           >
@@ -155,7 +169,7 @@ export default function ChunksModal({
           )}
 
           {status === "success" && chunks.length === 0 && (
-            <div className="text-center py-12 text-slate-500 text-sm">
+            <div className="text-center py-12 text-[var(--color-text-muted)] text-sm">
               暂无分块数据
             </div>
           )}
@@ -167,7 +181,7 @@ export default function ChunksModal({
                 return (
                   <div
                     key={chunk.chunk_index}
-                    className="bg-white/[0.03] border border-white/8 rounded-lg overflow-hidden"
+                    className="bg-white/[0.03] border border-[var(--color-border)] rounded-lg overflow-hidden"
                   >
                     <button
                       onClick={() => handleToggle(chunk.chunk_index)}
@@ -188,10 +202,10 @@ export default function ChunksModal({
                         #{chunk.chunk_index}
                       </span>
                       <span className="flex-1 min-w-0">
-                        <span className="block text-sm font-medium text-slate-200 truncate">
+                        <span className="block text-sm font-medium text-[var(--color-text)] truncate">
                           {chunk.section || "(无标题)"}
                         </span>
-                        <span className="block text-[11px] text-slate-500 mt-0.5 font-mono">
+                        <span className="block text-[11px] text-[var(--color-text-muted)] mt-0.5 font-mono">
                           chars {chunk.start_char}-{chunk.end_char}
                         </span>
                       </span>
@@ -200,20 +214,20 @@ export default function ChunksModal({
                           size={14}
                           weight="bold"
                           aria-hidden="true"
-                          className="text-slate-500 shrink-0"
+                          className="text-[var(--color-text-muted)] shrink-0"
                         />
                       ) : (
                         <CaretDown
                           size={14}
                           weight="bold"
                           aria-hidden="true"
-                          className="text-slate-500 shrink-0"
+                          className="text-[var(--color-text-muted)] shrink-0"
                         />
                       )}
                     </button>
                     {expanded && (
-                      <div className="px-4 pb-3 pt-1 border-t border-white/5">
-                        <p className="text-sm text-slate-300 leading-relaxed whitespace-pre-wrap">
+                      <div className="px-4 pb-3 pt-1 border-t border-[var(--color-border)]">
+                        <p className="text-sm text-[var(--color-text-secondary)] leading-relaxed whitespace-pre-wrap">
                           {chunk.text}
                         </p>
                       </div>
@@ -225,6 +239,6 @@ export default function ChunksModal({
           )}
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }

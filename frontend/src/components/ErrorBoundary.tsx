@@ -34,13 +34,13 @@ export default class ErrorBoundary extends Component<Props, State> {
       if (this.props.fallback) return this.props.fallback;
 
       return (
-        <div className="min-h-screen flex items-center justify-center bg-[#0f172a] px-4">
-          <div className="max-w-md w-full bg-[#1e293b] rounded-xl p-8 text-center shadow-lg">
+        <div className="min-h-screen flex items-center justify-center bg-[var(--color-bg)] px-4">
+          <div className="max-w-md w-full bg-[var(--color-surface)] rounded-xl p-8 text-center shadow-lg">
             <div className="text-5xl mb-4">💥</div>
-            <h2 className="text-xl font-semibold text-slate-100 mb-2">
+            <h2 className="text-xl font-semibold text-[var(--color-text)] mb-2">
               页面出错了
             </h2>
-            <p className="text-slate-400 text-sm mb-6 break-all">
+            <p className="text-[var(--color-text-secondary)] text-sm mb-6 break-all">
               {this.state.error?.message || "发生了未知错误"}
             </p>
             <button

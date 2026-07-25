@@ -96,3 +96,28 @@ async def test_history_nonexistent_resume(client: AsyncClient, auth_headers: dic
     """查不存在的简历的历史 → 404。"""
     resp = await client.get("/api/v1/qa/history/99999", headers=auth_headers)
     assert resp.status_code == 404
+
+
+# ── P1-16: 分页参数校验 ──────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_history_limit_too_small(client: AsyncClient, auth_headers: dict):
+    """limit=0 → 422（最小值 1）。"""
+    resp = await client.get("/api/v1/qa/history/99999?limit=0", headers=auth_headers)
+    # 422 优先于 404（参数校验在路由处理前）
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_history_limit_too_large(client: AsyncClient, auth_headers: dict):
+    """limit=101 → 422（最大值 100）。"""
+    resp = await client.get("/api/v1/qa/history/99999?limit=101", headers=auth_headers)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_history_offset_negative(client: AsyncClient, auth_headers: dict):
+    """offset=-1 → 422（最小值 0）。"""
+    resp = await client.get("/api/v1/qa/history/99999?offset=-1", headers=auth_headers)
+    assert resp.status_code == 422

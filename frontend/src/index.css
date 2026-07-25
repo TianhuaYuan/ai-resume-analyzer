@@ -1,5 +1,42 @@
 @import "tailwindcss";
 
+@theme {
+  --color-light-bg: #ffffff;
+  --color-light-surface: #f8fafc;
+  --color-light-card: #ffffff;
+  --color-light-border: #e2e8f0;
+  --color-light-text: #1e293b;
+  --color-light-text-secondary: #64748b;
+  --color-light-text-muted: #94a3b8;
+  --color-dark-bg: #0f172a;
+  --color-dark-surface: #1e293b;
+  --color-dark-card: #334155;
+  --color-dark-border: #334155;
+  --color-dark-text: #f1f5f9;
+  --color-dark-text-secondary: #94a3b8;
+  --color-dark-text-muted: #64748b;
+}
+
+[data-theme="dark"] {
+  --color-bg: var(--color-dark-bg);
+  --color-surface: var(--color-dark-surface);
+  --color-card: var(--color-dark-card);
+  --color-border: var(--color-dark-border);
+  --color-text: var(--color-dark-text);
+  --color-text-secondary: var(--color-dark-text-secondary);
+  --color-text-muted: var(--color-dark-text-muted);
+}
+
+[data-theme="light"] {
+  --color-bg: var(--color-light-bg);
+  --color-surface: var(--color-light-surface);
+  --color-card: var(--color-light-card);
+  --color-border: var(--color-light-border);
+  --color-text: var(--color-light-text);
+  --color-text-secondary: var(--color-light-text-secondary);
+  --color-text-muted: var(--color-light-text-muted);
+}
+
 @keyframes float {
   0%, 100% { transform: translate(0, 0); }
   50% { transform: translate(20px, -15px); }

@@ -21,6 +21,7 @@ export default function ResumeViewer({
   const [resume, setResume] = useState<ResumeItem | null>(null);
   const [error, setError] = useState("");
   const cancelledRef = useRef(false);
+  const dialogRef = useRef<HTMLDialogElement>(null);
 
   const load = useCallback(async () => {
     cancelledRef.current = false;
@@ -48,53 +49,67 @@ export default function ResumeViewer({
     };
   }, [open, load]);
 
+  // P3-6：使用原生 <dialog>，showModal/close 控制，Esc 原生支持
   useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    if (open) {
+      try {
+        dialog.showModal();
+      } catch {
+        dialog.open = true;
+      }
+    } else {
+      try {
+        dialog.close();
+      } catch {
+        dialog.open = false;
+      }
+    }
+  }, [open]);
 
   const handleRetry = () => load();
 
-  const handleOverlayClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.target === e.currentTarget) onClose();
+  const handleCancel = (e: React.FormEvent<HTMLDialogElement>) => {
+    e.preventDefault();
+    onClose();
   };
 
   if (!open) return null;
 
   return (
-    <div
-      onClick={handleOverlayClick}
-      className="fixed inset-0 z-50 flex items-center justify-center
+    <dialog
+      ref={dialogRef}
+      onCancel={handleCancel}
+      onClose={handleCancel}
+      className="fixed inset-0 z-50 m-0 w-full h-full p-0
         bg-black/60 backdrop-blur-sm motion-reduce:backdrop-blur-none"
       role="dialog"
       aria-modal="true"
       aria-label={`简历预览: ${resumeFilename}`}
     >
       <div
-        className="bg-[#1e293b] border border-white/10 rounded-2xl
+        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2
+          bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl
           max-w-2xl w-full mx-4 shadow-2xl
           animate-fade-in-up motion-reduce:animate-none
           flex flex-col max-h-[85dvh]"
       >
         {/* 头部 */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/8 shrink-0">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--color-border)] shrink-0">
           <div className="min-w-0 flex-1">
-            <h3 className="text-base font-semibold text-slate-100 truncate">
+            <h3 className="text-base font-semibold text-[var(--color-text)] truncate">
               简历预览
             </h3>
-            <p className="text-xs text-slate-500 truncate mt-0.5">
+            <p className="text-xs text-[var(--color-text-muted)] truncate mt-0.5">
               {resumeFilename}
             </p>
           </div>
           <button
             onClick={onClose}
             aria-label="关闭"
-            className="ml-3 p-1.5 rounded-lg text-slate-400
-              hover:text-slate-100 hover:bg-white/8
+            className="ml-3 p-1.5 rounded-lg text-[var(--color-text-secondary)]
+              hover:text-[var(--color-text)] hover:bg-white/8
               active:scale-[0.95] motion-reduce:active:scale-100
               transition-all cursor-pointer shrink-0"
           >
@@ -136,13 +151,13 @@ export default function ResumeViewer({
           )}
 
           {status === "success" && resume && !resume.parsed_text && (
-            <div className="text-center py-12 text-slate-500 text-sm">
+            <div className="text-center py-12 text-[var(--color-text-muted)] text-sm">
               简历内容为空，可能还在解析中
             </div>
           )}
 
           {status === "success" && resume && resume.parsed_text && (
-            <pre className="text-sm text-slate-300 leading-relaxed whitespace-pre-wrap font-mono">
+            <pre className="text-sm text-[var(--color-text-secondary)] leading-relaxed whitespace-pre-wrap font-mono">
               {resume.parsed_text}
             </pre>
           )}
@@ -150,16 +165,16 @@ export default function ResumeViewer({
 
         {/* 底部信息 */}
         {status === "success" && resume && (
-          <div className="px-6 py-3 border-t border-white/8 shrink-0">
-            <div className="flex items-center gap-2 text-xs text-slate-500">
+          <div className="px-6 py-3 border-t border-[var(--color-border)] shrink-0">
+            <div className="flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
               <FileText size={12} weight="bold" aria-hidden="true" />
               <span>{resume.chunk_count} 个分块</span>
-              <span className="text-slate-600">·</span>
+              <span className="text-[var(--color-text-muted)]">·</span>
               <span>{new Date(resume.created_at).toLocaleDateString("zh-CN")}</span>
             </div>
           </div>
         )}
       </div>
-    </div>
+    </dialog>
   );
 }

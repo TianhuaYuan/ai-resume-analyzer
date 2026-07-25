@@ -12,28 +12,20 @@ output_node / _route_after_evaluate（逻辑一致）。
 
 import json
 import logging
+from typing import Any, Callable
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
-from services.agentic_rag.generate import evaluate_node, generate_node
-from services.agentic_rag.mcp_nodes import (
-    mcp_generate_node,
-    mcp_rerank_node,
-    mcp_search_node,
-)
+from services.agentic_rag.generate import evaluate_node, _EVAL_MAX_RETRIES
 from services.agentic_rag.reflection import self_reflection_node
 from services.agentic_rag.rewrite import rewrite_node, route_node
-from services.agentic_rag.search import rerank_node, search_node
 from services.agentic_rag.state import (
     OUTPUT_NODE,
     REWRITE_NODE,
     ROUTE_NODE,
-    SEARCH_NODE,
     SELF_REFLECTION_NODE,
     EVALUATE_NODE,
-    GENERATE_NODE,
-    RERANK_NODE,
     AgenticRAGState,
 )
 
@@ -94,23 +86,17 @@ async def output_node(state: AgenticRAGState) -> dict:
 
 
 # ─────────────────────────────────────────────────────────────
-# 路由函数
+# 共享路由函数
 # ─────────────────────────────────────────────────────────────
-def _route_after_route(state: AgenticRAGState) -> str:
-    """标准模式：ROUTE 后进入 SEARCH 或 DIRECT_ANSWER。"""
-    decision = state.get("route_decision", "search")
-    logger.info("_route_after_route: %s", decision)
-    if decision == "direct_answer":
-        return DIRECT_ANSWER_NODE
-    return SEARCH_NODE
-
-
 def _route_after_evaluate(state: AgenticRAGState) -> str:
     """评估后路由（标准/MCP 共用）：分数过低进入 Self-Reflection（Reflexion ≤2 轮），否则输出。"""
     should_retry = state.get("should_retry", False)
     search_round = state.get("search_round", 0)
 
-    if should_retry and search_round <= 2:
+    # search_round 在 search_node 中是先读后加 1，所以：
+    # 第1轮搜索后 search_round=1，第2轮搜索后 search_round=2
+    # _EVAL_MAX_RETRIES=2 表示最多允许 2 轮搜索，所以用 < 而非 <=
+    if should_retry and search_round < _EVAL_MAX_RETRIES:
         logger.info("_route_after_evaluate: reflexion (round=%d)", search_round)
         return SELF_REFLECTION_NODE
 
@@ -118,13 +104,104 @@ def _route_after_evaluate(state: AgenticRAGState) -> str:
     return OUTPUT_NODE
 
 
-def _route_after_reflection(state: AgenticRAGState) -> str:
+# ─────────────────────────────────────────────────────────────
+# 图构建辅助函数
+# ─────────────────────────────────────────────────────────────
+def _build_rag_graph(
+    search_node_fn: Callable,
+    rerank_node_fn: Callable,
+    generate_node_fn: Callable,
+    route_after_route_fn: Callable,
+    route_after_reflection_fn: Callable,
+    search_node_name: str,
+    rerank_node_name: str,
+    generate_node_name: str,
+    checkpointer: Any = None,
+) -> Any:
+    """构建 RAG 图的共享逻辑。
+
+    标准模式和 MCP 模式的唯一区别在于 search/rerank/generate 节点和对应的路由函数，
+    其余结构完全相同。此函数消除重复的图构建代码。
+    """
+    if checkpointer is None:
+        checkpointer = MemorySaver()
+
+    graph = StateGraph(AgenticRAGState)
+
+    # 共享节点
+    graph.add_node(REWRITE_NODE, rewrite_node)
+    graph.add_node(ROUTE_NODE, route_node)
+    graph.add_node(EVALUATE_NODE, evaluate_node)
+    graph.add_node(SELF_REFLECTION_NODE, self_reflection_node)
+    graph.add_node(DIRECT_ANSWER_NODE, direct_answer_node)
+    graph.add_node(OUTPUT_NODE, output_node)
+
+    # 模式特定节点
+    graph.add_node(search_node_name, search_node_fn)
+    graph.add_node(rerank_node_name, rerank_node_fn)
+    graph.add_node(generate_node_name, generate_node_fn)
+
+    # 共享边
+    graph.add_edge(START, REWRITE_NODE)
+    graph.add_edge(REWRITE_NODE, ROUTE_NODE)
+
+    graph.add_conditional_edges(
+        ROUTE_NODE,
+        route_after_route_fn,
+        {
+            search_node_name: search_node_name,
+            DIRECT_ANSWER_NODE: DIRECT_ANSWER_NODE,
+        },
+    )
+
+    graph.add_edge(search_node_name, rerank_node_name)
+    graph.add_edge(rerank_node_name, generate_node_name)
+    graph.add_edge(generate_node_name, EVALUATE_NODE)
+
+    graph.add_conditional_edges(
+        EVALUATE_NODE,
+        _route_after_evaluate,
+        {
+            SELF_REFLECTION_NODE: SELF_REFLECTION_NODE,
+            OUTPUT_NODE: OUTPUT_NODE,
+        },
+    )
+
+    graph.add_conditional_edges(
+        SELF_REFLECTION_NODE,
+        route_after_reflection_fn,
+        {
+            search_node_name: search_node_name,
+        },
+    )
+
+    graph.add_edge(DIRECT_ANSWER_NODE, OUTPUT_NODE)
+    graph.add_edge(OUTPUT_NODE, END)
+
+    return graph.compile(checkpointer=checkpointer)
+
+
+# ─────────────────────────────────────────────────────────────
+# 标准模式路由
+# ─────────────────────────────────────────────────────────────
+def _route_after_route_standard(state: AgenticRAGState) -> str:
+    """标准模式：ROUTE 后进入 SEARCH 或 DIRECT_ANSWER。"""
+    decision = state.get("route_decision", "search")
+    logger.info("_route_after_route: %s", decision)
+    if decision == "direct_answer":
+        return DIRECT_ANSWER_NODE
+    return "search"
+
+
+def _route_after_reflection_standard(state: AgenticRAGState) -> str:
     """标准模式：反思后回到 SEARCH 补充检索。"""
-    supplement_queries = state.get("supplement_queries", [])
-    logger.info("_route_after_reflection: %d supplement queries", len(supplement_queries))
-    return SEARCH_NODE
+    logger.info("_route_after_reflection: %d supplement queries", len(state.get("supplement_queries", [])))
+    return "search"
 
 
+# ─────────────────────────────────────────────────────────────
+# MCP 模式路由
+# ─────────────────────────────────────────────────────────────
 def _route_after_route_mcp(state: AgenticRAGState) -> str:
     """MCP 模式：ROUTE 后进入 MCP_SEARCH 或 DIRECT_ANSWER。"""
     decision = state.get("route_decision", "search")
@@ -136,128 +213,47 @@ def _route_after_route_mcp(state: AgenticRAGState) -> str:
 
 def _route_after_reflection_mcp(state: AgenticRAGState) -> str:
     """MCP 模式：反思后回到 MCP_SEARCH 补充检索。"""
-    supplement_queries = state.get("supplement_queries", [])
-    logger.info("_route_after_reflection_mcp: %d supplement queries", len(supplement_queries))
+    logger.info("_route_after_reflection_mcp: %d supplement queries", len(state.get("supplement_queries", [])))
     return MCP_SEARCH_NODE
 
 
 # ─────────────────────────────────────────────────────────────
-# 标准模式图：直连（search/rerank/generate 节点）
+# 公共 API
 # ─────────────────────────────────────────────────────────────
 def create_agentic_rag_graph(checkpointer=None):
-    if checkpointer is None:
-        checkpointer = MemorySaver()
+    """标准模式图：直连（search/rerank/generate 节点）。"""
+    from services.agentic_rag.search import rerank_node, search_node
+    from services.agentic_rag.generate import generate_node
 
-    graph = StateGraph(AgenticRAGState)
-
-    graph.add_node(REWRITE_NODE, rewrite_node)
-    graph.add_node(ROUTE_NODE, route_node)
-    graph.add_node(SEARCH_NODE, search_node)
-    graph.add_node(RERANK_NODE, rerank_node)
-    graph.add_node(GENERATE_NODE, generate_node)
-    graph.add_node(EVALUATE_NODE, evaluate_node)
-    graph.add_node(SELF_REFLECTION_NODE, self_reflection_node)
-    graph.add_node(DIRECT_ANSWER_NODE, direct_answer_node)
-    graph.add_node(OUTPUT_NODE, output_node)
-
-    graph.add_edge(START, REWRITE_NODE)
-    graph.add_edge(REWRITE_NODE, ROUTE_NODE)
-
-    graph.add_conditional_edges(
-        ROUTE_NODE,
-        _route_after_route,
-        {
-            SEARCH_NODE: SEARCH_NODE,
-            DIRECT_ANSWER_NODE: DIRECT_ANSWER_NODE,
-        },
+    compiled = _build_rag_graph(
+        search_node_fn=search_node,
+        rerank_node_fn=rerank_node,
+        generate_node_fn=generate_node,
+        route_after_route_fn=_route_after_route_standard,
+        route_after_reflection_fn=_route_after_reflection_standard,
+        search_node_name="search",
+        rerank_node_name="rerank",
+        generate_node_name="generate",
+        checkpointer=checkpointer,
     )
-
-    graph.add_edge(SEARCH_NODE, RERANK_NODE)
-    graph.add_edge(RERANK_NODE, GENERATE_NODE)
-    graph.add_edge(GENERATE_NODE, EVALUATE_NODE)
-
-    graph.add_conditional_edges(
-        EVALUATE_NODE,
-        _route_after_evaluate,
-        {
-            SELF_REFLECTION_NODE: SELF_REFLECTION_NODE,
-            OUTPUT_NODE: OUTPUT_NODE,
-        },
-    )
-
-    graph.add_conditional_edges(
-        SELF_REFLECTION_NODE,
-        _route_after_reflection,
-        {
-            SEARCH_NODE: SEARCH_NODE,
-        },
-    )
-
-    graph.add_edge(DIRECT_ANSWER_NODE, OUTPUT_NODE)
-    graph.add_edge(OUTPUT_NODE, END)
-
-    compiled = graph.compile(checkpointer=checkpointer)
     logger.info("agentic_rag graph compiled successfully (with Reflexion)")
     return compiled
 
 
-# ─────────────────────────────────────────────────────────────
-# MCP 模式图：经 MCP 客户端调用（mcp_search/mcp_rerank/mcp_generate 节点）
-# 阶段2 加入的 mcp 节点；阶段4 的 Reflexion / degraded 路由与标准图一致。
-# ─────────────────────────────────────────────────────────────
 def create_mcp_agentic_rag_graph(checkpointer=None):
-    if checkpointer is None:
-        checkpointer = MemorySaver()
+    """MCP 模式图：经 MCP 客户端调用（mcp_search/mcp_rerank/mcp_generate 节点）。"""
+    from services.agentic_rag.mcp_nodes import mcp_generate_node, mcp_rerank_node, mcp_search_node
 
-    graph = StateGraph(AgenticRAGState)
-
-    graph.add_node(REWRITE_NODE, rewrite_node)
-    graph.add_node(ROUTE_NODE, route_node)
-    graph.add_node(MCP_SEARCH_NODE, mcp_search_node)
-    graph.add_node(MCP_RERANK_NODE, mcp_rerank_node)
-    graph.add_node(MCP_GENERATE_NODE, mcp_generate_node)
-    graph.add_node(EVALUATE_NODE, evaluate_node)
-    graph.add_node(SELF_REFLECTION_NODE, self_reflection_node)
-    graph.add_node(DIRECT_ANSWER_NODE, direct_answer_node)
-    graph.add_node(OUTPUT_NODE, output_node)
-
-    graph.add_edge(START, REWRITE_NODE)
-    graph.add_edge(REWRITE_NODE, ROUTE_NODE)
-
-    graph.add_conditional_edges(
-        ROUTE_NODE,
-        _route_after_route_mcp,
-        {
-            MCP_SEARCH_NODE: MCP_SEARCH_NODE,
-            DIRECT_ANSWER_NODE: DIRECT_ANSWER_NODE,
-        },
+    compiled = _build_rag_graph(
+        search_node_fn=mcp_search_node,
+        rerank_node_fn=mcp_rerank_node,
+        generate_node_fn=mcp_generate_node,
+        route_after_route_fn=_route_after_route_mcp,
+        route_after_reflection_fn=_route_after_reflection_mcp,
+        search_node_name=MCP_SEARCH_NODE,
+        rerank_node_name=MCP_RERANK_NODE,
+        generate_node_name=MCP_GENERATE_NODE,
+        checkpointer=checkpointer,
     )
-
-    graph.add_edge(MCP_SEARCH_NODE, MCP_RERANK_NODE)
-    graph.add_edge(MCP_RERANK_NODE, MCP_GENERATE_NODE)
-    graph.add_edge(MCP_GENERATE_NODE, EVALUATE_NODE)
-
-    graph.add_conditional_edges(
-        EVALUATE_NODE,
-        _route_after_evaluate,
-        {
-            SELF_REFLECTION_NODE: SELF_REFLECTION_NODE,
-            MCP_SEARCH_NODE: MCP_SEARCH_NODE,
-            OUTPUT_NODE: OUTPUT_NODE,
-        },
-    )
-
-    graph.add_conditional_edges(
-        SELF_REFLECTION_NODE,
-        _route_after_reflection_mcp,
-        {
-            MCP_SEARCH_NODE: MCP_SEARCH_NODE,
-        },
-    )
-
-    graph.add_edge(DIRECT_ANSWER_NODE, OUTPUT_NODE)
-    graph.add_edge(OUTPUT_NODE, END)
-
-    compiled = graph.compile(checkpointer=checkpointer)
     logger.info("mcp_agentic_rag graph compiled successfully")
     return compiled

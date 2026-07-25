@@ -1,17 +1,3 @@
-"""with_retry 可靠性增强版（P0.7）。
-
-三项改动：
-1. Full Jitter + 封顶 — delay_for 在 [0, base*2^attempt] 区间均匀随机，被 max_cap 封顶
-2. classify_error 七分类 — 不同分类采取不同重试策略：
-   - RATE_LIMIT：翻倍退避 + 多重试（5 次）
-   - TIMEOUT：缩短退避 + 少重试（1 次）
-   - NON_RETRYABLE/AUTH/NOT_FOUND：立即抛出
-   - NETWORK/UNKNOWN：正常重试（默认 max_retries）
-3. timeout 落实 — budget.timeout 通过 wait_for 应用到每次 fn 调用
-
-附带修复：改用 inspect 模块判断协程函数（旧 API 在 Python 3.16 弃用）
-"""
-
 import asyncio
 import inspect
 import logging
@@ -51,14 +37,9 @@ _CATEGORY_BACKOFF_MULTIPLIER: dict[ErrorCategory, float] = {
 class RetryBudget:
     """重试预算：将最大次数 / 退避基数 / 超时 / 退避封顶收敛为可复用对象。
 
-    取代原先散落的默认参数（max_retries=3, base_delay=1.0），
-    便于统一调参与观测单次调用的重试次数。
-
-    P0.7 增强：
-    - max_cap: 单次退避上限（默认 60s），防止指数爆炸
-    - timeout: 单次 fn 调用超时（秒），通过 asyncio.wait_for 落实
+    P3-10：本类是**不可变的配置对象**（stateless），不保存运行时状态。
+    因此可以安全地跨协程/线程共享，无需锁保护。
     """
-
     def __init__(
         self,
         max_retries: int = 3,
@@ -68,9 +49,8 @@ class RetryBudget:
     ) -> None:
         self.max_retries = max_retries
         self.base_delay = base_delay
-        self.timeout = timeout  # 单次调用超时（秒），None 表示不限制
-        self.max_cap = max_cap  # 单次退避时间上限（秒）
-        self.attempts = 0
+        self.timeout = timeout
+        self.max_cap = max_cap
 
     def delay_for(self, attempt: int) -> float:
         """Full Jitter：在 [0, base*2^attempt] 区间均匀随机，并被 max_cap 封顶。
@@ -81,9 +61,6 @@ class RetryBudget:
         """
         upper = min(self.base_delay * (2 ** attempt), self.max_cap)
         return random.uniform(0, upper)
-
-    def remaining(self) -> int:
-        return max(0, self.max_retries - self.attempts)
 
 
 async def with_retry(
@@ -125,8 +102,6 @@ async def with_retry(
     is_async_fn = inspect.iscoroutinefunction(fn)
 
     for attempt in range(max_retries + 1):
-        if budget is not None:
-            budget.attempts = attempt
         try:
             if is_async_fn:
                 # 异步 callable：可选套 asyncio.wait_for 落实 timeout

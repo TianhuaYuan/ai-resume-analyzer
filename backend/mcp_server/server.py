@@ -40,13 +40,13 @@ def create_auth_middleware(app):
     from starlette.requests import Request
     from starlette.responses import JSONResponse
 
-    from core.security import decode_token
+    from core.security import decode_token, is_token_revoked
 
     class MCPAuthMiddleware(BaseHTTPMiddleware):
         async def dispatch(self, request: Request, call_next):
-            # SEC-001 修复：用前缀匹配保护 /mcp 及其所有子路径，
+            # 用前缀匹配保护 /mcp 及其所有子路径，
             # 避免旧实现（精确匹配 "/mcp"）被 "/mcp/..." 这类拼接绕过。
-            if not request.url.path.startswith("/mcp"):
+            if request.url.path != "/mcp" and not request.url.path.startswith("/mcp/"):
                 return await call_next(request)
 
             auth_header = request.headers.get("authorization", "")
@@ -61,6 +61,12 @@ def create_auth_middleware(app):
             if payload is None:
                 return JSONResponse(
                     {"error": "Invalid or expired token"},
+                    status_code=401,
+                )
+
+            if is_token_revoked(payload.get("jti")):
+                return JSONResponse(
+                    {"error": "Token has been revoked"},
                     status_code=401,
                 )
 

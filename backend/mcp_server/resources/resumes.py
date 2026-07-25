@@ -16,7 +16,10 @@ async def get_resume_list() -> str:
     from core.database import AsyncSessionLocal
     from models.resume import Resume
 
-    user_id = get_current_user_id()
+    try:
+        user_id = get_current_user_id()
+    except LookupError:
+        return json.dumps({"error": "authentication required: missing user context"}, ensure_ascii=False)
 
     async with AsyncSessionLocal() as db:
         result = await db.execute(

@@ -131,7 +131,7 @@ SECTION_PATTERN = re.compile(
 )
 
 
-def _tokenize(text: str) -> list[str]:
+def tokenize(text: str) -> list[str]:
     return list(jieba.cut_for_search(text))
 
 
@@ -201,17 +201,4 @@ def chunk_by_sections(text: str, chunk_size: int = 300, overlap: int = 50) -> li
                 chunks.append(_make_chunk(sub, section, idx, offset))
                 idx += 1
                 offset += len(sub)
-    return chunks
-
-
-def fixed_chunk(text: str, chunk_size: int, overlap: int = 50) -> list[dict]:
-    """固定长度分块（对照实验用）"""
-    chunks = []
-    idx = 0
-    start = 0
-    while start < len(text):
-        end = min(start + chunk_size, len(text))
-        chunks.append(_make_chunk(text[start:end], "正文", idx, start))
-        idx += 1
-        start += chunk_size - overlap
     return chunks

@@ -620,8 +620,8 @@ class TestE2EMultiTurnDialogue:
                 config={"configurable": {"thread_id": "e2e-rounds"}},
             )
 
-        # 经过 3 轮检索（search_round: 0→1→2→3）
-        assert result["search_round"] >= 3
+        # 经过 2 轮检索（search_round: 0→1→2，_EVAL_MAX_RETRIES=2 限制）
+        assert result["search_round"] >= 2
         assert result["final_answer"] != ""
 
     @pytest.mark.asyncio

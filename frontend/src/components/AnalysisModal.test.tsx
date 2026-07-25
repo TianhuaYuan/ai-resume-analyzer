@@ -6,6 +6,13 @@ vi.mock("../api/resumes", () => ({
   exportResume: vi.fn(),
 }));
 
+// P1-21：mock useToast，验证导出失败时调用 toast.error
+const mockToastError = vi.fn();
+const mockToastSuccess = vi.fn();
+vi.mock("./Toast", () => ({
+  useToast: () => ({ error: mockToastError, success: mockToastSuccess, info: vi.fn() }),
+}));
+
 import AnalysisModal from "./AnalysisModal";
 import { analyzeResume, exportResume } from "../api/resumes";
 
@@ -15,6 +22,8 @@ const mockExport = vi.mocked(exportResume);
 beforeEach(() => {
   mockAnalyze.mockReset();
   mockExport.mockReset();
+  mockToastError.mockReset();
+  mockToastSuccess.mockReset();
 });
 
 afterEach(() => {
@@ -177,8 +186,10 @@ describe("AnalysisModal (Task 2 前端)", () => {
     const onClose = vi.fn();
     renderModal({ onClose });
 
+    const dialog = document.querySelector("dialog");
+    expect(dialog).not.toBeNull();
     await act(async () => {
-      fireEvent.keyDown(document.body, { key: "Escape" });
+      dialog!.dispatchEvent(new Event("cancel", { cancelable: true }));
     });
 
     expect(onClose).toHaveBeenCalledTimes(1);
@@ -192,11 +203,12 @@ describe("AnalysisModal (Task 2 前端)", () => {
       scores: null,
     });
     const onClose = vi.fn();
-    const { container } = renderModal({ onClose });
+    renderModal({ onClose });
 
-    const overlay = container.firstElementChild as HTMLElement;
+    const dialog = document.querySelector("dialog");
+    expect(dialog).not.toBeNull();
     await act(async () => {
-      fireEvent.click(overlay);
+      dialog!.dispatchEvent(new Event("close"));
     });
 
     expect(onClose).toHaveBeenCalledTimes(1);
@@ -331,5 +343,33 @@ describe("AnalysisModal (Task 2 前端)", () => {
     globalThis.URL.createObjectURL = origCreateObjectURL;
     globalThis.URL.revokeObjectURL = origRevokeObjectURL;
     vi.restoreAllMocks();
+  });
+
+  // ── P1-21：导出失败不再静默吞异常 ──
+
+  it("导出失败时通过 toast.error 提示用户，不再静默吞异常", async () => {
+    mockAnalyze.mockResolvedValue({
+      resume_id: 42,
+      analysis_type: "summary",
+      analysis: "分析结果",
+      scores: null,
+    });
+    mockExport.mockRejectedValueOnce(new Error("导出失败: 401"));
+    renderModal();
+
+    await waitFor(() => {
+      expect(screen.getByText(/分析结果/)).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /导出/ }));
+    });
+
+    await waitFor(() => {
+      expect(mockToastError).toHaveBeenCalledWith(
+        expect.stringContaining("导出失败"),
+        expect.anything()
+      );
+    });
   });
 });

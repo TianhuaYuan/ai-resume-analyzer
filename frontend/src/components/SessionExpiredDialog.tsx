@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Warning, Clock, SignIn, ArrowClockwise } from "@phosphor-icons/react";
 
 type SessionDialogMode = "expired" | "warning";
@@ -19,6 +19,9 @@ interface SessionExpiredDialogProps {
 /**
  * 全局会话状态弹窗。
  *
+ * P3-6：使用原生 <dialog> 元素，浏览器原生提供 focus trap（Tab 键循环）
+ * 和模态语义（aria-modal、esc 关闭等）。
+ *
  * 两种模式：
  * - expired：token 已过期，刷新失败。只能点「去登录」，不能关闭（Esc/overlay/X 均禁用）。
  * - warning：token 即将过期（默认提前 5 分钟）。可以「延长登录」或「忽略」。
@@ -31,6 +34,7 @@ export default function SessionExpiredDialog({
   onIgnore,
   loading = false,
 }: SessionExpiredDialogProps) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
   const [countdown, setCountdown] = useState(remainingSeconds);
 
   // warning 模式下倒计时，每秒更新
@@ -43,22 +47,41 @@ export default function SessionExpiredDialog({
     return () => clearInterval(timer);
   }, [open, mode, remainingSeconds]);
 
-  // expired 模式下禁止所有关闭方式（Esc / overlay / X 都不生效）
+  // 打开/关闭 dialog
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+
+    if (open) {
+      try {
+        dialog.showModal();
+      } catch {
+        dialog.open = true;
+      }
+    } else {
+      try {
+        dialog.close();
+      } catch {
+        dialog.open = false;
+      }
+    }
+  }, [open]);
+
+  // expired 模式：禁止 Esc 和 backdrop 关闭
   const canClose = mode === "warning" && !loading;
 
-  const handleKeyDown = (e: KeyboardEvent) => {
-    if (!canClose) return;
-    if (e.key === "Escape") onIgnore?.();
+  const handleCancel = (e: React.FormEvent<HTMLDialogElement>) => {
+    e.preventDefault();
+    if (canClose) {
+      onIgnore?.();
+    }
   };
 
-  useEffect(() => {
-    if (!open) return;
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [open, canClose, onIgnore]);
-
-  const handleOverlayClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.target === e.currentTarget && canClose) onIgnore?.();
+  const handleClose = (e: React.DialogEvent<HTMLDialogElement>) => {
+    e.preventDefault();
+    if (canClose) {
+      onIgnore?.();
+    }
   };
 
   if (!open) return null;
@@ -71,28 +94,28 @@ export default function SessionExpiredDialog({
     ? "bg-red-500/15 text-red-400"
     : "bg-amber-500/15 text-amber-400";
 
-  const primaryColor = isExpired
-    ? "bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/40"
-    : "bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/40";
+  const primaryColor =
+    "bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/40";
 
   return (
-    <div
-      onClick={handleOverlayClick}
-      className="fixed inset-0 z-[70] flex items-center justify-center
+    <dialog
+      ref={dialogRef}
+      onCancel={handleCancel}
+      onClose={handleClose}
+      className="fixed inset-0 z-[70] m-0 w-full h-full p-0
         bg-black/60 backdrop-blur-sm motion-reduce:backdrop-blur-none"
       role="dialog"
       aria-modal="true"
       aria-label={isExpired ? "登录已过期" : "登录即将过期"}
     >
       <div
-        className="bg-[#1e293b] border border-white/10 rounded-2xl
+        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2
+          bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl
           max-w-sm w-full mx-4 shadow-2xl
           animate-fade-in-up motion-reduce:animate-none"
       >
         <div className="flex flex-col items-center px-6 py-6 text-center">
-          <div
-            className={`shrink-0 p-3 rounded-xl mb-4 ${iconColor}`}
-          >
+          <div className={`shrink-0 p-3 rounded-xl mb-4 ${iconColor}`}>
             {isExpired ? (
               <Warning size={28} weight="bold" aria-hidden="true" />
             ) : (
@@ -100,24 +123,24 @@ export default function SessionExpiredDialog({
             )}
           </div>
 
-          <h3 className="text-base font-semibold text-slate-100">
+          <h3 className="text-base font-semibold text-[var(--color-text)]">
             {isExpired ? "登录已过期" : "登录即将过期"}
           </h3>
 
-          <p className="text-sm text-slate-400 mt-2 leading-relaxed">
+          <p className="text-sm text-[var(--color-text-secondary)] mt-2 leading-relaxed">
             {isExpired
               ? "你的登录状态已失效，请重新登录后继续使用。"
               : `你的登录还有 ${mins}分${secs.toString().padStart(2, "0")}秒 过期，是否延长？`}
           </p>
         </div>
 
-        <div className="flex items-center justify-center gap-2 px-6 py-4 border-t border-white/5">
+        <div className="flex items-center justify-center gap-2 px-6 py-4 border-t border-[var(--color-border)]">
           {!isExpired && (
             <button
               onClick={() => canClose && onIgnore?.()}
               disabled={loading}
               className="px-4 py-2 text-sm font-medium rounded-lg
-                text-slate-400 hover:text-slate-100 hover:bg-white/8
+                text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-white/8
                 active:scale-[0.98] motion-reduce:active:scale-100
                 transition-all cursor-pointer
                 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -155,6 +178,6 @@ export default function SessionExpiredDialog({
           </button>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }

@@ -1,21 +1,13 @@
-# CD 流水线：push main/develop 自动部署，workflow_dispatch 手动选环境
+# CD 流水线：push main 自动部署到生产环境
 
 name: CD
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
 
   workflow_dispatch:
     inputs:
-      environment:
-        description: "部署目标环境"
-        required: true
-        default: "staging"
-        type: choice
-        options:
-          - staging
-          - production
       image_tag:
         description: "Docker 镜像 tag（留空使用 git short SHA）"
         required: false
@@ -49,28 +41,24 @@ jobs:
       - name: Determine environment
         id: env
         run: |
-          # 手动触发 → 使用输入参数
-          # push develop → staging
-          # push main → production
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            ENV="${{ inputs.environment }}"
-          elif [ "${{ github.ref_name }}" = "develop" ]; then
-            ENV="staging"
-          else
-            ENV="production"
+          # P1-3：对 inputs.image_tag 做白名单校验，防止 workflow_dispatch 注入
+          RAW_TAG="${{ inputs.image_tag || github.sha }}"
+          if ! echo "$RAW_TAG" | grep -Eq '^[a-zA-Z0-9_.-]+$'; then
+            echo "ERROR: image_tag contains invalid characters: $RAW_TAG"
+            echo "Allowed: [a-zA-Z0-9_.-]"
+            exit 1
           fi
-
-          TAG="${{ inputs.image_tag || github.sha }}"
+          TAG="$RAW_TAG"
           SHORT_TAG="${TAG:0:12}"
 
-          echo "environment=$ENV" >> $GITHUB_OUTPUT
+          echo "environment=production" >> $GITHUB_OUTPUT
           echo "image_tag=$SHORT_TAG" >> $GITHUB_OUTPUT
 
           {
           echo "### Deploy Plan"
           echo "| Field | Value |"
           echo "|-------|-------|"
-          echo "| Environment | \`$ENV\` |"
+          echo "| Environment | \`production\` |"
           echo "| Image Tag | \`$SHORT_TAG\` |"
           } >> $GITHUB_STEP_SUMMARY
 
@@ -172,17 +160,8 @@ jobs:
       - name: Resolve host and path
         id: deploy_target
         run: |
-          ENV="${{ needs.prepare.outputs.environment }}"
-          case "$ENV" in
-            staging)
-              echo "host=${{ secrets.STAGING_DEPLOY_HOST }}" >> $GITHUB_OUTPUT
-              echo "path=${{ secrets.STAGING_DEPLOY_PATH || '/opt/ai-resume-analyzer-staging' }}" >> $GITHUB_OUTPUT
-              ;;
-            production)
-              echo "host=${{ secrets.PRODUCTION_DEPLOY_HOST }}" >> $GITHUB_OUTPUT
-              echo "path=${{ secrets.PRODUCTION_DEPLOY_PATH || '/opt/ai-resume-analyzer' }}" >> $GITHUB_OUTPUT
-              ;;
-          esac
+          echo "host=${{ secrets.PRODUCTION_DEPLOY_HOST }}" >> $GITHUB_OUTPUT
+          echo "path=${{ secrets.PRODUCTION_DEPLOY_PATH || '/opt/ai-resume-analyzer' }}" >> $GITHUB_OUTPUT
 
       - name: Setup SSH agent
         run: |
@@ -215,19 +194,11 @@ jobs:
             cd "$DEPLOY_PATH"
 
             if [ ! -f docker-compose.prod.yml ]; then
-              echo "First deploy: creating docker-compose.prod.yml..."
-              # 如果有 deploy.sh 就用它初始化，否则从仓库克隆
-              if [ -d .git ]; then
-                git pull origin main -- deploy/
-              else
-                git clone --depth 1 --filter=blob:none --sparse \
-                  https://github.com/${{ github.repository }}.git temp-deploy
-                cd temp-deploy && git sparse-checkout set deploy && cd ..
-                cp temp-deploy/deploy/docker-compose.prod.yml .
-                cp temp-deploy/deploy/deploy.sh .
-                chmod +x deploy.sh
-                rm -rf temp-deploy
-              fi
+              echo "First deploy: cloning docker-compose.prod.yml..."
+              git clone --depth 1 --filter=blob:none --sparse \
+                https://github.com/${{ github.repository }}.git temp-deploy
+              cp temp-deploy/docker-compose.prod.yml .
+              rm -rf temp-deploy
             fi
 
             echo "Pulling images..."
@@ -308,7 +279,7 @@ jobs:
               exit 1
             fi
 
-            docker image prune -f --filter "dangling=true" 2>/dev/null || true
+            docker image prune -f --filter "until=168h" 2>/dev/null || true
             {
               echo "ROLLBACK_BACKEND_TAG=${OLD_BACKEND_TAG:-$IMAGE_TAG}"
               echo "ROLLBACK_FRONTEND_TAG=${OLD_FRONTEND_TAG:-$IMAGE_TAG}"
@@ -342,7 +313,8 @@ jobs:
             docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E "resume-|NAMES"
 
             echo "--- Health ---"
-            HTTP=$(curl -sf -o /dev/null -w "%{http_code}" http://localhost:8000/ || echo "000")
+            # P1-2：backend 不再暴露端口到宿主机，通过 docker exec 在容器内验证
+            HTTP=$(docker exec resume-backend curl -sf -o /dev/null -w "%{http_code}" http://localhost:8000/ 2>/dev/null || echo "000")
             echo "Backend: HTTP $HTTP"
             FE=$(curl -sf -o /dev/null -w "%{http_code}" http://localhost:80/ || echo "000")
             echo "Frontend: HTTP $FE"

@@ -1,15 +1,37 @@
 import logging
 import time
+from typing import Any
 
+from core.config import settings
 from mcp_client.tools import mcp_search, mcp_rerank, mcp_generate
 from services.agentic_rag.state import AgenticRAGState
 from services.agentic_rag.generate import _extract_sources
-from services.rag.pipeline import reject_if_low_score
+from services.rag.retrieval import reject_if_low_score
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_HYBRID_TOP_K = 20
-_DEFAULT_RERANK_TOP_K = 5
+
+def _parse_mcp_list_result(raw: Any, error_context: str) -> list[dict]:
+    """解析 MCP 工具返回的列表结果，统一处理 dict/list/error 三种情况。"""
+    if isinstance(raw, list):
+        return raw
+    if isinstance(raw, dict):
+        if "error" in raw:
+            logger.error("%s: %s", error_context, raw["error"])
+            return []
+        return raw.get("results", [])
+    return []
+
+
+def _parse_mcp_generate_result(raw: Any) -> tuple[str, list[dict], bool]:
+    """解析 MCP generate 工具返回的结果，返回 (answer, sources, rejected)。"""
+    if isinstance(raw, dict) and "error" not in raw:
+        return (
+            raw.get("answer", "服务暂时不可用，请稍后重试。"),
+            raw.get("sources", []),
+            raw.get("rejected", False),
+        )
+    return "服务暂时不可用，请稍后重试。", [], True
 
 
 async def mcp_search_node(state: AgenticRAGState) -> dict:
@@ -18,19 +40,8 @@ async def mcp_search_node(state: AgenticRAGState) -> dict:
     round_num = state.get("search_round", 0)
 
     timer_start = time.monotonic()
-    raw_results = await mcp_search(query, resume_id, top_k=_DEFAULT_HYBRID_TOP_K)
-
-    if isinstance(raw_results, list):
-        chunks = raw_results
-    elif isinstance(raw_results, dict):
-        if "error" in raw_results:
-            logger.error("mcp_search_node: MCP error: %s", raw_results["error"])
-            chunks = []
-        else:
-            chunks = raw_results.get("results", [])
-    else:
-        chunks = []
-
+    raw_results = await mcp_search(query, resume_id, top_k=settings.DEFAULT_HYBRID_TOP_K)
+    chunks = _parse_mcp_list_result(raw_results, "mcp_search_node: MCP error")
     elapsed = time.monotonic() - timer_start
 
     logger.info(
@@ -51,10 +62,19 @@ async def mcp_search_node(state: AgenticRAGState) -> dict:
         "method": "mcp",
     }
 
+    tool_errors = list(state.get("tool_errors", []))
+    if not chunks:
+        tool_errors.append({
+            "tool": "mcp_search",
+            "query": query,
+            "error": f"MCP search returned empty results for query: {query}",
+        })
+
     return {
         "chunks": chunks,
         "search_round": round_num + 1,
         "trace": trace,
+        "tool_errors": tool_errors,
     }
 
 
@@ -69,20 +89,15 @@ async def mcp_rerank_node(state: AgenticRAGState) -> dict:
         return {"chunks": [], "trace": trace}
 
     timer_start = time.monotonic()
-    raw_results = await mcp_rerank(query, chunks, top_k=_DEFAULT_RERANK_TOP_K)
+    raw_results = await mcp_rerank(query, chunks, top_k=settings.DEFAULT_RERANK_TOP_K)
 
-    if isinstance(raw_results, list):
-        reranked = raw_results
-    elif isinstance(raw_results, dict):
-        if "error" in raw_results:
-            logger.error("mcp_rerank_node: MCP error: %s", raw_results["error"])
-            for c in chunks:
-                c.setdefault("rerank_score", 0.5)
-            reranked = chunks[:_DEFAULT_RERANK_TOP_K]
-        else:
-            reranked = raw_results.get("results", chunks[:_DEFAULT_RERANK_TOP_K])
-    else:
-        reranked = chunks[:_DEFAULT_RERANK_TOP_K]
+    reranked = _parse_mcp_list_result(raw_results, "mcp_rerank_node: MCP error")
+    if not reranked:
+        # 降级：保留原始顺序，给出保底分数（创建新 dict，不原地修改 state 中的 chunks）
+        reranked = [
+            {**c, "rerank_score": c.get("rerank_score", 0.5)}
+            for c in chunks[:settings.DEFAULT_RERANK_TOP_K]
+        ]
 
     elapsed = time.monotonic() - timer_start
 
@@ -110,6 +125,7 @@ async def mcp_rerank_node(state: AgenticRAGState) -> dict:
 async def mcp_generate_node(state: AgenticRAGState) -> dict:
     chunks = state.get("chunks", [])
     query = state.get("rewritten_query") or state["question"]
+    tool_errors = list(state.get("tool_errors", []))
 
     timer_start = time.monotonic()
 
@@ -126,25 +142,21 @@ async def mcp_generate_node(state: AgenticRAGState) -> dict:
         return {
             "answer": "抱歉，简历中未提及该信息。",
             "sources": [],
+            "tool_errors": tool_errors,
             "trace": trace,
         }
 
     raw_result = await mcp_generate(query, chunks, state["resume_id"])
+    answer, mcp_sources, rejected = _parse_mcp_generate_result(raw_result)
 
-    if isinstance(raw_result, dict) and "error" not in raw_result:
-        answer = raw_result.get("answer", "服务暂时不可用，请稍后重试。")
-        mcp_sources = raw_result.get("sources", [])
-        rejected = raw_result.get("rejected", False)
-    else:
-        answer = "服务暂时不可用，请稍后重试。"
-        mcp_sources = []
-        rejected = True
+    if rejected:
+        tool_errors.append({
+            "tool": "mcp_generate",
+            "query": query,
+            "error": "MCP generate failed or returned error",
+        })
 
-    if mcp_sources:
-        sources = mcp_sources
-    else:
-        sources = _extract_sources(chunks)
-
+    sources = mcp_sources if mcp_sources else _extract_sources(chunks)
     elapsed = time.monotonic() - timer_start
 
     logger.info(
@@ -167,5 +179,6 @@ async def mcp_generate_node(state: AgenticRAGState) -> dict:
     return {
         "answer": answer,
         "sources": sources,
+        "tool_errors": tool_errors,
         "trace": trace,
     }

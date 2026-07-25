@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Warning, X } from "@phosphor-icons/react";
 
 interface ConfirmDialogProps {
@@ -18,7 +18,9 @@ interface ConfirmDialogProps {
  *
  * 用途：删除/清空等不可逆操作前的二次确认。
  *
- * 关闭方式（取消）：Esc / 点 overlay / 点 X / 点取消按钮
+ * P3-6：使用原生 &lt;dialog&gt; 元素，自动支持 focus trap（Tab 键循环）。
+ *
+ * 关闭方式（取消）：Esc / 点 backdrop / 点 X / 点取消按钮
  * 关闭方式（确认）：点确认按钮（loading 时禁用）
  */
 export default function ConfirmDialog({
@@ -32,37 +34,57 @@ export default function ConfirmDialog({
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
-  // Esc 取消
+  const dialogRef = useRef<HTMLDialogElement>(null);
+
   useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !loading) onCancel();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, loading, onCancel]);
+    const dialog = dialogRef.current;
+    if (!dialog) return;
 
-  if (!open) return null;
+    if (open) {
+      try {
+        dialog.showModal();
+      } catch {
+        dialog.open = true;
+      }
+    } else {
+      try {
+        dialog.close();
+      } catch {
+        dialog.open = false;
+      }
+    }
+  }, [open]);
 
-  const handleOverlayClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.target === e.currentTarget && !loading) onCancel();
+  const handleClose = (e: React.DialogEvent<HTMLDialogElement>) => {
+    e.preventDefault();
+    if (!loading) onCancel();
+  };
+
+  const handleCancel = (e: React.FormEvent<HTMLDialogElement>) => {
+    e.preventDefault();
+    if (!loading) onCancel();
   };
 
   const confirmColor = danger
     ? "bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/40"
     : "bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/40";
 
+  if (!open) return null;
+
   return (
-    <div
-      onClick={handleOverlayClick}
-      className="fixed inset-0 z-[60] flex items-center justify-center
+    <dialog
+      ref={dialogRef}
+      onCancel={handleCancel}
+      onClose={handleClose}
+      className="fixed inset-0 z-[60] m-0 w-full h-full p-0
         bg-black/60 backdrop-blur-sm motion-reduce:backdrop-blur-none"
       role="dialog"
       aria-modal="true"
       aria-label={title}
     >
       <div
-        className="bg-[#1e293b] border border-white/10 rounded-2xl
+        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2
+          bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl
           max-w-md w-full mx-4 shadow-2xl
           animate-fade-in-up motion-reduce:animate-none"
       >
@@ -74,8 +96,8 @@ export default function ConfirmDialog({
             <Warning size={20} weight="bold" aria-hidden="true" />
           </div>
           <div className="flex-1 min-w-0">
-            <h3 className="text-base font-semibold text-slate-100">{title}</h3>
-            <p className="text-sm text-slate-400 mt-1.5 leading-relaxed">
+            <h3 className="text-base font-semibold text-[var(--color-text)]">{title}</h3>
+            <p className="text-sm text-[var(--color-text-secondary)] mt-1.5 leading-relaxed">
               {description}
             </p>
           </div>
@@ -83,8 +105,8 @@ export default function ConfirmDialog({
             onClick={() => !loading && onCancel()}
             aria-label="关闭"
             disabled={loading}
-            className="p-1.5 rounded-lg text-slate-400
-              hover:text-slate-100 hover:bg-white/8
+            className="p-1.5 rounded-lg text-[var(--color-text-secondary)]
+              hover:text-[var(--color-text)] hover:bg-white/8
               active:scale-[0.95] motion-reduce:active:scale-100
               transition-all cursor-pointer shrink-0
               disabled:opacity-50 disabled:cursor-not-allowed"
@@ -93,12 +115,12 @@ export default function ConfirmDialog({
           </button>
         </div>
 
-        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-white/5">
+        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-[var(--color-border)]">
           <button
             onClick={() => !loading && onCancel()}
             disabled={loading}
             className="px-3.5 py-1.5 text-sm font-medium rounded-lg
-              text-slate-400 hover:text-slate-100 hover:bg-white/8
+              text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-white/8
               active:scale-[0.98] motion-reduce:active:scale-100
               transition-all cursor-pointer
               disabled:opacity-50 disabled:cursor-not-allowed"
@@ -125,6 +147,6 @@ export default function ConfirmDialog({
           </button>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }

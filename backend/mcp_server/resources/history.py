@@ -17,7 +17,10 @@ async def get_qa_history(resume_id: str) -> str:
     from models.qa_history import QAHistory
     from models.resume import Resume
 
-    user_id = get_current_user_id()
+    try:
+        user_id = get_current_user_id()
+    except LookupError:
+        return json.dumps({"error": "authentication required: missing user context"}, ensure_ascii=False)
 
     try:
         resume_id_int = int(resume_id)
@@ -38,7 +41,7 @@ async def get_qa_history(resume_id: str) -> str:
             select(QAHistory)
             .where(QAHistory.user_id == user_id, QAHistory.resume_id == resume_id_int)
             .order_by(QAHistory.created_at.desc())
-            .limit(50)
+            .limit(100)  # MCP Resource 不支持分页参数，设置合理上限
         )
         records = result.scalars().all()
 

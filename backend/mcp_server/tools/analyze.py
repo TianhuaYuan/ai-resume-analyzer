@@ -27,7 +27,19 @@ async def analyze_resume(
         resume_id: 简历 ID（字符串数字）
         analysis_type: 分析类型（summary/skills/experience）
     """
-    user_id = get_current_user_id()
+    # SEC-002：MCP 工具必须校验用户身份，缺失上下文时拒绝而非静默放行。
+    try:
+        user_id = get_current_user_id()
+    except LookupError:
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps(
+                    {"error": "authentication required: missing user context"},
+                    ensure_ascii=False,
+                ),
+            )
+        ]
 
     try:
         resume_id_int = int(resume_id)

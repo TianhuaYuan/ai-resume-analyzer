@@ -6,10 +6,8 @@
 
 import asyncio
 import logging
-from typing import Any
 
 from core.config import settings
-from core.rag_params import RagParams
 from core.retry import with_retry
 from core.trace import StepTimer
 from services.rag.chunking import chunk_by_sections
@@ -25,10 +23,8 @@ from services.rag.retrieval import (
     _bm25_lock,
     get_embeddings,
     hybrid_search,
-    hybrid_search_p,
     reject_if_low_score,
     rerank,
-    rerank_p,
 )
 
 logger = logging.getLogger(__name__)
@@ -170,97 +166,6 @@ async def _retrieve(resume_id: int, question: str, timer: StepTimer) -> tuple[st
     return rewritten, reranked
 
 
-async def ask_question(resume_id: int, question: str) -> tuple[str, list[dict]]:
-    """RAG 全链路：检索 → Prompt → LLM 生成（同步）"""
-    timer = StepTimer()
-
-    rewritten, reranked = await _retrieve(resume_id, question, timer)
-    if not reranked:
-        timer.log()
-        return ("抱歉，简历中未提及该信息。", [])
-
-    prompt = build_prompt([c["text"] for c in reranked], rewritten)
-    answer = await timer.run(
-        "generate",
-        with_retry(llm_generate, prompt["system"], prompt["user"], fallback=FALLBACK_MESSAGE),
-    )
-
-    timer.log()
-    return answer, reranked
-
-
-async def _retrieve_p(
-    resume_id: int,
-    question: str,
-    p: RagParams,
-    timer: StepTimer,
-    collection_name: str | None = None,
-    bm25_key: Any | None = None,
-) -> tuple[str, list[dict]]:
-    """参数化版检索链路。collection_name / bm25_key 用于参数化实验隔离（Model C）。"""
-    rewritten = await timer.run("rewrite", rewrite_query(question))
-    chunks = await timer.run(
-        "hybrid",
-        hybrid_search_p(
-            resume_id, rewritten, p, collection_name=collection_name, bm25_key=bm25_key
-        ),
-    )
-    if not chunks:
-        return rewritten, []
-    chunks = chunks[: p.rerank_input_top_k] if p.rerank_input_top_k > 0 else chunks
-    if p.rerank_input_top_k == 0:
-        # rerank_input_top_k=0 哨兵值：跳过 Rerank，直接使用 hybrid 结果
-        # 用于验证 Rerank 是否真的提升质量（Phase 3 ablation）
-        if reject_if_low_score(chunks, threshold=p.reject_threshold):
-            return rewritten, []
-        return rewritten, chunks
-    reranked = await timer.run("rerank", rerank_p(rewritten, chunks, p))
-    if reject_if_low_score(reranked, threshold=p.reject_threshold):
-        return rewritten, []
-    return rewritten, reranked
-
-
-async def ask_question_p(
-    resume_id: int,
-    question: str,
-    p: RagParams,
-    collection_name: str | None = None,
-    bm25_key: Any | None = None,
-) -> tuple[str, list[dict], dict]:
-    """参数化版 RAG 全链路，返回 (answer, sources, timings)。
-    collection_name / bm25_key 为可选项，用于参数化实验隔离（Model C）；
-    省略时行为不变（沿用 resume_{resume_id} 集合与默认 BM25 键）。
-    """
-    timer = StepTimer()
-
-    rewritten, reranked = await _retrieve_p(
-        resume_id,
-        question,
-        p,
-        timer,
-        collection_name=collection_name,
-        bm25_key=bm25_key,
-    )
-    if not reranked:
-        timer.log()
-        return ("抱歉，简历中未提及该信息。", [], timer.steps)
-
-    prompt = build_prompt([c["text"] for c in reranked], rewritten)
-    answer = await timer.run(
-        "generate",
-        with_retry(
-            llm_generate,
-            prompt["system"],
-            prompt["user"],
-            temperature=p.generate_temperature,
-            fallback=FALLBACK_MESSAGE,
-        ),
-    )
-
-    timer.log()
-    return answer, reranked, timer.steps
-
-
 async def ask_question_stream(resume_id: int, question: str):
     """RAG 全链路流式版：检索 → 流式生成，逐个 yield 事件 dict"""
     timer = StepTimer()
@@ -293,6 +198,8 @@ async def ask_question_stream(resume_id: int, question: str):
             fallback=FALLBACK_MESSAGE,
         )
         full = fallback
+        # 通知客户端丢弃已收到的部分 token，用降级答案替换
+        yield {"type": "reset"}
         yield {"type": "token", "content": fallback}
 
     timer.log()

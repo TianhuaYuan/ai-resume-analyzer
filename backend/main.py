@@ -1,4 +1,6 @@
 from contextlib import asynccontextmanager
+import hmac
+import json
 import shutil
 import sys
 
@@ -54,6 +56,16 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.warning("Orphan cleanup skipped", exc_info=True)
 
+    # P1-13：恢复卡住的简历（进程崩溃后 status=processing 的记录永远无法完成）
+    try:
+        from services.resume_service import recover_stuck_resumes
+
+        recovered = await recover_stuck_resumes()
+        if recovered:
+            logger.warning("Recovered %d stuck resumes on startup", recovered)
+    except Exception:
+        logger.warning("Stuck resume recovery skipped", exc_info=True)
+
     # 初始化 MCP Server（注册 Tool 和 Resource）
     try:
         from mcp_server.transport.http import init_mcp_server
@@ -64,6 +76,17 @@ async def lifespan(app: FastAPI):
         logger.warning("MCP Server init skipped: %s", e)
 
     yield
+
+    # 关闭 Redis 连接
+    try:
+        from core.redis_client import close_redis
+
+        await close_redis()
+    except Exception:
+        pass
+
+    # 优雅关闭数据库连接池
+    await engine.dispose()
 
     # 关闭 MCP Server
     try:
@@ -107,10 +130,17 @@ async def limit_request_body(request: Request, call_next):
 
 @app.exception_handler(RateLimitExceeded)
 async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    # P2-14：添加 Retry-After 头，让用户知道多久后可重试
+    # slowapi 的 exc.limit.period 是限流窗口秒数（如 60s 内 10 次）
+    retry_after = getattr(getattr(exc, "limit", None), "period", 60) or 60
     return Response(
-        content='{"detail":"请求过于频繁，请稍后再试"}',
+        content=json.dumps(
+            {"detail": f"请求过于频繁，请 {retry_after} 秒后再试"},
+            ensure_ascii=False,
+        ),
         status_code=429,
         media_type="application/json",
+        headers={"Retry-After": str(retry_after)},
     )
 
 
@@ -126,15 +156,65 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", "X-Request-ID", "Idempotency-Key"],
 )
 
+# P0-9：代理头处理（必须在 CORS 之后添加 → 执行顺序在 CORS 之前）
+# 重写 request.client.host 为 X-Forwarded-For 中的真实 IP，trusted_hosts 限制为 Docker 内网
+# 注意：Starlette 1.x 无 ProxyHeadersMiddleware，自实现轻量版
+import ipaddress
+
+
+class SimpleProxyHeadersMiddleware:
+    """轻量代理头处理：可信来源的请求，把 request.client.host 改写为 X-Forwarded-For 首个 IP。"""
+
+    def __init__(self, app, trusted_hosts=None):
+        self.app = app
+        self.trusted_hosts = trusted_hosts or ["*"]
+
+    def _is_trusted(self, client_host: str) -> bool:
+        if "*" in self.trusted_hosts:
+            return True
+        try:
+            ip = ipaddress.ip_address(client_host)
+        except ValueError:
+            return False
+        for cidr in self.trusted_hosts:
+            try:
+                if ip in ipaddress.ip_network(cidr, strict=False):
+                    return True
+            except ValueError:
+                continue
+        return False
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        client = scope.get("client")
+        if client and self._is_trusted(client[0]):
+            headers = dict(scope.get("headers", []))
+            xff = headers.get(b"x-forwarded-for")
+            if xff:
+                real_ip = xff.decode().split(",")[0].strip()
+                if real_ip:
+                    scope["client"] = (real_ip, client[1])
+            x_real_ip = headers.get(b"x-real-ip")
+            if x_real_ip:
+                real_ip = x_real_ip.decode().strip()
+                if real_ip:
+                    scope["client"] = (real_ip, client[1])
+        return await self.app(scope, receive, send)
+
+
+app.add_middleware(
+    SimpleProxyHeadersMiddleware,
+    trusted_hosts=["172.16.0.0/12", "10.0.0.0/8", "127.0.0.1"],
+)
+
 
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
     response: Response = await call_next(request)
-    # 3.1 SEC-006：HSTS（仅 HTTPS 生效，HTTP 下浏览器忽略）+ 严格 CSP
+    # 3.1 SEC-006：HSTS（仅 HTTPS 生效，HTTP 下浏览器忽略）
+    # P2-5: CSP 已迁移到 nginx（后端只服务 API，CSP 由 nginx 统一管理前端+API 响应）
     response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
-    response.headers["Content-Security-Policy"] = (
-        "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
-    )
     # 3.3 SEC-018：禁用浏览器敏感权限特性
     response.headers["Permissions-Policy"] = (
         "camera=(), geolocation=(), microphone=(), payment=(), usb=(), interest-cohort=()"
@@ -195,7 +275,7 @@ async def metrics(request: Request):
     expected = settings.METRICS_TOKEN
     if expected:
         auth = request.headers.get("authorization", "")
-        if auth != f"Bearer {expected}":
+        if not hmac.compare_digest(auth, f"Bearer {expected}"):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Metrics endpoint requires authentication",

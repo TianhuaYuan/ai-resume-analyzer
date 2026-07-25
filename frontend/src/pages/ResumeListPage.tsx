@@ -353,7 +353,7 @@ export default function ResumeListPage() {
               type="file"
               accept=".pdf,.docx"
               onChange={handleUpload}
-              className="hidden"
+              style={{position:"absolute",opacity:0,pointerEvents:"none",width:0,height:0,overflow:"hidden"}}
             />
             <button
               onClick={triggerUpload}

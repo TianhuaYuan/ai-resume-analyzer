@@ -203,8 +203,10 @@ describe("ChunksModal (Task 3 前端)", () => {
     const onClose = vi.fn();
     renderModal({ onClose });
 
+    const dialog = document.querySelector("dialog");
+    expect(dialog).not.toBeNull();
     await act(async () => {
-      fireEvent.keyDown(document.body, { key: "Escape" });
+      dialog!.dispatchEvent(new Event("cancel", { cancelable: true }));
     });
 
     expect(onClose).toHaveBeenCalledTimes(1);
@@ -217,11 +219,12 @@ describe("ChunksModal (Task 3 前端)", () => {
       chunks: [SAMPLE_CHUNKS[0]],
     });
     const onClose = vi.fn();
-    const { container } = renderModal({ onClose });
+    renderModal({ onClose });
 
-    const overlay = container.firstElementChild as HTMLElement;
+    const dialog = document.querySelector("dialog");
+    expect(dialog).not.toBeNull();
     await act(async () => {
-      fireEvent.click(overlay);
+      dialog!.dispatchEvent(new Event("close"));
     });
 
     expect(onClose).toHaveBeenCalledTimes(1);

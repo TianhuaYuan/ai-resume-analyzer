@@ -98,10 +98,13 @@ export async function exportResume(
   id: number,
   format: string = "markdown"
 ): Promise<string> {
-  const resp = await fetch(
-    `/api/v1/resumes/${id}/export?format=${format}`,
-    { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } }
-  );
+  const token = localStorage.getItem("access_token");
+  const resp = await fetch(`/api/v1/resumes/${id}/export?format=${format}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "X-Request-ID": crypto.randomUUID?.() ?? "",
+    },
+  });
   if (!resp.ok) throw new Error(`导出失败: ${resp.status}`);
   return resp.text();
 }

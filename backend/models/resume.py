@@ -1,11 +1,16 @@
 from datetime import datetime, timezone
-from sqlalchemy import String, Text, Integer, ForeignKey, DateTime
+from sqlalchemy import String, Text, Integer, ForeignKey, DateTime, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from core.database import Base
 
 
 class Resume(Base):
     __tablename__ = "resumes"
+    # P1-9: (user_id, idempotency_key) 复合唯一约束，DB 层兜底并发竞态
+    # 与 alembic/versions/003_add_unique_constraint_resume_user_idempotency.py 保持一致
+    __table_args__ = (
+        UniqueConstraint("user_id", "idempotency_key", name="uq_resume_user_idempotency"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(

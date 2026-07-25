@@ -1,13 +1,11 @@
 import logging
 import time
 
+from core.config import settings
 from services.agentic_rag.state import AgenticRAGState
 from services.rag.retrieval import hybrid_search, rerank
 
 logger = logging.getLogger(__name__)
-
-_DEFAULT_HYBRID_TOP_K = 20
-_DEFAULT_RERANK_TOP_K = 5
 
 
 def _deduplicate_chunks(chunks: list[dict]) -> list[dict]:
@@ -39,7 +37,7 @@ async def search_node(state: AgenticRAGState) -> dict:
     all_chunks = []
     for q in queries_to_search:
         try:
-            chunks = await hybrid_search(resume_id, q, top_k=_DEFAULT_HYBRID_TOP_K)
+            chunks = await hybrid_search(resume_id, q, top_k=settings.DEFAULT_HYBRID_TOP_K)
         except Exception as exc:
             # 某个检索子步骤（稠密向量 / 稀疏 BM25 融合）失败：
             # 记录而非抛出，保证其余查询仍能返回结果，实现「部分降级」而非全盘失败。
@@ -99,7 +97,7 @@ async def rerank_node(state: AgenticRAGState) -> dict:
 
     timer_start = time.monotonic()
     try:
-        reranked = await rerank(query, chunks, top_k=_DEFAULT_RERANK_TOP_K)
+        reranked = await rerank(query, chunks, top_k=settings.DEFAULT_RERANK_TOP_K)
     except Exception as exc:
         # rerank 失败：降级为原始顺序（不重排），并记录工具错误，让下游感知「精排缺失」。
         logger.warning("rerank_node: rerank failed, falling back to original order: %s", exc)

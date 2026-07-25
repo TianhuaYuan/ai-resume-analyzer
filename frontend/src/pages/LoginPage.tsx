@@ -69,7 +69,7 @@ function FormInput({
 }) {
   return (
     <div className="space-y-1.5">
-      <label htmlFor={id} className="block text-sm font-medium text-slate-300">
+      <label htmlFor={id} className="block text-sm font-medium text-[var(--color-text-secondary)]">
         {label}
       </label>
       <input
@@ -79,12 +79,12 @@ function FormInput({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className={`w-full px-4 py-3 rounded-xl text-sm text-slate-200
+        className={`w-full px-4 py-3 rounded-xl text-sm text-[var(--color-text)]
           bg-white/5 border transition-all duration-200
-          placeholder:text-slate-500
+          placeholder:text-[var(--color-text-muted)]
           focus:outline-none focus:ring-2 focus:ring-indigo-500/40
           focus:border-indigo-500/50 focus:shadow-[0_0_15px_rgba(99,102,241,0.15)]
-          ${error ? "border-red-500/60" : "border-white/10"}`}
+          ${error ? "border-red-500/60" : "border-[var(--color-border)]"}`}
       />
       {error && (
         <p className="text-xs text-red-400 animate-shake">{error}</p>
@@ -133,6 +133,11 @@ export default function LoginPage() {
       setError("");
       setSuccess("");
       setFieldErrors({});
+      // P3-7: 切换 tab 时清空所有密码字段，防止密码管理器/浏览器自动填充残留到另一表单
+      // 也避免用户在登录 tab 输入密码后切到注册 tab 时密码泄漏到 DOM
+      setPassword("");
+      setRegPassword("");
+      setRegConfirm("");
       setFormVisible(true);
     }, 150);
   };
@@ -229,7 +234,7 @@ export default function LoginPage() {
             bg-linear-to-r from-indigo-200 to-purple-300 bg-clip-text text-transparent">
             AI Resume Analyzer
           </h1>
-          <p className="text-slate-400 text-sm mb-8">
+          <p className="text-[var(--color-text-secondary)] text-sm mb-8">
             智能简历分析系统
           </p>
 
@@ -243,16 +248,16 @@ export default function LoginPage() {
       </div>
 
       {/* ═══ 右面板：登录表单 ═══ */}
-      <div className="flex-1 flex items-center justify-center bg-[#0f172a] px-6 py-12 md:py-0">
+      <div className="flex-1 flex items-center justify-center bg-[var(--color-bg)] px-6 py-12 md:py-0">
         <div className="w-full max-w-md">
           {/* 玻璃卡片 */}
-          <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-8">
+          <div className="bg-white/5 backdrop-blur-xl border border-[var(--color-border)] rounded-2xl p-8">
             {/* 欢迎文字 */}
             <div className="mb-6">
-              <h2 className="text-xl font-semibold text-slate-100">
+              <h2 className="text-xl font-semibold text-[var(--color-text)]">
                 {tab === "login" ? "欢迎回来" : "创建账号"}
               </h2>
-              <p className="text-sm text-slate-500 mt-1">
+              <p className="text-sm text-[var(--color-text-muted)] mt-1">
                 {tab === "login" ? "登录以继续使用" : "注册以开始分析简历"}
               </p>
             </div>
@@ -267,7 +272,7 @@ export default function LoginPage() {
                     ${
                       tab === t
                         ? "bg-indigo-500/20 text-indigo-300 shadow-sm"
-                        : "text-slate-500 hover:text-slate-300"
+                        : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
                     }`}
                 >
                   {t === "login" ? "登录" : "注册"}
@@ -381,7 +386,7 @@ export default function LoginPage() {
           </div>
 
           {/* 底部提示 */}
-          <p className="text-center text-xs text-slate-600 mt-6">
+          <p className="text-center text-xs text-[var(--color-text-muted)] mt-6">
             AI 驱动的简历分析 · RAG + 混合检索 + 流式生成
           </p>
         </div>

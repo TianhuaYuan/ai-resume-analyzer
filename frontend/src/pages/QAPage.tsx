@@ -21,11 +21,24 @@ interface ChatMessage {
 
 // ── 来源引用组件 ────────────────────────────────────────
 
+const SOURCE_TRUNCATE_LIMIT = 220;
+
 function SourceCard({ index, text }: { index: number; text: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const isLong = text.length > SOURCE_TRUNCATE_LIMIT;
+
   return (
-    <div className="p-3 rounded-xl bg-indigo-500/6 border border-indigo-500/10 text-xs text-slate-400 leading-relaxed">
+    <div className="p-3 rounded-xl bg-indigo-500/6 border border-indigo-500/10 text-xs text-[var(--color-text-secondary)] leading-relaxed">
       <span className="text-indigo-400 font-semibold mr-2">[{index}]</span>
-      {text.length > 220 ? text.slice(0, 220) + "..." : text}
+      {isLong && !expanded ? text.slice(0, SOURCE_TRUNCATE_LIMIT) + "..." : text}
+      {isLong && (
+        <button
+          onClick={() => setExpanded((v) => !v)}
+          className="ml-1 text-indigo-400 hover:text-indigo-300 underline-offset-2 hover:underline cursor-pointer"
+        >
+          {expanded ? "收起" : "展开"}
+        </button>
+      )}
     </div>
   );
 }
@@ -39,7 +52,7 @@ function SourceToggle({ sources }: { sources: string[] }) {
     <div className="mt-2">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="inline-flex items-center gap-1 text-xs text-slate-500
+        className="inline-flex items-center gap-1 text-xs text-[var(--color-text-muted)]
           hover:text-indigo-400 hover:bg-indigo-500/8 px-2 py-1 rounded-md
           transition-colors cursor-pointer"
       >
@@ -71,10 +84,10 @@ function EmptyChat({ searching }: { searching: boolean }) {
         flex items-center justify-center text-indigo-400 mb-5">
         <ChatCircleDots size={28} weight="duotone" aria-hidden="true" />
       </div>
-      <p className="text-base text-slate-300 mb-1.5">
+      <p className="text-base text-[var(--color-text-secondary)] mb-1.5">
         {searching ? "没有匹配的问答" : "开始提问"}
       </p>
-      <p className="text-sm text-slate-500">
+      <p className="text-sm text-[var(--color-text-muted)]">
         {searching
           ? "换个关键词试试"
           : "例如：这份简历的亮点是什么？适合什么岗位？"}
@@ -108,11 +121,11 @@ function MessageBubble({ msg, deleting, onDelete }: MessageBubbleProps) {
       <div className="flex justify-start mb-4">
         <div className="max-w-[82%]">
           <div className="px-4 py-3.5 rounded-2xl rounded-bl-md leading-relaxed text-sm
-            bg-white/5 border border-white/8 backdrop-blur-sm">
+            bg-white/5 border border-[var(--color-border)] backdrop-blur-sm">
             {msg.streaming && !msg.answer ? (
-              <span className="text-slate-500">思考中...</span>
+              <span className="text-[var(--color-text-muted)]">思考中...</span>
             ) : (
-              <span className="text-slate-300 whitespace-pre-wrap">
+              <span className="text-[var(--color-text-secondary)] whitespace-pre-wrap">
                 {msg.answer}
                 {msg.streaming && <StreamingCursor />}
               </span>
@@ -131,7 +144,7 @@ function MessageBubble({ msg, deleting, onDelete }: MessageBubbleProps) {
                   disabled={deleting}
                   aria-label="删除该问答"
                   className="shrink-0 mt-2 inline-flex items-center gap-1 px-1.5 py-1
-                    rounded-md text-xs text-slate-500
+                    rounded-md text-xs text-[var(--color-text-muted)]
                     hover:text-red-400 hover:bg-red-500/10
                     active:scale-[0.95] motion-reduce:active:scale-100
                     transition-all cursor-pointer
@@ -266,7 +279,14 @@ export default function QAPage() {
         resumeId,
         q,
         (event: SSEEvent) => {
-          if (event.type === "token" && event.content) {
+          if (event.type === "reset") {
+            // 流式降级时，后端通知客户端丢弃已收到的部分 token
+            setChat((prev) =>
+              prev.map((m) =>
+                m.id === tempId ? { ...m, answer: "" } : m
+              )
+            );
+          } else if (event.type === "token" && event.content) {
             setChat((prev) =>
               prev.map((m) =>
                 m.id === tempId
@@ -374,16 +394,16 @@ export default function QAPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0f172a] flex flex-col">
+    <div className="min-h-screen bg-[var(--color-bg)] flex flex-col">
       {/* ── 顶栏 ── */}
-      <div className="px-6 py-4 border-b border-white/6 shrink-0">
+      <div className="px-6 py-4 border-b border-[var(--color-border)] shrink-0">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="min-w-0 flex-1">
-            <h2 className="text-base font-semibold text-slate-100 truncate">
+            <h2 className="text-base font-semibold text-[var(--color-text)] truncate">
               {resume?.filename ?? "加载中..."}
             </h2>
             {resume && (
-              <p className="text-xs text-slate-500 mt-0.5">
+              <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
                 {resume.chunk_count} 个分块
               </p>
             )}
@@ -395,7 +415,7 @@ export default function QAPage() {
               size={14}
               weight="bold"
               aria-hidden="true"
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none"
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] pointer-events-none"
             />
             <input
               type="text"
@@ -403,9 +423,9 @@ export default function QAPage() {
               onChange={(e) => setKeyword(e.target.value)}
               placeholder="搜索问答"
               disabled={asking}
-              className="w-40 sm:w-56 pl-8 pr-8 py-1.5 rounded-lg text-xs text-slate-200
-                bg-white/5 border border-white/10
-                placeholder:text-slate-500
+              className="w-40 sm:w-56 pl-8 pr-8 py-1.5 rounded-lg text-xs text-[var(--color-text)]
+                bg-white/5 border border-[var(--color-border)]
+                placeholder:text-[var(--color-text-muted)]
                 focus:outline-none focus:ring-2 focus:ring-indigo-500/40
                 focus:border-indigo-500/50
                 disabled:opacity-50 transition-all duration-200"
@@ -415,7 +435,7 @@ export default function QAPage() {
                 onClick={() => setKeyword("")}
                 aria-label="清除搜索"
                 className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded
-                  text-slate-500 hover:text-slate-200 hover:bg-white/8
+                  text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-white/8
                   active:scale-[0.95] motion-reduce:active:scale-100
                   transition-all cursor-pointer"
               >
@@ -429,7 +449,7 @@ export default function QAPage() {
             onClick={() => setClearConfirmOpen(true)}
             disabled={chat.length === 0 || clearing || asking}
             className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg
-              text-xs font-medium border border-white/10 text-slate-400
+              text-xs font-medium border border-[var(--color-border)] text-[var(--color-text-secondary)]
               hover:text-red-400 hover:border-red-500/30 hover:bg-red-500/8
               active:scale-[0.98] motion-reduce:active:scale-100
               transition-all cursor-pointer
@@ -441,7 +461,7 @@ export default function QAPage() {
 
           <Link
             to="/"
-            className="shrink-0 text-xs text-slate-500 hover:text-indigo-400 transition-colors"
+            className="shrink-0 text-xs text-[var(--color-text-muted)] hover:text-indigo-400 transition-colors"
           >
             ← 返回列表
           </Link>
@@ -457,7 +477,7 @@ export default function QAPage() {
                 className="inline-block w-6 h-6 rounded-full border-2 border-indigo-400 border-t-transparent animate-spin"
                 aria-hidden="true"
               />
-              <p className="text-xs text-slate-500 mt-3">加载历史中...</p>
+              <p className="text-xs text-[var(--color-text-muted)] mt-3">加载历史中...</p>
             </div>
           ) : chat.length === 0 ? (
             <EmptyChat searching={debouncedKeyword.length > 0} />
@@ -485,7 +505,7 @@ export default function QAPage() {
       </div>
 
       {/* ── 输入区 ── */}
-      <div className="shrink-0 px-4 sm:px-6 py-4 border-t border-white/6">
+      <div className="shrink-0 px-4 sm:px-6 py-4 border-t border-[var(--color-border)]">
         <form
           onSubmit={handleAsk}
           className="max-w-3xl mx-auto flex gap-3 items-center"
@@ -497,9 +517,9 @@ export default function QAPage() {
             onChange={(e) => setQuestion(e.target.value)}
             placeholder="输入问题，例如：这份简历的亮点是什么？"
             disabled={asking}
-            className="flex-1 px-5 py-3 rounded-2xl text-sm text-slate-200
-              bg-white/5 border border-white/10
-              placeholder:text-slate-500
+            className="flex-1 px-5 py-3 rounded-2xl text-sm text-[var(--color-text)]
+              bg-white/5 border border-[var(--color-border)]
+              placeholder:text-[var(--color-text-muted)]
               focus:outline-none focus:ring-2 focus:ring-indigo-500/40
               focus:border-indigo-500/50 focus:shadow-[0_0_15px_rgba(99,102,241,0.15)]
               disabled:opacity-50 transition-all duration-200"
@@ -509,7 +529,7 @@ export default function QAPage() {
               type="button"
               onClick={handleCancel}
               className="px-5 py-3 rounded-2xl text-sm font-medium
-                border border-white/10 text-slate-400
+                border border-[var(--color-border)] text-[var(--color-text-secondary)]
                 hover:text-red-400 hover:border-red-500/30 hover:bg-red-500/8
                 transition-all duration-200 cursor-pointer shrink-0"
             >

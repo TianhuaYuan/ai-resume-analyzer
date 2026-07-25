@@ -60,15 +60,18 @@ describe("SessionExpiredDialog - expired 模式", () => {
   it("expired 模式下按 Esc 不触发 onIgnore（不能关闭）", () => {
     const onIgnore = vi.fn();
     renderExpired({ onIgnore });
-    fireEvent.keyDown(document.body, { key: "Escape" });
+    const dialog = document.querySelector("dialog");
+    expect(dialog).not.toBeNull();
+    dialog!.dispatchEvent(new Event("cancel", { cancelable: true }));
     expect(onIgnore).not.toHaveBeenCalled();
   });
 
-  it("expired 模式下点 overlay 不触发 onIgnore（不能关闭）", () => {
+  it("expired 模式下点 backdrop 不触发 onIgnore（不能关闭）", () => {
     const onIgnore = vi.fn();
-    const { container } = renderExpired({ onIgnore });
-    const overlay = container.firstElementChild as HTMLElement;
-    fireEvent.click(overlay);
+    renderExpired({ onIgnore });
+    const dialog = document.querySelector("dialog");
+    expect(dialog).not.toBeNull();
+    dialog!.dispatchEvent(new Event("close"));
     expect(onIgnore).not.toHaveBeenCalled();
   });
 
@@ -114,15 +117,18 @@ describe("SessionExpiredDialog - warning 模式", () => {
   it("按 Esc 调用 onIgnore", () => {
     const onIgnore = vi.fn();
     renderWarning({ onIgnore });
-    fireEvent.keyDown(document.body, { key: "Escape" });
+    const dialog = document.querySelector("dialog");
+    expect(dialog).not.toBeNull();
+    dialog!.dispatchEvent(new Event("cancel", { cancelable: true }));
     expect(onIgnore).toHaveBeenCalledTimes(1);
   });
 
-  it("点 overlay 调用 onIgnore", () => {
+  it("点 backdrop 调用 onIgnore", () => {
     const onIgnore = vi.fn();
-    const { container } = renderWarning({ onIgnore });
-    const overlay = container.firstElementChild as HTMLElement;
-    fireEvent.click(overlay);
+    renderWarning({ onIgnore });
+    const dialog = document.querySelector("dialog");
+    expect(dialog).not.toBeNull();
+    dialog!.dispatchEvent(new Event("close"));
     expect(onIgnore).toHaveBeenCalledTimes(1);
   });
 

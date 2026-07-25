@@ -6,6 +6,7 @@
 
 import asyncio
 import logging
+from collections import OrderedDict
 from typing import Any
 
 import httpx
@@ -13,9 +14,24 @@ from rank_bm25 import BM25Okapi
 
 from core import cache as embedding_cache
 from core.config import settings
-from core.rag_params import RagParams
+
+# 模块级 httpx 客户端，复用 TCP 连接，避免每次 rerank 调用创建/销毁连接
+_http_client: httpx.AsyncClient | None = None
+_http_client_lock = asyncio.Lock()
+
+
+async def _get_http_client() -> httpx.AsyncClient:
+    """获取或创建模块级 httpx 客户端（单例，连接池复用）。
+
+    P1-11：加锁避免 TOCTOU 竞态，多协程并发调用只会创建一个实例。
+    """
+    global _http_client
+    async with _http_client_lock:
+        if _http_client is None or _http_client.is_closed:
+            _http_client = httpx.AsyncClient(timeout=30)
+    return _http_client
 from core.retry import with_retry
-from services.rag.chunking import _tokenize
+from services.rag.chunking import tokenize
 from services.rag.clients import (
     _collection_name,
     get_chroma_client,
@@ -25,7 +41,7 @@ from services.rag.clients import (
 
 logger = logging.getLogger(__name__)
 
-_bm25_indexes: dict[int, tuple[BM25Okapi, list[dict]]] = {}
+_bm25_indexes: OrderedDict[int, tuple[BM25Okapi, list[dict]]] = OrderedDict()
 _BM25_MAX_SIZE = 50  # LRU 上限，防止内存无限增长
 _bm25_lock = asyncio.Lock()
 
@@ -98,12 +114,13 @@ async def _load_bm25_index(
         )
     if not chunks:
         return False
-    tokenized = [_tokenize(c["text"]) for c in chunks]
-    # LRU 淘汰：超过上限时移除最早的条目
-    while len(_bm25_indexes) >= _BM25_MAX_SIZE:
-        oldest = next(iter(_bm25_indexes))
-        _bm25_indexes.pop(oldest, None)
+    tokenized = [tokenize(c["text"]) for c in chunks]
+    # LRU 淘汰：超过上限时删除最久未使用的条目
+    if store_key in _bm25_indexes:
+        _bm25_indexes.move_to_end(store_key)
     _bm25_indexes[store_key] = (BM25Okapi(tokenized), chunks)
+    while len(_bm25_indexes) > _BM25_MAX_SIZE:
+        _bm25_indexes.popitem(last=False)
     return True
 
 
@@ -125,13 +142,16 @@ async def _keyword_search(
                 resume_id, collection_name=collection_name, bm25_key=bm25_key
             ):
                 return []
+        # LRU：访问时 move_to_end，标记为最近使用
+        if store_key in _bm25_indexes:
+            _bm25_indexes.move_to_end(store_key)
         # H2 修复：将 _bm25_indexes.get() 的读取纳入锁临界区，
         # 避免与 clear_resume_vectors 的 pop 产生数据竞争
         index_data = _bm25_indexes.get(store_key)
     if index_data is None:
         return []
     index, chunks = index_data
-    scores = index.get_scores(_tokenize(question))
+    scores = index.get_scores(tokenize(question))
     top_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:top_k]
     return [
         {
@@ -199,27 +219,6 @@ async def hybrid_search(resume_id: int, question: str, top_k: int = 5) -> list[d
     return _merge_results(dense, sparse, top_k)
 
 
-async def hybrid_search_p(
-    resume_id: int,
-    question: str,
-    p: RagParams,
-    collection_name: str | None = None,
-    bm25_key: Any | None = None,
-) -> list[dict]:
-    """参数化版混合检索。collection_name / bm25_key 用于参数化实验隔离（Model C）。"""
-    dense, sparse = await asyncio.gather(
-        _vector_search(resume_id, question, top_k=p.dense_top_k, collection_name=collection_name),
-        _keyword_search(
-            resume_id,
-            question,
-            top_k=p.sparse_top_k,
-            bm25_key=bm25_key,
-            collection_name=collection_name,
-        ),
-    )
-    return _merge_results(dense, sparse, top_k=p.hybrid_top_k, k=p.rrf_k)
-
-
 def _merge_results(dense: list[dict], sparse: list[dict], top_k: int, k: int = 60) -> list[dict]:
     """RRF 融合：按排名而非分数合并两路结果，同一 chunk 两路都中则累加得分。
 
@@ -246,25 +245,25 @@ async def rerank(question: str, chunks: list[dict], top_k: int = 5) -> list[dict
         return [dict(c) for c in chunks]  # 返回副本，避免调用方持有同一引用
 
     async def _call_api():
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                settings.RERANK_BASE_URL,
-                json={
-                    "model": settings.RERANK_MODEL,
-                    "input": {
-                        "query": question,
-                        "documents": [c["text"][:400] for c in chunks],
-                    },
-                    "parameters": {"top_n": top_k},
+        client = await _get_http_client()
+        resp = await client.post(
+            settings.RERANK_BASE_URL,
+            json={
+                "model": settings.RERANK_MODEL,
+                "input": {
+                    "query": question,
+                    "documents": [c["text"][:400] for c in chunks],
                 },
-                headers={
-                    "Authorization": f"Bearer {settings.RERANK_API_KEY}",
-                    "Content-Type": "application/json",
-                },
-                timeout=10,
-            )
-            resp.raise_for_status()
-            return resp.json()
+                "parameters": {"top_n": top_k},
+            },
+            headers={
+                "Authorization": f"Bearer {settings.RERANK_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            timeout=10,
+        )
+        resp.raise_for_status()
+        return resp.json()
 
     try:
         data = await with_retry(_call_api, fallback=None)
@@ -282,52 +281,6 @@ async def rerank(question: str, chunks: list[dict], top_k: int = 5) -> list[dict
     # H3 修复：使用 sorted 返回新列表，而非对入参原地排序
     scored_sorted = sorted(scored, key=lambda c: c.get("rerank_score", 0), reverse=True)
     return scored_sorted[:top_k]
-
-
-async def rerank_p(question: str, chunks: list[dict], p: RagParams) -> list[dict]:
-    """参数化版 Rerank，支持可配截断长度和 top_k；返回新列表，不原地修改输入"""
-    if len(chunks) <= p.rerank_final_top_k:
-        return [dict(c) for c in chunks]
-
-    trunc = p.rerank_truncation if p.rerank_truncation > 0 else 999999
-
-    async def _call_api():
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                settings.RERANK_BASE_URL,
-                json={
-                    "model": settings.RERANK_MODEL,
-                    "input": {
-                        "query": question,
-                        "documents": [c["text"][:trunc] for c in chunks],
-                    },
-                    "parameters": {"top_n": p.rerank_final_top_k},
-                },
-                headers={
-                    "Authorization": f"Bearer {settings.RERANK_API_KEY}",
-                    "Content-Type": "application/json",
-                },
-                timeout=10,
-            )
-            resp.raise_for_status()
-            return resp.json()
-
-    try:
-        data = await with_retry(_call_api, fallback=None)
-        if data is None:
-            raise RuntimeError("Rerank API 全部重试失败")
-        results = data.get("output", {}).get("results", [])
-    except Exception as e:
-        logger.warning("Rerank API failed: %s, falling back to original order", e)
-        # H3 修复：返回带 rerank_score 的副本，不原地修改输入 chunks
-        return [{**c, "rerank_score": 0.5} for c in chunks][: p.rerank_final_top_k]
-
-    score_map: dict[int, float] = {r["index"]: r["relevance_score"] for r in results}
-    scored = [{**c, "rerank_score": score_map.get(i, 0.0)} for i, c in enumerate(chunks)]
-
-    # H3 修复：使用 sorted 返回新列表，而非对入参原地排序
-    scored_sorted = sorted(scored, key=lambda c: c.get("rerank_score", 0), reverse=True)
-    return scored_sorted[: p.rerank_final_top_k]
 
 
 def reject_if_low_score(chunks: list[dict], threshold: float = 0.3) -> bool:

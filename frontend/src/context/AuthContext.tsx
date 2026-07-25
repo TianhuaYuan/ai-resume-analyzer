@@ -10,6 +10,7 @@ import {
 import { login as loginApi, register as registerApi, logout as clearTokens } from "../api/auth";
 import { refreshToken, clearSessionAndRedirect, notifySessionExpired, notifySessionWarning } from "../api/client";
 import { safeDecodeJwt } from "../utils/jwt";
+import { computeSessionWarning } from "./sessionWarning";
 
 interface User {
   id: number;
@@ -54,6 +55,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [sessionRemainingSeconds, setSessionRemainingSeconds] = useState(0);
   const [sessionExtending, setSessionExtending] = useState(false);
   const warningShownRef = useRef(false); // 本次会话内 warning 只弹一次
+  // P1-19：token 版本号，续期成功后递增，触发预警定时器重新调度
+  const [tokenVersion, setTokenVersion] = useState(0);
 
   // ── 启动时从 token 解码 user 信息 ──────────────────────
   useEffect(() => {
@@ -74,6 +77,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // ── 即将过期定时器 ─────────────────────────────────────
+  // P1-19：依赖 tokenVersion，续期成功后递增它，触发定时器基于新 token 重新调度
   useEffect(() => {
     if (!user) {
       warningShownRef.current = false;
@@ -85,32 +89,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!payload || payload.exp == null) return;
 
     const expiresAt = payload.exp * 1000;
-    const warningAt = expiresAt - WARNING_BEFORE_SECONDS * 1000;
     const now = Date.now();
+    const decision = computeSessionWarning(expiresAt, now, WARNING_BEFORE_SECONDS);
 
-    // 已经过期了
-    if (now >= expiresAt) {
+    if (decision.kind === "expired") {
       notifySessionExpired();
       return;
     }
-    // 已经在预警窗口内
-    if (now >= warningAt) {
+    if (decision.kind === "warning") {
       if (!warningShownRef.current) {
         warningShownRef.current = true;
-        notifySessionWarning(Math.ceil((expiresAt - now) / 1000));
+        notifySessionWarning(decision.remainingSeconds);
       }
       return;
     }
-    // 还没到预警时间，设个定时器
-    const delay = warningAt - now;
+    // schedule
     const timer = setTimeout(() => {
       if (!warningShownRef.current) {
         warningShownRef.current = true;
         notifySessionWarning(WARNING_BEFORE_SECONDS);
       }
-    }, delay);
+    }, decision.delayMs);
     return () => clearTimeout(timer);
-  }, [user]);
+  }, [user, tokenVersion]);
 
   // ── 监听全局会话事件 ───────────────────────────────────
   useEffect(() => {
@@ -132,6 +133,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // ── P2-17：多 Tab 登出同步 ──────────────────────────────
+  // storage 事件只在「其他 Tab/Window」修改 localStorage 时触发，当前 Tab 不会收到。
+  // 当其他 Tab 登出（移除 access_token 或替换为无效值）时，当前 Tab 同步登出。
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== "access_token") return;
+      // newValue 为 null（移除）或空串（替换为无效值）→ 同步登出
+      if (!e.newValue) {
+        setUser(null);
+        setSessionDialog(null);
+        warningShownRef.current = false;
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
   // ── 弹窗操作 ───────────────────────────────────────────
   const handleSessionGoLogin = useCallback(() => {
     clearSessionAndRedirect();
@@ -144,6 +162,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (ok) {
         warningShownRef.current = false;
         setSessionDialog(null);
+        // P1-19：递增 tokenVersion，触发预警定时器基于新 token 的 exp 重新调度
+        setTokenVersion((v) => v + 1);
       } else {
         setSessionDialog("expired");
       }
@@ -170,6 +190,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       email: payload.email || "",
     });
     warningShownRef.current = false; // 新登录重置预警标记
+    setTokenVersion((v) => v + 1); // P1-19：新 token 触发定时器调度
   };
 
   const register = async (

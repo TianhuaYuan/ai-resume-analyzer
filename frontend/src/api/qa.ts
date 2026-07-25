@@ -12,7 +12,7 @@ export interface AnswerResponse {
 export interface SSEEvent {
   /** 事件去重用的唯一 id（N5）。后端未下发时为 undefined，此时不去重。 */
   id?: string | number;
-  type: "status" | "token" | "done" | "error";
+  type: "status" | "token" | "done" | "error" | "reset";
   message?: string;
   content?: string;
   answer?: string;
@@ -30,13 +30,6 @@ export function shouldSkipEvent(seen: Set<string>, event: SSEEvent): boolean {
   if (seen.has(key)) return true;
   seen.add(key);
   return false;
-}
-
-export async function askQuestion(
-  resume_id: number,
-  question: string
-): Promise<AnswerResponse> {
-  return api.post("/api/v1/qa/ask", { resume_id, question }) as Promise<AnswerResponse>;
 }
 
 /**

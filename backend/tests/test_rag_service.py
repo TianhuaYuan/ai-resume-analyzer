@@ -4,9 +4,9 @@ rag_service 单元测试 — 覆盖不依赖外部 API 的纯逻辑函数。
 运行: python -m pytest tests/test_rag_service.py -v
 """
 
-from services.rag.chunking import chunk_by_sections, fixed_chunk, _tokenize
-from services.rag.pipeline import build_prompt, reject_if_low_score
-from services.rag.retrieval import _merge_results
+from services.rag.chunking import chunk_by_sections, tokenize
+from services.rag.pipeline import build_prompt
+from services.rag.retrieval import _merge_results, reject_if_low_score
 
 # ── 测试数据 ──────────────────────────────────────────────
 
@@ -194,35 +194,6 @@ class TestChunkBySections:
         assert len(sections) == 2, f"期望 2 个节段（SUMMARY+EDUCATION），实际 {sections}"
 
 
-# ── fixed_chunk ──────────────────────────────────────────
-
-
-class TestFixedChunk:
-    def test_short_text_single_chunk(self):
-        chunks = fixed_chunk("Hello World", chunk_size=500)
-        assert len(chunks) == 1
-        assert chunks[0]["section"] == "正文"
-
-    def test_long_text_multi_chunk(self):
-        text = "A" * 1200
-        chunks = fixed_chunk(text, chunk_size=500, overlap=50)
-        assert len(chunks) == 3  # 0-500, 450-950, 900-1200
-        # 验证 overlap
-        assert chunks[0]["text"][-50:] == chunks[1]["text"][:50]
-
-    def test_empty_text(self):
-        chunks = fixed_chunk("", chunk_size=500)
-        assert chunks == []
-
-    def test_start_char_tracking(self):
-        text = "0123456789"
-        chunks = fixed_chunk(text, chunk_size=4, overlap=1)
-        positions = [(c["start_char"], c["end_char"]) for c in chunks]
-        # chunk 1: pos 0-4, chunk 2: pos 3-7, ...
-        assert positions[0] == (0, 4)
-        assert positions[1] == (3, 7)
-
-
 # ── build_prompt ─────────────────────────────────────────
 
 
@@ -342,24 +313,24 @@ class TestMergeResults:
         assert merged[0]["chunk_index"] == 0
 
 
-# ── _tokenize ────────────────────────────────────────────
+# ── tokenize ────────────────────────────────────────────
 
 
 class TestTokenize:
     def test_chinese_tokenization(self):
-        tokens = _tokenize("精通Python和FastAPI框架")
+        tokens = tokenize("精通Python和FastAPI框架")
         assert "Python" in tokens or "python" in tokens
         assert "精通" in tokens
         assert len(tokens) > 2  # jieba 应该切开
 
     def test_english_preserved(self):
-        tokens = _tokenize("FastAPI MySQL Redis")
+        tokens = tokenize("FastAPI MySQL Redis")
         # jieba 保留原始大小写
         assert "FastAPI" in tokens
         assert "MySQL" in tokens
 
     def test_empty_string(self):
-        tokens = _tokenize("")
+        tokens = tokenize("")
         assert tokens == []
 
 

@@ -304,19 +304,15 @@ Vite 自动将 `/api/*` 代理到后端 8000 端口。
 
 ## Docker 部署
 
-### 生产环境
+### Staging 环境（本地 Docker）
 
 ```bash
-cp backend/.env.example backend/.env.prod
-docker compose -f docker-compose.yml --env-file backend/.env.prod up -d
+docker compose -f docker-compose.staging.yml up
 ```
 
-### 开发环境（热重载）
+### 生产环境（CD 自动部署）
 
-```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml \
-    --env-file backend/.env.dev up
-```
+push main 分支后 GitHub Actions 自动构建并部署到云服务器。
 
 ### 部署架构
 
@@ -348,17 +344,6 @@ flowchart LR
 | MySQL | resume-mysql | 3306 | 数据库，healthcheck |
 | Backend | resume-backend | 8000 | FastAPI，多阶段构建，非 root 用户 |
 | Frontend | resume-frontend | 80/443 | nginx，SPA fallback + API 反代 |
-
-### 监控栈（可选）
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.monitor.yml up -d
-```
-
-| 服务 | 端口 | 说明 |
-|------|------|------|
-| Prometheus | 9090 | 指标采集（10s 间隔） |
-| Grafana | 3000 | 仪表盘（HTTP/RAG/LLM/系统概览） |
 
 ---
 
@@ -545,11 +530,10 @@ ai-resume-analyzer/
 │       ├── components/         # Navbar / ErrorBoundary / ConfirmDialog
 │       └── pages/              # LoginPage / ResumeListPage / QAPage
 │
-├── deploy/                     # 部署配置（docker-compose / deploy.sh）
+├── deploy/                     # CD 部署配置
 ├── monitoring/                 # Prometheus + Grafana
-├── docker-compose.yml          # 生产编排
-├── docker-compose.dev.yml      # 开发 override
-├── docker-compose.monitor.yml  # 监控栈
+├── docker-compose.staging.yml  # 本地 staging 环境（Docker）
+├── docker-compose.prod.yml     # CD 生产部署
 └── .github/workflows/          # CI + CD 流水线
 ```
 

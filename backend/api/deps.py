@@ -32,8 +32,8 @@ async def get_current_user(
     if payload.get("type") != "access":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="凭证类型无效")
 
-    # SEC-005：撤销名单校验
-    if is_token_revoked(payload.get("jti")):
+    # 撤销名单校验
+    if await is_token_revoked(payload.get("jti")):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="凭证已失效，请重新登录",

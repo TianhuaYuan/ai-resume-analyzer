@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Literal
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ResumeResponse(BaseModel):
@@ -32,7 +32,6 @@ class AnalyzeRequest(BaseModel):
 
 class ScoreDetail(BaseModel):
     """量化评分维度。"""
-
     ats_match: int
     keyword_coverage: int
     skill_density: int
@@ -67,7 +66,9 @@ class ChunksResponse(BaseModel):
 
 
 class MatchJDRequest(BaseModel):
-    jd_text: str
+    # P1-17: schema 层长度校验，防止空文本和恶意超长输入撑爆 LLM token
+    # service 层的 strip() 校验仍保留，拦截纯空格字符串（如 "   "）
+    jd_text: str = Field(..., min_length=1, max_length=5000, description="JD 文本，1-5000 字符")
 
 
 class MatchJDResponse(BaseModel):

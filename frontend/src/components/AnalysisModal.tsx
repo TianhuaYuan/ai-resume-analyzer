@@ -6,6 +6,7 @@ import {
   type AnalysisType,
   type ScoreDetail,
 } from "../api/resumes";
+import { useToast } from "./Toast";
 
 interface AnalysisModalProps {
   resumeId: number;
@@ -29,8 +30,8 @@ function ScoreBar({ label, value }: { label: string; value: number }) {
   return (
     <div className="space-y-1">
       <div className="flex justify-between text-xs">
-        <span className="text-slate-400">{label}</span>
-        <span className="text-slate-200 font-medium">{value}/100</span>
+        <span className="text-[var(--color-text-secondary)]">{label}</span>
+        <span className="text-[var(--color-text)] font-medium">{value}/100</span>
       </div>
       <div className="h-2 rounded-full bg-white/8 overflow-hidden">
         <div
@@ -54,6 +55,8 @@ export default function AnalysisModal({
   const [scores, setScores] = useState<ScoreDetail | null>(null);
   const [error, setError] = useState("");
   const cancelledRef = useRef(false);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const toast = useToast();
 
   const load = useCallback(
     async (type: AnalysisType) => {
@@ -89,14 +92,24 @@ export default function AnalysisModal({
     };
   }, [open, load]);
 
+  // P3-6：使用原生 <dialog>，showModal/close 控制，Esc 原生支持
   useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    if (open) {
+      try {
+        dialog.showModal();
+      } catch {
+        dialog.open = true;
+      }
+    } else {
+      try {
+        dialog.close();
+      } catch {
+        dialog.open = false;
+      }
+    }
+  }, [open]);
 
   const handleTabSwitch = (type: AnalysisType) => {
     if (type === activeTab) return;
@@ -106,8 +119,9 @@ export default function AnalysisModal({
 
   const handleRetry = () => load(activeTab);
 
-  const handleOverlayClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.target === e.currentTarget) onClose();
+  const handleCancel = (e: React.FormEvent<HTMLDialogElement>) => {
+    e.preventDefault();
+    onClose();
   };
 
   const handleExport = async () => {
@@ -122,43 +136,48 @@ export default function AnalysisModal({
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-    } catch {
-      // 导出失败静默处理，不影响分析体验
+    } catch (err: unknown) {
+      // P1-21：不再静默吞异常，通过 toast 提示用户
+      const msg = err instanceof Error ? err.message : "导出失败，请稍后重试";
+      toast.error(msg, { title: "导出失败" });
     }
   };
 
   if (!open) return null;
 
   return (
-    <div
-      onClick={handleOverlayClick}
-      className="fixed inset-0 z-50 flex items-center justify-center
+    <dialog
+      ref={dialogRef}
+      onCancel={handleCancel}
+      onClose={handleCancel}
+      className="fixed inset-0 z-50 m-0 w-full h-full p-0
         bg-black/60 backdrop-blur-sm motion-reduce:backdrop-blur-none"
       role="dialog"
       aria-modal="true"
       aria-label={`简历分析: ${resumeFilename}`}
     >
       <div
-        className="bg-[#1e293b] border border-white/10 rounded-2xl
+        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2
+          bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl
           max-w-2xl w-full mx-4 shadow-2xl
           animate-fade-in-up motion-reduce:animate-none
           flex flex-col max-h-[85dvh]"
       >
         {/* 头部 */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/8 shrink-0">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--color-border)] shrink-0">
           <div className="min-w-0 flex-1">
-            <h3 className="text-base font-semibold text-slate-100 truncate">
+            <h3 className="text-base font-semibold text-[var(--color-text)] truncate">
               简历分析
             </h3>
-            <p className="text-xs text-slate-500 truncate mt-0.5">
+            <p className="text-xs text-[var(--color-text-muted)] truncate mt-0.5">
               {resumeFilename}
             </p>
           </div>
           <button
             onClick={onClose}
             aria-label="关闭"
-            className="ml-3 p-1.5 rounded-lg text-slate-400
-              hover:text-slate-100 hover:bg-white/8
+            className="ml-3 p-1.5 rounded-lg text-[var(--color-text-secondary)]
+              hover:text-[var(--color-text)] hover:bg-white/8
               active:scale-[0.95] motion-reduce:active:scale-100
               transition-all cursor-pointer shrink-0"
           >
@@ -167,7 +186,7 @@ export default function AnalysisModal({
         </div>
 
         {/* Tab 栏 */}
-        <div className="flex border-b border-white/8 shrink-0">
+        <div className="flex border-b border-[var(--color-border)] shrink-0">
           {TABS.map((t) => {
             const active = t.key === activeTab;
             return (
@@ -179,8 +198,8 @@ export default function AnalysisModal({
                   active:scale-[0.98] motion-reduce:active:scale-100
                   ${
                     active
-                      ? "text-slate-100 border-indigo-500"
-                      : "text-slate-500 border-transparent hover:text-slate-300"
+                      ? "text-[var(--color-text)] border-indigo-500"
+                      : "text-[var(--color-text-muted)] border-transparent hover:text-[var(--color-text-secondary)]"
                   }`}
                 aria-pressed={active}
               >
@@ -236,20 +255,20 @@ export default function AnalysisModal({
                 </div>
               )}
               <div
-                className="text-sm text-slate-300 leading-relaxed whitespace-pre-wrap"
+                className="text-sm text-[var(--color-text-secondary)] leading-relaxed whitespace-pre-wrap"
                 aria-live="polite"
               >
                 {result}
               </div>
               {/* 导出按钮 */}
-              <div className="mt-4 pt-4 border-t border-white/8 flex justify-end">
+              <div className="mt-4 pt-4 border-t border-[var(--color-border)] flex justify-end">
                 <button
                   onClick={handleExport}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5
                     text-xs font-medium rounded-lg
                     bg-white/5 hover:bg-white/10
-                    border border-white/10
-                    text-slate-300
+                    border border-[var(--color-border)]
+                    text-[var(--color-text-secondary)]
                     active:scale-[0.98] motion-reduce:active:scale-100
                     transition-all cursor-pointer"
                 >
@@ -261,6 +280,6 @@ export default function AnalysisModal({
           )}
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }

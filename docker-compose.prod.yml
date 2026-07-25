@@ -1,0 +1,120 @@
+# CD 生产部署：docker compose -f docker-compose.prod.yml up -d
+# 服务器上需要 .env 文件
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: resume-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      # P1-1：healthcheck 用 MYSQL_PWD 传密码，避免 -p 在 ps aux 中暴露
+      MYSQL_PWD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: resume_ai
+      MYSQL_CHARACTER_SET_SERVER: utf8mb4
+      MYSQL_COLLATION_SERVER: utf8mb4_unicode_ci
+    volumes:
+      - mysql_data:/var/lib/mysql
+    # P1-2：生产环境不暴露端口，仅通过内部网络访问（防止绕过 nginx）
+    networks:
+      - resume-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    # P1-15：资源限制，防止单容器 OOM 拖垮宿主机
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "1.0"
+
+  redis:
+    image: redis:7-alpine
+    container_name: resume-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    volumes:
+      - redis_data:/data
+    networks:
+      - resume-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
+
+  backend:
+    image: ${DOCKER_REGISTRY:-docker.io}/${DOCKER_REPO:-ai-resume-analyzer}-backend:${IMAGE_TAG:-latest}
+    container_name: resume-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      APP_ENV: prod
+      DATABASE_URL: mysql+aiomysql://root:${MYSQL_ROOT_PASSWORD}@mysql:3306/resume_ai
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - uploads_data:/app/uploads
+      - chroma_data:/app/chroma_data
+    # P1-2：生产环境不暴露端口，仅通过内部网络访问（防止绕过 nginx）
+    networks:
+      - resume-network
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    stop_grace_period: 30s
+    # P1-15：资源限制（Python + ChromaDB 需要较多内存）
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "1.5"
+
+  frontend:
+    image: ${DOCKER_REGISTRY:-docker.io}/${DOCKER_REPO:-ai-resume-analyzer}-frontend:${IMAGE_TAG:-latest}
+    container_name: resume-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_HTTP_PORT:-80}:80"
+      - "${FRONTEND_HTTPS_PORT:-443}:443"
+    networks:
+      - resume-network
+    depends_on:
+      - backend
+    # P1-15：nginx 静态文件服务，资源占用低
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
+
+volumes:
+  mysql_data:
+    driver: local
+  uploads_data:
+    driver: local
+  chroma_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  resume-network:
+    driver: bridge

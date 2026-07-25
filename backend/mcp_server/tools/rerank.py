@@ -4,19 +4,19 @@ H6/M6 修复：原先使用 LLM 打分（llm_generate）做精排，属于重复
 现改为直接复用 services.rag_service.rerank 中已有的 Cross-Encoder 精排能力。
 """
 
+import asyncio
 import json
 import logging
 
 import httpx
 from mcp.types import TextContent
 
+from core.config import settings
 from mcp_server.server import get_current_user_id, mcp
 
 logger = logging.getLogger(__name__)
 
-_RERANK_TOP_K = 5
-# 远端 Cross-Encoder 调用的总超时上限（对齐阶段1：30s 总时限 / 10s 连接）
-MCP_HTTP_TIMEOUT = httpx.Timeout(30, connect=10)
+MCP_HTTP_TIMEOUT = httpx.Timeout(settings.MCP_HTTP_TIMEOUT_TOTAL, connect=settings.MCP_HTTP_TIMEOUT_CONNECT)
 
 
 @mcp.tool()
@@ -46,8 +46,6 @@ async def rerank_results(
             )
         ]
 
-    import asyncio
-
     try:
         chunk_list = json.loads(chunks) if isinstance(chunks, str) else chunks
     except json.JSONDecodeError:
@@ -56,7 +54,7 @@ async def rerank_results(
     if not chunk_list:
         return [TextContent(type="text", text='{"results": [], "message": "No chunks to rerank"}')]
 
-    top_k = max(1, min(top_k, 20))
+    top_k = max(1, min(top_k, settings.DEFAULT_RERANK_TOP_K))
 
     try:
         # H6/M6：复用已有的 Cross-Encoder 精排，而非自实现 LLM 打分。

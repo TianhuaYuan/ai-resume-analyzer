@@ -134,7 +134,7 @@ describe("MatchJDModal", () => {
 
   it("点击遮罩层关闭弹窗", () => {
     const onClose = vi.fn();
-    const { container } = render(
+    render(
       <MatchJDModal
         resumeId={1}
         resumeFilename="test.pdf"
@@ -142,8 +142,9 @@ describe("MatchJDModal", () => {
         onClose={onClose}
       />
     );
-    const overlay = container.querySelector(".fixed.inset-0");
-    fireEvent.click(overlay!);
+    const dialog = document.querySelector("dialog");
+    expect(dialog).not.toBeNull();
+    dialog!.dispatchEvent(new Event("close"));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
@@ -157,7 +158,9 @@ describe("MatchJDModal", () => {
         onClose={onClose}
       />
     );
-    fireEvent.keyDown(document, { key: "Escape" });
+    const dialog = document.querySelector("dialog");
+    expect(dialog).not.toBeNull();
+    dialog!.dispatchEvent(new Event("cancel", { cancelable: true }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 

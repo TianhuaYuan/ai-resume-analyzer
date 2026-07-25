@@ -56,3 +56,38 @@ class UserResponse(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}  # 允许直接从ORM对象构建
+
+
+class AdminResetPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class AdminResetPasswordResponse(BaseModel):
+    email: str
+    new_password: str
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        """P1-23: 复用注册密码强度规则，确保重置后的密码同样安全。"""
+        if len(v) < 8:
+            raise ValueError("密码至少8位")
+        if not any(c.isalpha() for c in v):
+            raise ValueError("密码必须包含字母")
+        if not any(c.isdigit() for c in v):
+            raise ValueError("密码必须包含数字")
+        return v
+
+
+class MessageResponse(BaseModel):
+    """通用消息响应。"""
+    detail: str

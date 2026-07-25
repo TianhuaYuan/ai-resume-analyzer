@@ -29,7 +29,19 @@ async def search_knowledge_base(
     from models.resume import Resume
     from services.rag.retrieval import hybrid_search, rerank
 
-    user_id = get_current_user_id()
+    # SEC-002：MCP 工具必须校验用户身份，缺失上下文时拒绝而非静默放行。
+    try:
+        user_id = get_current_user_id()
+    except LookupError:
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps(
+                    {"error": "authentication required: missing user context"},
+                    ensure_ascii=False,
+                ),
+            )
+        ]
 
     try:
         resume_id_int = int(resume_id)
@@ -72,7 +84,7 @@ async def search_knowledge_base(
 
         results = [
             {
-                "content": c["text"],
+                "text": c["text"],
                 "score": round(c.get("rerank_score", c.get("score", 0.0)), 4),
                 "section": c.get("section", ""),
                 "chunk_index": c.get("chunk_index", -1),
@@ -84,4 +96,4 @@ async def search_knowledge_base(
         return [TextContent(type="text", text=json.dumps(results, ensure_ascii=False))]
     except Exception as e:
         logger.exception("search_knowledge_base failed for resume %d", resume_id_int)
-        return [TextContent(type="text", text=f'{{"error": "Search failed: {e}"}}')]
+        return [TextContent(type="text", text='{"error": "Search failed, please try again later"}')]

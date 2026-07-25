@@ -11,6 +11,7 @@ from collections.abc import AsyncGenerator
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from core.database import Base, get_db
@@ -22,6 +23,16 @@ TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
 engine_test = create_async_engine(TEST_DATABASE_URL, echo=False)
 AsyncSessionTest = async_sessionmaker(engine_test, class_=AsyncSession, expire_on_commit=False)
+
+
+# P2-9: SQLite 默认关闭外键约束，CASCADE 不会生效。生产 MySQL 默认开启，
+# 测试环境需通过 event listener 在每个连接建立时执行 PRAGMA foreign_keys=ON，
+# 让测试 DB 行为接近生产，确保 ondelete=CASCADE 配置被真实验证。
+@event.listens_for(engine_test.sync_engine, "connect")
+def _enable_sqlite_foreign_keys(dbapi_conn, conn_record):
+    cursor = dbapi_conn.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
 
 
 @pytest.fixture(autouse=True)

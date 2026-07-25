@@ -1,0 +1,82 @@
+"""
+MCP Search 字段名测试：验证 search_knowledge_base 返回结果包含 'text' 字段。
+
+问题：search.py 返回 "content" 字段，但 mcp_client/tools.py 读取 "text" 字段，
+导致 MCP 模式产出空答案。
+
+修复：将 "content" 改为 "text"。
+"""
+
+import pytest
+
+
+class TestMCPSearchFieldName:
+    """MCP Search 工具返回字段名验证。"""
+
+    @pytest.mark.asyncio
+    async def test_search_knowledge_base_returns_text_field(self):
+        """search_knowledge_base 返回结果必须包含 'text' 字段而非 'content'。"""
+        from mcp_server.tools.search import search_knowledge_base
+
+        from mcp_server.server import _current_user_id
+
+        _current_user_id.set(1)
+
+        from unittest.mock import patch, AsyncMock
+
+        mock_chunks = [
+            {
+                "text": "测试简历内容",
+                "chunk_index": 0,
+                "section": "工作经历",
+                "score": 0.9,
+            }
+        ]
+
+        with (
+            patch(
+                "mcp_server.tools.search.hybrid_search",
+                new_callable=AsyncMock,
+                return_value=mock_chunks,
+            ),
+            patch(
+                "mcp_server.tools.search.rerank",
+                new_callable=AsyncMock,
+                return_value=mock_chunks,
+            ),
+        ):
+            result = await search_knowledge_base(
+                query="测试查询",
+                resume_id="1",
+                top_k=1,
+            )
+
+        assert len(result) == 1
+        import json
+
+        data = json.loads(result[0].text)
+        assert isinstance(data, list)
+        assert len(data) == 1
+
+        item = data[0]
+        assert "text" in item, f"Expected 'text' field but got keys: {list(item.keys())}"
+        assert item["text"] == "测试简历内容"
+
+    @pytest.mark.asyncio
+    async def test_mcp_search_uses_text_field(self):
+        """mcp_search 正确读取 'text' 字段用于生成上下文。"""
+        from mcp_client.tools import mcp_generate
+
+        mock_chunks = [
+            {
+                "text": "在某公司担任Python开发工程师",
+                "chunk_index": 0,
+                "section": "工作经历",
+                "rerank_score": 0.9,
+            }
+        ]
+
+        context = "\n\n".join(f"[段落 {i + 1}] {c.get('text', '')}" for i, c in enumerate(mock_chunks))
+
+        assert "Python开发工程师" in context
+        assert "[段落 1]" in context

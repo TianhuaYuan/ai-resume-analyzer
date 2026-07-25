@@ -16,6 +16,10 @@ class AgenticRAGState(TypedDict):
     completeness_score: float
     accuracy_score: float
     source_credibility_score: float
+    # evaluate_node 是否因 max_retries 强制放行（返回 0.5 假分数）。
+    # True = 未真正评估，直接给保底分放行；False = 真实评估或拒绝。
+    # 下游可据此区分「真实 0.5 分」和「没评估直接放行」。
+    eval_forced: bool
     reflection_result: str
     missing_info: list[str]
     supplement_queries: list[str]

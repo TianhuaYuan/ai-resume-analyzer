@@ -25,7 +25,8 @@ function renderDialog(props: Partial<React.ComponentProps<typeof ConfirmDialog>>
 describe("ConfirmDialog (Task 4 通用确认弹窗)", () => {
   it("open=false 时不渲染", () => {
     renderDialog({ open: false });
-    expect(screen.queryByText("确认操作")).toBeNull();
+    const dialog = document.querySelector("dialog");
+    expect(dialog).toBeNull();
   });
 
   it("open=true 显示标题和描述", () => {
@@ -70,15 +71,18 @@ describe("ConfirmDialog (Task 4 通用确认弹窗)", () => {
   it("按 Esc 调用 onCancel", () => {
     const onCancel = vi.fn();
     renderDialog({ onCancel });
-    fireEvent.keyDown(document.body, { key: "Escape" });
+    const dialog = document.querySelector("dialog");
+    expect(dialog).not.toBeNull();
+    dialog!.dispatchEvent(new Event("cancel", { cancelable: true }));
     expect(onCancel).toHaveBeenCalledTimes(1);
   });
 
-  it("点 overlay 遮罩调用 onCancel", () => {
+  it("点 backdrop 遮罩调用 onCancel", () => {
     const onCancel = vi.fn();
-    const { container } = renderDialog({ onCancel });
-    const overlay = container.firstElementChild as HTMLElement;
-    fireEvent.click(overlay);
+    renderDialog({ onCancel });
+    const dialog = document.querySelector("dialog");
+    expect(dialog).not.toBeNull();
+    dialog!.dispatchEvent(new Event("close"));
     expect(onCancel).toHaveBeenCalledTimes(1);
   });
 
@@ -103,7 +107,9 @@ describe("ConfirmDialog (Task 4 通用确认弹窗)", () => {
     expect(onCancel).not.toHaveBeenCalled();
 
     // Esc 禁用
-    fireEvent.keyDown(document.body, { key: "Escape" });
+    const dialog = document.querySelector("dialog");
+    expect(dialog).not.toBeNull();
+    dialog!.dispatchEvent(new Event("cancel", { cancelable: true }));
     expect(onCancel).not.toHaveBeenCalled();
   });
 

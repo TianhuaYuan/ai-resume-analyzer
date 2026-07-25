@@ -70,6 +70,45 @@ async def test_list_resumes_empty(client: AsyncClient, auth_headers: dict):
     assert data["total"] == 0
 
 
+# ── P1-16: 分页参数校验 ──────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_list_resumes_limit_too_small(client: AsyncClient, auth_headers: dict):
+    """limit=0 → 422（最小值 1）。"""
+    resp = await client.get("/api/v1/resumes?limit=0", headers=auth_headers)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_list_resumes_limit_too_large(client: AsyncClient, auth_headers: dict):
+    """limit=101 → 422（最大值 100）。"""
+    resp = await client.get("/api/v1/resumes?limit=101", headers=auth_headers)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_list_resumes_limit_boundary_ok(client: AsyncClient, auth_headers: dict):
+    """limit=1 和 limit=100 边界值 → 200。"""
+    for limit in (1, 100):
+        resp = await client.get(f"/api/v1/resumes?limit={limit}", headers=auth_headers)
+        assert resp.status_code == 200, f"limit={limit} 应通过"
+
+
+@pytest.mark.asyncio
+async def test_list_resumes_offset_negative(client: AsyncClient, auth_headers: dict):
+    """offset=-1 → 422（最小值 0）。"""
+    resp = await client.get("/api/v1/resumes?offset=-1", headers=auth_headers)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_list_resumes_offset_zero_ok(client: AsyncClient, auth_headers: dict):
+    """offset=0 → 200（边界值）。"""
+    resp = await client.get("/api/v1/resumes?offset=0", headers=auth_headers)
+    assert resp.status_code == 200
+
+
 # ── 详情 ──────────────────────────────────────────────
 
 

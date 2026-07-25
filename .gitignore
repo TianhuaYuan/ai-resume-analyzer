@@ -14,7 +14,6 @@ ENV/
 .env.*
 !.env.example
 !.env.test
-!deploy/.env.prod.example
 
 uploads/
 chroma_data/
@@ -39,21 +38,5 @@ dist/
 Thumbs.db
 desktop.ini
 
-# 实验数据（含个人信息，不公开）
-# 统一实验归档（v1/2/3 + data），含个人信息不公开
-backend/tuning_archive/
-backend/rag_tuning/uploads/
-backend/rag_tuning/golden_set.json
-backend/rag_tuning/bad_case_analysis.md
-
-# 部署
-deploy/.rollback-info
-deploy/.env
-deploy/*.log
-
 *.log
 logs/
-docs/
-
-# 第三方工作目录
-.workbuddy/

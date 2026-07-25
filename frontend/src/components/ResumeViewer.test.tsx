@@ -104,7 +104,7 @@ describe("ResumeViewer", () => {
   it("点击遮罩层关闭弹窗", async () => {
     vi.mocked(getResume).mockResolvedValueOnce(mockResume);
     const onClose = vi.fn();
-    const { container } = render(
+    render(
       <ResumeViewer
         resumeId={1}
         resumeFilename="test.pdf"
@@ -115,8 +115,9 @@ describe("ResumeViewer", () => {
     await waitFor(() => {
       expect(screen.getByText(/Python后端工程师/)).toBeInTheDocument();
     });
-    const overlay = container.querySelector(".fixed.inset-0");
-    fireEvent.click(overlay!);
+    const dialog = document.querySelector("dialog");
+    expect(dialog).not.toBeNull();
+    dialog!.dispatchEvent(new Event("close"));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
@@ -134,7 +135,9 @@ describe("ResumeViewer", () => {
     await waitFor(() => {
       expect(screen.getByText(/Python后端工程师/)).toBeInTheDocument();
     });
-    fireEvent.keyDown(document, { key: "Escape" });
+    const dialog = document.querySelector("dialog");
+    expect(dialog).not.toBeNull();
+    dialog!.dispatchEvent(new Event("cancel", { cancelable: true }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 

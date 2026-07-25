@@ -2,12 +2,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // 每个用例都重新加载模块，保证单飞锁模块变量 refreshPromise 从干净状态开始
 let refreshToken: () => Promise<boolean>;
+let clearSessionAndRedirect: () => void;
 
 beforeEach(async () => {
   vi.resetModules();
   localStorage.clear();
   const mod = await import("./client");
   refreshToken = mod.refreshToken;
+  clearSessionAndRedirect = mod.clearSessionAndRedirect;
 });
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -63,5 +65,35 @@ describe("refreshToken 单飞锁 (C1)", () => {
     // 锁已释放：第二次调用会再次真正发起请求
     expect(await refreshToken()).toBe(false);
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("clearSessionAndRedirect (P1-20)", () => {
+  it("只清除应用自身的 token，不删除同域其他应用的数据", () => {
+    // 模拟同域下其他应用存储的数据
+    localStorage.setItem("access_token", "my-app-access");
+    localStorage.setItem("refresh_token", "my-app-refresh");
+    localStorage.setItem("third_party_app_config", '{"theme":"dark"}');
+    localStorage.setItem("other_app_cart", "[1,2,3]");
+
+    // stub window.location.href 赋值，避免 jsdom 导航报错
+    const originalHref = window.location.href;
+    const hrefSetter = vi.fn();
+    Object.defineProperty(window, "location", {
+      value: { href: "", },
+      writable: true,
+    });
+
+    clearSessionAndRedirect();
+
+    // 应用 token 已清除
+    expect(localStorage.getItem("access_token")).toBeNull();
+    expect(localStorage.getItem("refresh_token")).toBeNull();
+    // 其他应用数据保留
+    expect(localStorage.getItem("third_party_app_config")).toBe('{"theme":"dark"}');
+    expect(localStorage.getItem("other_app_cart")).toBe("[1,2,3]");
+
+    // 恢复
+    window.location.href = originalHref;
   });
 });

@@ -9,16 +9,24 @@ from httpx import AsyncClient
 from core.config import settings
 
 
-# ── 3.1 / 3.3 安全响应头（HSTS / CSP / Permissions-Policy + 基础防护头）──
+# ── 3.1 / 3.3 安全响应头（HSTS / Permissions-Policy + 基础防护头）──
+# P2-5: CSP 已迁移到 nginx，后端不再下发 Content-Security-Policy 头
 async def test_security_headers_present(client: AsyncClient):
     resp = await client.get("/")  # / 是 health 路由，中间件对全部响应生效
     h = resp.headers
     assert h.get("Strict-Transport-Security", "").startswith("max-age=31536000")
-    assert "default-src 'none'" in h.get("Content-Security-Policy", "")
     assert "camera=()" in h.get("Permissions-Policy", "")
     assert h.get("X-Content-Type-Options") == "nosniff"
     assert h.get("X-Frame-Options") == "DENY"
     assert h.get("Referrer-Policy") == "strict-origin-when-cross-origin"
+
+
+async def test_csp_header_migrated_to_nginx(client: AsyncClient):
+    """P2-5: 后端不再下发 CSP 头，由 nginx 统一管理。"""
+    resp = await client.get("/")
+    assert "Content-Security-Policy" not in resp.headers, (
+        "CSP 应迁移到 nginx，后端不应再下发 Content-Security-Policy 头"
+    )
 
 
 # ── 3.2 CORS 收紧：preflight 不允许通配 ──
