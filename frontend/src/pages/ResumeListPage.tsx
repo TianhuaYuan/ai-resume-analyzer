@@ -1,17 +1,22 @@
 import { useEffect, useState, useRef } from "react";
 import { Link } from "react-router-dom";
-import { Sparkle, ListBullets, FileText, Target } from "@phosphor-icons/react";
+import { Sparkle, ListBullets, FileText, Target, ArrowClockwise, CheckSquare, TrashSimple, X } from "@phosphor-icons/react";
 import {
   listResumes,
   uploadResume,
   deleteResume,
   getResume,
+  retryResume,
+  generateIdempotencyKey,
   type ResumeItem,
 } from "../api/resumes";
 import AnalysisModal from "../components/AnalysisModal";
 import ChunksModal from "../components/ChunksModal";
 import ResumeViewer from "../components/ResumeViewer";
 import MatchJDModal from "../components/MatchJDModal";
+import MoreMenu from "../components/MoreMenu";
+import ConfirmDialog from "../components/ConfirmDialog";
+import { useToast } from "../components/Toast";
 
 // ── 骨架屏 ──────────────────────────────────────────────
 
@@ -86,46 +91,6 @@ function FileIcon({ status }: { status: string }) {
   );
 }
 
-// ── 确认删除弹窗 ────────────────────────────────────────
-
-function ConfirmDialog({
-  filename,
-  onConfirm,
-  onCancel,
-}: {
-  filename: string;
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-[#1e293b] border border-white/10 rounded-2xl p-6 max-w-sm w-full mx-4
-        animate-fade-in-up shadow-2xl">
-        <h3 className="text-lg font-semibold text-slate-100 mb-2">确认删除</h3>
-        <p className="text-sm text-slate-400 mb-6">
-          确定删除「<span className="text-slate-200">{filename}</span>」吗？此操作不可撤销。
-        </p>
-        <div className="flex gap-3 justify-end">
-          <button
-            onClick={onCancel}
-            className="px-4 py-2 text-sm text-slate-400 hover:text-slate-200
-              bg-white/5 border border-white/10 rounded-lg transition-colors cursor-pointer"
-          >
-            取消
-          </button>
-          <button
-            onClick={onConfirm}
-            className="px-4 py-2 text-sm text-white bg-red-500/80 hover:bg-red-500
-              rounded-lg transition-colors cursor-pointer"
-          >
-            删除
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ── 空状态 ──────────────────────────────────────────────
 
 function EmptyState({ onUpload }: { onUpload: () => void }) {
@@ -135,8 +100,8 @@ function EmptyState({ onUpload }: { onUpload: () => void }) {
         flex items-center justify-center text-4xl">
         📋
       </div>
-      <h3 className="text-lg font-medium text-slate-200 mb-2">还没有简历</h3>
-      <p className="text-sm text-slate-500 mb-6">上传你的第一份简历，开始 AI 智能分析</p>
+      <h3 className="text-lg font-medium text-[var(--color-text)] mb-2">还没有简历</h3>
+      <p className="text-sm text-[var(--color-text-muted)] mb-6">上传你的第一份简历，开始 AI 智能分析</p>
       <button
         onClick={onUpload}
         className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white
@@ -167,6 +132,18 @@ export default function ResumeListPage() {
   const [viewerTarget, setViewerTarget] = useState<ResumeItem | null>(null);
   const [jdMatchTarget, setJdMatchTarget] = useState<ResumeItem | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  // Task 1.3: 正在重试中的简历 id 集合，用于禁用按钮防止重复点击
+  const [retryingIds, setRetryingIds] = useState<Set<number>>(new Set());
+  // Task 2.6: 上传幂等键 + 上次失败的 file，用于"重试上传"复用同 key
+  const lastUploadKeyRef = useRef<string | null>(null);
+  const lastFileRef = useRef<File | null>(null);
+  const [uploadFailed, setUploadFailed] = useState(false);
+  // Task 5.5: 批量操作
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
+  const [batchDeleting, setBatchDeleting] = useState(false);
+  const toast = useToast();
 
   const fetchResumes = async () => {
     setLoading(true);
@@ -236,18 +213,98 @@ export default function ResumeListPage() {
 
   const triggerUpload = () => fileInputRef.current?.click();
 
+  // P0.4 + P2-13 + P3-4: 统一类型/大小校验，按钮与拖拽入口行为一致
+  // 允许 PDF + DOCX，单文件上限 10MB
+  const MAX_FILE_SIZE = 10 * 1024 * 1024;
+  const ACCEPTED_TYPES = ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"];
+  const ACCEPTED_EXTS = [".pdf", ".docx"];
+
+  function validateFile(file: File): string | null {
+    const lowerName = file.name.toLowerCase();
+    const extOk = ACCEPTED_EXTS.some((ext) => lowerName.endsWith(ext));
+    const typeOk = ACCEPTED_TYPES.includes(file.type);
+    if (!extOk && !typeOk) return "仅支持 PDF / DOCX 文件";
+    if (file.size > MAX_FILE_SIZE) return "文件大小不能超过 10MB";
+    return null;
+  }
+
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
 
-    setError("");
-    setUploading(true);
-
-    // 拖拽上传后，清空 input 值允许重复上传同一文件
+    // 清空 input 值允许重复上传同一文件
     if (fileInputRef.current) fileInputRef.current.value = "";
 
+    if (files.length === 1) {
+      // 单文件：保持原有逻辑
+      const invalidReason = validateFile(files[0]);
+      if (invalidReason) {
+        setError(invalidReason);
+        return;
+      }
+      await doUpload(files[0]);
+      return;
+    }
+
+    // Task 5.5: 多文件批量上传
+    setUploading(true);
+    setError("");
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const file of files) {
+      const invalidReason = validateFile(file);
+      if (invalidReason) {
+        failCount++;
+        continue;
+      }
+      try {
+        const key = await generateIdempotencyKey(file);
+        const result = await uploadResume(file, key);
+        setNewCardId(result.id);
+        setResumes((prev) => [
+          {
+            id: result.id,
+            filename: result.filename,
+            parsed_text: "",
+            chunk_count: 0,
+            status: result.status,
+            status_message: "解析中...",
+            created_at: new Date().toISOString(),
+          },
+          ...prev,
+        ]);
+        startPoll(result.id);
+        successCount++;
+      } catch {
+        failCount++;
+      }
+    }
+
+    setUploading(false);
+    if (failCount > 0) {
+      setError(`${failCount} 个文件上传失败`);
+      setUploadFailed(true);
+    }
+    if (successCount > 0) {
+      toast.success(`成功上传 ${successCount} 份简历`);
+    }
+  };
+
+  // Task 2.6: 实际执行上传，先算 key 保存到 ref，再调 uploadResume(file, key)
+  // 重试场景调用 doUpload(lastFile, lastUploadKey) 复用同 key
+  const doUpload = async (file: File, overrideKey?: string) => {
+    setError("");
+    setUploadFailed(false);
+    setUploading(true);
+
     try {
-      const result = await uploadResume(file);
+      // 首次上传：算 key 并保存；重试：复用上次 key
+      const key = overrideKey ?? (await generateIdempotencyKey(file));
+      lastUploadKeyRef.current = key;
+      lastFileRef.current = file;
+
+      const result = await uploadResume(file, key);
       setNewCardId(result.id);
       setResumes((prev) => [
         {
@@ -262,11 +319,24 @@ export default function ResumeListPage() {
         ...prev,
       ]);
       startPoll(result.id);
+      // 上传成功后清空 retry 状态
+      lastUploadKeyRef.current = null;
+      lastFileRef.current = null;
+      setUploadFailed(false);
     } catch {
       setError("上传失败，请重试");
+      setUploadFailed(true);
     } finally {
       setUploading(false);
     }
+  };
+
+  // Task 2.6: 重试上传，复用 lastUploadKey 实现真正幂等
+  const handleRetryUpload = () => {
+    const lastFile = lastFileRef.current;
+    const lastKey = lastUploadKeyRef.current;
+    if (!lastFile || !lastKey) return;
+    void doUpload(lastFile, lastKey);
   };
 
   const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
@@ -274,34 +344,14 @@ export default function ResumeListPage() {
     setIsDragging(false);
     const file = e.dataTransfer.files?.[0];
     if (!file) return;
-    if (file.type !== "application/pdf") {
-      setError("仅支持 PDF 文件");
+
+    const invalidReason = validateFile(file);
+    if (invalidReason) {
+      setError(invalidReason);
       return;
     }
-    // 复用 handleUpload 的逻辑
-    setError("");
-    setUploading(true);
-    try {
-      const result = await uploadResume(file);
-      setNewCardId(result.id);
-      setResumes((prev) => [
-        {
-          id: result.id,
-          filename: result.filename,
-          parsed_text: "",
-          chunk_count: 0,
-          status: result.status,
-          status_message: "解析中...",
-          created_at: new Date().toISOString(),
-        },
-        ...prev,
-      ]);
-      startPoll(result.id);
-    } catch {
-      setError("上传失败，请重试");
-    } finally {
-      setUploading(false);
-    }
+
+    await doUpload(file);
   };
 
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
@@ -327,9 +377,87 @@ export default function ResumeListPage() {
     }
   };
 
+  // Task 5.5: 批量删除
+  const handleBatchDelete = async () => {
+    setBatchDeleting(true);
+    let deletedCount = 0;
+    let failCount = 0;
+    for (const id of selectedIds) {
+      try {
+        await deleteResume(id);
+        deletedCount++;
+      } catch {
+        failCount++;
+      }
+    }
+    setBatchDeleting(false);
+    setBatchDeleteOpen(false);
+    setSelectMode(false);
+    setSelectedIds(new Set());
+    if (deletedCount > 0) {
+      setResumes((prev) => prev.filter((r) => !selectedIds.has(r.id)));
+      setTotal((prev) => prev - deletedCount);
+      toast.success(`已删除 ${deletedCount} 份简历`);
+    }
+    if (failCount > 0) {
+      setError(`${failCount} 份简历删除失败`);
+    }
+  };
+
+  const toggleSelect = (id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === resumes.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(resumes.map((r) => r.id)));
+    }
+  };
+
+  const exitSelectMode = () => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  };
+
+  // Task 1.3: 重试失败的简历。调用 retryResume → 状态改回 processing → 重新轮询
+  const handleRetry = async (resume: ResumeItem) => {
+    // 防重复点击
+    if (retryingIds.has(resume.id)) return;
+    setRetryingIds((prev) => new Set(prev).add(resume.id));
+    try {
+      const result = await retryResume(resume.id);
+      // 立即把卡片状态改成 processing，让用户看到反馈
+      setResumes((prev) =>
+        prev.map((r) =>
+          r.id === resume.id
+            ? { ...r, status: "processing", status_message: "重新解析中..." }
+            : r
+        )
+      );
+      toast.success(`已重新提交「${result.filename}」解析`);
+      startPoll(result.id);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "重试失败";
+      toast.error(msg);
+    } finally {
+      setRetryingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(resume.id);
+        return next;
+      });
+    }
+  };
+
   return (
     <div
-      className={`min-h-screen bg-[#0f172a] drop-zone transition-all ${
+      className={`min-h-screen bg-[var(--color-bg)] drop-zone transition-all ${
         isDragging ? "ring-4 ring-indigo-500 ring-inset bg-indigo-500/5" : ""
       }`}
       onDragOver={handleDragOver}
@@ -340,45 +468,110 @@ export default function ResumeListPage() {
         {/* ── 顶部栏 ── */}
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-xl font-semibold text-slate-100">
+            <h1 className="text-xl font-semibold text-[var(--color-text)]">
               我的简历
-              <span className="text-sm font-normal text-slate-500 ml-2">
+              <span className="text-sm font-normal text-[var(--color-text-muted)] ml-2">
                 ({total} 份)
               </span>
             </h1>
           </div>
-          <div>
+          <div className="flex items-center gap-2">
+            {/* 隐藏文件输入（始终在 DOM 中） */}
             <input
               ref={fileInputRef}
               type="file"
               accept=".pdf,.docx"
+              multiple
               onChange={handleUpload}
               style={{position:"absolute",opacity:0,pointerEvents:"none",width:0,height:0,overflow:"hidden"}}
             />
-            <button
-              onClick={triggerUpload}
-              disabled={uploading}
-              className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white
-                bg-linear-to-r from-indigo-500 to-purple-600
-                hover:brightness-110 hover:shadow-lg hover:shadow-indigo-500/25
-                active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed
-                transition-all duration-200 cursor-pointer"
-            >
-              {uploading ? "上传中..." : "+ 上传简历"}
-            </button>
+            {resumes.length > 0 && !selectMode && (
+              <button
+                onClick={() => setSelectMode(true)}
+                className="px-3 py-2 rounded-lg text-sm text-[var(--color-text-secondary)]
+                  hover:text-[var(--color-text)] hover:bg-white/8
+                  transition-colors cursor-pointer"
+                aria-label="管理"
+              >
+                <CheckSquare size={18} weight="regular" aria-hidden="true" />
+              </button>
+            )}
+            {selectMode && (
+              <>
+                <label className="inline-flex items-center gap-1.5 px-2 py-1.5 text-xs text-[var(--color-text-secondary)] cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.size === resumes.length && resumes.length > 0}
+                    onChange={toggleSelectAll}
+                    className="rounded border-[var(--color-border)]"
+                    aria-label="全选"
+                  />
+                  全选
+                </label>
+                <button
+                  onClick={() => setBatchDeleteOpen(true)}
+                  disabled={selectedIds.size === 0}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium
+                    text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg
+                    disabled:opacity-40 disabled:cursor-not-allowed
+                    transition-colors cursor-pointer"
+                  aria-label="删除所选"
+                >
+                  <TrashSimple size={14} weight="bold" aria-hidden="true" />
+                  删除所选{selectedIds.size > 0 ? ` (${selectedIds.size})` : ""}
+                </button>
+                <button
+                  onClick={exitSelectMode}
+                  className="p-1.5 rounded-lg text-[var(--color-text-secondary)]
+                    hover:text-[var(--color-text)] hover:bg-white/8
+                    transition-colors cursor-pointer"
+                  aria-label="取消"
+                >
+                  <X size={16} weight="bold" aria-hidden="true" />
+                </button>
+              </>
+            )}
+            {!selectMode && (
+              <button
+                onClick={triggerUpload}
+                disabled={uploading}
+                className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white
+                  bg-linear-to-r from-indigo-500 to-purple-600
+                  hover:brightness-110 hover:shadow-lg hover:shadow-indigo-500/25
+                  active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed
+                  transition-all duration-200 cursor-pointer"
+              >
+                {uploading ? "上传中..." : "+ 上传简历"}
+              </button>
+            )}
           </div>
         </div>
 
         {/* ── 错误提示 ── */}
         {error && (
-          <div className="mb-6 p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm animate-shake">
-            {error}
-            <button
-              onClick={() => setError("")}
-              className="ml-3 text-red-500 hover:text-red-400 cursor-pointer"
-            >
-              ✕
-            </button>
+          <div className="mb-6 p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm animate-shake flex items-center justify-between gap-3">
+            <span>{error}</span>
+            <div className="flex items-center gap-2 shrink-0">
+              {/* Task 2.6: 上传失败时显示「重试上传」按钮，复用 lastUploadKey */}
+              {uploadFailed && (
+                <button
+                  onClick={handleRetryUpload}
+                  disabled={uploading}
+                  className="px-2.5 py-1 rounded-md text-xs font-medium
+                    bg-red-500/20 hover:bg-red-500/30 text-red-300
+                    disabled:opacity-50 disabled:cursor-not-allowed
+                    transition-colors cursor-pointer"
+                >
+                  重试上传
+                </button>
+              )}
+              <button
+                onClick={() => setError("")}
+                className="text-red-500 hover:text-red-400 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
           </div>
         )}
 
@@ -393,18 +586,24 @@ export default function ResumeListPage() {
               <Link
                 key={r.id}
                 to={r.status === "ready" ? `/resumes/${r.id}` : "#"}
-                className={`block group ${r.status !== "ready" ? "pointer-events-none" : ""}`}
+                onClick={(e) => {
+                  // P0.2: 失败/处理中状态点击卡片不再跳转，但保留按钮可点击
+                  // 不使用 pointer-events-none，否则会连带禁用删除等操作按钮
+                  if (r.status !== "ready") e.preventDefault();
+                }}
+                className="block group"
               >
                 <div
                   className={`flex items-center justify-between p-5 rounded-2xl
                     border transition-all duration-200
                     ${r.status === "ready"
-                      ? "bg-white/4 border-white/8 hover:border-indigo-500/30 hover:bg-white/6 hover:-translate-y-px cursor-pointer"
+                      ? "bg-white/4 border-[var(--color-border)] hover:border-indigo-500/30 hover:bg-white/6 hover:-translate-y-px cursor-pointer"
                       : r.status === "failed"
                       ? "bg-white/4 border-red-500/15"
-                      : "bg-white/4 border-white/8"
+                      : "bg-white/4 border-[var(--color-border)]"
                     }
                     ${r.id === newCardId ? "animate-slide-in-top" : ""}
+                    ${selectMode && selectedIds.has(r.id) ? "ring-1 ring-indigo-500/40 bg-indigo-500/5" : ""}
                   `}
                   style={
                     r.id !== newCardId
@@ -414,10 +613,20 @@ export default function ResumeListPage() {
                 >
                   {/* 左侧 */}
                   <div className="flex items-center gap-3.5 flex-1 min-w-0">
+                    {selectMode && (
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(r.id)}
+                        onChange={() => toggleSelect(r.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="shrink-0 rounded border-[var(--color-border)]"
+                        aria-label={`选择 ${r.filename}`}
+                      />
+                    )}
                     <FileIcon status={r.status} />
                     <div className="flex-1 min-w-0">
                       <p className={`text-sm font-medium truncate ${
-                        r.status === "ready" ? "text-slate-200 group-hover:text-white" : "text-slate-400"
+                        r.status === "ready" ? "text-[var(--color-text)] group-hover:text-[var(--color-text)]" : "text-[var(--color-text-secondary)]"
                       }`}>
                         {r.filename}
                       </p>
@@ -427,7 +636,7 @@ export default function ResumeListPage() {
                             <div className="h-1 w-24 rounded-full bg-white/6 overflow-hidden">
                               <div className="h-full w-3/5 rounded-full bg-linear-to-r from-amber-500 to-amber-400 animate-progress-pulse" />
                             </div>
-                            <span className="text-xs text-slate-500">解析中...</span>
+                            <span className="text-xs text-[var(--color-text-muted)]">解析中...</span>
                           </div>
                         ) : r.status === "failed" ? (
                           <span className="text-xs text-red-400/80">
@@ -435,11 +644,11 @@ export default function ResumeListPage() {
                           </span>
                         ) : (
                           <>
-                            <span className="text-xs text-slate-500">
+                            <span className="text-xs text-[var(--color-text-muted)]">
                               {r.chunk_count} 个分块
                             </span>
-                            <span className="text-xs text-slate-600">·</span>
-                            <span className="text-xs text-slate-500">
+                            <span className="text-xs text-[var(--color-text-muted)]">·</span>
+                            <span className="text-xs text-[var(--color-text-muted)]">
                               {new Date(r.created_at).toLocaleDateString("zh-CN")}
                             </span>
                           </>
@@ -451,16 +660,37 @@ export default function ResumeListPage() {
                   {/* 右侧 */}
                   <div className="flex items-center gap-3 ml-4 shrink-0">
                     <StatusBadge status={r.status} />
+                    {r.status === "failed" && (
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleRetry(r);
+                        }}
+                        disabled={retryingIds.has(r.id)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs
+                          text-[var(--color-text-secondary)] hover:text-amber-300
+                          hover:bg-amber-500/10 rounded-lg
+                          active:scale-[0.98] motion-reduce:active:scale-100
+                          disabled:opacity-50 disabled:cursor-not-allowed
+                          transition-all cursor-pointer"
+                        aria-label="重试"
+                      >
+                        <ArrowClockwise size={13} weight="bold" aria-hidden="true" />
+                        重试
+                      </button>
+                    )}
                     {r.status === "ready" && (
                       <>
+                        {/* 大屏按钮组（≥640px） */}
                         <button
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
                             setViewerTarget(r);
                           }}
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs
-                            text-slate-400 hover:text-emerald-300
+                          className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1.5 text-xs
+                            text-[var(--color-text-secondary)] hover:text-emerald-300
                             hover:bg-emerald-500/10 rounded-lg
                             active:scale-[0.98] motion-reduce:active:scale-100
                             transition-all cursor-pointer"
@@ -474,8 +704,8 @@ export default function ResumeListPage() {
                             e.stopPropagation();
                             setChunksTarget(r);
                           }}
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs
-                            text-slate-400 hover:text-sky-300
+                          className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1.5 text-xs
+                            text-[var(--color-text-secondary)] hover:text-sky-300
                             hover:bg-sky-500/10 rounded-lg
                             active:scale-[0.98] motion-reduce:active:scale-100
                             transition-all cursor-pointer"
@@ -489,8 +719,8 @@ export default function ResumeListPage() {
                             e.stopPropagation();
                             setAnalyzeTarget(r);
                           }}
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs
-                            text-slate-400 hover:text-indigo-300
+                          className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1.5 text-xs
+                            text-[var(--color-text-secondary)] hover:text-indigo-300
                             hover:bg-indigo-500/10 rounded-lg
                             active:scale-[0.98] motion-reduce:active:scale-100
                             transition-all cursor-pointer"
@@ -504,8 +734,8 @@ export default function ResumeListPage() {
                             e.stopPropagation();
                             setJdMatchTarget(r);
                           }}
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs
-                            text-slate-400 hover:text-purple-300
+                          className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1.5 text-xs
+                            text-[var(--color-text-secondary)] hover:text-purple-300
                             hover:bg-purple-500/10 rounded-lg
                             active:scale-[0.98] motion-reduce:active:scale-100
                             transition-all cursor-pointer"
@@ -513,19 +743,83 @@ export default function ResumeListPage() {
                           <Target size={13} weight="bold" aria-hidden="true" />
                           JD匹配
                         </button>
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setDeleteTarget(r);
+                          }}
+                          className="hidden sm:inline-flex px-2.5 py-1.5 text-xs text-[var(--color-text-muted)] hover:text-red-400
+                            hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer"
+                        >
+                          删除
+                        </button>
+
+                        {/* 小屏 MoreMenu（<640px）：折叠预览/分块/分析/JD匹配/删除 */}
+                        <div className="sm:hidden">
+                          <MoreMenu
+                            label="更多操作"
+                            items={[
+                              {
+                                key: "preview",
+                                label: "预览",
+                                onClick: () => setViewerTarget(r),
+                              },
+                              {
+                                key: "chunks",
+                                label: "分块",
+                                onClick: () => setChunksTarget(r),
+                              },
+                              {
+                                key: "analyze",
+                                label: "分析",
+                                onClick: () => setAnalyzeTarget(r),
+                              },
+                              {
+                                key: "jd-match",
+                                label: "JD匹配",
+                                onClick: () => setJdMatchTarget(r),
+                              },
+                              {
+                                key: "delete",
+                                label: "删除",
+                                danger: true,
+                                onClick: () => setDeleteTarget(r),
+                              },
+                            ]}
+                          />
+                        </div>
                       </>
                     )}
-                    <button
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setDeleteTarget(r);
-                      }}
-                      className="px-2.5 py-1.5 text-xs text-slate-500 hover:text-red-400
-                        hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer"
-                    >
-                      删除
-                    </button>
+                    {/* processing / failed 状态：仅提供删除（failed 已有重试按钮） */}
+                    {r.status !== "ready" && (
+                      <>
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setDeleteTarget(r);
+                          }}
+                          className="hidden sm:inline-flex px-2.5 py-1.5 text-xs text-[var(--color-text-muted)] hover:text-red-400
+                            hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer"
+                        >
+                          删除
+                        </button>
+                        <div className="sm:hidden">
+                          <MoreMenu
+                            label="更多操作"
+                            items={[
+                              {
+                                key: "delete",
+                                label: "删除",
+                                danger: true,
+                                onClick: () => setDeleteTarget(r),
+                              },
+                            ]}
+                          />
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
               </Link>
@@ -534,14 +828,28 @@ export default function ResumeListPage() {
         )}
       </div>
 
-      {/* ── 删除确认弹窗 ── */}
-      {deleteTarget && (
-        <ConfirmDialog
-          filename={deleteTarget.filename}
-          onConfirm={handleDelete}
-          onCancel={() => setDeleteTarget(null)}
-        />
-      )}
+      {/* ── 删除确认弹窗（共享 ConfirmDialog + focus trap） ── */}
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="确认删除"
+        description={`确定删除「${deleteTarget?.filename ?? ""}」吗？此操作不可撤销。`}
+        confirmText="删除"
+        danger
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
+
+      {/* ── 批量删除确认弹窗 ── */}
+      <ConfirmDialog
+        open={batchDeleteOpen}
+        title="批量删除"
+        description={`确定删除选中的 ${selectedIds.size} 份简历吗？此操作不可撤销。`}
+        confirmText="删除"
+        danger
+        loading={batchDeleting}
+        onConfirm={handleBatchDelete}
+        onCancel={() => setBatchDeleteOpen(false)}
+      />
 
       {/* ── 简历分析弹窗 ── */}
       <AnalysisModal

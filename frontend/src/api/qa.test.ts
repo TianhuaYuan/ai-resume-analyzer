@@ -150,6 +150,71 @@ describe("askQuestionStream", () => {
     expect(tokens).toHaveLength(1); // 去重后只收到一次
     expect(events.map((e) => e.type)).toEqual(["token", "done"]);
   });
+
+  // ── Task 2.3: mode 参数 ──
+
+  it("Task 2.3: 不传 mode 时默认走 stream 模式（URL 不带 query）", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(makeSSE([ev({ type: "done", sources: [] })]), { status: 200 })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await new Promise<void>((resolve) => {
+      askQuestionStream(1, "q", () => {}, () => {}, () => resolve());
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const callUrl = fetchMock.mock.calls[0][0] as string;
+    expect(callUrl).toBe("/api/v1/qa/ask/stream");
+  });
+
+  it("Task 2.3: 传 mode='agentic' 时 URL 附加 ?mode=agentic", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(makeSSE([ev({ type: "done", sources: [] })]), { status: 200 })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await new Promise<void>((resolve) => {
+      askQuestionStream(1, "q", () => {}, () => {}, () => resolve(), { mode: "agentic" });
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const callUrl = fetchMock.mock.calls[0][0] as string;
+    expect(callUrl).toBe("/api/v1/qa/ask/stream?mode=agentic");
+  });
+
+  it("Task 2.3: 传 mode='stream' 时 URL 仍附加 ?mode=stream（显式传递）", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(makeSSE([ev({ type: "done", sources: [] })]), { status: 200 })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await new Promise<void>((resolve) => {
+      askQuestionStream(1, "q", () => {}, () => {}, () => resolve(), { mode: "stream" });
+    });
+
+    const callUrl = fetchMock.mock.calls[0][0] as string;
+    expect(callUrl).toBe("/api/v1/qa/ask/stream?mode=stream");
+  });
+
+  it("Task 2.3: 401 刷新重试时保留原 mode 参数", async () => {
+    const fetchMock = vi.fn(async () => {
+      if (fetchMock.mock.calls.length === 1) return new Response("", { status: 401 });
+      return new Response(makeSSE([ev({ type: "done", sources: [] })]), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.mocked(refreshToken).mockResolvedValue(true);
+
+    await new Promise<void>((resolve) => {
+      askQuestionStream(1, "q", () => {}, () => {}, () => resolve(), { mode: "agentic" });
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const url1 = fetchMock.mock.calls[0][0] as string;
+    const url2 = fetchMock.mock.calls[1][0] as string;
+    expect(url1).toBe("/api/v1/qa/ask/stream?mode=agentic");
+    expect(url2).toBe("/api/v1/qa/ask/stream?mode=agentic");
+  });
 });
 
 describe("getHistory (Task 4 keyword 搜索)", () => {

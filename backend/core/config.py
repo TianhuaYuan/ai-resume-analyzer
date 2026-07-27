@@ -89,6 +89,18 @@ class Settings(BaseSettings):
     # P1-23: 管理员邮箱列表（逗号分隔），拥有管理员重置密码等权限
     ADMIN_EMAILS: str = ""
 
+    # ── Task 1.2: 邮件发送配置 ──
+    # EMAIL_PROVIDER: log（开发默认，写日志）/ smtp（生产，真实发邮件）
+    EMAIL_PROVIDER: str = "log"
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 465
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_USE_TLS: bool = False  # False=SMTP_SSL(465)，True=SMTP+starttls(587)
+    SMTP_FROM: str = ""  # 发件人地址，如 noreply@example.com
+    # 前端基础 URL，用于拼接密码重置链接（如 http://localhost:5173）
+    FRONTEND_BASE_URL: str = "http://localhost:5173"
+
     # ── RAG 共享常量 ──
     DEFAULT_HYBRID_TOP_K: int = 20
     DEFAULT_RERANK_TOP_K: int = 5

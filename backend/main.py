@@ -67,12 +67,16 @@ async def lifespan(app: FastAPI):
         logger.warning("Stuck resume recovery skipped", exc_info=True)
 
     # 初始化 MCP Server（注册 Tool 和 Resource）
+    # Task 1.4: 记录 MCP 健康状态到 app.state，供 /health 探针读取
+    app.state.mcp_healthy = False  # 默认不健康，初始化成功后置 True
     try:
         from mcp_server.transport.http import init_mcp_server
 
         init_mcp_server()
+        app.state.mcp_healthy = True
         logger.info("MCP Server initialized")
     except Exception as e:
+        app.state.mcp_healthy = False
         logger.warning("MCP Server init skipped: %s", e)
 
     yield
@@ -97,7 +101,23 @@ async def lifespan(app: FastAPI):
         pass
 
 
-app = FastAPI(title="AI简历分析系统", version="0.2.0", lifespan=lifespan)
+def _docs_enabled() -> bool:
+    """Task 1.4: 生产环境关闭 Swagger/OpenAPI 文档暴露。
+
+    生产环境暴露 /docs /redoc /openapi.json 会泄露 API 结构，方便攻击者
+    构造针对性请求。仅 production 关闭，staging 保留方便联调。
+    """
+    return settings.ENVIRONMENT != "production"
+
+
+app = FastAPI(
+    title="AI简历分析系统",
+    version="0.2.0",
+    lifespan=lifespan,
+    docs_url="/docs" if _docs_enabled() else None,
+    redoc_url="/redoc" if _docs_enabled() else None,
+    openapi_url="/openapi.json" if _docs_enabled() else None,
+)
 app.state.limiter = limiter
 
 app.add_middleware(RequestIDMiddleware)
@@ -284,7 +304,7 @@ async def metrics(request: Request):
 
 
 @app.get("/", tags=["health"])
-async def health(verbose: bool = Query(False, description="返回详细检查信息")):
+async def health(request: Request, verbose: bool = Query(False, description="返回详细检查信息")):
     checks: dict = {}
     all_ok = True
 
@@ -306,6 +326,11 @@ async def health(verbose: bool = Query(False, description="返回详细检查信
     except Exception:
         checks["chromadb"] = "disconnected"
         all_ok = False
+
+    # Task 1.4: MCP 健康探针（读取 lifespan 写入的 app.state.mcp_healthy）
+    # MCP 不可用不标记整体 degraded：MCP 是辅助能力，挂了不影响核心 RAG/QA 流程
+    mcp_healthy = getattr(request.app.state, "mcp_healthy", False)
+    checks["mcp"] = "healthy" if mcp_healthy else "unhealthy"
 
     # LLM 服务可达性（verbose 模式 — 轻量 ping，不调用生成）
     if verbose:

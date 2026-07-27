@@ -30,15 +30,27 @@ interface ToastContextValue {
 
 const ToastContext = createContext<ToastContextValue | null>(null);
 
-// ── Auto-dismiss timing ──
-
-const AUTO_DISMISS_MS: Record<ToastType, number> = {
+// ── Auto-dismiss timing（null 表示不自动消失，需手动关闭）──
+// error 不自动消失：避免用户没看清错误就消失，必须手动关闭
+const AUTO_DISMISS_MS: Record<ToastType, number | null> = {
   success: 3000,
-  error: 5000,
+  error: null,
   info: 4000,
 };
 
 const MAX_TOASTS = 3;
+
+// ── ARIA 属性（按类型区分，符合 WAI-ARIA Toast 模式）──
+// success/info: role=status（隐含 polite）+ 显式 aria-live=polite
+// error: role=alert（隐含 assertive）+ 显式 aria-live=assertive
+const ARIA_ATTRS: Record<
+  ToastType,
+  { role: "status" | "alert"; ariaLive: "polite" | "assertive" }
+> = {
+  success: { role: "status", ariaLive: "polite" },
+  error: { role: "alert", ariaLive: "assertive" },
+  info: { role: "status", ariaLive: "polite" },
+};
 
 // ── Provider ──
 
@@ -87,17 +99,23 @@ const BG_CLASS: Record<ToastType, string> = {
 };
 
 function ToastEntry({ item, onDismiss }: { item: ToastItem; onDismiss: (id: number) => void }) {
+  const { role, ariaLive } = ARIA_ATTRS[item.type];
+  const duration = AUTO_DISMISS_MS[item.type];
+
   useEffect(() => {
-    const timer = setTimeout(() => onDismiss(item.id), AUTO_DISMISS_MS[item.type]);
+    // duration=null（error）时不注册自动消失 timer
+    if (duration === null) return;
+    const timer = setTimeout(() => onDismiss(item.id), duration);
     return () => clearTimeout(timer);
-  }, [item, onDismiss]);
+  }, [item, onDismiss, duration]);
 
   return (
     <div
-      role="alert"
+      role={role}
+      aria-live={ariaLive}
       className={`${BG_CLASS[item.type]} text-white px-4 py-3 rounded-lg shadow-lg
         flex items-center justify-between gap-3 min-w-[280px] max-w-[400px]
-        animate-fade-in-up motion-reduce:animate-none`}
+        animate-fade-in-up motion-reduce:animate-none relative overflow-hidden`}
     >
       <div className="flex-1">
         {item.title && <div className="font-semibold text-sm mb-0.5">{item.title}</div>}
@@ -110,6 +128,14 @@ function ToastEntry({ item, onDismiss }: { item: ToastItem; onDismiss: (id: numb
       >
         <X size={16} weight="bold" aria-hidden="true" />
       </button>
+      {duration !== null && (
+        <div
+          data-testid="toast-progress"
+          aria-hidden="true"
+          className="absolute bottom-0 left-0 h-0.5 bg-white/30 animate-toast-progress"
+          style={{ animationDuration: `${duration}ms` }}
+        />
+      )}
     </div>
   );
 }
@@ -120,8 +146,9 @@ export function ToastContainer() {
 
   const { toasts, remove } = ctx;
 
+  // 响应式定位：移动端底部居中（避免遮挡顶部内容），桌面端 top-right（不遮挡操作区）
   return (
-    <div className="fixed top-4 right-4 z-[100] flex flex-col gap-2">
+    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 md:bottom-auto md:top-4 md:right-4 md:left-auto md:translate-x-0 z-[100] flex flex-col gap-2">
       {toasts.map((t) => (
         <ToastEntry key={t.id} item={t} onDismiss={remove} />
       ))}

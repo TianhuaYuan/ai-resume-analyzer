@@ -134,13 +134,20 @@ async function request(
 export const api = {
   get: (path: string) => request(path),
 
-  post: (path: string, body?: unknown, isFormData = false) =>
+  // Task 2.6: 扩展 headers 参数，支持 Idempotency-Key 等自定义头
+  // isFormData=true 时不设 Content-Type（浏览器自动 multipart），但仍可传自定义 headers
+  post: (
+    path: string,
+    body?: unknown,
+    isFormData = false,
+    headers?: Record<string, string>
+  ) =>
     request(path, {
       method: "POST",
       body: isFormData ? (body as FormData) : JSON.stringify(body),
       headers: isFormData
-        ? undefined
-        : { "Content-Type": "application/json" },
+        ? headers
+        : { "Content-Type": "application/json", ...headers },
     }),
 
   delete: (path: string) => request(path, { method: "DELETE" }),

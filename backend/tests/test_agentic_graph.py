@@ -82,17 +82,23 @@ class TestRouteAfterEvaluate:
         assert _route_after_evaluate(state) == "output"
 
     def test_retry_within_limit_goes_to_self_reflection(self):
-        """should_retry=True 且 round <= 2 → 进入 self_reflection（Reflexion核心）。"""
+        """should_retry=True 且 round=1 → 进入 self_reflection（第1轮反思）。"""
         state = _make_state(should_retry=True, search_round=1)
         assert _route_after_evaluate(state) == "self_reflection"
 
-    def test_retry_at_limit_2_goes_to_output(self):
-        """round=2 时已达最大重试次数，应输出（_EVAL_MAX_RETRIES=2，search_round < 2 才允许重试）。"""
+    def test_retry_at_limit_2_goes_to_self_reflection(self):
+        """P0.3 修复：round=2 时仍允许进入第2轮 Reflexion 反思。
+
+        修复前：< 比较 → 2 < 2 = False → 直接 output，实际只跑1轮反思。
+        修复后：<= 比较 → 2 <= 2 = True → 进入第2轮反思，确保真正的 ≤2 轮 Reflexion。
+        第3轮搜索后 search_round=3，evaluate_node 中 `search_round > _EVAL_MAX_RETRIES`
+        会强制 should_retry=False，从而在 _route_after_evaluate 走 output。
+        """
         state = _make_state(should_retry=True, search_round=2)
-        assert _route_after_evaluate(state) == "output"
+        assert _route_after_evaluate(state) == "self_reflection"
 
     def test_retry_exceeds_limit_goes_to_output(self):
-        """round>2 时即使 should_retry=True 也输出（安全兜底）。"""
+        """round=3 时即使 should_retry=True 也输出（由 evaluate_node 强制 should_retry=False 兜底）。"""
         state = _make_state(should_retry=True, search_round=3)
         assert _route_after_evaluate(state) == "output"
 
@@ -470,12 +476,12 @@ class TestEdgeCases:
     """边界条件测试。"""
 
     def test_route_after_evaluate_retry_at_boundary(self):
-        """round=2, should_retry=True → 输出（_EVAL_MAX_RETRIES=2，已达上限）。"""
+        """P0.3 修复：round=2, should_retry=True → 进入第2轮 Reflexion（而非直接 output）。"""
         state = _make_state(should_retry=True, search_round=2)
-        assert _route_after_evaluate(state) == "output"
+        assert _route_after_evaluate(state) == "self_reflection"
 
     def test_route_after_evaluate_retry_over_boundary(self):
-        """round=3, should_retry=True → 输出（安全兜底）。"""
+        """round=3, should_retry=True → 输出（由 evaluate_node 强制 should_retry=False 兜底）。"""
         state = _make_state(should_retry=True, search_round=3)
         assert _route_after_evaluate(state) == "output"
 

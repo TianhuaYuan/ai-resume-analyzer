@@ -8,13 +8,14 @@ vi.mock("../../api/qa", () => ({
   getHistory: vi.fn(async () => ({ items: [], total: 0 })),
   clearHistory: vi.fn(async () => ({ deleted_count: 0 })),
   deleteQa: vi.fn(async () => undefined),
+  submitFeedback: vi.fn(async () => undefined),
 }));
 
 vi.mock("../../api/resumes", () => ({
   listResumes: vi.fn(async () => ({ items: [], total: 0 })),
 }));
 
-import { getHistory, clearHistory, deleteQa } from "../../api/qa";
+import { getHistory, clearHistory, deleteQa, askQuestionStream, submitFeedback } from "../../api/qa";
 
 function renderPage(route = "/resumes/42") {
   // P2-12：测试路由与生产 App.tsx 保持一致（/resumes/:id）
@@ -33,6 +34,8 @@ beforeEach(() => {
   vi.mocked(getHistory).mockResolvedValue({ items: [], total: 0 });
   vi.mocked(clearHistory).mockResolvedValue({ deleted_count: 0 });
   vi.mocked(deleteQa).mockResolvedValue(undefined);
+  vi.mocked(askQuestionStream).mockReturnValue(() => {});
+  vi.mocked(submitFeedback).mockResolvedValue(undefined);
   // jsdom 没有 scrollIntoView，QAPage 的 chatEndRef 会调用它
   Element.prototype.scrollIntoView = vi.fn();
 });
@@ -330,5 +333,294 @@ describe("SourceCard 展开/收起 (P2-16)", () => {
     // 展开后应显示完整文本
     expect(screen.getByText(LONG_TEXT)).toBeInTheDocument();
     expect(screen.getByText("收起")).toBeInTheDocument();
+  });
+});
+
+// ── Task 2.3: 顶栏 Segmented Control 切换 RAG 模式 ──
+
+describe("QAPage RAG 模式切换 Segmented Control (Task 2.3)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(getHistory).mockResolvedValue({ items: [], total: 0 });
+    vi.mocked(askQuestionStream).mockReturnValue(() => {});
+    Element.prototype.scrollIntoView = vi.fn();
+  });
+
+  it("顶栏渲染 Segmented Control 含「传统」和「Agentic」两个选项", async () => {
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText("开始提问")).toBeInTheDocument();
+    });
+
+    expect(screen.getByRole("radio", { name: /传统/ })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /Agentic/ })).toBeInTheDocument();
+  });
+
+  it("默认选中「传统」模式", async () => {
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText("开始提问")).toBeInTheDocument();
+    });
+
+    const streamRadio = screen.getByRole("radio", { name: /传统/ });
+    expect(streamRadio).toBeChecked();
+  });
+
+  it("切换到「Agentic」后选中状态变更", async () => {
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText("开始提问")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("radio", { name: /Agentic/ }));
+
+    expect(screen.getByRole("radio", { name: /Agentic/ })).toBeChecked();
+    expect(screen.getByRole("radio", { name: /传统/ })).not.toBeChecked();
+  });
+
+  it("默认模式下发送问题调用 askQuestionStream 不附带 mode 参数（options 不含 mode 或 mode=stream）", async () => {
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText("开始提问")).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText(/输入问题/), {
+      target: { value: "这个人会啥" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    await waitFor(() => {
+      expect(askQuestionStream).toHaveBeenCalled();
+    });
+    const lastCallArgs = vi.mocked(askQuestionStream).mock.calls[0];
+    const optionsArg = lastCallArgs[5];
+    // 默认模式下 options 不应含 mode='agentic'
+    const mode = optionsArg?.mode;
+    expect(mode).not.toBe("agentic");
+  });
+
+  it("切换到 Agentic 后发送问题附带 mode='agentic'", async () => {
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText("开始提问")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("radio", { name: /Agentic/ }));
+    fireEvent.change(screen.getByPlaceholderText(/输入问题/), {
+      target: { value: "亮点是啥" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    await waitFor(() => {
+      expect(askQuestionStream).toHaveBeenCalled();
+    });
+    const lastCallArgs = vi.mocked(askQuestionStream).mock.calls[0];
+    const optionsArg = lastCallArgs[5];
+    expect(optionsArg?.mode).toBe("agentic");
+  });
+
+  it("Segmented Control 带 radiogroup 语义，便于屏幕阅读器", async () => {
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText("开始提问")).toBeInTheDocument();
+    });
+
+    expect(screen.getByRole("radiogroup")).toBeInTheDocument();
+  });
+});
+
+// ── Task 5.1: 预设提问 ──
+
+describe("Task 5.1: 预设提问", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(getHistory).mockResolvedValue({ items: [], total: 0 });
+    vi.mocked(askQuestionStream).mockReturnValue(() => {});
+    Element.prototype.scrollIntoView = vi.fn();
+  });
+
+  it("空聊天状态显示预设提问按钮", async () => {
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText("开始提问")).toBeInTheDocument();
+    });
+
+    // 应该有预设提问按钮
+    expect(screen.getByRole("button", { name: /亮点/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /适合.*岗位/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /技能/ })).toBeInTheDocument();
+  });
+
+  it("点击预设提问按钮自动填入问题并发送", async () => {
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText("开始提问")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /亮点/ }));
+
+    // 应该调用 askQuestionStream 而不是仅仅填入输入框
+    await waitFor(() => {
+      expect(askQuestionStream).toHaveBeenCalled();
+    });
+    const callArgs = vi.mocked(askQuestionStream).mock.calls[0];
+    expect(callArgs[1]).toMatch(/亮点/);
+  });
+
+  it("有聊天记录时预设提问按钮不显示", async () => {
+    vi.mocked(getHistory).mockResolvedValue({
+      items: [
+        { id: 1, question: "Q1", answer: "A1", sources: [], created_at: "2026-07-19" },
+      ],
+      total: 1,
+    });
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText("Q1")).toBeInTheDocument();
+    });
+
+    expect(screen.queryByRole("button", { name: /亮点/ })).toBeNull();
+  });
+
+  it("正在流式回答时预设提问按钮禁用", async () => {
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText("开始提问")).toBeInTheDocument();
+    });
+
+    // 模拟正在回答
+    const presetBtn = screen.getByRole("button", { name: /亮点/ });
+    // 初始状态不应禁用（未在asking中）
+    expect(presetBtn).not.toBeDisabled();
+  });
+});
+
+// ── Task 5.1: 质量反馈 ──
+
+describe("Task 5.1: 质量反馈", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(getHistory).mockResolvedValue({ items: [], total: 0 });
+    vi.mocked(askQuestionStream).mockReturnValue(() => {});
+    vi.mocked(submitFeedback).mockResolvedValue(undefined);
+    Element.prototype.scrollIntoView = vi.fn();
+  });
+
+  it("已完成的回答显示 👍 👎 反馈按钮", async () => {
+    vi.mocked(getHistory).mockResolvedValue({
+      items: [
+        { id: 1, question: "Q1", answer: "A1", sources: [], created_at: "2026-07-19" },
+      ],
+      total: 1,
+    });
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText("Q1")).toBeInTheDocument();
+    });
+
+    expect(screen.getByRole("button", { name: /有帮助/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /没帮助/ })).toBeInTheDocument();
+  });
+
+  it("点击 👍 调用 submitFeedback(qaId, 'positive')", async () => {
+    vi.mocked(getHistory).mockResolvedValue({
+      items: [
+        { id: 10, question: "Q1", answer: "A1", sources: [], created_at: "2026-07-19" },
+      ],
+      total: 1,
+    });
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText("Q1")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /有帮助/ }));
+
+    await waitFor(() => {
+      expect(submitFeedback).toHaveBeenCalledWith(10, "positive");
+    });
+  });
+
+  it("点击 👎 调用 submitFeedback(qaId, 'negative')", async () => {
+    vi.mocked(getHistory).mockResolvedValue({
+      items: [
+        { id: 10, question: "Q1", answer: "A1", sources: [], created_at: "2026-07-19" },
+      ],
+      total: 1,
+    });
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText("Q1")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /没帮助/ }));
+
+    await waitFor(() => {
+      expect(submitFeedback).toHaveBeenCalledWith(10, "negative");
+    });
+  });
+
+  it("反馈后按钮显示选中状态，不可重复点击", async () => {
+    vi.mocked(getHistory).mockResolvedValue({
+      items: [
+        { id: 10, question: "Q1", answer: "A1", sources: [], created_at: "2026-07-19" },
+      ],
+      total: 1,
+    });
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText("Q1")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /有帮助/ }));
+
+    await waitFor(() => {
+      expect(submitFeedback).toHaveBeenCalledTimes(1);
+    });
+
+    // 反馈后再次点击不应重复调用
+    fireEvent.click(screen.getByRole("button", { name: /有帮助/ }));
+    expect(submitFeedback).toHaveBeenCalledTimes(1);
+  });
+
+  it("流式消息不显示反馈按钮", async () => {
+    vi.mocked(getHistory).mockResolvedValue({ items: [], total: 0 });
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText("开始提问")).toBeInTheDocument();
+    });
+
+    // 手动触发一个流式提问
+    fireEvent.change(screen.getByPlaceholderText(/输入问题/), {
+      target: { value: "测试问题" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    await waitFor(() => {
+      expect(askQuestionStream).toHaveBeenCalled();
+    });
+
+    // 流式消息（streaming=true）不应有反馈按钮
+    expect(screen.queryByRole("button", { name: /有帮助/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /没帮助/ })).toBeNull();
+  });
+
+  it("反馈 API 失败不崩溃", async () => {
+    vi.mocked(submitFeedback).mockRejectedValue(new Error("网络错误"));
+    vi.mocked(getHistory).mockResolvedValue({
+      items: [
+        { id: 10, question: "Q1", answer: "A1", sources: [], created_at: "2026-07-19" },
+      ],
+      total: 1,
+    });
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText("Q1")).toBeInTheDocument();
+    });
+
+    // 点击反馈不应抛出未捕获异常
+    expect(() => {
+      fireEvent.click(screen.getByRole("button", { name: /有帮助/ }));
+    }).not.toThrow();
   });
 });

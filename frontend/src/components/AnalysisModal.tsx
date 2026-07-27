@@ -7,6 +7,7 @@ import {
   type ScoreDetail,
 } from "../api/resumes";
 import { useToast } from "./Toast";
+import MarkdownRenderer from "./MarkdownRenderer";
 
 interface AnalysisModalProps {
   resumeId: number;
@@ -254,11 +255,20 @@ export default function AnalysisModal({
                   <ScoreBar label="综合评价" value={scores.overall} />
                 </div>
               )}
-              <div
-                className="text-sm text-[var(--color-text-secondary)] leading-relaxed whitespace-pre-wrap"
-                aria-live="polite"
-              >
-                {result}
+              {/* Task 2.5: 评分 Tab 后端未返回 scores 时显示 fallback 提示卡片 */}
+              {activeTab === "score" && !scores && (
+                <div
+                  className="mb-4 p-3 rounded-xl bg-yellow-500/10 border border-yellow-500/20 text-yellow-300"
+                  role="alert"
+                >
+                  <p className="text-sm">
+                    系统暂时无法提取量化分数，请查看下方文字分析。
+                  </p>
+                </div>
+              )}
+              {/* Task 2.4: 替换纯文本 div 为 Markdown 渲染（GFM + sanitize + 单换行） */}
+              <div aria-live="polite">
+                <MarkdownRenderer>{result}</MarkdownRenderer>
               </div>
               {/* 导出按钮 */}
               <div className="mt-4 pt-4 border-t border-[var(--color-border)] flex justify-end">

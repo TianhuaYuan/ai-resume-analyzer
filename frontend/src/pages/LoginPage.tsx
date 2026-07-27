@@ -1,5 +1,5 @@
 import { useState, useEffect, type FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 function Spinner() {
@@ -27,26 +27,8 @@ function Spinner() {
   );
 }
 
-function FeaturePill({
-  label,
-  color,
-}: {
-  label: string;
-  color: "indigo" | "violet" | "sky";
-}) {
-  const colorMap = {
-    indigo: "bg-indigo-500/15 border-indigo-500/20 text-indigo-300",
-    violet: "bg-violet-500/15 border-violet-500/20 text-violet-300",
-    sky: "bg-sky-500/15 border-sky-500/20 text-sky-300",
-  };
-  return (
-    <span
-      className={`inline-block px-3 py-1 rounded-full border text-xs font-medium ${colorMap[color]}`}
-    >
-      {label}
-    </span>
-  );
-}
+// 特性文字：中点分隔，无图标无容器
+const FEATURES = ["智能问答", "精准匹配", "实时分析"];
 
 function FormInput({
   id,
@@ -205,45 +187,30 @@ export default function LoginPage() {
       {/* ═══ 左面板：品牌展示 ═══ */}
       <div
         className="relative flex-1 flex flex-col justify-center items-center
-          px-8 py-12 md:py-0 overflow-hidden
-          bg-linear-to-br from-[#0f0a2e] via-[#1a0a2e] to-[#2d1b69]"
+          px-8 py-12 md:py-0 overflow-hidden bg-zinc-900"
       >
-        {/* 光斑装饰 */}
-        <div
-          className="absolute -top-12 -left-12 w-64 h-64 rounded-full
-            bg-purple-500/20 blur-[60px] animate-float"
-        />
-        <div
-          className="absolute -bottom-8 -right-8 w-56 h-56 rounded-full
-            bg-indigo-400/15 blur-[60px] animate-float-reverse"
-        />
-
         {/* 品牌内容 */}
         <div
-          className={`relative z-10 text-center transition-all duration-500
+          className={`text-center transition-all duration-500
             ${mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}`}
         >
-          {/* Logo */}
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-6
-            bg-linear-to-br from-indigo-500 to-purple-600 shadow-lg shadow-indigo-500/25">
-            <span className="text-white text-2xl font-bold tracking-tight">R</span>
+          {/* Logo：纯色白块 */}
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-xl mb-6 bg-white/10">
+            <span className="text-white/90 text-xl font-bold tracking-tight">R</span>
           </div>
 
-          {/* 标题 */}
-          <h1 className="text-3xl md:text-4xl font-bold mb-3
-            bg-linear-to-r from-indigo-200 to-purple-300 bg-clip-text text-transparent">
+          {/* 标题：纯白文字 */}
+          <h1 className="text-3xl font-bold mb-2 text-white/95">
             AI Resume Analyzer
           </h1>
-          <p className="text-[var(--color-text-secondary)] text-sm mb-8">
+          <p className="text-white/50 text-sm mb-10">
             智能简历分析系统
           </p>
 
-          {/* 特性标签 */}
-          <div className="flex flex-wrap justify-center gap-2.5">
-            <FeaturePill label="RAG 问答" color="indigo" />
-            <FeaturePill label="混合检索" color="violet" />
-            <FeaturePill label="SSE 流式" color="sky" />
-          </div>
+          {/* 特性文字：中点分隔 */}
+          <p className="text-white/35 text-xs tracking-wide">
+            {FEATURES.join("  ·  ")}
+          </p>
         </div>
       </div>
 
@@ -318,6 +285,15 @@ export default function LoginPage() {
                     placeholder="至少8位，需包含字母和数字"
                     error={fieldErrors.password}
                   />
+                  {/* Task 1.2: 忘记密码入口，仅登录 tab 显示 */}
+                  <div className="flex justify-end -mt-2">
+                    <Link
+                      to="/forgot-password"
+                      className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+                    >
+                      忘记密码？
+                    </Link>
+                  </div>
                   <button
                     type="submit"
                     disabled={loading}

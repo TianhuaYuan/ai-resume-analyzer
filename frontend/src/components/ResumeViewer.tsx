@@ -150,9 +150,42 @@ export default function ResumeViewer({
             </div>
           )}
 
+          {/* Task 2.7: 空 parsed_text 按 status 区分文案，避免误导 */}
           {status === "success" && resume && !resume.parsed_text && (
-            <div className="text-center py-12 text-[var(--color-text-muted)] text-sm">
-              简历内容为空，可能还在解析中
+            <div className="text-center py-12">
+              {resume.status === "processing" && (
+                <div className="space-y-3">
+                  <p className="text-[var(--color-text-muted)] text-sm">
+                    简历正在解析中，请稍后刷新
+                  </p>
+                  <button
+                    onClick={handleRetry}
+                    aria-label="刷新"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5
+                      text-xs font-medium rounded-lg
+                      bg-indigo-500/15 hover:bg-indigo-500/25
+                      border border-indigo-500/30 text-indigo-300
+                      active:scale-[0.98] motion-reduce:active:scale-100
+                      transition-all cursor-pointer"
+                  >
+                    <ArrowClockwise size={14} weight="bold" aria-hidden="true" />
+                    刷新
+                  </button>
+                </div>
+              )}
+              {resume.status === "failed" && (
+                <div className="space-y-2">
+                  <p className="text-red-400 text-sm font-medium">简历解析失败</p>
+                  <p className="text-[var(--color-text-muted)] text-xs">
+                    {resume.status_message || "未知错误"}
+                  </p>
+                </div>
+              )}
+              {resume.status === "ready" && (
+                <p className="text-[var(--color-text-muted)] text-sm">
+                  解析完成，但未提取到文本内容（可能是图片型 PDF）
+                </p>
+              )}
             </div>
           )}
 

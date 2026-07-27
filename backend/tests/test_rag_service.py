@@ -4,6 +4,8 @@ rag_service 单元测试 — 覆盖不依赖外部 API 的纯逻辑函数。
 运行: python -m pytest tests/test_rag_service.py -v
 """
 
+import pytest
+
 from services.rag.chunking import chunk_by_sections, tokenize
 from services.rag.pipeline import build_prompt
 from services.rag.retrieval import _merge_results, reject_if_low_score
@@ -255,6 +257,54 @@ class TestRejectIfLowScore:
         chunks = [{"text": "no score field"}]
         # 缺少 rerank_score → 未经过 rerank → 不拒答（保留结果）
         assert reject_if_low_score(chunks, threshold=0.5) is False
+
+
+# ── P0.5: rerank() 空 results 降级测试 ──────────────────
+
+
+class TestRerankEmptyResultsFallback:
+    """P0.5: Rerank API HTTP 200 + 空 results 时应走降级路径（与 API 失败一致）。
+
+    修复前：空 results → score_map={} → 所有 chunk rerank_score=0.0
+            → reject_if_low_score 判定 0.0 < 0.3 → 误拒答
+    修复后：空 results 视为异常，返回 rerank_score=0.5 的降级副本（同 API 失败路径）
+    """
+
+    @pytest.mark.asyncio
+    async def test_empty_results_falls_back_to_neutral_score(self, monkeypatch):
+        from services.rag import retrieval as retrieval_mod
+
+        # 构造 8 个 chunks（> top_k=5 才会真正进入 rerank API 路径）
+        chunks = [{"text": f"chunk_{i}"} for i in range(8)]
+
+        # mock with_retry 直接返回 {"output": {"results": []}}（HTTP 200 但 results 为空）
+        async def _fake_with_retry(*args, **kwargs):
+            return {"output": {"results": []}}
+
+        monkeypatch.setattr(retrieval_mod, "with_retry", _fake_with_retry)
+
+        result = await retrieval_mod.rerank("test question", chunks, top_k=5)
+
+        # 修复后：应返回降级路径的 0.5 分（而非 0.0）
+        assert len(result) == 5
+        for c in result:
+            assert c["rerank_score"] == 0.5, f"expected 0.5 fallback, got {c.get('rerank_score')}"
+
+    @pytest.mark.asyncio
+    async def test_empty_results_does_not_trigger_reject(self, monkeypatch):
+        """端到端验证：空 results → 降级 0.5 → reject_if_low_score(0.3) 不拒答。"""
+        from services.rag import retrieval as retrieval_mod
+
+        chunks = [{"text": f"chunk_{i}"} for i in range(8)]
+
+        async def _fake_with_retry(*args, **kwargs):
+            return {"output": {"results": []}}
+
+        monkeypatch.setattr(retrieval_mod, "with_retry", _fake_with_retry)
+
+        result = await retrieval_mod.rerank("q", chunks, top_k=5)
+        # 修复后不应触发拒答（0.5 >= 0.3）
+        assert retrieval_mod.reject_if_low_score(result, threshold=0.3) is False
 
 
 # ── _merge_results (RRF) ────────────────────────────────

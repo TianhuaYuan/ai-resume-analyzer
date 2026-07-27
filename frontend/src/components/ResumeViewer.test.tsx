@@ -141,7 +141,9 @@ describe("ResumeViewer", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it("parsed_text 为空时显示空状态提示", async () => {
+  // ── Task 2.7: 空 parsed_text 按 status 显示不同文案 ──
+
+  it("Task 2.7: processing 状态显示「正在解析中」+ 刷新按钮", async () => {
     vi.mocked(getResume).mockResolvedValueOnce({
       ...mockResume,
       parsed_text: "",
@@ -156,8 +158,81 @@ describe("ResumeViewer", () => {
       />
     );
     await waitFor(() => {
-      expect(screen.getByText("简历内容为空，可能还在解析中")).toBeInTheDocument();
+      expect(screen.getByText(/正在解析中/)).toBeInTheDocument();
     });
+    // processing 提供刷新按钮
+    const refreshBtn = screen.getByRole("button", { name: /刷新/ });
+    expect(refreshBtn).toBeInTheDocument();
+  });
+
+  it("Task 2.7: 点击刷新按钮重新调用 getResume", async () => {
+    vi.mocked(getResume).mockResolvedValueOnce({
+      ...mockResume,
+      parsed_text: "",
+      status: "processing",
+    });
+    render(
+      <ResumeViewer
+        resumeId={1}
+        resumeFilename="test.pdf"
+        open={true}
+        onClose={() => {}}
+      />
+    );
+    await waitFor(() => {
+      expect(screen.getByText(/正在解析中/)).toBeInTheDocument();
+    });
+
+    vi.mocked(getResume).mockResolvedValueOnce(mockResume);
+    fireEvent.click(screen.getByRole("button", { name: /刷新/ }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Python后端工程师/)).toBeInTheDocument();
+    });
+    expect(getResume).toHaveBeenCalledTimes(2);
+  });
+
+  it("Task 2.7: failed 状态显示失败原因（status_message）+ 不显示「可能还在解析」", async () => {
+    vi.mocked(getResume).mockResolvedValueOnce({
+      ...mockResume,
+      parsed_text: "",
+      status: "failed",
+      status_message: "文件格式不支持",
+    });
+    render(
+      <ResumeViewer
+        resumeId={1}
+        resumeFilename="test.pdf"
+        open={true}
+        onClose={() => {}}
+      />
+    );
+    await waitFor(() => {
+      expect(screen.getByText(/文件格式不支持/)).toBeInTheDocument();
+    });
+    // 不应显示误导性的「可能还在解析中」
+    expect(screen.queryByText(/可能还在解析/)).toBeNull();
+  });
+
+  it("Task 2.7: ready 但空 parsed_text 显示「未提取到文本内容」", async () => {
+    vi.mocked(getResume).mockResolvedValueOnce({
+      ...mockResume,
+      parsed_text: "",
+      status: "ready",
+    });
+    render(
+      <ResumeViewer
+        resumeId={1}
+        resumeFilename="test.pdf"
+        open={true}
+        onClose={() => {}}
+      />
+    );
+    await waitFor(() => {
+      expect(screen.getByText(/未提取到文本内容/)).toBeInTheDocument();
+    });
+    // 不应显示误导性的「可能还在解析中」
+    expect(screen.queryByText(/可能还在解析/)).toBeNull();
   });
 
   it("重试按钮重新加载数据", async () => {

@@ -89,14 +89,20 @@ async def output_node(state: AgenticRAGState) -> dict:
 # 共享路由函数
 # ─────────────────────────────────────────────────────────────
 def _route_after_evaluate(state: AgenticRAGState) -> str:
-    """评估后路由（标准/MCP 共用）：分数过低进入 Self-Reflection（Reflexion ≤2 轮），否则输出。"""
+    """评估后路由（标准/MCP 共用）：分数过低进入 Self-Reflection（Reflexion ≤2 轮），否则输出。
+
+    P0.3 修复：原 `search_round < _EVAL_MAX_RETRIES` 导致第2轮搜索后无法反思，
+    实际只跑1轮 Reflexion。改为 `<=` 后流程为：
+      - 第1轮 search→round=1，evaluate 评估，should_retry=True → 反思1
+      - 第2轮 search→round=2，evaluate 评估，should_retry=True → 反思2
+      - 第3轮 search→round=3，evaluate_node 中 `search_round > _EVAL_MAX_RETRIES`
+        强制 should_retry=False → output
+    真正实现「≤2 轮 Reflexion」语义。
+    """
     should_retry = state.get("should_retry", False)
     search_round = state.get("search_round", 0)
 
-    # search_round 在 search_node 中是先读后加 1，所以：
-    # 第1轮搜索后 search_round=1，第2轮搜索后 search_round=2
-    # _EVAL_MAX_RETRIES=2 表示最多允许 2 轮搜索，所以用 < 而非 <=
-    if should_retry and search_round < _EVAL_MAX_RETRIES:
+    if should_retry and search_round <= _EVAL_MAX_RETRIES:
         logger.info("_route_after_evaluate: reflexion (round=%d)", search_round)
         return SELF_REFLECTION_NODE
 

@@ -32,6 +32,18 @@ export function shouldSkipEvent(seen: Set<string>, event: SSEEvent): boolean {
   return false;
 }
 
+export type QAMode = "stream" | "agentic";
+
+export interface AskQuestionOptions {
+  /**
+   * Task 2.3：RAG 模式
+   * - "stream"（默认）：普通流式 RAG，逐 token 推送
+   * - "agentic"：完整 Agentic RAG 图（改写→检索→重排→生成→评估→反思），
+   *              完成后一次性推送完整答案
+   */
+  mode?: QAMode;
+}
+
 /**
  * SSE 流式问答。返回 abort 函数用于取消请求。
  * onEvent 在每个 SSE 事件时调用；onError 在出错时调用；
@@ -43,10 +55,21 @@ export function askQuestionStream(
   onEvent: (event: SSEEvent) => void,
   onError: (err: Error) => void,
   onDone?: () => void,
+  options?: AskQuestionOptions,
 ): () => void {
   const abort = new AbortController();
   const seenIds = new Set<string>();
   let aborted = false;
+
+  // Task 2.3：根据 mode 构造 URL。mode 缺省或为 "stream" 时不附加 query（保持向后兼容），
+  // 显式传 "stream" 也附加 ?mode=stream（便于调用方明确表达意图）。
+  // 后端约定：mode=agentic 走完整 Agentic RAG 图，否则走普通流式管线。
+  const url =
+    options?.mode === "agentic"
+      ? "/api/v1/qa/ask/stream?mode=agentic"
+      : options?.mode === "stream"
+      ? "/api/v1/qa/ask/stream?mode=stream"
+      : "/api/v1/qa/ask/stream";
 
   const buildHeaders = (): Record<string, string> => ({
     "Content-Type": "application/json",
@@ -59,7 +82,7 @@ export function askQuestionStream(
 
   (async () => {
     try {
-      let res = await fetch("/api/v1/qa/ask/stream", {
+      let res = await fetch(url, {
         method: "POST",
         headers: buildHeaders(),
         body,
@@ -74,7 +97,7 @@ export function askQuestionStream(
           notifySessionExpired();
           throw new Error("登录已过期");
         }
-        res = await fetch("/api/v1/qa/ask/stream", {
+        res = await fetch(url, {
           method: "POST",
           headers: buildHeaders(),
           body,
@@ -162,4 +185,12 @@ export async function clearHistory(resume_id: number): Promise<QADeleteResult> {
 /** 删单条问答记录。后端返回 204，前端不解析 body。 */
 export async function deleteQa(qa_id: number): Promise<void> {
   await api.delete(`/api/v1/qa/${qa_id}`);
+}
+
+/** Task 5.1: 提交质量反馈。rating = "positive" | "negative"。 */
+export async function submitFeedback(
+  qa_id: number,
+  rating: "positive" | "negative"
+): Promise<void> {
+  await api.post(`/api/v1/qa/${qa_id}/feedback`, { rating });
 }

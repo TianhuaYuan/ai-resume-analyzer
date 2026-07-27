@@ -270,6 +270,11 @@ async def rerank(question: str, chunks: list[dict], top_k: int = 5) -> list[dict
         if data is None:
             raise RuntimeError("Rerank API 全部重试失败")
         results = data.get("output", {}).get("results", [])
+        # P0.5: HTTP 200 但 results 为空视为异常，走与 API 失败一致的降级路径
+        # 否则 score_map={} → 所有 chunk rerank_score=0.0 → reject_if_low_score 误拒答
+        if not results:
+            logger.warning("Rerank API returned empty results, falling back to original order")
+            return [{**c, "rerank_score": 0.5} for c in chunks][:top_k]
     except Exception as e:
         logger.warning("Rerank API failed: %s, falling back to original order", e)
         # H3 修复：返回带 rerank_score 的副本，不原地修改输入 chunks

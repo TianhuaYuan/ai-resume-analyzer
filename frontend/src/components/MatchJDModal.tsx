@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { X, ArrowClockwise, Target } from "@phosphor-icons/react";
 import { matchJD } from "../api/resumes";
+import MarkdownRenderer from "./MarkdownRenderer";
 
 interface MatchJDModalProps {
   resumeId: number;
@@ -186,11 +187,9 @@ export default function MatchJDModal({
           {/* success */}
           {status === "success" && (
             <>
-              <div
-                className="text-sm text-[var(--color-text-secondary)] leading-relaxed whitespace-pre-wrap"
-                aria-live="polite"
-              >
-                {result}
+              {/* Task 2.4: 替换纯文本 div 为 Markdown 渲染（GFM + sanitize + 单换行） */}
+              <div aria-live="polite">
+                <MarkdownRenderer>{result}</MarkdownRenderer>
               </div>
               <button
                 onClick={() => {

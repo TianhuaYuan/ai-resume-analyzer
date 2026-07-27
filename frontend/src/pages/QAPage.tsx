@@ -1,12 +1,14 @@
 import { useEffect, useState, useRef, useCallback, type FormEvent } from "react";
 import { useParams, Link } from "react-router-dom";
-import { ChatCircleDots, MagnifyingGlass, Trash, X } from "@phosphor-icons/react";
+import { ChatCircleDots, MagnifyingGlass, Trash, ThumbsUp, ThumbsDown, X } from "@phosphor-icons/react";
 import {
   askQuestionStream,
   getHistory,
   clearHistory,
   deleteQa,
+  submitFeedback,
   type SSEEvent,
+  type QAMode,
 } from "../api/qa";
 import { listResumes, type ResumeItem } from "../api/resumes";
 import ConfirmDialog from "../components/ConfirmDialog";
@@ -17,7 +19,16 @@ interface ChatMessage {
   answer: string;
   sources: string[];
   streaming: boolean;
+  /** Task 5.1: 质量反馈状态 */
+  feedback?: "positive" | "negative" | null;
 }
+
+// Task 5.1: 预设提问
+const PRESET_QUESTIONS = [
+  "这份简历的亮点是什么？",
+  "适合什么岗位？",
+  "技能匹配度如何？",
+];
 
 // ── 来源引用组件 ────────────────────────────────────────
 
@@ -77,7 +88,15 @@ function StreamingCursor() {
 
 // ── 空状态 ──────────────────────────────────────────────
 
-function EmptyChat({ searching }: { searching: boolean }) {
+function EmptyChat({
+  searching,
+  asking,
+  onPresetClick,
+}: {
+  searching: boolean;
+  asking: boolean;
+  onPresetClick: (q: string) => void;
+}) {
   return (
     <div className="flex-1 flex flex-col items-center justify-center py-16">
       <div className="w-16 h-16 rounded-2xl bg-indigo-500/10 border border-indigo-500/15
@@ -87,11 +106,31 @@ function EmptyChat({ searching }: { searching: boolean }) {
       <p className="text-base text-[var(--color-text-secondary)] mb-1.5">
         {searching ? "没有匹配的问答" : "开始提问"}
       </p>
-      <p className="text-sm text-[var(--color-text-muted)]">
+      <p className="text-sm text-[var(--color-text-muted)] mb-4">
         {searching
           ? "换个关键词试试"
-          : "例如：这份简历的亮点是什么？适合什么岗位？"}
+          : "点击下方问题快速开始"}
       </p>
+      {!searching && (
+        <div className="flex flex-wrap justify-center gap-2">
+          {PRESET_QUESTIONS.map((q) => (
+            <button
+              key={q}
+              onClick={() => onPresetClick(q)}
+              disabled={asking}
+              className="px-4 py-2 rounded-xl text-xs text-[var(--color-text-secondary)]
+                bg-white/5 border border-[var(--color-border)]
+                hover:border-indigo-500/40 hover:text-indigo-300 hover:bg-indigo-500/8
+                active:scale-[0.97] motion-reduce:active:scale-100
+                transition-all cursor-pointer
+                disabled:opacity-40 disabled:cursor-not-allowed"
+              aria-label={q}
+            >
+              {q}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -102,11 +141,13 @@ interface MessageBubbleProps {
   msg: ChatMessage;
   deleting: boolean;
   onDelete: (id: number | string) => void;
+  onFeedback: (id: number | string, rating: "positive" | "negative") => void;
 }
 
-function MessageBubble({ msg, deleting, onDelete }: MessageBubbleProps) {
-  // 流式消息（id 仍是字符串 tempId）不显示删除按钮
+function MessageBubble({ msg, deleting, onDelete, onFeedback }: MessageBubbleProps) {
+  // 流式消息（id 仍是字符串 tempId）不显示删除按钮和反馈按钮
   const canDelete = !msg.streaming && typeof msg.id === "number";
+  const canFeedback = !msg.streaming && typeof msg.id === "number";
   return (
     <div className="group animate-fade-in-up">
       {/* 用户问题 */}
@@ -132,36 +173,75 @@ function MessageBubble({ msg, deleting, onDelete }: MessageBubbleProps) {
             )}
           </div>
 
-          {/* 来源引用 + 单条删除按钮 */}
+          {/* 来源引用 + 反馈 + 删除按钮 */}
           {!msg.streaming && (
             <div className="flex items-start justify-between gap-2">
               <div className="flex-1 min-w-0">
                 <SourceToggle sources={msg.sources} />
               </div>
-              {canDelete && (
-                <button
-                  onClick={() => !deleting && onDelete(msg.id)}
-                  disabled={deleting}
-                  aria-label="删除该问答"
-                  className="shrink-0 mt-2 inline-flex items-center gap-1 px-1.5 py-1
-                    rounded-md text-xs text-[var(--color-text-muted)]
-                    hover:text-red-400 hover:bg-red-500/10
-                    active:scale-[0.95] motion-reduce:active:scale-100
-                    transition-all cursor-pointer
-                    opacity-0 group-hover:opacity-100 focus:opacity-100
-                    disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {deleting ? (
-                    <span
-                      className="inline-block w-3 h-3 rounded-full border-2 border-current border-t-transparent animate-spin"
-                      aria-hidden="true"
-                    />
-                  ) : (
-                    <Trash size={12} weight="regular" aria-hidden="true" />
-                  )}
-                  删除
-                </button>
-              )}
+              <div className="shrink-0 flex items-center gap-1 mt-2">
+                {/* Task 5.1: 质量反馈按钮 */}
+                {canFeedback && (
+                  <>
+                    <button
+                      onClick={() => !msg.feedback && onFeedback(msg.id, "positive")}
+                      disabled={!!msg.feedback}
+                      aria-label="有帮助"
+                      className={`inline-flex items-center gap-0.5 px-1.5 py-1
+                        rounded-md text-xs transition-all cursor-pointer
+                        ${msg.feedback === "positive"
+                          ? "text-indigo-400 bg-indigo-500/10"
+                          : "text-[var(--color-text-muted)] hover:text-indigo-400 hover:bg-indigo-500/8"
+                        }
+                        disabled:cursor-not-allowed
+                        opacity-0 group-hover:opacity-100 focus:opacity-100
+                        ${msg.feedback ? "!opacity-100" : ""}`}
+                    >
+                      <ThumbsUp size={12} weight={msg.feedback === "positive" ? "fill" : "regular"} aria-hidden="true" />
+                    </button>
+                    <button
+                      onClick={() => !msg.feedback && onFeedback(msg.id, "negative")}
+                      disabled={!!msg.feedback}
+                      aria-label="没帮助"
+                      className={`inline-flex items-center gap-0.5 px-1.5 py-1
+                        rounded-md text-xs transition-all cursor-pointer
+                        ${msg.feedback === "negative"
+                          ? "text-red-400 bg-red-500/10"
+                          : "text-[var(--color-text-muted)] hover:text-red-400 hover:bg-red-500/8"
+                        }
+                        disabled:cursor-not-allowed
+                        opacity-0 group-hover:opacity-100 focus:opacity-100
+                        ${msg.feedback ? "!opacity-100" : ""}`}
+                    >
+                      <ThumbsDown size={12} weight={msg.feedback === "negative" ? "fill" : "regular"} aria-hidden="true" />
+                    </button>
+                  </>
+                )}
+                {canDelete && (
+                  <button
+                    onClick={() => !deleting && onDelete(msg.id)}
+                    disabled={deleting}
+                    aria-label="删除该问答"
+                    className="inline-flex items-center gap-1 px-1.5 py-1
+                      rounded-md text-xs text-[var(--color-text-muted)]
+                      hover:text-red-400 hover:bg-red-500/10
+                      active:scale-[0.95] motion-reduce:active:scale-100
+                      transition-all cursor-pointer
+                      opacity-0 group-hover:opacity-100 focus:opacity-100
+                      disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {deleting ? (
+                      <span
+                        className="inline-block w-3 h-3 rounded-full border-2 border-current border-t-transparent animate-spin"
+                        aria-hidden="true"
+                      />
+                    ) : (
+                      <Trash size={12} weight="regular" aria-hidden="true" />
+                    )}
+                    删除
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -189,6 +269,9 @@ export default function QAPage() {
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [deletingId, setDeletingId] = useState<number | string | null>(null);
+
+  // Task 2.3：RAG 模式切换。默认 "stream"（传统流式），可切到 "agentic"（完整 Agentic RAG 图）
+  const [qaMode, setQaMode] = useState<QAMode>("stream");
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<(() => void) | null>(null);
@@ -342,10 +425,12 @@ export default function QAPage() {
               m.id === tempId ? { ...m, streaming: false } : m
             )
           );
-        }
+        },
+        // Task 2.3：透传 RAG 模式。stream=普通流式，agentic=完整 Agentic RAG 图
+        { mode: qaMode }
       );
     },
-    [question, asking, resumeId]
+    [question, asking, resumeId, qaMode]
   );
 
   const handleCancel = () => {
@@ -393,6 +478,119 @@ export default function QAPage() {
     }
   };
 
+  // Task 5.1：预设提问 — 直接发送预设问题
+  const handlePresetAsk = useCallback(
+    (q: string) => {
+      if (asking || !q.trim()) return;
+      setError("");
+      setAsking(true);
+
+      const tempId = `streaming-${Date.now()}`;
+      const newMsg: ChatMessage = {
+        id: tempId,
+        question: q.trim(),
+        answer: "",
+        sources: [],
+        streaming: true,
+      };
+      setChat((prev) => [...prev, newMsg]);
+
+      abortRef.current = askQuestionStream(
+        resumeId,
+        q.trim(),
+        (event: SSEEvent) => {
+          if (event.type === "reset") {
+            setChat((prev) =>
+              prev.map((m) =>
+                m.id === tempId ? { ...m, answer: "" } : m
+              )
+            );
+          } else if (event.type === "token" && event.content) {
+            setChat((prev) =>
+              prev.map((m) =>
+                m.id === tempId
+                  ? { ...m, answer: m.answer + event.content }
+                  : m
+              )
+            );
+          } else if (event.type === "done") {
+            setChat((prev) =>
+              prev.map((m) =>
+                m.id === tempId
+                  ? {
+                      ...m,
+                      id: event.qa_id ?? tempId,
+                      sources: event.sources ?? [],
+                      streaming: false,
+                    }
+                  : m
+              )
+            );
+            setAsking(false);
+          } else if (event.type === "error") {
+            setChat((prev) =>
+              prev.map((m) =>
+                m.id === tempId
+                  ? {
+                      ...m,
+                      answer: event.message ?? "生成失败",
+                      streaming: false,
+                    }
+                  : m
+              )
+            );
+            setAsking(false);
+          }
+        },
+        (err: Error) => {
+          setError(err.message);
+          setChat((prev) =>
+            prev.map((m) =>
+              m.id === tempId
+                ? { ...m, answer: "生成失败，请重试", streaming: false }
+                : m
+            )
+          );
+          setAsking(false);
+        },
+        () => {
+          setAsking(false);
+          setChat((prev) =>
+            prev.map((m) =>
+              m.id === tempId ? { ...m, streaming: false } : m
+            )
+          );
+        },
+        { mode: qaMode }
+      );
+    },
+    [asking, resumeId, qaMode]
+  );
+
+  // Task 5.1：质量反馈
+  const handleFeedback = useCallback(
+    async (msgId: number | string, rating: "positive" | "negative") => {
+      if (typeof msgId !== "number") return;
+      // 乐观更新 UI
+      setChat((prev) =>
+        prev.map((m) =>
+          m.id === msgId ? { ...m, feedback: rating } : m
+        )
+      );
+      try {
+        await submitFeedback(msgId, rating);
+      } catch {
+        // 失败时回滚反馈状态
+        setChat((prev) =>
+          prev.map((m) =>
+            m.id === msgId ? { ...m, feedback: null } : m
+          )
+        );
+      }
+    },
+    []
+  );
+
   return (
     <div className="min-h-screen bg-[var(--color-bg)] flex flex-col">
       {/* ── 顶栏 ── */}
@@ -407,6 +605,55 @@ export default function QAPage() {
                 {resume.chunk_count} 个分块
               </p>
             )}
+          </div>
+
+          {/* Task 2.3：RAG 模式 Segmented Control */}
+          <div
+            role="radiogroup"
+            aria-label="RAG 模式"
+            className="shrink-0 inline-flex items-center p-0.5 rounded-lg
+              bg-white/5 border border-[var(--color-border)]"
+          >
+            <label
+              className={`px-3 py-1 rounded-md text-xs font-medium cursor-pointer
+                transition-all duration-150
+                ${
+                  qaMode === "stream"
+                    ? "bg-indigo-500/20 text-indigo-300 border border-indigo-500/40"
+                    : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] border border-transparent"
+                }`}
+            >
+              <input
+                type="radio"
+                name="qa-mode"
+                value="stream"
+                checked={qaMode === "stream"}
+                onChange={() => setQaMode("stream")}
+                disabled={asking}
+                className="sr-only"
+              />
+              传统
+            </label>
+            <label
+              className={`px-3 py-1 rounded-md text-xs font-medium cursor-pointer
+                transition-all duration-150
+                ${
+                  qaMode === "agentic"
+                    ? "bg-indigo-500/20 text-indigo-300 border border-indigo-500/40"
+                    : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] border border-transparent"
+                }`}
+            >
+              <input
+                type="radio"
+                name="qa-mode"
+                value="agentic"
+                checked={qaMode === "agentic"}
+                onChange={() => setQaMode("agentic")}
+                disabled={asking}
+                className="sr-only"
+              />
+              Agentic
+            </label>
           </div>
 
           {/* 搜索框 */}
@@ -480,7 +727,7 @@ export default function QAPage() {
               <p className="text-xs text-[var(--color-text-muted)] mt-3">加载历史中...</p>
             </div>
           ) : chat.length === 0 ? (
-            <EmptyChat searching={debouncedKeyword.length > 0} />
+            <EmptyChat searching={debouncedKeyword.length > 0} asking={asking} onPresetClick={handlePresetAsk} />
           ) : (
             chat.map((msg) => (
               <MessageBubble
@@ -488,6 +735,7 @@ export default function QAPage() {
                 msg={msg}
                 deleting={deletingId === msg.id}
                 onDelete={handleDeleteMessage}
+                onFeedback={handleFeedback}
               />
             ))
           )}

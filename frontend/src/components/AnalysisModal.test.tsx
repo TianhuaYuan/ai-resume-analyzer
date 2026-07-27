@@ -372,4 +372,102 @@ describe("AnalysisModal (Task 2 前端)", () => {
       );
     });
   });
+
+  // ── Task 2.5: 评分 Tab scores=null 时显示 fallback 提示 ──
+
+  it("Task 2.5: 评分 Tab 后端未返回 scores 时显示 fallback 提示卡片", async () => {
+    mockAnalyze.mockResolvedValue({
+      resume_id: 42,
+      analysis_type: "score",
+      analysis: "该简历整体表现良好，结构清晰，技能匹配度高。",
+      scores: null,
+    });
+    renderModal();
+
+    await waitFor(() => expect(mockAnalyze).toHaveBeenCalled());
+    // 切到评分 Tab
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /评分/ }));
+    });
+
+    await waitFor(() => {
+      // fallback 提示卡片应显示
+      expect(
+        screen.getByText(/系统暂时无法提取量化分数/)
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("Task 2.5: fallback 提示卡片下方仍渲染 analysis 文本", async () => {
+    mockAnalyze.mockResolvedValue({
+      resume_id: 42,
+      analysis_type: "score",
+      analysis: "该简历整体表现良好，建议在 DevOps 方向补充经验。",
+      scores: null,
+    });
+    renderModal();
+
+    await waitFor(() => expect(mockAnalyze).toHaveBeenCalled());
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /评分/ }));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/系统暂时无法提取量化分数/)).toBeInTheDocument();
+      // analysis 文本仍渲染（在 fallback 卡片下方）
+      expect(screen.getByText(/DevOps/)).toBeInTheDocument();
+    });
+  });
+
+  it("Task 2.5: scores 存在时不显示 fallback 提示卡片", async () => {
+    // 先 mock summary，再切到 score
+    mockAnalyze.mockResolvedValueOnce({
+      resume_id: 42,
+      analysis_type: "summary",
+      analysis: "总结内容",
+      scores: null,
+    });
+    renderModal();
+
+    await waitFor(() => expect(mockAnalyze).toHaveBeenCalled());
+
+    mockAnalyze.mockResolvedValueOnce({
+      resume_id: 42,
+      analysis_type: "score",
+      analysis: "### ATS 匹配率: 80/100",
+      scores: { ats_match: 80, keyword_coverage: 70, skill_density: 75, overall: 78 },
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /评分/ }));
+    });
+
+    await waitFor(() => {
+      // scores 存在时 ScoreBar 渲染 4 个 label，markdown 也渲染 "ATS 匹配率"，故用 getAllByText
+      expect(screen.getAllByText(/ATS 匹配率/).length).toBeGreaterThan(0);
+    });
+
+    // scores 存在时不应显示 fallback 提示
+    expect(screen.queryByText(/系统暂时无法提取量化分数/)).toBeNull();
+  });
+
+  it("Task 2.5: fallback 提示卡片有黄色警告样式（role=alert）", async () => {
+    mockAnalyze.mockResolvedValue({
+      resume_id: 42,
+      analysis_type: "score",
+      analysis: "纯文字分析",
+      scores: null,
+    });
+    renderModal();
+
+    await waitFor(() => expect(mockAnalyze).toHaveBeenCalled());
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /评分/ }));
+    });
+
+    await waitFor(() => {
+      const alert = screen.getByRole("alert");
+      expect(alert).toHaveTextContent("系统暂时无法提取量化分数");
+    });
+  });
 });

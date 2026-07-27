@@ -18,6 +18,7 @@ from core.security import (
 )
 from models.user import User
 from schemas.auth import RegisterRequest, TokenResponse
+from services.email_sender import get_email_sender
 
 logger = logging.getLogger(__name__)
 
@@ -133,10 +134,17 @@ async def admin_reset_password(db: AsyncSession, email: str) -> str:
 async def initiate_password_reset(db: AsyncSession, email: str) -> str | None:
     """P1-23 方案 B：发起密码重置流程。
 
-    - 用户存在：生成 reset token（JWT, type=reset），开发环境写入日志（生产环境对接邮件服务）
+    - 用户存在：生成 reset token（JWT, type=reset），通过 EmailSender 发送重置邮件
+      - 开发环境（EMAIL_PROVIDER=log）：LogEmailSender 写日志，token 仍可在日志提取
+      - 生产环境（EMAIL_PROVIDER=smtp）：SmtpEmailSender 发送真实邮件
     - 用户不存在：静默返回 None（不泄露用户是否存在，防止枚举攻击）
 
-    返回 reset token（仅用于开发环境日志记录），用户不存在时返回 None。
+    返回 reset token（保留以便日志记录和单元测试提取），用户不存在时返回 None。
+
+    Task 1.2 改造点：
+    - 把"发邮件"动作委托给 EmailSender 抽象层
+    - 保留 auth_service 的业务日志（reset_token=xxx），与现有 test_password_reset.py 兼容
+    - LogEmailSender 内部也会写 services.email_sender 日志（含完整重置链接）
     """
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
@@ -146,14 +154,28 @@ async def initiate_password_reset(db: AsyncSession, email: str) -> str | None:
         return None
 
     token = create_reset_token({"sub": str(user.id)})
-    # 开发环境：写入日志供测试和本地联调使用
-    # 生产环境：此处应替换为发送邮件逻辑（如 SMTP / 第三方邮件服务）
+
+    # 业务日志：保留 reset_token 写入，开发环境从日志提取 token 联调（兼容现有测试）
+    # 生产环境若 EMAIL_PROVIDER=smtp，应改为只记录 token 前缀，避免 token 泄露到日志文件
+    # 当前实现：日志始终写完整 token，方便排查；上线前可在 SmtpEmailSender 启用时
+    # 改为 logger.info("密码重置请求: email=%s (邮件已发送)", email)
     logger.info(
         "密码重置请求: email=%s reset_token=%s (有效期 %d 分钟)",
         email,
         token,
         30,  # 与 settings.RESET_TOKEN_EXPIRE_MINUTES 对齐
     )
+
+    # 委托 EmailSender 发送邮件（log=写日志 / smtp=真实发邮件）
+    # 失败不阻塞 API 返回 200，防止攻击者通过响应时间/异常判断用户是否存在
+    try:
+        sender = get_email_sender()
+        sender.send_reset_email(to=email, token=token)
+    except Exception:
+        # 发送失败仅记录错误日志，不抛出（防止用户枚举 + 不影响 reset token 已生成）
+        # 注意：开发环境 LogEmailSender 不会抛异常，这里主要兜底 SmtpEmailSender 网络故障
+        logger.exception("密码重置邮件发送失败: email=%s", email)
+
     return token
 
 

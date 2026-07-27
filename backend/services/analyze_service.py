@@ -62,21 +62,62 @@ _ANALYSIS_PROMPTS: dict[str, str] = {
 
 
 def _parse_scores(analysis: str) -> ScoreDetail | None:
-    """从 LLM 返回的评分文本中提取量化分数。
+    r"""从 LLM 返回的评分文本中提取量化分数。
 
-    使用正则匹配 "XXX/100" 格式，按顺序对应
-    ats_match, keyword_coverage, skill_density, overall。
+    Task 2.5: 支持多种 LLM 输出格式，按优先级匹配：
+      1. "XX/100"     → 原始格式（含 "XX/100分" 变体）
+      2. "XX分"       → 中文格式（不能紧跟在 "/" 后，避免匹配 "/100分" 中的 100）
+      3. "score: XX"  → 英文键值
+      4. "得分: XX"   → 中文键值
+
+    约束：
+      - 数字必须 0-100，过滤年份/ID 等误匹配（如 2024、12345）
+        通过 `(?<!\d)` lookbehind 防止从长数字中截取 3 位（如 "2024" 取 "024"）
+      - 至少 4 个有效分数，按出现顺序对应
+        ats_match, keyword_coverage, skill_density, overall
+      - 不足 4 个返回 None，由前端独立 fallback
+
+    Args:
+        analysis: LLM 返回的评分文本
+
+    Returns:
+        ScoreDetail 或 None
     """
-    # 匹配 "XX/100" 或 "XXX/100" 格式的分数
-    matches = re.findall(r"(\d{1,3})/100", analysis)
-    if len(matches) >= 4:
-        return ScoreDetail(
-            ats_match=int(matches[0]),
-            keyword_coverage=int(matches[1]),
-            skill_density=int(matches[2]),
-            overall=int(matches[3]),
-        )
-    return None
+    if not analysis:
+        return None
+
+    # Combined alternation pattern（finditer 一次扫描，避免多 pattern 分别匹配导致重复）
+    # 顺序：XX/100 → XX分 → score: XX → 得分: XX
+    # (?<!\d): 前面不能是数字，防止 "2024" 被部分匹配为 "024"
+    # (?<!/): 前面不能是 "/"，防止 "/100分" 中的 100 被 XX分 模式重复匹配
+    combined = (
+        r"(?<!\d)(\d{1,3})\s*/\s*100"
+        r"|(?<!\d)(?<!/)(\d{1,3})\s*分"
+        r"|score\s*[:：]\s*(\d{1,3})"
+        r"|得分\s*[:：]\s*(\d{1,3})"
+    )
+
+    all_scores: list[int] = []
+    for m in re.finditer(combined, analysis):
+        # alternation 中只有一个分组非 None
+        for g in m.groups():
+            if g is None:
+                continue
+            value = int(g)
+            if value <= 100:
+                all_scores.append(value)
+            break  # 只处理第一个非 None 分组
+
+    if len(all_scores) < 4:
+        return None
+
+    # 取前 4 个，按出现顺序对应 ATS/关键词/技能密度/综合
+    return ScoreDetail(
+        ats_match=all_scores[0],
+        keyword_coverage=all_scores[1],
+        skill_density=all_scores[2],
+        overall=all_scores[3],
+    )
 
 
 async def analyze_resume(
