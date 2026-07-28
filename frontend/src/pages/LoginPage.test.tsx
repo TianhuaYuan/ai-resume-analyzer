@@ -3,6 +3,32 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import LoginPage from "./LoginPage";
 
+// Mock framer-motion：jsdom 环境下 motion 组件渲染为原生元素
+vi.mock("framer-motion", () => ({
+  motion: {
+    div: ({ children, ...props }: React.ComponentProps<"div">) => (
+      <div {...props}>{children}</div>
+    ),
+    button: ({ children, ...props }: React.ComponentProps<"button">) => (
+      <button {...props}>{children}</button>
+    ),
+    span: ({ children, ...props }: React.ComponentProps<"span">) => (
+      <span {...props}>{children}</span>
+    ),
+    h1: ({ children, ...props }: React.ComponentProps<"h1">) => (
+      <h1 {...props}>{children}</h1>
+    ),
+    p: ({ children, ...props }: React.ComponentProps<"p">) => (
+      <p {...props}>{children}</p>
+    ),
+  },
+  AnimatePresence: ({ children }: { children: React.ReactNode }) => (
+    <>{children}</>
+  ),
+  useMotionValue: () => ({ get: () => 0, set: () => {} }),
+  useTransform: () => ({ get: () => 0 }),
+}));
+
 // 把 useAuth mock 成 noop，让 LoginPage 能独立于 AuthContext 渲染
 vi.mock("../context/AuthContext", () => ({
   useAuth: () => ({
@@ -11,11 +37,19 @@ vi.mock("../context/AuthContext", () => ({
   }),
 }));
 
-// ── Task 1.2 收尾：LoginPage 必须提供"忘记密码"入口 ──
-// 修复前：LoginPage 登录表单没有"忘记密码"链接，用户一旦忘记密码无路可走
-// 修复后：登录 tab 下提供"忘记密码？"链接，点击跳转到 /forgot-password
+function renderLogin() {
+  return render(
+    <MemoryRouter initialEntries={["/login"]}>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/forgot-password" element={<div>forgot password page</div>} />
+        <Route path="/" element={<div>home page</div>} />
+      </Routes>
+    </MemoryRouter>
+  );
+}
 
-describe("LoginPage 忘记密码入口 (Task 1.2 收尾)", () => {
+describe("LoginPage 重新设计", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -23,70 +57,76 @@ describe("LoginPage 忘记密码入口 (Task 1.2 收尾)", () => {
     vi.restoreAllMocks();
   });
 
-  it("登录 tab 下渲染 '忘记密码？' 链接", async () => {
-    render(
-      <MemoryRouter initialEntries={["/login"]}>
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/forgot-password" element={<div>forgot page</div>} />
-        </Routes>
-      </MemoryRouter>
-    );
-
-    // 等待组件挂载动画完成
+  it("登录表单渲染提交按钮", async () => {
+    renderLogin();
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /登 录/ })).toBeInTheDocument();
+      expect(screen.getByTestId("submit-btn")).toBeInTheDocument();
     });
-
-    // 断言存在 "忘记密码？" 链接
-    const link = screen.getByRole("link", { name: /忘记密码/ });
-    expect(link).toBeInTheDocument();
-    expect(link).toHaveAttribute("href", "/forgot-password");
   });
 
-  it("注册 tab 下不渲染 '忘记密码？' 链接（避免误导）", async () => {
-    render(
-      <MemoryRouter initialEntries={["/login"]}>
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/forgot-password" element={<div>forgot page</div>} />
-        </Routes>
-      </MemoryRouter>
-    );
-
-    // 切换到注册 tab
+  it("登录表单渲染 '忘记密码？' 链接，点击导航到 /forgot-password", async () => {
+    renderLogin();
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /登 录/ })).toBeInTheDocument();
+      expect(screen.getByText(/忘记密码/)).toBeInTheDocument();
     });
-
-    fireEvent.click(screen.getByRole("button", { name: "注册" }));
-
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: /注 册/ })).toBeInTheDocument();
-    });
-
-    // 注册 tab 下不应有忘记密码链接
-    expect(screen.queryByRole("link", { name: /忘记密码/ })).toBeNull();
-  });
-
-  it("点击 '忘记密码？' 链接导航到 /forgot-password", async () => {
-    render(
-      <MemoryRouter initialEntries={["/login"]}>
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/forgot-password" element={<div>forgot password page</div>} />
-        </Routes>
-      </MemoryRouter>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByRole("link", { name: /忘记密码/ })).toBeInTheDocument();
-    });
-
-    fireEvent.click(screen.getByRole("link", { name: /忘记密码/ }));
-
+    fireEvent.click(screen.getByText(/忘记密码/));
     await waitFor(() => {
       expect(screen.getByText("forgot password page")).toBeInTheDocument();
+    });
+  });
+
+  it("点击 'Sign up' 切换到注册表单", async () => {
+    renderLogin();
+    await waitFor(() => {
+      expect(screen.getByText(/sign up/i)).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText(/sign up/i));
+    // 注册表单应有用户名输入框
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText(/至少2个字符/)).toBeInTheDocument();
+    });
+  });
+
+  it("注册表单不显示 '忘记密码？' 链接", async () => {
+    renderLogin();
+    // 先切换到注册
+    await waitFor(() => {
+      expect(screen.getByText(/sign up/i)).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText(/sign up/i));
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText(/至少2个字符/)).toBeInTheDocument();
+    });
+    // 注册表单下不应有忘记密码
+    expect(screen.queryByText(/忘记密码/)).toBeNull();
+  });
+
+  it("注册表单渲染注册提交按钮", async () => {
+    renderLogin();
+    await waitFor(() => {
+      expect(screen.getByText(/sign up/i)).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText(/sign up/i));
+    await waitFor(() => {
+      expect(screen.getByTestId("register-submit-btn")).toBeInTheDocument();
+    });
+  });
+
+  it("注册表单有 '返回登录' 链接，点击切回登录", async () => {
+    renderLogin();
+    // 切换到注册
+    await waitFor(() => {
+      expect(screen.getByText(/sign up/i)).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText(/sign up/i));
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText(/至少2个字符/)).toBeInTheDocument();
+    });
+    // 点击返回登录
+    const backLink = screen.getByText(/log in|返回登录|sign in/i);
+    fireEvent.click(backLink);
+    await waitFor(() => {
+      expect(screen.getByTestId("submit-btn")).toBeInTheDocument();
     });
   });
 });
