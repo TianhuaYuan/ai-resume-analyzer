@@ -100,19 +100,6 @@ def create_refresh_token(data: dict) -> str:
     return _create_token(data, timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS), "refresh")
 
 
-def create_reset_token(data: dict) -> str:
-    """P1-23: 生成密码重置 token（短期，type=reset）。
-
-    与 access/refresh token 共享 JWT 机制，但 type=reset 用于路由校验，
-    防止与其他类型 token 互换使用。有效期由 RESET_TOKEN_EXPIRE_MINUTES 控制。
-    """
-    return _create_token(
-        data,
-        timedelta(minutes=settings.RESET_TOKEN_EXPIRE_MINUTES),
-        "reset",
-    )
-
-
 def decode_token(token: str) -> dict | None:
     """解码 JWT，过期或无效返回 None"""
     try:

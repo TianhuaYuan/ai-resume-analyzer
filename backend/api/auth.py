@@ -18,11 +18,11 @@ from schemas.auth import (
     AdminResetPasswordRequest,
     AdminResetPasswordResponse,
     ForgotPasswordRequest,
+    ForgotPasswordVerifyRequest,
     LoginRequest,
     MessageResponse,
     RefreshRequest,
     RegisterRequest,
-    ResetPasswordRequest,
     TokenResponse,
     UserResponse,
 )
@@ -30,11 +30,11 @@ from services.auth_service import (
     admin_reset_password,
     register_user,
     authenticate_user,
-    complete_password_reset,
     create_tokens,
-    initiate_password_reset,
     refresh_token,
+    reset_password_by_verification,
 )
+from services.verification_service import generate_code, store_code, verify_code
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -50,9 +50,26 @@ def _cookie_max_age() -> tuple[int, int]:
 @router.post("/register", response_model=UserResponse, status_code=201)
 @limiter.limit(settings.RATE_LIMIT_REGISTER)
 async def register(request: Request, data: RegisterRequest, db: AsyncSession = Depends(get_db)):
-    """注册。Pydantic 已校验邮箱格式+密码长度+两次一致。"""
+    """注册。需要先调用 /send-code 获取验证码。"""
+    if not await verify_code(data.email, data.verification_code):
+        raise HTTPException(status_code=400, detail="验证码无效或已过期")
     user = await register_user(db, data)
     return user
+
+
+@router.post("/send-code", response_model=MessageResponse)
+@limiter.limit("3/minute")
+async def send_code(request: Request, data: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
+    """发送邮箱验证码（注册/忘记密码共用）。"""
+    code = generate_code()
+    await store_code(data.email, code)
+    try:
+        from services.email_sender import get_email_sender
+        sender = get_email_sender()
+        sender.send_verification_email(to=data.email, code=code)
+    except Exception:
+        logger.exception("验证码邮件发送失败: email=%s", data.email)
+    return MessageResponse(detail="验证码已发送")
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -192,32 +209,17 @@ async def admin_reset_password_endpoint(
 @limiter.limit(settings.RATE_LIMIT_PASSWORD_RESET)
 async def forgot_password(
     request: Request,
-    data: ForgotPasswordRequest,
+    data: ForgotPasswordVerifyRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    """P1-23 方案 B：发起密码重置流程。
+    """新流程：验证码通过后直接修改密码（无需邮件链接）。
 
-    无论邮箱是否存在都返回 200（防止用户枚举攻击）。
-    - 用户存在：生成 reset token，开发环境写入日志（生产环境发邮件）
-    - 用户不存在：静默忽略
-
-    限流：3 次/分钟（爆破/滥用防御）。
+    流程：
+    1. 验证邮箱验证码
+    2. 邮箱存在 → 直接更新密码（用户不存在静默返回 200 防枚举）
+    3. 返回 200，前端提示用户用新密码登录
     """
-    await initiate_password_reset(db, data.email)
-    return MessageResponse(detail="若邮箱存在，重置链接已发送")
-
-
-@router.post("/reset-password", response_model=MessageResponse)
-async def reset_password(
-    data: ResetPasswordRequest,
-    db: AsyncSession = Depends(get_db),
-):
-    """P1-23 方案 B：完成密码重置。
-
-    验证 reset token 并更新密码：
-    - token 无效/过期/类型错误→400
-    - token 已使用（一次性）→400
-    - 密码强度不足→422（Pydantic 校验）
-    """
-    await complete_password_reset(db, data.token, data.new_password)
+    if not await verify_code(data.email, data.verification_code):
+        raise HTTPException(status_code=400, detail="验证码无效或已过期")
+    await reset_password_by_verification(db, data.email, data.new_password)
     return MessageResponse(detail="密码已重置，请使用新密码登录")

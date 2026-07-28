@@ -7,7 +7,7 @@ import {
   useRef,
   type ReactNode,
 } from "react";
-import { login as loginApi, register as registerApi, logout as clearTokens } from "../api/auth";
+import { login as loginApi, register as registerApi, logout as clearTokens, sendCode as sendCodeApi } from "../api/auth";
 import { refreshToken, clearSessionAndRedirect, notifySessionExpired, notifySessionWarning } from "../api/client";
 import { safeDecodeJwt } from "../utils/jwt";
 import { computeSessionWarning } from "./sessionWarning";
@@ -29,8 +29,10 @@ interface AuthCtx {
     username: string,
     email: string,
     password: string,
-    password_confirm: string
+    password_confirm: string,
+    verification_code: string
   ) => Promise<void>;
+  sendCode: (email: string) => Promise<string>;
   logout: () => Promise<void>;
   // Task 5：会话弹窗状态
   sessionDialog: SessionDialogType;
@@ -197,9 +199,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     username: string,
     email: string,
     password: string,
-    password_confirm: string
+    password_confirm: string,
+    verification_code: string
   ) => {
-    await registerApi(username, email, password, password_confirm);
+    await registerApi(username, email, password, password_confirm, verification_code);
+  };
+
+  const sendCode = async (email: string) => {
+    return await sendCodeApi(email);
   };
 
   const logout = async () => {
@@ -216,6 +223,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loading,
         login,
         register,
+        sendCode,
         logout,
         sessionDialog,
         sessionRemainingSeconds,

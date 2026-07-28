@@ -5,15 +5,15 @@
 1. **不绑死邮件服务商**：通过 `EmailSender` Protocol 抽象，开发/测试用 `LogEmailSender`，
    生产用 `SmtpEmailSender`（标准 `smtplib`，兼容阿里云/QQ/163/SendGrid 等任意 SMTP）。
 2. **零门槛起步**：开发环境默认 `EMAIL_PROVIDER=log`，无 SMTP 账号也能跑通流程。
-3. **测试无破坏**：`LogEmailSender` 把 reset_token 写日志，现有 `test_password_reset.py`
-   从日志提取 token 的逻辑保留不变。
-4. **生产可平滑切换**：仅需在 `.env.prod` 改 `EMAIL_PROVIDER=smtp` + 配置 SMTP_*。
+3. **生产可平滑切换**：仅需在 `.env.prod` 改 `EMAIL_PROVIDER=smtp` + 配置 SMTP_*。
 
 接口契约
 --------
-- `send_reset_email(to: str, token: str) -> None`：发送密码重置邮件
-- `build_reset_email(token, base_url, expire_minutes) -> tuple[str, str]`：返回 (html, text)
+- `send_verification_email(to: str, code: str) -> None`：发送验证码邮件
+- `build_verification_email(code, expire_minutes) -> tuple[str, str]`：返回 (html, text)
 - `get_email_sender() -> EmailSender`：工厂函数，根据 `settings.EMAIL_PROVIDER` 返回实例
+
+验证码有效期 5 分钟（与 services.verification_service._CODE_EXPIRE_MINUTES 对齐）。
 """
 import logging
 import smtplib
@@ -25,31 +25,21 @@ from core.config import settings
 
 logger = logging.getLogger(__name__)
 
+_VERIFICATION_EXPIRE_MINUTES = 5  # 与 services.verification_service._CODE_EXPIRE_MINUTES 对齐
+
 
 # ── 邮件内容构建 ───────────────────────────────────────────────
 
-def build_reset_email(token: str, base_url: str, expire_minutes: int) -> tuple[str, str]:
-    """构建密码重置邮件内容，返回 (html, text) 双版本。
-
-    Args:
-        token: JWT 重置 token
-        base_url: 前端基础 URL（如 http://localhost:5173）
-        expire_minutes: token 有效期（分钟），写入邮件提示用户尽快操作
-
-    Returns:
-        (html_body, text_body) 二元组，两者均含完整重置链接
-    """
-    reset_link = f"{base_url}/reset-password?token={token}"
-
+def build_verification_email(code: str, expire_minutes: int) -> tuple[str, str]:
+    """构建验证码邮件内容，返回 (html, text) 双版本。"""
     text = (
-        "【AI Resume Analyzer】密码重置\n"
+        "【AI Resume Analyzer】验证码\n"
         "\n"
-        "您正在申请重置账户密码，请点击下方链接完成重置：\n"
-        f"{reset_link}\n"
+        f"您的验证码是：{code}\n"
         "\n"
-        f"链接有效期：{expire_minutes} 分钟\n"
+        f"验证码有效期：{expire_minutes} 分钟\n"
         "\n"
-        "如果不是您本人操作，请忽略此邮件，您的密码不会被修改。\n"
+        "如果不是您本人操作，请忽略此邮件。\n"
     )
 
     html = f"""\
@@ -57,29 +47,20 @@ def build_reset_email(token: str, base_url: str, expire_minutes: int) -> tuple[s
 <html lang="zh-CN">
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif;
              max-width: 560px; margin: 0 auto; padding: 24px; color: #1e293b;">
-  <h2 style="color: #4f46e5; margin-bottom: 16px;">AI Resume Analyzer — 密码重置</h2>
+  <h2 style="color: #4f46e5; margin-bottom: 16px;">AI Resume Analyzer — 验证码</h2>
   <p style="font-size: 14px; line-height: 1.6;">您好，</p>
   <p style="font-size: 14px; line-height: 1.6;">
-    您正在申请重置账户密码，请点击下方按钮完成重置：
+    您正在进行邮箱验证，验证码如下：
   </p>
-  <p style="margin: 24px 0;">
-    <a href="{reset_link}"
-       style="display: inline-block; padding: 12px 24px; background: #4f46e5;
-              color: #ffffff; text-decoration: none; border-radius: 8px;
-              font-weight: 600; font-size: 14px;">
-      重置密码
-    </a>
-  </p>
-  <p style="font-size: 13px; color: #64748b; word-break: break-all;">
-    或直接访问此链接：<br>
-    <a href="{reset_link}" style="color: #4f46e5; word-break: break-all;">{reset_link}</a>
+  <p style="margin: 24px 0; font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #1e293b;">
+    {code}
   </p>
   <p style="font-size: 13px; color: #64748b; margin-top: 16px;">
-    链接有效期：{expire_minutes} 分钟，请尽快完成重置。
+    验证码有效期：{expire_minutes} 分钟，请尽快输入。
   </p>
   <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;">
   <p style="font-size: 12px; color: #94a3b8;">
-    如果不是您本人操作，请忽略此邮件，您的密码不会被修改。<br>
+    如果不是您本人操作，请忽略此邮件。<br>
     本邮件由系统自动发送，请勿回复。
   </p>
 </body>
@@ -93,38 +74,24 @@ def build_reset_email(token: str, base_url: str, expire_minutes: int) -> tuple[s
 class EmailSender(Protocol):
     """邮件发送接口（结构化子类型，无需显式继承）。"""
 
-    def send_reset_email(self, to: str, token: str) -> None:
-        """发送密码重置邮件给指定收件人。"""
+    def send_verification_email(self, to: str, code: str) -> None:
+        """发送验证码邮件给指定收件人。"""
         ...
 
 
 # ── LogEmailSender：开发环境用 ───────────────────────────────
 
 class LogEmailSender:
-    """开发环境 EmailSender：把邮件内容（含 reset_token）写入日志。
+    """开发环境 EmailSender：把邮件内容（含验证码）写入日志。"""
 
-    用途：
-    - 本地开发无 SMTP 账号时使用
-    - 单元测试从日志提取 token 联调
-    - 与现有 `test_password_reset.py` 完全兼容（仍能从 services.auth_service
-      或 services.email_sender 日志中提取 token）
-
-    注意：reset_token 写日志仅限开发环境，生产环境必须切换 SmtpEmailSender，
-    否则 token 会泄露到日志文件。
-    """
-
-    def __init__(self, base_url: str, expire_minutes: int):
-        self.base_url = base_url
+    def __init__(self, expire_minutes: int = _VERIFICATION_EXPIRE_MINUTES):
         self.expire_minutes = expire_minutes
 
-    def send_reset_email(self, to: str, token: str) -> None:
-        reset_link = f"{self.base_url}/reset-password?token={token}"
-        # 保留 reset_token=xxx 格式，与现有 test_password_reset.py 的正则提取兼容
+    def send_verification_email(self, to: str, code: str) -> None:
         logger.info(
-            "密码重置邮件（开发日志）: to=%s reset_token=%s link=%s (有效期 %d 分钟)",
+            "验证码邮件（开发日志）: to=%s code=%s (有效期 %d 分钟)",
             to,
-            token,
-            reset_link,
+            code,
             self.expire_minutes,
         )
 
@@ -149,8 +116,7 @@ class SmtpEmailSender:
         password: str,
         use_tls: bool,
         from_addr: str,
-        base_url: str,
-        expire_minutes: int,
+        expire_minutes: int = _VERIFICATION_EXPIRE_MINUTES,
         timeout: int = 30,
     ):
         self.host = host
@@ -159,26 +125,22 @@ class SmtpEmailSender:
         self.password = password
         self.use_tls = use_tls
         self.from_addr = from_addr
-        self.base_url = base_url
         self.expire_minutes = expire_minutes
         self.timeout = timeout
 
-    def send_reset_email(self, to: str, token: str) -> None:
-        html, text = build_reset_email(
-            token=token,
-            base_url=self.base_url,
+    def send_verification_email(self, to: str, code: str) -> None:
+        html, text = build_verification_email(
+            code=code,
             expire_minutes=self.expire_minutes,
         )
 
-        # multipart/alternative：邮件客户端根据配置优先显示 HTML 或纯文本
         msg = MIMEMultipart("alternative")
-        msg["Subject"] = "【AI Resume Analyzer】密码重置"
+        msg["Subject"] = "【AI Resume Analyzer】验证码"
         msg["From"] = self.from_addr
         msg["To"] = to
         msg.attach(MIMEText(text, "plain", "utf-8"))
         msg.attach(MIMEText(html, "html", "utf-8"))
 
-        # SMTP_SSL（端口 465）vs SMTP+starttls（端口 587）
         if self.use_tls:
             with smtplib.SMTP(self.host, self.port, timeout=self.timeout) as server:
                 server.starttls()
@@ -189,7 +151,7 @@ class SmtpEmailSender:
                 server.login(self.username, self.password)
                 server.sendmail(self.from_addr, [to], msg.as_string())
 
-        logger.info("密码重置邮件已发送: to=%s", to)
+        logger.info("验证码邮件已发送: to=%s", to)
 
 
 # ── 工厂函数 ──────────────────────────────────────────────────
@@ -208,10 +170,7 @@ def get_email_sender() -> EmailSender:
     provider = settings.EMAIL_PROVIDER.lower()
 
     if provider == "log":
-        return LogEmailSender(
-            base_url=settings.FRONTEND_BASE_URL,
-            expire_minutes=settings.RESET_TOKEN_EXPIRE_MINUTES,
-        )
+        return LogEmailSender()
 
     if provider == "smtp":
         # fail-fast：缺关键 SMTP 配置直接报错，避免带着错误配置启动后才发现邮件发不出去
@@ -237,8 +196,6 @@ def get_email_sender() -> EmailSender:
             password=settings.SMTP_PASSWORD,
             use_tls=settings.SMTP_USE_TLS,
             from_addr=settings.SMTP_FROM,
-            base_url=settings.FRONTEND_BASE_URL,
-            expire_minutes=settings.RESET_TOKEN_EXPIRE_MINUTES,
         )
 
     raise ValueError(

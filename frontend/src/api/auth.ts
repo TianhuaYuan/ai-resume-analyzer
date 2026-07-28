@@ -16,14 +16,21 @@ export async function register(
   username: string,
   email: string,
   password: string,
-  password_confirm: string
+  password_confirm: string,
+  verification_code: string
 ) {
   return api.post("/api/v1/auth/register", {
     username,
     email,
     password,
     password_confirm,
+    verification_code,
   });
+}
+
+export async function sendCode(email: string): Promise<string> {
+  const data = await api.post("/api/v1/auth/send-code", { email }) as { detail: string };
+  return data.detail;
 }
 
 /**
@@ -48,30 +55,22 @@ export async function logout() {
 }
 
 /**
- * Task 1.2: 发起密码重置申请。
+ * 发起密码重置：新流程。
  *
- * 后端无论邮箱是否存在都返回 200（防止用户枚举攻击），前端只需提示
- * "若邮箱存在，重置链接已发送"，不区分用户是否存在。
+ * 验证码通过后，后端直接修改密码（不再发送重置链接）。
+ * 邮箱不存在时后端静默返回 200（防用户枚举）。
  *
  * 公开端点：不带 Authorization 头，调用时用户处于未登录状态。
  */
-export async function forgotPassword(email: string): Promise<string> {
-  const data = await api.post("/api/v1/auth/forgot-password", { email }) as { detail: string };
-  return data.detail;
-}
-
-/**
- * Task 1.2: 完成密码重置。
- *
- * 用 reset token + 新密码提交到后端，后端校验 token（decode + type=reset +
- * 未撤销 + 一次性）后更新密码哈希并撤销 token jti。
- *
- * 公开端点：不带 Authorization 头。
- */
-export async function resetPassword(token: string, newPassword: string): Promise<string> {
-  const data = await api.post("/api/v1/auth/reset-password", {
-    token,
-    new_password: newPassword,
-  }) as { detail: string };
-  return data.detail;
+export async function forgotPassword(
+    email: string,
+    verification_code: string,
+    new_password: string
+): Promise<string> {
+    const data = await api.post("/api/v1/auth/forgot-password", {
+        email,
+        verification_code,
+        new_password,
+    }) as { detail: string };
+    return data.detail;
 }

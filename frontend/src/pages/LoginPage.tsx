@@ -1,7 +1,7 @@
 import { useState, useEffect, type FormEvent } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
-import { User, Mail, Lock, ArrowRight } from "lucide-react";
+import { User, Mail, Lock, ArrowRight, Hash } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { SignInCard2 } from "../components/ui/sign-in-card-2";
 import { cn } from "@/lib/utils";
@@ -79,6 +79,9 @@ export default function LoginPage() {
   const [regEmail, setRegEmail] = useState("");
   const [regPassword, setRegPassword] = useState("");
   const [regConfirm, setRegConfirm] = useState("");
+  const [verificationCode, setVerificationCode] = useState("");
+  const [sendCodeLoading, setSendCodeLoading] = useState(false);
+  const [sendCodeCooldown, setSendCodeCooldown] = useState(0);
 
   // 字段级错误
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -105,8 +108,37 @@ export default function LoginPage() {
     if (!regPassword || regPassword.length < 8)
       errs.regPassword = "密码至少8位，需包含字母和数字";
     if (regPassword !== regConfirm) errs.regConfirm = "两次密码不一致";
+    if (!verificationCode || verificationCode.length !== 6)
+      errs.verificationCode = "请输入6位验证码";
     setFieldErrors(errs);
     return Object.keys(errs).length === 0;
+  };
+
+  const handleSendCode = async () => {
+    if (sendCodeCooldown > 0 || sendCodeLoading) return;
+    if (!regEmail.trim()) {
+      setFieldErrors({ ...fieldErrors, regEmail: "请输入邮箱" });
+      return;
+    }
+    setSendCodeLoading(true);
+    try {
+      await sendCode(regEmail);
+      setSuccess("验证码已发送");
+      setSendCodeCooldown(60);
+      const timer = setInterval(() => {
+        setSendCodeCooldown((prev) => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "发送验证码失败");
+    } finally {
+      setSendCodeLoading(false);
+    }
   };
 
   // ── 登录 ──
@@ -127,6 +159,8 @@ export default function LoginPage() {
   };
 
   // ── 注册 ──
+  // 注册成功后自动用同一邮箱+密码调用 login 完成登录，并跳转首页。
+  // （后端 /register 只返回 UserResponse，不下发 token；前端注册后必须再 login 一次。）
   const handleRegister = async (e: FormEvent) => {
     e.preventDefault();
     setError("");
@@ -135,13 +169,11 @@ export default function LoginPage() {
 
     setLoading(true);
     try {
-      await register(username, regEmail, regPassword, regConfirm);
-      setSuccess("注册成功，请登录");
-      setTimeout(() => {
-        setTab("login");
-        setEmail(regEmail);
-        setPassword("");
-      }, 600);
+      await register(username, regEmail, regPassword, regConfirm, verificationCode);
+      // 注册成功 → 自动登录
+      await login(regEmail, regPassword);
+      // 登录成功 → 跳转首页
+      navigate("/");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "注册失败");
     } finally {
@@ -216,14 +248,16 @@ export default function LoginPage() {
               initial={{ scale: 0.5, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ type: "spring", duration: 0.8 }}
-              className="mx-auto w-10 h-10 rounded-full border border-white/10 flex items-center justify-center relative overflow-hidden"
+              className="mx-auto w-12 h-12 rounded-full border border-white/10 flex items-center justify-center relative overflow-hidden bg-white/5"
             >
-              <span className="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-b from-white to-white/70">
-                R
-              </span>
+              <img
+                src="/favicon.svg"
+                alt="logo"
+                className="w-7 h-7"
+              />
             </motion.div>
             <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-b from-white to-white/80">
-              Create Account
+              创建账号
             </h1>
             <p className="text-white/60 text-xs">
               注册以开始分析简历
@@ -283,6 +317,31 @@ export default function LoginPage() {
               error={fieldErrors.regConfirm}
               icon={Lock}
             />
+            <div className="flex gap-2">
+              <RegisterInput
+                id="verification-code"
+                label="验证码"
+                value={verificationCode}
+                onChange={setVerificationCode}
+                placeholder="6位数字"
+                error={fieldErrors.verificationCode}
+                icon={Hash}
+              />
+              <button
+                type="button"
+                disabled={sendCodeLoading || sendCodeCooldown > 0}
+                onClick={handleSendCode}
+                className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white text-sm rounded-lg transition-colors duration-300 flex items-center justify-center self-end mt-3"
+              >
+                {sendCodeLoading ? (
+                  <div className="w-4 h-4 border-2 border-white/70 border-t-transparent rounded-full animate-spin" />
+                ) : sendCodeCooldown > 0 ? (
+                  `${sendCodeCooldown}s`
+                ) : (
+                  "发送"
+                )}
+              </button>
+            </div>
 
             <motion.button
               whileHover={{ scale: 1.02 }}

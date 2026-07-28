@@ -8,7 +8,6 @@ import SessionExpiredDialog from "./components/SessionExpiredDialog";
 import { ToastProvider, ToastContainer } from "./components/Toast";
 import LoginPage from "./pages/LoginPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
-import ResetPasswordPage from "./pages/ResetPasswordPage";
 import ResumeListPage from "./pages/ResumeListPage";
 import QAPage from "./pages/QAPage";
 
@@ -60,7 +59,6 @@ function AppRoutes() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-      <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route
         path="/"
         element={

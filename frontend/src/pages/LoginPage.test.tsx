@@ -29,11 +29,14 @@ vi.mock("framer-motion", () => ({
   useTransform: () => ({ get: () => 0 }),
 }));
 
-// 把 useAuth mock 成 noop，让 LoginPage 能独立于 AuthContext 渲染
+// 默认 mock：login / register 都是 noop
+const mockLogin = vi.fn(async () => {});
+const mockRegister = vi.fn(async () => {});
+
 vi.mock("../context/AuthContext", () => ({
   useAuth: () => ({
-    login: vi.fn(async () => {}),
-    register: vi.fn(async () => {}),
+    login: mockLogin,
+    register: mockRegister,
   }),
 }));
 
@@ -127,6 +130,73 @@ describe("LoginPage 重新设计", () => {
     fireEvent.click(backLink);
     await waitFor(() => {
       expect(screen.getByTestId("submit-btn")).toBeInTheDocument();
+    });
+  });
+
+  it("注册成功后调用 login 接口并跳转到首页（自动登录）", async () => {
+    renderLogin();
+    // 切换到注册
+    await waitFor(() => {
+      expect(screen.getByText(/注册/i)).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText(/注册/i));
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText(/至少2个字符/)).toBeInTheDocument();
+    });
+    // 填写表单
+    fireEvent.change(screen.getByPlaceholderText(/至少2个字符/), {
+      target: { value: "newuser" },
+    });
+    fireEvent.change(screen.getByPlaceholderText(/your@email.com/), {
+      target: { value: "newuser@test.com" },
+    });
+    fireEvent.change(screen.getByPlaceholderText(/至少8位/), {
+      target: { value: "Password123" },
+    });
+    fireEvent.change(screen.getByPlaceholderText(/再输一遍/), {
+      target: { value: "Password123" },
+    });
+    // 提交
+    fireEvent.click(screen.getByTestId("register-submit-btn"));
+    // 应先调用 register
+    await waitFor(() => {
+      expect(mockRegister).toHaveBeenCalledWith(
+        "newuser",
+        "newuser@test.com",
+        "Password123",
+        "Password123"
+      );
+    });
+    // register 成功后应自动调用 login 完成登录
+    await waitFor(() => {
+      expect(mockLogin).toHaveBeenCalledWith("newuser@test.com", "Password123");
+    });
+    // 登录成功后应跳转到首页
+    await waitFor(() => {
+      expect(screen.getByText("home page")).toBeInTheDocument();
+    });
+  });
+
+  it("注册页标题为「创建账号」（全中文化）", async () => {
+    renderLogin();
+    await waitFor(() => {
+      expect(screen.getByText(/注册/i)).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText(/注册/i));
+    await waitFor(() => {
+      expect(screen.getByText("创建账号")).toBeInTheDocument();
+    });
+  });
+
+  it("注册页图标使用 favicon.svg", async () => {
+    renderLogin();
+    await waitFor(() => {
+      expect(screen.getByText(/注册/i)).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText(/注册/i));
+    await waitFor(() => {
+      const icon = document.querySelector('img[alt*="logo"], img[src*="favicon"]');
+      expect(icon).toBeInTheDocument();
     });
   });
 });

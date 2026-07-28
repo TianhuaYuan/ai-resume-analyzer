@@ -4,9 +4,10 @@ from pydantic import BaseModel, EmailStr, field_validator
 
 class RegisterRequest(BaseModel):
     username: str
-    email: EmailStr  # 自动校验邮箱格式
+    email: EmailStr
     password: str
     password_confirm: str
+    verification_code: str
 
     @field_validator("username")
     @classmethod
@@ -31,6 +32,13 @@ class RegisterRequest(BaseModel):
     def passwords_match(cls, v: str, info) -> str:
         if "password" in info.data and v != info.data["password"]:
             raise ValueError("两次密码不一致")
+        return v
+
+    @field_validator("verification_code")
+    @classmethod
+    def verification_code_length(cls, v: str) -> str:
+        if len(v) != 6 or not v.isdigit():
+            raise ValueError("验证码必须是6位数字")
         return v
 
 
@@ -71,14 +79,22 @@ class ForgotPasswordRequest(BaseModel):
     email: EmailStr
 
 
-class ResetPasswordRequest(BaseModel):
-    token: str
+class ForgotPasswordVerifyRequest(BaseModel):
+    email: EmailStr
+    verification_code: str
     new_password: str
+
+    @field_validator("verification_code")
+    @classmethod
+    def verification_code_length(cls, v: str) -> str:
+        if len(v) != 6 or not v.isdigit():
+            raise ValueError("验证码必须是6位数字")
+        return v
 
     @field_validator("new_password")
     @classmethod
     def password_strength(cls, v: str) -> str:
-        """P1-23: 复用注册密码强度规则，确保重置后的密码同样安全。"""
+        """复用注册密码强度规则。"""
         if len(v) < 8:
             raise ValueError("密码至少8位")
         if not any(c.isalpha() for c in v):

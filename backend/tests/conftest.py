@@ -72,14 +72,27 @@ async def client() -> AsyncGenerator[AsyncClient, None]:
 
 @pytest.fixture
 async def registered_user(client: AsyncClient) -> dict:
-    """注册一个测试用户并返回其信息。"""
+    """注册一个测试用户并返回其信息。
+    
+    流程：先调用 /send-code 获取验证码，再调用 /register 完成注册。
+    """
     user_data = {
         "username": "testuser",
         "email": "test@example.com",
         "password": "Test1234!",
         "password_confirm": "Test1234!",
     }
-    resp = await client.post("/api/v1/auth/register", json=user_data)
+    
+    await client.post("/api/v1/auth/send-code", json={"email": user_data["email"]})
+    
+    from services.verification_service import _in_memory_codes, _CODE_KEY_PREFIX
+    
+    code_key = f"{_CODE_KEY_PREFIX}{user_data['email']}"
+    code_entry = _in_memory_codes.get(code_key)
+    verification_code = code_entry["code"] if code_entry else "123456"
+    
+    register_data = {**user_data, "verification_code": verification_code}
+    resp = await client.post("/api/v1/auth/register", json=register_data)
     assert resp.status_code == 201
     return {**user_data, "id": resp.json()["id"]}
 
