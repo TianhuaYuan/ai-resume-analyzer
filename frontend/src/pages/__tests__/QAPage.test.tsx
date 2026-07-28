@@ -624,3 +624,28 @@ describe("Task 5.1: 质量反馈", () => {
     }).not.toThrow();
   });
 });
+
+describe("QAPage 顶部栏设计", () => {
+  it("顶部栏滚动时保持固定（sticky）", async () => {
+    renderPage();
+    await waitFor(() => {
+      expect(getHistory).toHaveBeenCalled();
+    });
+    // 顶栏包含文件名，查找后向上找 sticky 容器
+    const heading = screen.getByRole("heading", { level: 2 });
+    const header = heading.closest("div[class*='sticky'], div[class*='fixed']");
+    expect(header).toBeTruthy();
+    expect(header!.className).toMatch(/sticky|fixed/);
+  });
+
+  it("顶部栏不使用半透明背景", async () => {
+    renderPage();
+    await waitFor(() => {
+      expect(getHistory).toHaveBeenCalled();
+    });
+    const heading = screen.getByRole("heading", { level: 2 });
+    const header = heading.closest("div[class*='sticky'], div[class*='fixed']");
+    expect(header).toBeTruthy();
+    expect(header!.className).not.toMatch(/backdrop-blur|bg-\[.*\]\/\d+/);
+  });
+});

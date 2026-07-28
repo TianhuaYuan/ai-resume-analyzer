@@ -18,12 +18,13 @@ export default function Navbar() {
 
   return (
     <nav className="flex items-center justify-between px-6 py-3
-      border-b border-[var(--color-border)] bg-[var(--color-bg)]/80 backdrop-blur-xl sticky top-0 z-40">
+      border-b border-[var(--color-border)] bg-[var(--color-bg)] sticky top-0 z-40">
       <Link to="/" className="flex items-center gap-2.5 no-underline">
-        <div className="w-7 h-7 rounded-lg bg-linear-to-br from-indigo-500 to-purple-600
-          flex items-center justify-center">
-          <span className="text-white text-xs font-bold">R</span>
-        </div>
+        <svg viewBox="0 0 64 64" className="w-7 h-7">
+          <polygon points="32,6 54,18 32,30 10,18" fill="#F5C547"/>
+          <polygon points="10,18 32,30 32,54 10,42" fill="#38D4D4"/>
+          <polygon points="32,30 54,18 54,42 32,54" fill="#8B5CF6"/>
+        </svg>
         <span className="text-sm font-semibold text-[var(--color-text)]">
           AI Resume Analyzer
         </span>

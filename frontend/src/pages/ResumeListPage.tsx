@@ -22,16 +22,16 @@ import { useToast } from "../components/Toast";
 
 function SkeletonCard() {
   return (
-    <div className="bg-white/4 border border-white/8 rounded-2xl p-5">
+    <div className="border border-[var(--color-border)] p-5">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3 flex-1">
-          <div className="w-8 h-8 rounded-lg animate-skeleton" />
+          <div className="w-8 h-8 animate-skeleton" />
           <div className="flex-1 space-y-2">
-            <div className="h-4 w-48 rounded animate-skeleton" />
-            <div className="h-3 w-32 rounded animate-skeleton" />
+            <div className="h-4 w-48 animate-skeleton" />
+            <div className="h-3 w-32 animate-skeleton" />
           </div>
         </div>
-        <div className="h-6 w-16 rounded-full animate-skeleton" />
+        <div className="h-6 w-16 animate-skeleton" />
       </div>
     </div>
   );
@@ -52,41 +52,44 @@ function SkeletonList() {
 function StatusBadge({ status }: { status: string }) {
   if (status === "processing") {
     return (
-      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium
-        bg-amber-500/12 border border-amber-500/20 text-amber-400">
-        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-progress-pulse" />
+      <span className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-medium
+        font-mono-label tracking-widest uppercase
+        border border-[var(--color-text)] text-[var(--color-text-secondary)]">
+        <span className="w-1.5 h-1.5 bg-[var(--color-text-muted)] animate-progress-pulse" />
         处理中
       </span>
     );
   }
   if (status === "failed") {
     return (
-      <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium
-        bg-red-500/12 border border-red-500/20 text-red-400">
+      <span className="inline-flex items-center px-3 py-1 text-xs font-medium
+        font-mono-label tracking-widest uppercase
+        border-b-2 border-[var(--color-text)] text-[var(--color-text-secondary)]">
         失败
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium
-      bg-emerald-500/12 border border-emerald-500/20 text-emerald-400">
+    <span className="inline-flex items-center px-3 py-1 text-xs font-medium
+      font-mono-label tracking-widest uppercase
+      text-[var(--color-text)]">
       就绪
     </span>
   );
 }
 
 function FileIcon({ status }: { status: string }) {
-  const bg =
+  const borderClass =
     status === "failed"
-      ? "bg-red-500/12"
+      ? "border-b-2 border-[var(--color-text)]"
       : status === "processing"
-      ? "bg-amber-500/12"
-      : "bg-indigo-500/12";
-  const emoji = status === "failed" ? "⚠️" : status === "processing" ? "⏳" : "📄";
+      ? "border border-[var(--color-border)]"
+      : "border border-[var(--color-text)]";
+  const symbol = status === "failed" ? "!" : status === "processing" ? "..." : "#";
 
   return (
-    <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-base ${bg}`}>
-      {emoji}
+    <div className={`w-9 h-9 flex items-center justify-center text-sm font-mono-label font-bold text-[var(--color-text)] ${borderClass}`}>
+      {symbol}
     </div>
   );
 }
@@ -95,22 +98,34 @@ function FileIcon({ status }: { status: string }) {
 
 function EmptyState({ onUpload }: { onUpload: () => void }) {
   return (
-    <div className="text-center py-20">
-      <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-indigo-500/10 border border-indigo-500/15
-        flex items-center justify-center text-4xl">
-        📋
+    <div className="py-16 md:py-32 flex flex-col md:flex-row md:items-center md:justify-between gap-12">
+      <div className="flex-1">
+        <hr className="mono-rule mb-8 max-w-xs" />
+        <p className="font-display text-3xl md:text-5xl font-bold tracking-tight text-[var(--color-text)] mb-6 leading-tight">
+          开始你的<br />简历之旅
+        </p>
+        <p className="text-base md:text-lg text-[var(--color-text-secondary)] mb-8 max-w-md leading-relaxed" style={{ fontFamily: "var(--font-body)" }}>
+          上传你的第一份简历，AI 将自动分析内容、提取关键信息，并生成专业的优化建议。
+        </p>
+        <button
+          onClick={onUpload}
+          className="mono-btn-primary"
+        >
+          上传简历 →
+        </button>
       </div>
-      <h3 className="text-lg font-medium text-[var(--color-text)] mb-2">还没有简历</h3>
-      <p className="text-sm text-[var(--color-text-muted)] mb-6">上传你的第一份简历，开始 AI 智能分析</p>
-      <button
-        onClick={onUpload}
-        className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white
-          bg-linear-to-r from-indigo-500 to-purple-600
-          hover:brightness-110 hover:shadow-lg hover:shadow-indigo-500/25
-          active:scale-[0.98] transition-all duration-200 cursor-pointer"
-      >
-        上传简历
-      </button>
+      <div className="flex-1 flex justify-center">
+        <div className="w-48 h-48 md:w-64 md:h-64 border-2 border-[var(--color-text)] flex items-center justify-center">
+          <svg viewBox="0 0 64 64" className="w-24 h-24 md:w-32 md:h-32">
+            <polygon points="32,6 54,18 32,30 10,18" fill="var(--color-text)" opacity="0.1"/>
+            <polygon points="10,18 32,30 32,54 10,42" fill="var(--color-text)" opacity="0.1"/>
+            <polygon points="32,30 54,18 54,42 32,54" fill="var(--color-text)" opacity="0.1"/>
+            <polygon points="32,6 54,18 32,30 10,18" fill="none" stroke="var(--color-text)" strokeWidth="1"/>
+            <polygon points="10,18 32,30 32,54 10,42" fill="none" stroke="var(--color-text)" strokeWidth="1"/>
+            <polygon points="32,30 54,18 54,42 32,54" fill="none" stroke="var(--color-text)" strokeWidth="1"/>
+          </svg>
+        </div>
+      </div>
     </div>
   );
 }
@@ -369,7 +384,7 @@ export default function ResumeListPage() {
     try {
       await deleteResume(deleteTarget.id);
       setResumes((prev) => prev.filter((r) => r.id !== deleteTarget.id));
-      setTotal((prev) => prev - 1);
+      setTotal((prev) => Math.max(0, prev - 1));
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "删除失败");
     } finally {
@@ -396,7 +411,7 @@ export default function ResumeListPage() {
     setSelectedIds(new Set());
     if (deletedCount > 0) {
       setResumes((prev) => prev.filter((r) => !selectedIds.has(r.id)));
-      setTotal((prev) => prev - deletedCount);
+      setTotal((prev) => Math.max(0, prev - deletedCount));
       toast.success(`已删除 ${deletedCount} 份简历`);
     }
     if (failCount > 0) {
@@ -456,22 +471,23 @@ export default function ResumeListPage() {
   };
 
   return (
-    <div
-      className={`min-h-screen bg-[var(--color-bg)] drop-zone transition-all ${
-        isDragging ? "ring-4 ring-indigo-500 ring-inset bg-indigo-500/5" : ""
-      }`}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-    >
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
+    <>
+      <div
+        className={`min-h-screen bg-[var(--color-bg)] drop-zone ${
+          isDragging ? "ring-4 ring-[var(--color-text)] ring-inset" : ""
+        }`}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        <div className="max-w-4xl mx-auto">
         {/* ── 顶部栏 ── */}
-        <div className="flex items-center justify-between mb-8">
+        <div className="sticky top-[49px] z-30 bg-[var(--color-bg)] px-6 md:px-8 lg:px-12 py-4 border-b border-[var(--color-border)] flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-semibold text-[var(--color-text)]">
+            <h1 className="font-display text-4xl md:text-5xl font-bold tracking-tight text-[var(--color-text)]">
               我的简历
-              <span className="text-sm font-normal text-[var(--color-text-muted)] ml-2">
-                ({total} 份)
+              <span className="font-mono-label text-sm font-normal tracking-widest text-[var(--color-text-muted)] ml-3 uppercase">
+                {total} 份
               </span>
             </h1>
           </div>
@@ -535,47 +551,45 @@ export default function ResumeListPage() {
               <button
                 onClick={triggerUpload}
                 disabled={uploading}
-                className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white
-                  bg-linear-to-r from-indigo-500 to-purple-600
-                  hover:brightness-110 hover:shadow-lg hover:shadow-indigo-500/25
-                  active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed
-                  transition-all duration-200 cursor-pointer"
+                className="mono-btn-primary"
               >
-                {uploading ? "上传中..." : "+ 上传简历"}
+                {uploading ? "上传中..." : "上传简历 →"}
               </button>
             )}
           </div>
         </div>
 
-        {/* ── 错误提示 ── */}
-        {error && (
-          <div className="mb-6 p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm animate-shake flex items-center justify-between gap-3">
-            <span>{error}</span>
-            <div className="flex items-center gap-2 shrink-0">
-              {/* Task 2.6: 上传失败时显示「重试上传」按钮，复用 lastUploadKey */}
-              {uploadFailed && (
-                <button
-                  onClick={handleRetryUpload}
-                  disabled={uploading}
-                  className="px-2.5 py-1 rounded-md text-xs font-medium
-                    bg-red-500/20 hover:bg-red-500/30 text-red-300
-                    disabled:opacity-50 disabled:cursor-not-allowed
-                    transition-colors cursor-pointer"
-                >
-                  重试上传
-                </button>
-              )}
-              <button
-                onClick={() => setError("")}
-                className="text-red-500 hover:text-red-400 cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* ── 内容区 ── */}
+        <div className="px-6 md:px-8 lg:px-12 py-8 md:py-12">
+          {/* ── 错误提示 ── */}
+          {error && (
+            <div className="mb-6 p-3.5 border-b-2 border-[var(--color-text)] text-[var(--color-text)] text-sm animate-shake flex items-center justify-between gap-3">
+              <span className="font-mono-label tracking-widest uppercase text-xs">{error}</span>
+              <div className="flex items-center gap-2 shrink-0">
+                {/* Task 2.6: 上传失败时显示「重试上传」按钮，复用 lastUploadKey */}
+                {uploadFailed && (
+                  <button
+                    onClick={handleRetryUpload}
+                    disabled={uploading}
+                    className="px-2.5 py-1 rounded-md text-xs font-medium
+                      bg-red-500/20 hover:bg-red-500/30 text-red-300
+                      disabled:opacity-50 disabled:cursor-not-allowed
+                      transition-colors cursor-pointer"
+                  >
+                    重试上传
+                  </button>
+                )}
+                <button
+                  onClick={() => setError("")}
+                  className="text-red-500 hover:text-red-400 cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ── 内容区 ── */}
         {loading ? (
           <SkeletonList />
         ) : resumes.length === 0 ? (
@@ -594,16 +608,16 @@ export default function ResumeListPage() {
                 className="block group"
               >
                 <div
-                  className={`flex items-center justify-between p-5 rounded-2xl
-                    border transition-all duration-200
+                  className={`flex items-center justify-between p-5
+                    border transition-colors duration-100
                     ${r.status === "ready"
-                      ? "bg-white/4 border-[var(--color-border)] hover:border-indigo-500/30 hover:bg-white/6 hover:-translate-y-px cursor-pointer"
+                      ? "border-[var(--color-text)] mono-hover-border cursor-pointer"
                       : r.status === "failed"
-                      ? "bg-white/4 border-red-500/15"
-                      : "bg-white/4 border-[var(--color-border)]"
+                      ? "border-[var(--color-text)] border-b-2"
+                      : "border-[var(--color-border)]"
                     }
                     ${r.id === newCardId ? "animate-slide-in-top" : ""}
-                    ${selectMode && selectedIds.has(r.id) ? "ring-1 ring-indigo-500/40 bg-indigo-500/5" : ""}
+                    ${selectMode && selectedIds.has(r.id) ? "border-2 border-[var(--color-text)] bg-[var(--color-text)]/5" : ""}
                   `}
                   style={
                     r.id !== newCardId
@@ -633,10 +647,10 @@ export default function ResumeListPage() {
                       <div className="flex items-center gap-2 mt-1">
                         {r.status === "processing" ? (
                           <div className="flex items-center gap-2">
-                            <div className="h-1 w-24 rounded-full bg-white/6 overflow-hidden">
-                              <div className="h-full w-3/5 rounded-full bg-linear-to-r from-amber-500 to-amber-400 animate-progress-pulse" />
+                            <div className="h-0.5 w-24 bg-[var(--color-border)] overflow-hidden">
+                              <div className="h-full w-3/5 bg-[var(--color-text)] animate-progress-pulse" />
                             </div>
-                            <span className="text-xs text-[var(--color-text-muted)]">解析中...</span>
+                            <span className="text-xs font-mono-label tracking-widest text-[var(--color-text-muted)] uppercase">解析中</span>
                           </div>
                         ) : r.status === "failed" ? (
                           <span className="text-xs text-red-400/80">
@@ -669,11 +683,12 @@ export default function ResumeListPage() {
                         }}
                         disabled={retryingIds.has(r.id)}
                         className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs
-                          text-[var(--color-text-secondary)] hover:text-amber-300
-                          hover:bg-amber-500/10 rounded-lg
-                          active:scale-[0.98] motion-reduce:active:scale-100
+                          font-mono-label tracking-widest uppercase
+                          text-[var(--color-text-secondary)] hover:text-[var(--color-text)]
+                          hover:bg-[var(--color-bg)]
+                          border-b border-transparent hover:border-[var(--color-text)]
                           disabled:opacity-50 disabled:cursor-not-allowed
-                          transition-all cursor-pointer"
+                          transition-colors duration-100 cursor-pointer"
                         aria-label="重试"
                       >
                         <ArrowClockwise size={13} weight="bold" aria-hidden="true" />
@@ -690,10 +705,11 @@ export default function ResumeListPage() {
                             setViewerTarget(r);
                           }}
                           className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1.5 text-xs
-                            text-[var(--color-text-secondary)] hover:text-emerald-300
-                            hover:bg-emerald-500/10 rounded-lg
-                            active:scale-[0.98] motion-reduce:active:scale-100
-                            transition-all cursor-pointer"
+                            font-mono-label tracking-widest uppercase
+                            text-[var(--color-text-secondary)] hover:text-[var(--color-text)]
+                            hover:border-b hover:border-[var(--color-text)]
+                            border-b border-transparent
+                            transition-colors duration-100 cursor-pointer"
                         >
                           <FileText size={13} weight="bold" aria-hidden="true" />
                           预览
@@ -705,10 +721,11 @@ export default function ResumeListPage() {
                             setChunksTarget(r);
                           }}
                           className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1.5 text-xs
-                            text-[var(--color-text-secondary)] hover:text-sky-300
-                            hover:bg-sky-500/10 rounded-lg
-                            active:scale-[0.98] motion-reduce:active:scale-100
-                            transition-all cursor-pointer"
+                            font-mono-label tracking-widest uppercase
+                            text-[var(--color-text-secondary)] hover:text-[var(--color-text)]
+                            hover:border-b hover:border-[var(--color-text)]
+                            border-b border-transparent
+                            transition-colors duration-100 cursor-pointer"
                         >
                           <ListBullets size={13} weight="bold" aria-hidden="true" />
                           分块
@@ -720,10 +737,11 @@ export default function ResumeListPage() {
                             setAnalyzeTarget(r);
                           }}
                           className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1.5 text-xs
-                            text-[var(--color-text-secondary)] hover:text-indigo-300
-                            hover:bg-indigo-500/10 rounded-lg
-                            active:scale-[0.98] motion-reduce:active:scale-100
-                            transition-all cursor-pointer"
+                            font-mono-label tracking-widest uppercase
+                            text-[var(--color-text-secondary)] hover:text-[var(--color-text)]
+                            hover:border-b hover:border-[var(--color-text)]
+                            border-b border-transparent
+                            transition-colors duration-100 cursor-pointer"
                         >
                           <Sparkle size={13} weight="bold" aria-hidden="true" />
                           分析
@@ -735,10 +753,11 @@ export default function ResumeListPage() {
                             setJdMatchTarget(r);
                           }}
                           className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1.5 text-xs
-                            text-[var(--color-text-secondary)] hover:text-purple-300
-                            hover:bg-purple-500/10 rounded-lg
-                            active:scale-[0.98] motion-reduce:active:scale-100
-                            transition-all cursor-pointer"
+                            font-mono-label tracking-widest uppercase
+                            text-[var(--color-text-secondary)] hover:text-[var(--color-text)]
+                            hover:border-b hover:border-[var(--color-text)]
+                            border-b border-transparent
+                            transition-colors duration-100 cursor-pointer"
                         >
                           <Target size={13} weight="bold" aria-hidden="true" />
                           JD匹配
@@ -749,8 +768,11 @@ export default function ResumeListPage() {
                             e.stopPropagation();
                             setDeleteTarget(r);
                           }}
-                          className="hidden sm:inline-flex px-2.5 py-1.5 text-xs text-[var(--color-text-muted)] hover:text-red-400
-                            hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer"
+                          className="hidden sm:inline-flex px-2.5 py-1.5 text-xs font-mono-label tracking-widest uppercase
+                            text-[var(--color-text-muted)] hover:text-[var(--color-text)]
+                            hover:border-b-2 hover:border-[var(--color-text)]
+                            border-b border-transparent
+                            transition-colors duration-100 cursor-pointer"
                         >
                           删除
                         </button>
@@ -800,8 +822,11 @@ export default function ResumeListPage() {
                             e.stopPropagation();
                             setDeleteTarget(r);
                           }}
-                          className="hidden sm:inline-flex px-2.5 py-1.5 text-xs text-[var(--color-text-muted)] hover:text-red-400
-                            hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer"
+                          className="hidden sm:inline-flex px-2.5 py-1.5 text-xs font-mono-label tracking-widest uppercase
+                            text-[var(--color-text-muted)] hover:text-[var(--color-text)]
+                            hover:border-b-2 hover:border-[var(--color-text)]
+                            border-b border-transparent
+                            transition-colors duration-100 cursor-pointer"
                         >
                           删除
                         </button>
@@ -827,61 +852,63 @@ export default function ResumeListPage() {
           </div>
         )}
       </div>
-
-      {/* ── 删除确认弹窗（共享 ConfirmDialog + focus trap） ── */}
-      <ConfirmDialog
-        open={deleteTarget !== null}
-        title="确认删除"
-        description={`确定删除「${deleteTarget?.filename ?? ""}」吗？此操作不可撤销。`}
-        confirmText="删除"
-        danger
-        onConfirm={handleDelete}
-        onCancel={() => setDeleteTarget(null)}
-      />
-
-      {/* ── 批量删除确认弹窗 ── */}
-      <ConfirmDialog
-        open={batchDeleteOpen}
-        title="批量删除"
-        description={`确定删除选中的 ${selectedIds.size} 份简历吗？此操作不可撤销。`}
-        confirmText="删除"
-        danger
-        loading={batchDeleting}
-        onConfirm={handleBatchDelete}
-        onCancel={() => setBatchDeleteOpen(false)}
-      />
-
-      {/* ── 简历分析弹窗 ── */}
-      <AnalysisModal
-        resumeId={analyzeTarget?.id ?? 0}
-        resumeFilename={analyzeTarget?.filename ?? ""}
-        open={analyzeTarget !== null}
-        onClose={() => setAnalyzeTarget(null)}
-      />
-
-      {/* ── 分块预览弹窗 ── */}
-      <ChunksModal
-        resumeId={chunksTarget?.id ?? 0}
-        resumeFilename={chunksTarget?.filename ?? ""}
-        open={chunksTarget !== null}
-        onClose={() => setChunksTarget(null)}
-      />
-
-      {/* ── 简历原文预览弹窗 ── */}
-      <ResumeViewer
-        resumeId={viewerTarget?.id ?? 0}
-        resumeFilename={viewerTarget?.filename ?? ""}
-        open={viewerTarget !== null}
-        onClose={() => setViewerTarget(null)}
-      />
-
-      {/* ── JD 匹配分析弹窗 ── */}
-      <MatchJDModal
-        resumeId={jdMatchTarget?.id ?? 0}
-        resumeFilename={jdMatchTarget?.filename ?? ""}
-        open={jdMatchTarget !== null}
-        onClose={() => setJdMatchTarget(null)}
-      />
     </div>
+    </div>
+
+    {/* ── 删除确认弹窗（共享 ConfirmDialog + focus trap） ── */}
+    <ConfirmDialog
+      open={deleteTarget !== null}
+      title="确认删除"
+      description={`确定删除「${deleteTarget?.filename ?? ""}」吗？此操作不可撤销。`}
+      confirmText="删除"
+      danger
+      onConfirm={handleDelete}
+      onCancel={() => setDeleteTarget(null)}
+    />
+
+    {/* ── 批量删除确认弹窗 ── */}
+    <ConfirmDialog
+      open={batchDeleteOpen}
+      title="批量删除"
+      description={`确定删除选中的 ${selectedIds.size} 份简历吗？此操作不可撤销。`}
+      confirmText="删除"
+      danger
+      loading={batchDeleting}
+      onConfirm={handleBatchDelete}
+      onCancel={() => setBatchDeleteOpen(false)}
+    />
+
+    {/* ── 简历分析弹窗 ── */}
+    <AnalysisModal
+      resumeId={analyzeTarget?.id ?? 0}
+      resumeFilename={analyzeTarget?.filename ?? ""}
+      open={analyzeTarget !== null}
+      onClose={() => setAnalyzeTarget(null)}
+    />
+
+    {/* ── 分块预览弹窗 ── */}
+    <ChunksModal
+      resumeId={chunksTarget?.id ?? 0}
+      resumeFilename={chunksTarget?.filename ?? ""}
+      open={chunksTarget !== null}
+      onClose={() => setChunksTarget(null)}
+    />
+
+    {/* ── 简历原文预览弹窗 ── */}
+    <ResumeViewer
+      resumeId={viewerTarget?.id ?? 0}
+      resumeFilename={viewerTarget?.filename ?? ""}
+      open={viewerTarget !== null}
+      onClose={() => setViewerTarget(null)}
+    />
+
+    {/* ── JD 匹配分析弹窗 ── */}
+    <MatchJDModal
+      resumeId={jdMatchTarget?.id ?? 0}
+      resumeFilename={jdMatchTarget?.filename ?? ""}
+      open={jdMatchTarget !== null}
+      onClose={() => setJdMatchTarget(null)}
+    />
+    </>
   );
 }

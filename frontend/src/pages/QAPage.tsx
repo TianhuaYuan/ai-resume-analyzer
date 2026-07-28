@@ -594,7 +594,7 @@ export default function QAPage() {
   return (
     <div className="min-h-screen bg-[var(--color-bg)] flex flex-col">
       {/* ── 顶栏 ── */}
-      <div className="px-6 py-4 border-b border-[var(--color-border)] shrink-0">
+      <div className="sticky top-[49px] z-30 bg-[var(--color-bg)] px-6 py-4 border-b border-[var(--color-border)] shrink-0">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="min-w-0 flex-1">
             <h2 className="text-base font-semibold text-[var(--color-text)] truncate">

@@ -51,18 +51,18 @@ describe("SignInCard2 登录卡片组件", () => {
 
   it("渲染邮箱输入框", () => {
     renderCard();
-    expect(screen.getByPlaceholderText(/email/i)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/邮箱地址/i)).toBeInTheDocument();
   });
 
   it("渲染密码输入框", () => {
     renderCard();
-    expect(screen.getByPlaceholderText(/password/i)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/密码/i)).toBeInTheDocument();
   });
 
   it("输入邮箱触发 onEmailChange", () => {
     const onEmailChange = vi.fn();
     renderCard({ onEmailChange });
-    fireEvent.change(screen.getByPlaceholderText(/email/i), {
+    fireEvent.change(screen.getByPlaceholderText(/邮箱地址/i), {
       target: { value: "test@example.com" },
     });
     expect(onEmailChange).toHaveBeenCalledWith("test@example.com");
@@ -71,7 +71,7 @@ describe("SignInCard2 登录卡片组件", () => {
   it("输入密码触发 onPasswordChange", () => {
     const onPasswordChange = vi.fn();
     renderCard({ onPasswordChange });
-    fireEvent.change(screen.getByPlaceholderText(/password/i), {
+    fireEvent.change(screen.getByPlaceholderText(/密码/i), {
       target: { value: "secret123" },
     });
     expect(onPasswordChange).toHaveBeenCalledWith("secret123");
@@ -79,7 +79,7 @@ describe("SignInCard2 登录卡片组件", () => {
 
   it("点击眼睛图标切换密码可见性", () => {
     renderCard();
-    const passwordInput = screen.getByPlaceholderText(/password/i);
+    const passwordInput = screen.getByPlaceholderText(/密码/i);
     expect(passwordInput).toHaveAttribute("type", "password");
 
     // 点击切换按钮（眼睛图标）
@@ -103,7 +103,7 @@ describe("SignInCard2 登录卡片组件", () => {
   it("提交表单触发 onSubmit", () => {
     const onSubmit = vi.fn();
     renderCard({ onSubmit });
-    const form = screen.getByPlaceholderText(/email/i).closest("form");
+    const form = screen.getByPlaceholderText(/邮箱地址/i).closest("form");
     expect(form).toBeInTheDocument();
     if (form) {
       fireEvent.submit(form);
@@ -111,10 +111,10 @@ describe("SignInCard2 登录卡片组件", () => {
     }
   });
 
-  it("渲染 '记住我' 复选框", () => {
+  it("渲染 '记住我' 复选框（中文）", () => {
     renderCard();
-    const checkbox = screen.getByRole("checkbox", { name: /remember/i }) ||
-      screen.getByLabelText(/remember/i);
+    const checkbox = screen.getByRole("checkbox", { name: /记住/i }) ||
+      screen.getByLabelText(/记住/i);
     expect(checkbox).toBeInTheDocument();
   });
 
@@ -129,12 +129,30 @@ describe("SignInCard2 登录卡片组件", () => {
     expect(submitBtn).toBeDisabled();
   });
 
-  it("渲染 'Sign up' 链接并触发 onSignUp", () => {
+  it("渲染 '注册' 链接并触发 onSignUp", () => {
     const onSignUp = vi.fn();
     renderCard({ onSignUp });
-    const link = screen.getByText(/sign up/i);
+    const link = screen.getByText(/注册/i);
     expect(link).toBeInTheDocument();
     fireEvent.click(link);
     expect(onSignUp).toHaveBeenCalled();
+  });
+
+  it("登录页面所有文案为中文", () => {
+    renderCard();
+    expect(screen.getByText(/欢迎回来/i)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/邮箱地址/i)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/密码/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/记住/i)).toBeInTheDocument();
+    // 登录按钮通过 data-testid 定位
+    const submitBtn = screen.getByTestId("submit-btn");
+    expect(submitBtn.textContent).toContain("登录");
+    expect(screen.getByText(/还没有账号/i)).toBeInTheDocument();
+    expect(screen.getByText(/注册/i)).toBeInTheDocument();
+    // 不应包含英文文案
+    expect(screen.queryByText(/Welcome Back/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Sign In/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Sign up/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Remember me/i)).not.toBeInTheDocument();
   });
 });

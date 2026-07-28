@@ -297,7 +297,7 @@ export default function LoginPage() {
                   <div className="w-4 h-4 border-2 border-black/70 border-t-transparent rounded-full animate-spin" />
                 ) : (
                   <span className="flex items-center justify-center gap-1 text-sm font-medium">
-                    Sign Up
+                    注册
                     <ArrowRight className="w-3 h-3" />
                   </span>
                 )}
@@ -306,7 +306,7 @@ export default function LoginPage() {
 
             {/* 返回登录 */}
             <p className="text-center text-xs text-white/60 mt-4">
-              Already have an account?{" "}
+              已有账号？{" "}
               <button
                 type="button"
                 onClick={() => {
@@ -319,7 +319,7 @@ export default function LoginPage() {
                 }}
                 className="text-white hover:text-white/70 transition-colors duration-300 font-medium cursor-pointer"
               >
-                Log in
+                返回登录
               </button>
             </p>
           </form>

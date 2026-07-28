@@ -106,12 +106,13 @@ export function SignInCard2({
                 initial={{ scale: 0.5, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 transition={{ type: "spring", duration: 0.8 }}
-                className="mx-auto w-10 h-10 rounded-full border border-white/10 flex items-center justify-center relative overflow-hidden"
+                className="mx-auto w-10 h-10 flex items-center justify-center"
               >
-                <span className="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-b from-white to-white/70">
-                  R
-                </span>
-                <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent opacity-50" />
+                <svg viewBox="0 0 64 64" className="w-10 h-10">
+                  <polygon points="32,6 54,18 32,30 10,18" fill="#F5C547"/>
+                  <polygon points="10,18 32,30 32,54 10,42" fill="#38D4D4"/>
+                  <polygon points="32,30 54,18 54,42 32,54" fill="#8B5CF6"/>
+                </svg>
               </motion.div>
 
               <motion.h1
@@ -120,7 +121,7 @@ export function SignInCard2({
                 transition={{ delay: 0.2 }}
                 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-b from-white to-white/80"
               >
-                Welcome Back
+                欢迎回来
               </motion.h1>
 
               <motion.p
@@ -152,7 +153,7 @@ export function SignInCard2({
                     />
                     <Input
                       type="email"
-                      placeholder="Email address"
+                      placeholder="邮箱地址"
                       value={email}
                       onChange={(e) => onEmailChange(e.target.value)}
                       onFocus={() => setFocusedInput("email")}
@@ -178,7 +179,7 @@ export function SignInCard2({
                     />
                     <Input
                       type={showPassword ? "text" : "password"}
-                      placeholder="Password"
+                      placeholder="密码"
                       value={password}
                       onChange={(e) => onPasswordChange(e.target.value)}
                       onFocus={() => setFocusedInput("password")}
@@ -216,7 +217,7 @@ export function SignInCard2({
                     htmlFor="remember-me"
                     className="text-xs text-white/60 hover:text-white/80 transition-colors duration-200 cursor-pointer"
                   >
-                    Remember me
+                    记住我
                   </label>
                 </div>
 
@@ -252,15 +253,15 @@ export function SignInCard2({
                       </motion.div>
                     ) : (
                       <motion.span
-                        key="button-text"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        className="flex items-center justify-center gap-1 text-sm font-medium"
-                      >
-                        Sign In
-                        <ArrowRight className="w-3 h-3" />
-                      </motion.span>
+                          key="button-text"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          className="flex items-center justify-center gap-1 text-sm font-medium"
+                        >
+                          登录
+                          <ArrowRight className="w-3 h-3" />
+                        </motion.span>
                     )}
                   </AnimatePresence>
                 </div>
@@ -273,13 +274,13 @@ export function SignInCard2({
                 animate={{ opacity: 1 }}
                 transition={{ delay: 0.5 }}
               >
-                Don't have an account?{" "}
+                还没有账号？{" "}
                 <button
                   type="button"
                   onClick={onSignUp}
                   className="text-white hover:text-white/70 transition-colors duration-300 font-medium cursor-pointer"
                 >
-                  Sign up
+                  注册
                 </button>
               </motion.p>
             </form>

@@ -75,12 +75,12 @@ describe("LoginPage 重新设计", () => {
     });
   });
 
-  it("点击 'Sign up' 切换到注册表单", async () => {
+  it("点击 '注册' 切换到注册表单", async () => {
     renderLogin();
     await waitFor(() => {
-      expect(screen.getByText(/sign up/i)).toBeInTheDocument();
+      expect(screen.getByText(/注册/i)).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByText(/sign up/i));
+    fireEvent.click(screen.getByText(/注册/i));
     // 注册表单应有用户名输入框
     await waitFor(() => {
       expect(screen.getByPlaceholderText(/至少2个字符/)).toBeInTheDocument();
@@ -91,9 +91,9 @@ describe("LoginPage 重新设计", () => {
     renderLogin();
     // 先切换到注册
     await waitFor(() => {
-      expect(screen.getByText(/sign up/i)).toBeInTheDocument();
+      expect(screen.getByText(/注册/i)).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByText(/sign up/i));
+    fireEvent.click(screen.getByText(/注册/i));
     await waitFor(() => {
       expect(screen.getByPlaceholderText(/至少2个字符/)).toBeInTheDocument();
     });
@@ -104,9 +104,9 @@ describe("LoginPage 重新设计", () => {
   it("注册表单渲染注册提交按钮", async () => {
     renderLogin();
     await waitFor(() => {
-      expect(screen.getByText(/sign up/i)).toBeInTheDocument();
+      expect(screen.getByText(/注册/i)).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByText(/sign up/i));
+    fireEvent.click(screen.getByText(/注册/i));
     await waitFor(() => {
       expect(screen.getByTestId("register-submit-btn")).toBeInTheDocument();
     });
@@ -116,14 +116,14 @@ describe("LoginPage 重新设计", () => {
     renderLogin();
     // 切换到注册
     await waitFor(() => {
-      expect(screen.getByText(/sign up/i)).toBeInTheDocument();
+      expect(screen.getByText(/注册/i)).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByText(/sign up/i));
+    fireEvent.click(screen.getByText(/注册/i));
     await waitFor(() => {
       expect(screen.getByPlaceholderText(/至少2个字符/)).toBeInTheDocument();
     });
     // 点击返回登录
-    const backLink = screen.getByText(/log in|返回登录|sign in/i);
+    const backLink = screen.getByText(/返回登录/i);
     fireEvent.click(backLink);
     await waitFor(() => {
       expect(screen.getByTestId("submit-btn")).toBeInTheDocument();
