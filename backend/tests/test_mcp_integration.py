@@ -309,7 +309,7 @@ async def test_resume_list_resource_integration():
         mock_cm.__aenter__ = AsyncMock(return_value=mock_db)
         mock_cm.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("core.database.AsyncSessionLocal", return_value=mock_cm):
+        with patch("mcp_server.resources.resumes.AsyncSessionLocal", return_value=mock_cm):
             result = await get_resume_list()
             data = json.loads(result)
             assert len(data) == 1
@@ -347,7 +347,7 @@ async def test_qa_history_resource_integration():
         mock_cm.__aenter__ = AsyncMock(return_value=mock_db)
         mock_cm.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("core.database.AsyncSessionLocal", return_value=mock_cm):
+        with patch("mcp_server.resources.history.AsyncSessionLocal", return_value=mock_cm):
             result = await get_qa_history("1")
             data = json.loads(result)
             assert len(data) == 1
@@ -989,7 +989,7 @@ class TestMCPHTTPEndpoint:
 
         token = _current_user_id.set(1)
         try:
-            with patch("core.database.AsyncSessionLocal", return_value=mock_cm):
+            with patch("mcp_server.tools.search.AsyncSessionLocal", return_value=mock_cm):
                 result = await search_knowledge_base(query="test", resume_id="99999")
                 data = json.loads(result[0].text)
                 assert "error" in data
@@ -1035,7 +1035,7 @@ class TestMCPHTTPEndpoint:
             mock_cm.__aenter__ = AsyncMock(return_value=mock_db)
             mock_cm.__aexit__ = AsyncMock(return_value=False)
 
-            with patch("core.database.AsyncSessionLocal", return_value=mock_cm):
+            with patch("mcp_server.resources.resumes.AsyncSessionLocal", return_value=mock_cm):
                 result = await get_resume_list()
                 data = json.loads(result)
                 assert len(data) == 1
@@ -1071,7 +1071,7 @@ class TestMCPHTTPEndpoint:
             mock_cm.__aenter__ = AsyncMock(return_value=mock_db)
             mock_cm.__aexit__ = AsyncMock(return_value=False)
 
-            with patch("core.database.AsyncSessionLocal", return_value=mock_cm):
+            with patch("mcp_server.resources.history.AsyncSessionLocal", return_value=mock_cm):
                 result = await get_qa_history("1")
                 data = json.loads(result)
                 assert len(data) == 1

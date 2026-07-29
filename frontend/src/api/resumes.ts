@@ -134,19 +134,25 @@ export async function matchJD(
   }) as Promise<MatchJDResult>;
 }
 
-export interface CompareDimension {
-  skills: Record<string, string[]>;
-  projects: Record<string, string[]>;
+/** 单个维度的值：summary/skills/experience 是 Markdown 字符串，score 是结构化评分，projects 是项目名列表 */
+export type DimensionValue = string | ScoreDetail | string[];
+
+export interface CompareDimensions {
+  summary?: Record<string, string>;
+  skills?: Record<string, string>;
+  experience?: Record<string, string>;
+  score?: Record<string, ScoreDetail>;
+  projects?: Record<string, string[]>;
 }
 
 export interface CompareResult {
   resumes: Array<{ id: number; filename: string }>;
-  dimensions: Partial<CompareDimension>;
+  dimensions: CompareDimensions;
 }
 
 export async function compareResumes(
   resumeIds: number[],
-  dimensions: string[] = ["skills", "projects"]
+  dimensions?: string[]
 ): Promise<CompareResult> {
   return api.post("/api/v1/resumes/compare", {
     resume_ids: resumeIds,

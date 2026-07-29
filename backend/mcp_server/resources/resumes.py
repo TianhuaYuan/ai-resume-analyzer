@@ -3,7 +3,11 @@
 import json
 import logging
 
+from sqlalchemy import select
+
 from mcp_server.server import get_current_user_id, mcp
+from core.database import AsyncSessionLocal
+from models.resume import Resume
 
 logger = logging.getLogger(__name__)
 
@@ -11,10 +15,6 @@ logger = logging.getLogger(__name__)
 @mcp.resource("resume://list")
 async def get_resume_list() -> str:
     """获取当前用户的所有简历列表。"""
-    from sqlalchemy import select
-
-    from core.database import AsyncSessionLocal
-    from models.resume import Resume
 
     try:
         user_id = get_current_user_id()

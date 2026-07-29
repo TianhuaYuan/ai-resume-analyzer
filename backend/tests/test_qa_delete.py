@@ -17,6 +17,15 @@ from models.resume import Resume
 from tests.conftest import AsyncSessionTest
 
 
+async def _get_verification_code(client: AsyncClient, email: str) -> str:
+    """调用 send-code 并返回验证码（从内存中读取）。"""
+    await client.post("/api/v1/auth/send-code", json={"email": email})
+    from services.verification_service import _in_memory_codes, _CODE_KEY_PREFIX
+    key = f"{_CODE_KEY_PREFIX}{email}"
+    entry = _in_memory_codes.get(key)
+    return entry["code"] if entry else "123456"
+
+
 async def _insert_resume(user_id: int) -> int:
     async with AsyncSessionTest() as session:
         resume = Resume(
@@ -103,7 +112,8 @@ async def test_delete_history_cross_user_404(
     resume_a = await _insert_resume(user_a_id)
     await _insert_qa(user_a_id, resume_a, question="A1", answer="A1 ans")
 
-    # 注册用户 B
+    # 注册用户 B（需要先获取验证码）
+    code_b = await _get_verification_code(client, "userb@test.com")
     resp_b = await client.post(
         "/api/v1/auth/register",
         json={
@@ -111,6 +121,7 @@ async def test_delete_history_cross_user_404(
             "password": "Pass1234!",
             "password_confirm": "Pass1234!",
             "username": "userb",
+            "verification_code": code_b,
         },
     )
     assert resp_b.status_code == 201
@@ -167,6 +178,7 @@ async def test_delete_qa_cross_user_404(
     qa_a_id = await _insert_qa(user_a_id, resume_a, question="A1", answer="A1 ans")
 
     # 注册 B
+    code_b = await _get_verification_code(client, "userb2@test.com")
     resp_b = await client.post(
         "/api/v1/auth/register",
         json={
@@ -174,6 +186,7 @@ async def test_delete_qa_cross_user_404(
             "password": "Pass1234!",
             "password_confirm": "Pass1234!",
             "username": "userb2",
+            "verification_code": code_b,
         },
     )
     assert resp_b.status_code == 201

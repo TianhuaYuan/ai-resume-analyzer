@@ -26,6 +26,11 @@ async def admin_headers(client, registered_user, monkeypatch):
 @pytest.fixture
 async def normal_user_headers(client):
     """普通用户（非管理员）登录。"""
+    await client.post("/api/v1/auth/send-code", json={"email": "normal@example.com"})
+    from services.verification_service import _in_memory_codes, _CODE_KEY_PREFIX
+    code_key = f"{_CODE_KEY_PREFIX}normal@example.com"
+    code_entry = _in_memory_codes.get(code_key)
+    verification_code = code_entry["code"] if code_entry else "123456"
     await client.post(
         "/api/v1/auth/register",
         json={
@@ -33,6 +38,7 @@ async def normal_user_headers(client):
             "email": "normal@example.com",
             "password": "Test1234!",
             "password_confirm": "Test1234!",
+            "verification_code": verification_code,
         },
     )
     resp = await client.post(
@@ -48,6 +54,11 @@ async def test_admin_reset_password_success(
 ):
     """管理员重置密码应返回新密码，且新密码可登录。"""
     # 创建目标用户
+    await client.post("/api/v1/auth/send-code", json={"email": "target@example.com"})
+    from services.verification_service import _in_memory_codes, _CODE_KEY_PREFIX
+    code_key = f"{_CODE_KEY_PREFIX}target@example.com"
+    code_entry = _in_memory_codes.get(code_key)
+    verification_code = code_entry["code"] if code_entry else "123456"
     await client.post(
         "/api/v1/auth/register",
         json={
@@ -55,6 +66,7 @@ async def test_admin_reset_password_success(
             "email": "target@example.com",
             "password": "OldPass123!",
             "password_confirm": "OldPass123!",
+            "verification_code": verification_code,
         },
     )
 

@@ -85,12 +85,13 @@ export default function MoreMenu({
       if (!triggerDisabled) {
         if (!open) setOpen(true);
         // 菜单已渲染（或即将渲染）后聚焦第一个可点击项
-        requestAnimationFrame(() => {
+        // setTimeout 替代 requestAnimationFrame，兼容 jsdom 测试环境
+        setTimeout(() => {
           const first = menuRef.current?.querySelector<HTMLElement>(
             '[role="menuitem"]:not([aria-disabled="true"])'
           );
           first?.focus();
-        });
+        }, 0);
       }
     } else if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();

@@ -16,6 +16,11 @@ from core.retry import with_retry
 from models.resume import Resume
 from schemas.resume import ScoreDetail
 from services.rag.pipeline import llm_generate
+from services.resume_analysis_cache import (
+    VALID_ANALYSIS_TYPES,
+    get_full_analysis_cache,
+    set_full_analysis_cache,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -204,3 +209,53 @@ async def analyze_resume(
             result["scores"] = scores
 
     return result
+
+
+async def get_full_analysis(
+    db: AsyncSession,
+    user_id: int,
+    resume_id: int,
+) -> dict:
+    """获取一份简历的完整分析结果（4 种类型）。
+
+    优先批量读 Redis 缓存，全部命中时不调用 LLM。
+    缓存缺失的类型自动调用 analyze_resume 补齐（同时写入缓存）。
+
+    Returns:
+        {
+            "resume_id": int,
+            "summary": dict,
+            "skills": dict,
+            "experience": dict,
+            "score": dict,
+        }
+    """
+    # 校验简历归属 + 状态
+    result = await db.execute(
+        select(Resume).where(Resume.id == resume_id, Resume.user_id == user_id)
+    )
+    resume = result.scalar_one_or_none()
+    if resume is None:
+        raise HTTPException(status_code=404, detail="简历不存在或无权访问")
+    if resume.status != "ready":
+        raise HTTPException(
+            status_code=409,
+            detail=f"简历未就绪（当前状态: {resume.status}）",
+        )
+
+    # 尝试批量读缓存
+    cached = await get_full_analysis_cache(resume_id)
+    if cached is not None:
+        return {"resume_id": resume_id, **cached}
+
+    # 缓存未命中 → LLM 补齐每种类型
+    results: dict[str, dict] = {}
+    for analysis_type in VALID_ANALYSIS_TYPES:
+        r = await analyze_resume(db, user_id, resume_id, analysis_type)
+        results[analysis_type] = r
+
+    # 异步写回缓存（不阻塞响应）
+    import asyncio
+    asyncio.ensure_future(set_full_analysis_cache(resume_id, results))
+
+    return {"resume_id": resume_id, **results}

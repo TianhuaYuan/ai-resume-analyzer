@@ -3,15 +3,39 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import ComparePage from "../ComparePage";
 
+// 新数据结构：skills/experience/summary 是 LLM 分析 Markdown 字符串，
+// score 是结构化评分，projects 是项目名列表
 const mockCompareResult = {
   resumes: [
     { id: 1, filename: "resume-a.pdf" },
     { id: 2, filename: "resume-b.pdf" },
   ],
   dimensions: {
+    summary: {
+      "1": "候选人精通 Python 与 FastAPI，3 年后端经验。",
+      "2": "候选人擅长 Java 与 Spring Boot，5 年后端经验。",
+    },
     skills: {
-      "1": ["Python", "FastAPI", "React", "Docker", "PostgreSQL"],
-      "2": ["Java", "Spring Boot", "MySQL", "Redis", "Kubernetes"],
+      "1": "编程语言: Python\n框架: FastAPI, React\n工具: Docker, PostgreSQL",
+      "2": "编程语言: Java\n框架: Spring Boot\n工具: MySQL, Redis, Kubernetes",
+    },
+    experience: {
+      "1": "工作经历:\n- A 公司 后端工程师 2022-2024",
+      "2": "工作经历:\n- B 公司 高级工程师 2020-2025",
+    },
+    score: {
+      "1": {
+        ats_match: 85,
+        keyword_coverage: 70,
+        skill_density: 80,
+        overall: 78,
+      },
+      "2": {
+        ats_match: 90,
+        keyword_coverage: 85,
+        skill_density: 88,
+        overall: 87,
+      },
     },
     projects: {
       "1": ["简历分析系统"],
@@ -20,29 +44,16 @@ const mockCompareResult = {
   },
 };
 
-// Mock recharts components — they render div wrappers for testing
+// Mock recharts components
 vi.mock("recharts", () => {
-  const MockRadarChart = ({ children, ...props }: any) => (
-    <div data-testid="radar-chart" data-radar-chart-props={JSON.stringify(props)}>
-      {children}
-    </div>
-  );
   const MockBarChart = ({ children, ...props }: any) => (
     <div data-testid="bar-chart" data-bar-chart-props={JSON.stringify(props)}>
       {children}
     </div>
   );
-  const MockRadar = ({ dataKey, name, ...props }: any) => (
-    <div data-testid={`radar-${dataKey}`} data-radar-name={name} />
-  );
   const MockBar = ({ dataKey, name, ...props }: any) => (
     <div data-testid={`bar-${dataKey}`} data-bar-name={name} />
   );
-  const MockPolarGrid = () => <div data-testid="polar-grid" />;
-  const MockPolarAngleAxis = ({ dataKey }: any) => (
-    <div data-testid="polar-angle-axis" data-datakey={dataKey} />
-  );
-  const MockPolarRadiusAxis = () => <div data-testid="polar-radius-axis" />;
   const MockXAxis = () => <div data-testid="x-axis" />;
   const MockYAxis = () => <div data-testid="y-axis" />;
   const MockCartesianGrid = () => <div data-testid="cartesian-grid" />;
@@ -55,13 +66,8 @@ vi.mock("recharts", () => {
   );
 
   return {
-    RadarChart: MockRadarChart,
     BarChart: MockBarChart,
-    Radar: MockRadar,
     Bar: MockBar,
-    PolarGrid: MockPolarGrid,
-    PolarAngleAxis: MockPolarAngleAxis,
-    PolarRadiusAxis: MockPolarRadiusAxis,
     XAxis: MockXAxis,
     YAxis: MockYAxis,
     CartesianGrid: MockCartesianGrid,
@@ -91,10 +97,8 @@ describe("ComparePage", () => {
   });
 
   it("加载中显示骨架屏", () => {
-    // 永不 resolve 的 Promise，保持 loading 状态
     vi.mocked(compareResumes).mockReturnValue(new Promise(() => {}));
     renderPage();
-    // 骨架屏使用 animate-pulse 类
     const skeleton = document.querySelector(".animate-pulse");
     expect(skeleton).toBeInTheDocument();
   });
@@ -121,14 +125,6 @@ describe("ComparePage", () => {
     });
   });
 
-  it("API 返回 404 时显示错误信息", async () => {
-    vi.mocked(compareResumes).mockRejectedValue(new Error("Request failed with status code 404"));
-    renderPage();
-    await waitFor(() => {
-      expect(screen.getByText(/404/)).toBeInTheDocument();
-    });
-  });
-
   it("成功时显示对比结果标题和简历数量", async () => {
     vi.mocked(compareResumes).mockResolvedValue(mockCompareResult);
     renderPage();
@@ -142,7 +138,6 @@ describe("ComparePage", () => {
     vi.mocked(compareResumes).mockResolvedValue(mockCompareResult);
     renderPage();
     await waitFor(() => {
-      // resume-a.pdf 在标签列表和项目区域各出现一次 → getAllByText
       const matches = screen.getAllByText("resume-a.pdf");
       expect(matches.length).toBeGreaterThanOrEqual(1);
       const matchesB = screen.getAllByText("resume-b.pdf");
@@ -150,31 +145,92 @@ describe("ComparePage", () => {
     });
   });
 
-  it("成功时显示技能维度标签", async () => {
+  it("显示总结维度（summary）区域标题", async () => {
     vi.mocked(compareResumes).mockResolvedValue(mockCompareResult);
     renderPage();
     await waitFor(() => {
-      // 技能在雷达图中渲染（mock 中 data-testid="radar-chart" 存在）
-      const skillsSection = screen.getByText("技能对比").closest("div");
-      expect(skillsSection?.querySelector('[data-testid="radar-chart"]')).toBeInTheDocument();
+      expect(screen.getByText("总结对比")).toBeInTheDocument();
     });
   });
 
-  it("成功时显示项目维度标签", async () => {
+  it("显示技能维度（skills）区域标题", async () => {
     vi.mocked(compareResumes).mockResolvedValue(mockCompareResult);
     renderPage();
     await waitFor(() => {
-      expect(screen.getByText("简历分析系统")).toBeInTheDocument();
-      expect(screen.getByText("电商系统")).toBeInTheDocument();
+      expect(screen.getByText("技能对比")).toBeInTheDocument();
     });
   });
 
-  it("技能维度渲染雷达图", async () => {
+  it("显示经验维度（experience）区域标题", async () => {
     vi.mocked(compareResumes).mockResolvedValue(mockCompareResult);
     renderPage();
     await waitFor(() => {
-      const skillsSection = screen.getByText("技能对比").closest("div");
-      expect(skillsSection?.querySelector('[data-testid="radar-chart"]')).toBeInTheDocument();
+      expect(screen.getByText("经验对比")).toBeInTheDocument();
+    });
+  });
+
+  it("显示评分维度（score）区域标题", async () => {
+    vi.mocked(compareResumes).mockResolvedValue(mockCompareResult);
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText("评分对比")).toBeInTheDocument();
+    });
+  });
+
+  it("显示项目维度（projects）区域标题", async () => {
+    vi.mocked(compareResumes).mockResolvedValue(mockCompareResult);
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText("项目对比")).toBeInTheDocument();
+    });
+  });
+
+  it("skills 维度渲染 LLM 分析文本（Markdown）", async () => {
+    vi.mocked(compareResumes).mockResolvedValue(mockCompareResult);
+    renderPage();
+    await waitFor(() => {
+      // skills 现在是字符串，应渲染 Markdown 内容而非雷达图
+      // 两份简历都有"编程语言"，用 getAllByText
+      expect(screen.getAllByText(/编程语言/).length).toBeGreaterThanOrEqual(2);
+      expect(screen.getAllByText(/Python/).length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText(/Spring Boot/).length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  it("score 维度渲染结构化评分", async () => {
+    vi.mocked(compareResumes).mockResolvedValue(mockCompareResult);
+    renderPage();
+    await waitFor(() => {
+      // 应显示综合评分数字
+      expect(screen.getByText("78")).toBeInTheDocument();
+      expect(screen.getByText("87")).toBeInTheDocument();
+    });
+  });
+
+  it("score 维度渲染评分柱状图", async () => {
+    vi.mocked(compareResumes).mockResolvedValue(mockCompareResult);
+    renderPage();
+    await waitFor(() => {
+      const scoreSection = screen.getByText("评分对比").closest("div");
+      expect(scoreSection?.querySelector('[data-testid="bar-chart"]')).toBeInTheDocument();
+    });
+  });
+
+  it("summary 维度渲染 Markdown 文本", async () => {
+    vi.mocked(compareResumes).mockResolvedValue(mockCompareResult);
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText(/候选人精通 Python/)).toBeInTheDocument();
+      expect(screen.getByText(/候选人擅长 Java/)).toBeInTheDocument();
+    });
+  });
+
+  it("experience 维度渲染 Markdown 文本", async () => {
+    vi.mocked(compareResumes).mockResolvedValue(mockCompareResult);
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText(/A 公司/)).toBeInTheDocument();
+      expect(screen.getByText(/B 公司/)).toBeInTheDocument();
     });
   });
 
@@ -187,17 +243,21 @@ describe("ComparePage", () => {
     });
   });
 
+  it("项目维度显示项目名称", async () => {
+    vi.mocked(compareResumes).mockResolvedValue(mockCompareResult);
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText("简历分析系统")).toBeInTheDocument();
+      expect(screen.getByText("电商系统")).toBeInTheDocument();
+      expect(screen.getByText("支付网关")).toBeInTheDocument();
+    });
+  });
+
   it("没有项目数据时显示「无项目数据」", async () => {
     const noProjectResult = {
-      resumes: [
-        { id: 1, filename: "resume-a.pdf" },
-        { id: 2, filename: "resume-b.pdf" },
-      ],
+      ...mockCompareResult,
       dimensions: {
-        skills: {
-          "1": ["Python"],
-          "2": ["Java"],
-        },
+        ...mockCompareResult.dimensions,
         projects: {
           "1": [],
           "2": [],

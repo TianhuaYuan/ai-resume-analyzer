@@ -86,11 +86,26 @@ class Settings(BaseSettings):
     # 预检查时的最小预留额度（低于此值就拒绝请求）
     TOKEN_QUOTA_MIN_RESERVE: int = 500
 
+    # ── RabbitMQ 消息队列配置 ──
+    RABBITMQ_ENABLED: bool = False  # 是否启用 RabbitMQ
+    RABBITMQ_URL: str = "amqp://guest:guest@localhost:5672/"  # AMQP 连接 URL
+    RABBITMQ_QUEUE: str = "ai_resume_analyze"  # 分析任务队列名
+
     # 监控配置
     METRICS_TOKEN: str = ""  # Prometheus /metrics 抓取所需的 Bearer token，生产环境必填
 
     # 运行时配置
     UVICORN_WORKERS: int = 4  # 生产环境 worker 数，可通过环境变量覆盖
+
+    # ── Docker 部署变量（仅用于 docker compose 环境，Python 不直接使用） ──
+    DOCKER_REGISTRY: str = "docker.io"
+    DOCKER_REPO: str = ""
+    IMAGE_TAG: str = "latest"
+    MYSQL_ROOT_PASSWORD: str = ""
+    MYSQL_PORT: int = 3306
+    FRONTEND_HTTP_PORT: int = 80
+    FRONTEND_HTTPS_PORT: int = 443
+    BACKEND_PORT: int = 8000
 
     # P1-23: 管理员邮箱列表（逗号分隔），拥有管理员重置密码等权限
     ADMIN_EMAILS: str = ""

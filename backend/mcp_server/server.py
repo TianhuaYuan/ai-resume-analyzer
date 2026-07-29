@@ -64,7 +64,7 @@ def create_auth_middleware(app):
                     status_code=401,
                 )
 
-            if is_token_revoked(payload.get("jti")):
+            if await is_token_revoked(payload.get("jti")):
                 return JSONResponse(
                     {"error": "Token has been revoked"},
                     status_code=401,

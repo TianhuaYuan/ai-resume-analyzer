@@ -3,7 +3,12 @@
 import json
 import logging
 
+from sqlalchemy import select
+
 from mcp_server.server import get_current_user_id, mcp
+from core.database import AsyncSessionLocal
+from models.qa_history import QAHistory
+from models.resume import Resume
 
 logger = logging.getLogger(__name__)
 
@@ -11,11 +16,6 @@ logger = logging.getLogger(__name__)
 @mcp.resource("qa_history://{resume_id}")
 async def get_qa_history(resume_id: str) -> str:
     """获取指定简历的问答历史记录。"""
-    from sqlalchemy import select
-
-    from core.database import AsyncSessionLocal
-    from models.qa_history import QAHistory
-    from models.resume import Resume
 
     try:
         user_id = get_current_user_id()

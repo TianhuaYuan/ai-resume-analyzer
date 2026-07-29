@@ -1,9 +1,15 @@
 """Redis 连接单例，含降级策略。
 
 Redis 不可用时返回 None，调用方自行降级为内存模式。
+
+降级策略（按环境）：
+- development/testing：按 ENVIRONMENT 标签直接跳过，零开销
+- staging/production：尝试连接，失败后降级
 """
 
 import logging
+
+from core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -12,6 +18,10 @@ _redis = None
 
 async def get_redis():
     """获取 Redis 客户端。不可用时返回 None，调用方自行降级。"""
+    # 开发/测试环境：不尝试连接，直接跳过
+    if settings.ENVIRONMENT in ("development", "testing"):
+        return None
+
     global _redis
     if _redis is not None:
         try:
@@ -22,8 +32,6 @@ async def get_redis():
 
     try:
         import redis.asyncio as aioredis
-
-        from core.config import settings
 
         _redis = aioredis.from_url(
             settings.REDIS_URL,

@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """应用生命周期：启动时验证数据库 + 清理孤儿 ChromaDB 目录 + 初始化 MCP Server + Metrics。"""
+    """应用生命周期：启动时验证数据库 + 清理孤儿 ChromaDB 目录 + 初始化 MCP Server + Metrics + RabbitMQ。"""
     await init_db()
     # 3.6 N6：启动期 fail-fast 配置校验（生产/预发缺关键变量直接启动失败）
     validate_required_settings()
@@ -79,7 +79,29 @@ async def lifespan(app: FastAPI):
         app.state.mcp_healthy = False
         logger.warning("MCP Server init skipped: %s", e)
 
+    # 初始化 RabbitMQ 生产者和消费者
+    try:
+        from core import rabbitmq_client
+        from services.resume_analyze_consumer import process_analyze_task
+
+        producer_ok = await rabbitmq_client.init_producer()
+        if producer_ok:
+            consumer_ok = await rabbitmq_client.init_consumer(process_analyze_task)
+            if consumer_ok:
+                logger.info("RabbitMQ 生产者+消费者初始化成功")
+            else:
+                logger.warning("RabbitMQ 消费者初始化失败，将跳过消息消费")
+    except Exception as e:
+        logger.warning("RabbitMQ 初始化失败: %s（将降级为同步执行）", e)
+
     yield
+
+    # 关闭 RabbitMQ
+    try:
+        from core import rabbitmq_client
+        await rabbitmq_client.shutdown()
+    except Exception:
+        pass
 
     # 关闭 Redis 连接
     try:

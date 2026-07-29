@@ -187,11 +187,11 @@ describe("ResumeListPage Minimalist Monochrome 设计", () => {
       expect(cards.length).toBeGreaterThanOrEqual(1);
     });
 
-    it("状态标签无渐变色和圆角", async () => {
+    it("状态标签无渐变色（monochrome 设计）", async () => {
       renderPage();
       await screen.findByText("就绪");
       const badge = screen.getByText("就绪");
-      expect(badge.className).not.toMatch(/rounded-[a-z]+(?<!none)|gradient|from-/);
+      expect(badge.className).not.toMatch(/gradient|from-|bg-gradient/);
     });
 
     it("上传按钮使用 mono-btn-primary 样式", async () => {

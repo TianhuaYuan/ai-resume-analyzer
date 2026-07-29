@@ -77,9 +77,10 @@ class TestMCPRouteAfterEvaluate:
         state = _make_state(should_retry=True, search_round=1)
         assert _route_after_evaluate(state) == SELF_REFLECTION_NODE
 
-    def test_retry_at_limit_goes_to_output(self):
+    def test_retry_at_limit_goes_to_self_reflection(self):
+        """round=2 ≤ max_retries=2 → 仍可反思（不超过则继续）。"""
         state = _make_state(should_retry=True, search_round=2)
-        assert _route_after_evaluate(state) == OUTPUT_NODE
+        assert _route_after_evaluate(state) == SELF_REFLECTION_NODE
 
     def test_retry_exceeds_limit_goes_to_output(self):
         state = _make_state(should_retry=True, search_round=3)
@@ -289,7 +290,7 @@ class TestMCPGraphEndToEnd:
                 "services.agentic_rag.generate.with_retry",
                 new_callable=AsyncMock,
                 side_effect=[
-                    '{"completeness": 4, "accuracy": 4, "source_credibility": 4, "feedback": "不够详细"}',  # eval round 1 → should_retry
+                    '{"completeness": 3, "accuracy": 3, "source_credibility": 3, "feedback": "不够详细"}',  # eval round 1 → should_retry
                     '{"completeness": 8, "accuracy": 8, "source_credibility": 8, "feedback": "回答准确"}',  # eval round 2 → pass
                 ],
             ),
@@ -380,8 +381,9 @@ class TestMCPEdgeCases:
     """MCP 版本边界条件测试。"""
 
     def test_route_after_evaluate_retry_at_boundary(self):
+        """round=2 ≤ max_retries=2 → 仍可反思。"""
         state = _make_state(should_retry=True, search_round=2)
-        assert _route_after_evaluate(state) == OUTPUT_NODE
+        assert _route_after_evaluate(state) == SELF_REFLECTION_NODE
 
     def test_route_after_evaluate_retry_over_boundary(self):
         state = _make_state(should_retry=True, search_round=3)

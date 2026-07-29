@@ -30,6 +30,7 @@ from schemas.resume import (
     ChunksResponse,
     CompareRequest,
     CompareResponse,
+    FullAnalyzeResponse,
     MatchJDRequest,
     MatchJDResponse,
     ResumeListResponse,
@@ -137,7 +138,10 @@ async def upload_resume(
         )
 
     if background is not None:
-        background.add_task(resume_service.process_resume_background, resume.id, file_path)
+        background.add_task(
+            resume_service.process_resume_background,
+            resume.id, file_path, user_id,
+        )
 
     response.status_code = 202
     return UploadAsyncResponse(
@@ -202,7 +206,10 @@ async def retry_resume(
     """
     resume = await resume_service.retry_resume_processing(db, resume_id, current_user.id)
     if background is not None:
-        background.add_task(resume_service.process_resume_background, resume.id, resume.file_path)
+        background.add_task(
+            resume_service.process_resume_background,
+            resume.id, resume.file_path, current_user.id,
+        )
     return UploadAsyncResponse(
         id=resume.id,
         filename=resume.filename,
@@ -230,6 +237,30 @@ async def post_analyze_resume(
         db, current_user.id, resume_id, body.analysis_type
     )
     return AnalyzeResponse(**result)
+
+
+@router.get("/{resume_id}/full-analyze", response_model=FullAnalyzeResponse)
+async def get_full_analyze(
+    resume_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """获取一份简历的完整分析结果（summary/skills/experience/score 4 种一次性返回）。
+
+    优先批量读 Redis 缓存，全部命中时零 LLM 调用；缺失的类型自动补齐。
+    对比功能与本接口共享同一份缓存。
+
+    错误码：
+    - 401 未登录
+    - 404 简历不存在或非本人
+    - 409 简历未就绪（status != ready）
+    - 422 简历内容为空
+    - 500 LLM 调用失败
+    """
+    result = await analyze_service.get_full_analysis(
+        db, current_user.id, resume_id
+    )
+    return FullAnalyzeResponse(**result)
 
 
 @router.get("/{resume_id}/chunks", response_model=ChunksResponse)

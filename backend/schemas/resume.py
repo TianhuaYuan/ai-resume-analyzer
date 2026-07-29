@@ -43,6 +43,63 @@ class AnalyzeResponse(BaseModel):
     analysis_type: str
     analysis: str
     scores: ScoreDetail | None = None
+    cached: bool = False  # True 表示来自 Redis 缓存（供前端提示用）
+
+
+class FullAnalyzeResponse(BaseModel):
+    """完整分析结果：4 种类型一次性返回。
+
+    对比功能和前端"完整分析"按钮使用此接口，
+    数据优先从 Redis 缓存返回，缺失的类型自动调用 LLM 补齐。
+    """
+
+    resume_id: int
+    summary: AnalyzeResponse
+    skills: AnalyzeResponse
+    experience: AnalyzeResponse
+    score: AnalyzeResponse
+
+
+# ── 对比功能扩展 ───────────────────────────────────────────
+
+# 合法对比维度：扩展到 4 种分析结果 + 原有项目维度
+CompareDimension = Literal["summary", "skills", "experience", "score", "projects"]
+
+
+class CompareRequest(BaseModel):
+    """多简历对比请求。"""
+
+    resume_ids: list[int] = Field(..., min_length=2, max_length=5, description="简历 ID 列表，2-5 个")
+    dimensions: list[CompareDimension] = Field(
+        default_factory=lambda: ["summary", "skills", "experience", "score", "projects"],
+        description="对比维度，默认全部",
+    )
+
+
+class ResumeBrief(BaseModel):
+    """简历简要信息。"""
+
+    id: int
+    filename: str
+
+
+# 单个维度的值：summary/skills/experience 是 Markdown 文本字符串，
+# score 是结构化评分 dict，projects 是项目名列表
+DimensionValue = str | dict | list[str]
+
+
+class CompareResponse(BaseModel):
+    """多简历对比响应。
+
+    dimensions 结构: {dimension_name: {resume_id_str: value}}
+    例如:
+      "skills": {"1": "技能分析Markdown", "2": "技能分析Markdown"}
+      "score":  {"1": {"overall":80,...},  "2": {"overall":75,...}}
+      "projects": {"1": ["项目A","项目B"], "2": ["项目C"]}
+    """
+
+    resumes: list[ResumeBrief]
+    dimensions: dict[str, dict[str, DimensionValue]]
 
 
 class ChunkItem(BaseModel):
@@ -74,24 +131,3 @@ class MatchJDRequest(BaseModel):
 class MatchJDResponse(BaseModel):
     resume_id: int
     analysis: str
-
-
-class CompareRequest(BaseModel):
-    """多简历对比请求。"""
-
-    resume_ids: list[int] = Field(..., min_length=2, max_length=5, description="简历 ID 列表，2-5 个")
-    dimensions: list[Literal["skills", "projects"]] = Field(..., min_length=1, description="对比维度")
-
-
-class ResumeBrief(BaseModel):
-    """简历简要信息。"""
-
-    id: int
-    filename: str
-
-
-class CompareResponse(BaseModel):
-    """多简历对比响应。"""
-
-    resumes: list[ResumeBrief]
-    dimensions: dict[str, dict[str, list[str]]]

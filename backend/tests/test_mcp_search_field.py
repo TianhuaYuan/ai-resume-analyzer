@@ -22,7 +22,7 @@ class TestMCPSearchFieldName:
 
         _current_user_id.set(1)
 
-        from unittest.mock import patch, AsyncMock
+        from unittest.mock import patch, AsyncMock, MagicMock
 
         mock_chunks = [
             {
@@ -33,14 +33,25 @@ class TestMCPSearchFieldName:
             }
         ]
 
+        mock_resume = MagicMock()
+        mock_resume.status = "ready"
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = mock_resume
+        mock_session = AsyncMock()
+        mock_session.__aenter__.return_value.execute.return_value = mock_result
+
         with (
             patch(
-                "mcp_server.tools.search.hybrid_search",
+                "mcp_server.tools.search.AsyncSessionLocal",
+                return_value=mock_session,
+            ),
+            patch(
+                "services.rag.retrieval.hybrid_search",
                 new_callable=AsyncMock,
                 return_value=mock_chunks,
             ),
             patch(
-                "mcp_server.tools.search.rerank",
+                "services.rag.retrieval.rerank",
                 new_callable=AsyncMock,
                 return_value=mock_chunks,
             ),

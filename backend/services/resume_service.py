@@ -12,6 +12,7 @@ from core.config import settings
 from core.database import AsyncSessionLocal
 from models.resume import Resume
 from services.rag.pipeline import clear_resume_vectors, process_resume
+from services.resume_analysis_cache import get_analysis_cache
 from utils.file_parser import parse_resume
 
 logger = logging.getLogger(__name__)
@@ -163,9 +164,11 @@ async def retry_resume_processing(
     return resume
 
 
-async def process_resume_background(resume_id: int, file_path: str):
-    """后台任务：解析文件 → 分块 → 向量化 → 更新状态。
-    用独立的 DB session，因为原请求 session 已关闭。"""
+async def process_resume_background(resume_id: int, file_path: str, user_id: int = 0):
+    """后台任务：解析文件 → 分块 → 向量化 → 更新状态 → 发布分析任务。
+
+    用独立的 DB session，因为原请求 session 已关闭。
+    """
     async with AsyncSessionLocal() as db:
         try:
             parsed_text = parse_resume(file_path)
@@ -176,6 +179,20 @@ async def process_resume_background(resume_id: int, file_path: str):
                 .values(parsed_text=parsed_text, chunk_count=chunk_count, status="ready")
             )
             await db.commit()
+
+            # 解析成功后，发布后台分析任务
+            if user_id:
+                try:
+                    from services.resume_analyze_producer import publish_analyze_task
+                    await publish_analyze_task(
+                        resume_id=resume_id,
+                        user_id=user_id,
+                        filename=file_path.split("/")[-1].split("\\")[-1],
+                    )
+                    logger.info("简历解析完成，已发布分析任务: resume_id=%d", resume_id)
+                except Exception as e:
+                    logger.warning("发布分析任务失败（不影响主流程）: %s", e)
+
         except Exception:
             # P1-10：logger.exception 保留完整 traceback，便于定位根因
             logger.exception("Background processing failed for resume %d", resume_id)
@@ -254,24 +271,35 @@ async def compare_resumes(
 ) -> dict:
     """多简历对比分析。
 
+    4 种分析维度（summary/skills/experience/score）优先从 Redis 缓存取 LLM 分析结果，
+    缓存未命中时实时调用 analyze_resume 补齐（同时写入缓存）。
+    projects 维度从 parsed_text 提取项目名列表。
+
     Args:
         db: 数据库 session
         user_id: 当前用户 ID
         resume_ids: 简历 ID 列表（已由 schema 校验 2-5 个）
-        dimensions: 对比维度列表（skills / projects）
+        dimensions: 对比维度列表（summary/skills/experience/score/projects）
 
     Returns:
         {
             "resumes": [{"id": int, "filename": str}, ...],
             "dimensions": {
-                "skills": {"resume_id": ["Python", ...], ...},
-                "projects": {"resume_id": ["项目名", ...], ...}
+                "skills": {"1": "LLM分析Markdown", "2": "..."},
+                "score": {"1": {"overall": 80,...}, "2": {...}},
+                "projects": {"1": ["项目A",...], "2": [...]},
+                ...
             }
         }
 
     Raises:
         HTTPException 404: 任一简历不存在或不属于该用户
     """
+    from services.analyze_service import analyze_resume
+
+    # LLM 分析维度（需要从缓存/LLM 获取）
+    LLM_DIMENSIONS = {"summary", "skills", "experience", "score"}
+
     # 1. 查询所有简历（验证归属）
     result = await db.execute(
         select(Resume).where(
@@ -298,38 +326,46 @@ async def compare_resumes(
     # 3. 按维度提取信息
     for dim in dimensions:
         response["dimensions"][dim] = {}
-        for resume in resumes:
-            if dim == "skills":
-                response["dimensions"][dim][str(resume.id)] = _extract_skills(resume.parsed_text)
-            elif dim == "projects":
+
+        if dim in LLM_DIMENSIONS:
+            # LLM 分析维度：先查缓存，未命中则调用 analyze_resume
+            for resume in resumes:
+                cached = await get_analysis_cache(resume.id, dim)
+                if cached is not None:
+                    # 缓存命中：直接取 analysis 字段
+                    if dim == "score" and "scores" in cached:
+                        response["dimensions"][dim][str(resume.id)] = cached["scores"]
+                    else:
+                        response["dimensions"][dim][str(resume.id)] = cached.get("analysis", "")
+                else:
+                    # 缓存未命中：实时调用 LLM 分析（会自动写入缓存）
+                    try:
+                        analysis_result = await analyze_resume(
+                            db, user_id, resume.id, dim
+                        )
+                        if dim == "score" and "scores" in analysis_result:
+                            response["dimensions"][dim][str(resume.id)] = analysis_result["scores"]
+                        else:
+                            response["dimensions"][dim][str(resume.id)] = analysis_result.get("analysis", "")
+                    except Exception as e:
+                        logger.warning(
+                            "对比时分析失败 resume_id=%d dim=%s: %s",
+                            resume.id, dim, e,
+                        )
+                        response["dimensions"][dim][str(resume.id)] = "分析失败"
+
+        elif dim == "projects":
+            # projects 维度：从原文提取项目名列表
+            for resume in resumes:
                 response["dimensions"][dim][str(resume.id)] = _extract_projects(resume.parsed_text)
 
     return response
 
 
-def _extract_skills(parsed_text: str) -> list[str]:
-    """从 parsed_text 提取技能列表。
-
-    简单实现：按换行/逗号分词，过滤掉明显不是技能的词（如"项目"）。
-    """
-    if not parsed_text:
-        return []
-
-    # 按换行和逗号分词
-    words = []
-    for line in parsed_text.split("\n"):
-        for part in line.split(","):
-            word = part.strip()
-            if word and word not in {"项目", "项目："}:
-                words.append(word)
-
-    return words[:10]  # 最多返回 10 个
-
-
 def _extract_projects(parsed_text: str) -> list[str]:
     """从 parsed_text 提取项目列表。
 
-    简单实现：查找"项目："开头的行。
+    查找"项目："或"项目:"开头的行，提取项目名称。
     """
     if not parsed_text:
         return []

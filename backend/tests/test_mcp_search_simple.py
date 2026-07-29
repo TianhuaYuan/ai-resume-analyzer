@@ -13,16 +13,23 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 def test_search_returns_text_field():
     """search_knowledge_base 返回结果必须包含 'text' 字段。"""
-    from unittest.mock import patch, MagicMock
+    from unittest.mock import patch, MagicMock, AsyncMock
 
     mock_chunks = [
         {"text": "测试简历内容", "chunk_index": 0, "section": "工作经历", "score": 0.9}
     ]
 
+    mock_resume = MagicMock()
+    mock_resume.status = "ready"
+    mock_result = MagicMock()
+    mock_result.scalar_one_or_none.return_value = mock_resume
+    mock_session = AsyncMock()
+    mock_session.__aenter__.return_value.execute.return_value = mock_result
+
     with (
-        patch("mcp_server.tools.search.AsyncSessionLocal", return_value=MagicMock()),
-        patch("mcp_server.tools.search.hybrid_search", return_value=mock_chunks),
-        patch("mcp_server.tools.search.rerank", return_value=mock_chunks),
+        patch("mcp_server.tools.search.AsyncSessionLocal", return_value=mock_session),
+        patch("services.rag.retrieval.hybrid_search", return_value=mock_chunks),
+        patch("services.rag.retrieval.rerank", return_value=mock_chunks),
     ):
         from mcp_server.tools.search import search_knowledge_base
         from mcp_server.server import _current_user_id

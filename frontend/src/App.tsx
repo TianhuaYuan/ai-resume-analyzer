@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { ThemeProvider } from "./context/ThemeContext";
+import { WebSocketProvider } from "./context/WebSocketContext";
 import type { ReactNode } from "react";
 import Navbar from "./components/Navbar";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -92,8 +93,10 @@ export default function App() {
         <BrowserRouter>
           <AuthProvider>
             <ToastProvider>
-              <AppRoutes />
-              <ToastContainer />
+              <WebSocketProvider>
+                <AppRoutes />
+                <ToastContainer />
+              </WebSocketProvider>
             </ToastProvider>
           </AuthProvider>
         </BrowserRouter>

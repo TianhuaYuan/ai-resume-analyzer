@@ -357,6 +357,15 @@ export default function QAPage() {
     getQuota().then(setQuota).catch(() => {});
   }, []);
 
+  // 监听 WebSocket 触发的额度刷新事件（后台分析完成/额度不足时）
+  useEffect(() => {
+    const handleQuotaRefresh = () => {
+      getQuota().then(setQuota).catch(() => {});
+    };
+    window.addEventListener("quota:refresh", handleQuotaRefresh);
+    return () => window.removeEventListener("quota:refresh", handleQuotaRefresh);
+  }, []);
+
   // 防抖 keyword → debouncedKeyword（300ms）
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);

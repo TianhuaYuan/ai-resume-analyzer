@@ -7,21 +7,21 @@
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import Optional
-from zoneinfo import ZoneInfo
 
 from core.config import settings
 from core.redis_client import get_redis
 
 logger = logging.getLogger(__name__)
 
-# 使用北京时间作为时区基准
-BEIJING_TZ = ZoneInfo("Asia/Shanghai")
+# 使用北京时间作为时区基准（UTC+8）
+# 不使用 zoneinfo 以避免 Windows 系统缺少时区数据库的问题
+BEIJING_TZ = timezone(timedelta(hours=8))
 
 
 def _get_today_key(user_id: int) -> str:
     """生成今日的 Redis key。格式: token_quota:{user_id}:{YYYY-MM-DD}
 
-    使用北京时间（Asia/Shanghai）判断"今日"。
+    使用北京时间（UTC+8）判断"今日"。
     """
     today = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d")
     return f"token_quota:{user_id}:{today}"

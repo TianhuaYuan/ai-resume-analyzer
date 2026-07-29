@@ -156,15 +156,20 @@ describe("LoginPage 重新设计", () => {
     fireEvent.change(screen.getByPlaceholderText(/再输一遍/), {
       target: { value: "Password123" },
     });
+    // 填写验证码
+    fireEvent.change(screen.getByPlaceholderText(/6位数字/), {
+      target: { value: "123456" },
+    });
     // 提交
     fireEvent.click(screen.getByTestId("register-submit-btn"));
-    // 应先调用 register
+    // 应先调用 register（含 verification_code）
     await waitFor(() => {
       expect(mockRegister).toHaveBeenCalledWith(
         "newuser",
         "newuser@test.com",
         "Password123",
-        "Password123"
+        "Password123",
+        "123456"
       );
     });
     // register 成功后应自动调用 login 完成登录

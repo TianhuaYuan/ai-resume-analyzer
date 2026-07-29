@@ -339,9 +339,8 @@ class TestBackwardCompatibility:
             with pytest.raises(RuntimeError, match="fail"):
                 await with_retry(always_fail, max_retries=1, base_delay=0.01)
 
-    def test_retry_budget_remaining(self):
-        """RetryBudget.remaining() 仍正常工作。"""
+    def test_retry_budget_is_stateless(self):
+        """RetryBudget 是不可变的配置对象，不保存运行时状态。"""
         budget = RetryBudget(max_retries=3)
-        assert budget.remaining() == 3
-        budget.attempts = 2
-        assert budget.remaining() == 1
+        assert budget.max_retries == 3
+        assert budget.delay_for(0) >= 0

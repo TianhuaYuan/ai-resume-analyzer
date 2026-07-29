@@ -52,6 +52,24 @@ services:
           memory: 256M
           cpus: "0.5"
 
+  rabbitmq:
+    image: rabbitmq:4-management
+    container_name: resume-rabbitmq
+    restart: unless-stopped
+    networks:
+      - resume-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
+
   backend:
     image: ${DOCKER_REGISTRY:-docker.io}/${DOCKER_REPO:-ai-resume-analyzer}-backend:${IMAGE_TAG:-latest}
     container_name: resume-backend
@@ -62,6 +80,7 @@ services:
       APP_ENV: prod
       DATABASE_URL: mysql+aiomysql://root:${MYSQL_ROOT_PASSWORD}@mysql:3306/resume_ai
       REDIS_URL: redis://redis:6379/0
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
     volumes:
       - uploads_data:/app/uploads
       - chroma_data:/app/chroma_data
@@ -72,6 +91,8 @@ services:
       mysql:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/"]
@@ -113,6 +134,8 @@ volumes:
   chroma_data:
     driver: local
   redis_data:
+    driver: local
+  rabbitmq_data:
     driver: local
 
 networks:

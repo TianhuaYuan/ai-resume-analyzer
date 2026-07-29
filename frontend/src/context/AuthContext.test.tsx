@@ -33,6 +33,18 @@ function renderWithProvider() {
 describe("AuthContext 多 Tab 登出同步 (P2-17)", () => {
   beforeEach(() => {
     localStorage.clear();
+    // mock getCurrentUser 返回假用户数据，避免初始化时因后端不可用而清空 token
+    vi.mock("../api/auth", () => ({
+      login: vi.fn(),
+      register: vi.fn(),
+      logout: vi.fn(),
+      sendCode: vi.fn(async () => ({ code: "123456" })),
+      getCurrentUser: vi.fn(async () => ({
+        id: 42,
+        username: "tester",
+        email: "tester@example.com",
+      })),
+    }));
   });
 
   afterEach(() => {

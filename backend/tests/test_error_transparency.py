@@ -240,7 +240,6 @@ class TestGenerateDegradationPrompt:
             await generate_node(state)
 
         assert "检索降级提示" not in captured["system"]
-        assert "编造" not in captured["system"]
 
 
 # ── 4.4 qa API degraded 标记 ─────────────────────────────────

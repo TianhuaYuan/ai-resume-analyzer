@@ -43,14 +43,14 @@ async def rewrite_query(question: str, model: str | None = None) -> str:
         f"用户问题：{question}\n"
         "改写后的问题："
     )
-    result, _ = await with_retry(
+    result = await with_retry(
         llm_generate,
         system,
         user,
         temperature=0.1,
         max_tokens=200,
         model=model,
-        fallback=(question, {}),
+        fallback=question,
     )
     return result or question
 
@@ -61,12 +61,11 @@ async def llm_generate(
     temperature: float = 0.1,
     max_tokens: int | None = None,
     model: str | None = None,
-) -> tuple[str, dict]:
+) -> str:
     """调 Chat API 生成回答。
 
     Returns:
-        (回答文本, usage dict)
-        usage: {"prompt_tokens": int, "completion_tokens": int, "total_tokens": int}
+        回答文本（字符串）
     """
     client = get_chat_client()
     kwargs = {
@@ -80,15 +79,7 @@ async def llm_generate(
     if max_tokens is not None:
         kwargs["max_tokens"] = max_tokens
     response = await client.chat.completions.create(**kwargs)
-    content = (response.choices[0].message.content or "").strip()
-
-    # 提取 token 使用量
-    usage = {
-        "prompt_tokens": getattr(response.usage, "prompt_tokens", 0) if response.usage else 0,
-        "completion_tokens": getattr(response.usage, "completion_tokens", 0) if response.usage else 0,
-        "total_tokens": getattr(response.usage, "total_tokens", 0) if response.usage else 0,
-    }
-    return content, usage
+    return (response.choices[0].message.content or "").strip()
 
 
 async def _llm_generate_stream(
@@ -212,24 +203,27 @@ async def ask_question_stream(resume_id: int, question: str):
 
     full = ""
     try:
-        async for token in _llm_generate_stream(prompt["system"], prompt["user"]):
-            full += token
-            yield {"type": "token", "content": token}
+        async for event in _llm_generate_stream(prompt["system"], prompt["user"]):
+            if event["type"] == "usage":
+                continue
+            content = event.get("content", "")
+            full += content
+            yield {"type": "token", "content": content}
     except asyncio.CancelledError:
         raise  # 客户端断开连接，不吞异常
     except Exception:
         # 流式失败 → 降级为非流式重试一次
         logger.exception("Streaming failed, falling back to non-streaming")
-        fallback = await with_retry(
+        fallback_resp, _ = await with_retry(
             llm_generate,
             prompt["system"],
             prompt["user"],
-            fallback=FALLBACK_MESSAGE,
+            fallback=(FALLBACK_MESSAGE, {}),
         )
-        full = fallback
+        full = fallback_resp
         # 通知客户端丢弃已收到的部分 token，用降级答案替换
         yield {"type": "reset"}
-        yield {"type": "token", "content": fallback}
+        yield {"type": "token", "content": fallback_resp}
 
     timer.log()
     yield {
