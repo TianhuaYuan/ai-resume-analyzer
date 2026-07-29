@@ -48,10 +48,24 @@ function MarkdownRendererImpl({ children, className }: MarkdownRendererProps) {
             <ol className="markdown-ol list-decimal pl-5 my-2 space-y-0.5" {...props} />
           ),
           li: ({ node, ...props }) => (
-            <li className="markdown-li" {...props} />
+            <li
+              className="markdown-li markdown-li-card
+                rounded-lg border border-[var(--color-border)]
+                bg-white/[0.03] hover:bg-white/[0.05]
+                px-4 py-3 my-2 transition-colors duration-200
+                list-none"
+              {...props}
+            />
           ),
           strong: ({ node, ...props }) => (
-            <strong className="markdown-strong font-semibold text-[var(--color-text)]" {...props} />
+            <strong
+              className="markdown-strong markdown-strong-badge
+                font-semibold text-[var(--color-text)]
+                inline-block px-2 py-0.5 rounded-md
+                bg-indigo-500/15 text-indigo-300
+                text-xs mr-1 align-middle"
+              {...props}
+            />
           ),
           em: ({ node, ...props }) => (
             <em className="markdown-em" {...props} />

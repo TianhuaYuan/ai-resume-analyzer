@@ -66,15 +66,6 @@ export function notifySessionExpired() {
 }
 
 /**
- * 触发「登录即将过期」全局事件。detail 里带剩余秒数。
- */
-export function notifySessionWarning(remainingSeconds: number) {
-  window.dispatchEvent(
-    new CustomEvent("session:warning", { detail: { remainingSeconds } })
-  );
-}
-
-/**
  * 应用自身使用的 localStorage key 白名单。
  * 清理会话时只删除这些 key，避免影响同域名下其他应用的数据。
  */

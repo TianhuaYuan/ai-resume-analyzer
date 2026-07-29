@@ -385,16 +385,16 @@ class TestEvaluateNode:
 
     @pytest.mark.asyncio
     async def test_just_below_threshold_retries(self):
-        """5.9 分（略低于阈值）→ 重试。"""
+        """略低于阈值 → 重试。"""
         state = _make_state(answer="部分回答")
         with patch(
             "services.agentic_rag.generate.llm_generate",
             new_callable=AsyncMock,
-            return_value='{"completeness": 5, "accuracy": 6, "source_credibility": 5, "feedback": "不够完整"}',
+            return_value='{"completeness": 3, "accuracy": 4, "source_credibility": 4, "feedback": "不够完整"}',
         ):
             result = await evaluate_node(state)
 
-        assert result["eval_score"] < 0.6
+        assert result["eval_score"] < 0.4
         assert result["should_retry"] is True
 
     @pytest.mark.asyncio

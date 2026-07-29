@@ -74,3 +74,24 @@ class MatchJDRequest(BaseModel):
 class MatchJDResponse(BaseModel):
     resume_id: int
     analysis: str
+
+
+class CompareRequest(BaseModel):
+    """多简历对比请求。"""
+
+    resume_ids: list[int] = Field(..., min_length=2, max_length=5, description="简历 ID 列表，2-5 个")
+    dimensions: list[Literal["skills", "projects"]] = Field(..., min_length=1, description="对比维度")
+
+
+class ResumeBrief(BaseModel):
+    """简历简要信息。"""
+
+    id: int
+    filename: str
+
+
+class CompareResponse(BaseModel):
+    """多简历对比响应。"""
+
+    resumes: list[ResumeBrief]
+    dimensions: dict[str, dict[str, list[str]]]

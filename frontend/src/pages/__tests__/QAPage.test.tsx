@@ -625,6 +625,72 @@ describe("Task 5.1: 质量反馈", () => {
   });
 });
 
+describe("QAPage Markdown 渲染", () => {
+  it("历史记录中的 answer 使用 Markdown 渲染", async () => {
+    vi.mocked(getHistory).mockResolvedValue({
+      items: [
+        {
+          id: 1,
+          question: "Q1",
+          answer: "**加粗** 和 \n- 列表项",
+          sources: [],
+          created_at: "2026-07-19",
+        },
+      ],
+      total: 1,
+    });
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText("Q1")).toBeInTheDocument();
+    });
+
+    // MarkdownRenderer 会渲染加粗文本和列表
+    expect(screen.getByText("加粗")).toBeInTheDocument();
+    expect(document.querySelector(".markdown-strong-badge")).toBeInTheDocument();
+    expect(document.querySelector(".markdown-li-card")).toBeInTheDocument();
+  });
+});
+
+describe("QAPage 历史记录排序修复", () => {
+  it("不依赖后端返回顺序，按 id 升序排列确保旧在上新在下", async () => {
+    // 模拟后端 created_at 相同时顺序不确定的情况
+    vi.mocked(getHistory).mockResolvedValue({
+      items: [
+        { id: 2, question: "中间", answer: "A2", sources: [], created_at: "2026-07-20T10:00:00" },
+        { id: 3, question: "最新", answer: "A3", sources: [], created_at: "2026-07-21T10:00:00" },
+        { id: 1, question: "最早", answer: "A1", sources: [], created_at: "2026-07-19T10:00:00" },
+      ],
+      total: 3,
+    });
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText("最早")).toBeInTheDocument();
+    });
+    const bubbles = screen.getAllByText(/最早|中间|最新/);
+    expect(bubbles[0]).toHaveTextContent("最早");
+    expect(bubbles[1]).toHaveTextContent("中间");
+    expect(bubbles[2]).toHaveTextContent("最新");
+  });
+
+  it("每条历史消息显示格式化的时间戳（北京时间）", async () => {
+    vi.mocked(getHistory).mockResolvedValue({
+      items: [
+        // 后端返回 naive datetime（无 Z 后缀），实际是 UTC 02:30 → 北京时间 10:30
+        { id: 1, question: "Q1", answer: "A1", sources: [], created_at: "2026-07-19T02:30:00" },
+      ],
+      total: 1,
+    });
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText("Q1")).toBeInTheDocument();
+    });
+    const ts = screen.getByTestId("message-timestamp");
+    expect(ts).toBeInTheDocument();
+    expect(ts.textContent).toMatch(/07-19/);
+    expect(ts.textContent).toMatch(/10:30/);
+  });
+});
+
 describe("QAPage 顶部栏设计", () => {
   it("顶部栏滚动时保持固定（sticky）", async () => {
     renderPage();

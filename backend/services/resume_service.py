@@ -247,3 +247,99 @@ async def delete_resume(db: AsyncSession, resume_id: int, user_id: int) -> None:
     # 4. 最后删 MySQL（CASCADE 自动清理 qa_history 等关联记录）
     await db.delete(resume)
     await db.commit()
+
+
+async def compare_resumes(
+    db: AsyncSession, user_id: int, resume_ids: list[int], dimensions: list[str]
+) -> dict:
+    """多简历对比分析。
+
+    Args:
+        db: 数据库 session
+        user_id: 当前用户 ID
+        resume_ids: 简历 ID 列表（已由 schema 校验 2-5 个）
+        dimensions: 对比维度列表（skills / projects）
+
+    Returns:
+        {
+            "resumes": [{"id": int, "filename": str}, ...],
+            "dimensions": {
+                "skills": {"resume_id": ["Python", ...], ...},
+                "projects": {"resume_id": ["项目名", ...], ...}
+            }
+        }
+
+    Raises:
+        HTTPException 404: 任一简历不存在或不属于该用户
+    """
+    # 1. 查询所有简历（验证归属）
+    result = await db.execute(
+        select(Resume).where(
+            Resume.id.in_(resume_ids), Resume.user_id == user_id
+        )
+    )
+    resumes = result.scalars().all()
+
+    # 验证所有 ID 都找到
+    found_ids = {r.id for r in resumes}
+    missing_ids = set(resume_ids) - found_ids
+    if missing_ids:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"简历不存在: {sorted(missing_ids)}",
+        )
+
+    # 2. 构建响应
+    response = {
+        "resumes": [{"id": r.id, "filename": r.filename} for r in resumes],
+        "dimensions": {},
+    }
+
+    # 3. 按维度提取信息
+    for dim in dimensions:
+        response["dimensions"][dim] = {}
+        for resume in resumes:
+            if dim == "skills":
+                response["dimensions"][dim][str(resume.id)] = _extract_skills(resume.parsed_text)
+            elif dim == "projects":
+                response["dimensions"][dim][str(resume.id)] = _extract_projects(resume.parsed_text)
+
+    return response
+
+
+def _extract_skills(parsed_text: str) -> list[str]:
+    """从 parsed_text 提取技能列表。
+
+    简单实现：按换行/逗号分词，过滤掉明显不是技能的词（如"项目"）。
+    """
+    if not parsed_text:
+        return []
+
+    # 按换行和逗号分词
+    words = []
+    for line in parsed_text.split("\n"):
+        for part in line.split(","):
+            word = part.strip()
+            if word and word not in {"项目", "项目："}:
+                words.append(word)
+
+    return words[:10]  # 最多返回 10 个
+
+
+def _extract_projects(parsed_text: str) -> list[str]:
+    """从 parsed_text 提取项目列表。
+
+    简单实现：查找"项目："开头的行。
+    """
+    if not parsed_text:
+        return []
+
+    projects = []
+    for line in parsed_text.split("\n"):
+        line = line.strip()
+        if line.startswith("项目：") or line.startswith("项目:"):
+            project_name = line.split("：", 1)[-1].split(":", 1)[-1].strip()
+            if project_name:
+                projects.append(project_name)
+
+    return projects

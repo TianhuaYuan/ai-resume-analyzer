@@ -32,8 +32,8 @@ logger = logging.getLogger(__name__)
 FALLBACK_MESSAGE = "服务暂时不可用，请稍后重试。"
 
 
-async def rewrite_query(question: str) -> str:
-    """LLM 改写问题做指代消解，失败时返回原问题兜底"""
+async def rewrite_query(question: str, model: str | None = None) -> str:
+    """LLM 改写问题做指代消解，失败时返回原问题兜底（轻量重试 — flash 模型单次 ~0.3s）"""
     system = "你是一个问题改写助手。"
     user = (
         "把用户的问题改写成完整、具体、适合向量检索的问题。保留所有关键实体。"
@@ -49,6 +49,7 @@ async def rewrite_query(question: str) -> str:
         user,
         temperature=0.1,
         max_tokens=200,
+        model=model,
         fallback=question,
     )
     return rewritten or question
@@ -59,11 +60,12 @@ async def llm_generate(
     user: str,
     temperature: float = 0.1,
     max_tokens: int | None = None,
+    model: str | None = None,
 ) -> str:
-    """调 Chat API 生成回答（模型由 settings.CHAT_MODEL 决定），抽出来方便加不同的 temperature 和重试"""
+    """调 Chat API 生成回答（模型由 settings.CHAT_MODEL 决定，可被 model 参数覆盖），抽出来方便加不同的 temperature 和重试"""
     client = get_chat_client()
     kwargs = {
-        "model": settings.CHAT_MODEL,
+        "model": model or settings.CHAT_MODEL,
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
@@ -105,8 +107,9 @@ def build_prompt(context_chunks: list[str], question: str) -> dict:
     context = "\n\n".join(f"[段落 {i + 1}]\n{text}" for i, text in enumerate(context_chunks))
     system = (
         "你是一个简历分析助手。请根据下面的简历内容回答问题。"
-        "如果简历中没有直接相关信息，请明确说未提及，不要推测。"
-        "如果简历中有部分相关内容，请基于已有信息给出最佳回答。"
+        "如果简历中有直接相关信息，请基于这些信息给出最佳回答。"
+        "如果简历中没有直接相关信息，可以进行合理推断（例如从缺失的技能/经历推断短板），"
+        "但需明确区分哪些是简历直接提到的、哪些是你的推断。切忌编造事实。"
     )
     user = f"简历内容：\n{context}\n\n问题：{question}\n\n请给出简洁准确的回答。"
     return {"system": system, "user": user}

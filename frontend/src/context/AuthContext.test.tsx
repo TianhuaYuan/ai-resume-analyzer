@@ -118,3 +118,94 @@ describe("AuthContext 多 Tab 登出同步 (P2-17)", () => {
     expect(screen.getByTestId("user-label").textContent).toBe("tester");
   });
 });
+
+describe("AuthContext 简化会话管理 — 无主动预警", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  // 暴露完整 context 的测试组件
+  function SessionDebugLabel() {
+    const auth = useAuth();
+    return (
+      <div>
+        <span data-testid="session-dialog">{auth.sessionDialog ?? "null"}</span>
+        <span data-testid="has-extend">{String(typeof auth.handleSessionExtend === "function")}</span>
+        <span data-testid="has-ignore">{String(typeof auth.handleSessionIgnore === "function")}</span>
+      </div>
+    );
+  }
+
+  function renderSessionDebug() {
+    return render(
+      <AuthProvider>
+        <SessionDebugLabel />
+      </AuthProvider>
+    );
+  }
+
+  it("session:expired 事件触发后 sessionDialog 变为 expired", async () => {
+    const token = makeFakeToken(3600);
+    localStorage.setItem("access_token", token);
+
+    renderSessionDebug();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("session-dialog").textContent).toBe("null");
+    });
+
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent("session:expired"));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("session-dialog").textContent).toBe("expired");
+    });
+  });
+
+  it("context 不暴露 handleSessionExtend（已移除预警延长逻辑）", async () => {
+    const token = makeFakeToken(3600);
+    localStorage.setItem("access_token", token);
+
+    renderSessionDebug();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("has-extend").textContent).toBe("false");
+    });
+  });
+
+  it("context 不暴露 handleSessionIgnore（已移除预警忽略逻辑）", async () => {
+    const token = makeFakeToken(3600);
+    localStorage.setItem("access_token", token);
+
+    renderSessionDebug();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("has-ignore").textContent).toBe("false");
+    });
+  });
+
+  it("session:warning 事件不影响 sessionDialog 状态（预警已废弃）", async () => {
+    const token = makeFakeToken(3600);
+    localStorage.setItem("access_token", token);
+
+    renderSessionDebug();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("session-dialog").textContent).toBe("null");
+    });
+
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent("session:warning", { detail: { remainingSeconds: 300 } })
+      );
+    });
+
+    // 状态仍为 null（不弹 warning 对话框）
+    expect(screen.getByTestId("session-dialog").textContent).toBe("null");
+  });
+});

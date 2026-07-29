@@ -96,7 +96,7 @@ export default function ChunksModal({
       ref={dialogRef}
       onCancel={handleCancel}
       onClose={handleCancel}
-      className="fixed inset-0 z-50 m-0 w-full h-full p-0
+      className="fixed inset-0 z-50 m-0 w-full h-full p-0 overflow-hidden
         bg-black/60 backdrop-blur-sm motion-reduce:backdrop-blur-none"
       role="dialog"
       aria-modal="true"
@@ -105,9 +105,11 @@ export default function ChunksModal({
       <div
         className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2
           bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl
-          max-w-2xl w-full mx-4 shadow-2xl
+          w-[calc(100vw-2rem)] sm:max-w-lg md:max-w-2xl
+          shadow-2xl
           animate-fade-in-up motion-reduce:animate-none
-          flex flex-col max-h-[85dvh]"
+          flex flex-col overflow-hidden
+          max-h-[80dvh] sm:max-h-[85dvh] md:max-h-[82dvh]"
       >
         {/* 头部 */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--color-border)] shrink-0">
@@ -137,7 +139,10 @@ export default function ChunksModal({
         </div>
 
         {/* 内容区 */}
-        <div className="flex-1 overflow-y-auto px-6 py-5">
+        <div
+          className="flex-1 overflow-y-auto pl-6 pr-3 py-5"
+          style={{ scrollbarGutter: "stable" }}
+        >
           {status === "loading" && (
             <div className="space-y-3" aria-busy="true" aria-live="polite">
               <div className="h-12 rounded-lg animate-skeleton" />
@@ -175,7 +180,7 @@ export default function ChunksModal({
           )}
 
           {status === "success" && chunks.length > 0 && (
-            <div className="space-y-2.5">
+            <div className="space-y-3.5">
               {chunks.map((chunk) => {
                 const expanded = expandedSet.has(chunk.chunk_index);
                 return (

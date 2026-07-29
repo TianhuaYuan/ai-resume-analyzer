@@ -206,7 +206,7 @@ class TestBuildPrompt:
         assert "system" in prompt
         assert "user" in prompt
         assert "简历分析助手" in prompt["system"]
-        assert "未提及" in prompt["system"]
+        assert "编造事实" in prompt["system"]
         assert "张三精通 Python" in prompt["user"]
         assert "他会 Python 吗？" in prompt["user"]
 

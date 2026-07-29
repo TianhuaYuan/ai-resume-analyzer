@@ -3,6 +3,7 @@ import logging
 import time
 import re
 
+from core.config import settings
 from core.retry import with_retry
 from services.agentic_rag.state import AgenticRAGState
 from services.rag.pipeline import llm_generate
@@ -140,6 +141,7 @@ async def self_reflection_node(state: AgenticRAGState) -> dict:
         reflection_user,
         temperature=0.2,
         max_tokens=500,
+        model=settings.JUDGE_MODEL if settings.JUDGE_ENABLED else None,
         fallback='{"reflection": "反思服务暂时不可用", "missing_info": [], "supplement_queries": []}',
     )
 

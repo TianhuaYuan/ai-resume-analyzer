@@ -383,7 +383,7 @@ class TestGraphEndToEnd:
                 new_callable=AsyncMock,
                 side_effect=[
                     mock_answer,  # generate round 1
-                    '{"completeness": 4, "accuracy": 5, "source_credibility": 3, "feedback": "不够详细"}',  # eval round 1 → should_retry
+                    '{"completeness": 3, "accuracy": 5, "source_credibility": 3, "feedback": "不够详细"}',  # eval round 1 → should_retry
                     mock_reflection,  # reflection
                     mock_answer,  # generate round 2
                     '{"completeness": 8, "accuracy": 8, "source_credibility": 7, "feedback": "回答准确"}',  # eval round 2 → pass

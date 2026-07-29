@@ -11,7 +11,7 @@ from services.rag.retrieval import reject_if_low_score
 
 logger = logging.getLogger(__name__)
 
-_EVAL_PASS_THRESHOLD = 0.6
+_EVAL_PASS_THRESHOLD = 0.4
 _EVAL_MAX_RETRIES = 2
 
 
@@ -268,6 +268,7 @@ async def evaluate_node(state: AgenticRAGState) -> dict:
         eval_user,
         temperature=0.0,
         max_tokens=400,
+        model=settings.JUDGE_MODEL if settings.JUDGE_ENABLED else None,
         fallback='{"completeness": 5, "accuracy": 5, "source_credibility": 5, "feedback": "评估服务暂时不可用"}',
     )
 

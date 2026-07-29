@@ -153,4 +153,28 @@ describe("MarkdownRenderer (Task 2.4)", () => {
     const { container } = render(<MarkdownRenderer>{""}</MarkdownRenderer>);
     expect(container.firstChild).not.toBeNull();
   });
+
+  it("职位推荐列表：列表项渲染为卡片样式", () => {
+    render(
+      <MarkdownRenderer>
+        {"- **AI应用开发工程师**：您有 LLM 应用开发经验\n- **后端开发工程师**：具备 FastAPI 技能"}
+      </MarkdownRenderer>
+    );
+    const items = screen.getAllByRole("listitem");
+    expect(items).toHaveLength(2);
+    // 验证列表项有卡片样式类名
+    expect(items[0].className).toContain("markdown-li-card");
+    expect(items[1].className).toContain("markdown-li-card");
+  });
+
+  it("职位推荐列表：strong 渲染为徽章样式", () => {
+    render(
+      <MarkdownRenderer>
+        {"- **AI应用开发工程师**：描述文本"}
+      </MarkdownRenderer>
+    );
+    const strong = screen.getByText("AI应用开发工程师");
+    expect(strong.tagName).toBe("STRONG");
+    expect(strong.className).toContain("markdown-strong-badge");
+  });
 });

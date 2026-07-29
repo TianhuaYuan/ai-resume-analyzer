@@ -1,6 +1,7 @@
 import logging
 import time
 
+from core.config import settings
 from core.retry import with_retry
 from services.rag.pipeline import rewrite_query, llm_generate
 from services.agentic_rag.state import AgenticRAGState
@@ -13,7 +14,7 @@ async def rewrite_node(state: AgenticRAGState) -> dict:
     timer_start = time.monotonic()
 
     try:
-        rewritten = await rewrite_query(question)
+        rewritten = await rewrite_query(question, model=settings.JUDGE_MODEL if settings.JUDGE_ENABLED else None)
     except Exception:
         logger.warning("rewrite_node: rewrite_query failed, falling back to original")
         rewritten = question
@@ -46,13 +47,14 @@ _ROUTE_SYSTEM = (
 )
 
 
-async def _classify_route(query: str) -> str:
+async def _classify_route(query: str, model: str | None = None) -> str:
     result = await with_retry(
         llm_generate,
         _ROUTE_SYSTEM,
         f"问题：{query}",
         temperature=0.0,
         max_tokens=10,
+        model=model,
         fallback="search",
     )
     result = (result or "search").strip().lower()
@@ -99,12 +101,13 @@ async def route_node(state: AgenticRAGState) -> dict:
 
     if _is_trivial_greeting(query):
         decision = "direct_answer"
-        logger.info("route_node: greeting detected → direct_answer")
+        elapsed = time.monotonic() - timer_start
+        logger.info("route_node: greeting → direct_answer (%.2fs)", elapsed)
     else:
-        decision = await _classify_route(query)
-        logger.info("route_node: '%s' → %s", query, decision)
+        decision = await _classify_route(query, model=settings.JUDGE_MODEL if settings.JUDGE_ENABLED else None)
+        elapsed = time.monotonic() - timer_start
+        logger.info("route_node: '%s' → %s (%.2fs)", query, decision, elapsed)
 
-    elapsed = time.monotonic() - timer_start
     trace = dict(state.get("trace", {}))
     trace["route"] = {"elapsed_ms": int(elapsed * 1000), "decision": decision}
 

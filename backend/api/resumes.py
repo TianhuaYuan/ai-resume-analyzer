@@ -28,6 +28,8 @@ from schemas.resume import (
     AnalyzeResponse,
     ChunkItem,
     ChunksResponse,
+    CompareRequest,
+    CompareResponse,
     MatchJDRequest,
     MatchJDResponse,
     ResumeListResponse,
@@ -347,3 +349,23 @@ async def export_resume(
             "Content-Disposition": f'attachment; filename="resume_{resume_id}_report.md"'
         },
     )
+
+
+@router.post("/compare", response_model=CompareResponse)
+async def compare_resumes(
+    body: CompareRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """多简历对比分析。
+
+    对比 2-5 份简历的技能和项目维度。
+    错误码：
+    - 401 未登录
+    - 404 任一简历不存在或非本人
+    - 422 resume_ids 或 dimensions 不符合规范
+    """
+    result = await resume_service.compare_resumes(
+        db, current_user.id, body.resume_ids, body.dimensions
+    )
+    return CompareResponse(**result)

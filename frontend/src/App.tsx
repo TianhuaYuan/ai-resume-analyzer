@@ -10,6 +10,7 @@ import LoginPage from "./pages/LoginPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import ResumeListPage from "./pages/ResumeListPage";
 import QAPage from "./pages/QAPage";
+import ComparePage from "./pages/ComparePage";
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
@@ -29,11 +30,7 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 function AppLayout({ children }: { children: ReactNode }) {
   const {
     sessionDialog,
-    sessionRemainingSeconds,
-    sessionExtending,
     handleSessionGoLogin,
-    handleSessionExtend,
-    handleSessionIgnore,
   } = useAuth();
 
   return (
@@ -42,13 +39,7 @@ function AppLayout({ children }: { children: ReactNode }) {
       {children}
       <SessionExpiredDialog
         open={sessionDialog !== null}
-        mode={sessionDialog ?? "expired"}
-        remainingSeconds={sessionRemainingSeconds}
-        loading={sessionExtending}
-        onPrimary={
-          sessionDialog === "warning" ? handleSessionExtend : handleSessionGoLogin
-        }
-        onIgnore={handleSessionIgnore}
+        onGoLogin={handleSessionGoLogin}
       />
     </>
   );
@@ -75,6 +66,16 @@ function AppRoutes() {
           <ProtectedRoute>
             <AppLayout>
               <QAPage />
+            </AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/compare"
+        element={
+          <ProtectedRoute>
+            <AppLayout>
+              <ComparePage />
             </AppLayout>
           </ProtectedRoute>
         }

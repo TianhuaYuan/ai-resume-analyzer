@@ -12,6 +12,7 @@ import {
 } from "../api/qa";
 import { listResumes, type ResumeItem } from "../api/resumes";
 import ConfirmDialog from "../components/ConfirmDialog";
+import MarkdownRenderer from "../components/MarkdownRenderer";
 
 interface ChatMessage {
   id: number | string;
@@ -21,6 +22,8 @@ interface ChatMessage {
   streaming: boolean;
   /** Task 5.1: 质量反馈状态 */
   feedback?: "positive" | "negative" | null;
+  /** 创建时间，用于排序和显示 */
+  created_at?: string;
 }
 
 // Task 5.1: 预设提问
@@ -84,6 +87,25 @@ function StreamingCursor() {
   return (
     <span className="inline-block w-0.5 h-4 bg-indigo-400 ml-0.5 align-middle animate-cursor-blink" />
   );
+}
+
+/** 将 ISO 时间字符串格式化为北京时间 "MM-DD HH:mm" */
+function formatTimestamp(dateStr?: string): string | null {
+  if (!dateStr) return null;
+  // 后端返回 naive datetime（无 Z 后缀），实际是 UTC，需补 Z 才能正确转换时区
+  const normalized = /[Z+]/.test(dateStr) ? dateStr : dateStr + "Z";
+  const d = new Date(normalized);
+  if (isNaN(d.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Shanghai",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(d);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  return `${get("month")}-${get("day")} ${get("hour")}:${get("minute")}`;
 }
 
 // ── 空状态 ──────────────────────────────────────────────
@@ -166,17 +188,25 @@ function MessageBubble({ msg, deleting, onDelete, onFeedback }: MessageBubblePro
             {msg.streaming && !msg.answer ? (
               <span className="text-[var(--color-text-muted)]">思考中...</span>
             ) : (
-              <span className="text-[var(--color-text-secondary)] whitespace-pre-wrap">
+              <MarkdownRenderer className="whitespace-pre-wrap">
                 {msg.answer}
-                {msg.streaming && <StreamingCursor />}
-              </span>
+              </MarkdownRenderer>
             )}
+            {msg.streaming && msg.answer && <StreamingCursor />}
           </div>
 
           {/* 来源引用 + 反馈 + 删除按钮 */}
           {!msg.streaming && (
             <div className="flex items-start justify-between gap-2">
               <div className="flex-1 min-w-0">
+                {msg.created_at && formatTimestamp(msg.created_at) && (
+                  <span
+                    data-testid="message-timestamp"
+                    className="text-[10px] text-[var(--color-text-muted)] mt-1 block"
+                  >
+                    {formatTimestamp(msg.created_at)}
+                  </span>
+                )}
                 <SourceToggle sources={msg.sources} />
               </div>
               <div className="shrink-0 flex items-center gap-1 mt-2">
@@ -291,8 +321,11 @@ export default function QAPage() {
           answer: it.answer,
           sources: it.sources,
           streaming: false,
+          created_at: it.created_at,
         }));
         // 保留正在流式输出的消息，避免搜索时把刚发出的问题冲掉
+        // 按 id 升序排列（id 自增，等价于时间正序），确保旧在上、新在下
+        historyItems.sort((a, b) => Number(a.id) - Number(b.id));
         setChat((prev) => {
           const streamingMsgs = prev.filter((m) => m.streaming);
           return [...streamingMsgs, ...historyItems];

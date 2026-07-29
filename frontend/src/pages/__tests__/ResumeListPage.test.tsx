@@ -1,7 +1,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useNavigate } from "react-router-dom";
 import ResumeListPage from "../ResumeListPage";
+
+const mockNavigate = vi.fn();
+vi.mock("react-router-dom", async () => {
+  const actual = await vi.importActual("react-router-dom");
+  return {
+    ...actual,
+    useNavigate: () => mockNavigate,
+  };
+});
 
 // 默认 mock：所有 API 调用成功
 vi.mock("../../api/resumes", () => ({
@@ -27,6 +36,7 @@ vi.mock("../../api/resumes", () => ({
     status: "processing",
   })),
   generateIdempotencyKey: vi.fn(async () => "mock-hash-key-aaaa"),
+  compareResumes: vi.fn(async () => ({ resumes: [], dimensions: {} })),
 }));
 
 vi.mock("../../components/AnalysisModal", () => ({
@@ -288,6 +298,104 @@ describe("Task 5.6: ResumeListPage 删除确认弹窗重构", () => {
     const confirmBtn = dialogContent.getByRole("button", { name: "删除" });
     expect(confirmBtn.className).toMatch(/bg-red-500/);
   });
+
+  it("列表中删除按钮为红色 danger 样式，与操作按钮区分", async () => {
+    renderPage();
+    await screen.findByText("test-resume.pdf");
+
+    const card = screen.getByText("test-resume.pdf").closest("[class*='block']");
+    const deleteBtn = within(card as HTMLElement).getByText("删除");
+    expect(deleteBtn.className).toMatch(/text-red-300/);
+    // 危险按钮有明显的红色背景
+    expect(deleteBtn.className).toMatch(/bg-red-500\/10/);
+  });
+
+  it("操作按钮（预览/分块/分析/JD匹配）与删除按钮分组包裹", async () => {
+    renderPage();
+    await screen.findByText("test-resume.pdf");
+
+    const card = screen.getByText("test-resume.pdf").closest("[class*='block']");
+    // 操作按钮组在一个容器中
+    const actionGroup = within(card as HTMLElement).getByTestId("resume-action-group");
+    expect(actionGroup).toBeInTheDocument();
+    // 删除按钮在单独的容器中
+    const deleteGroup = within(card as HTMLElement).getByTestId("resume-delete-group");
+    expect(deleteGroup).toBeInTheDocument();
+  });
+
+  it("删除按钮带半透明红色背景色（hover/常态都有）", async () => {
+    renderPage();
+    await screen.findByText("test-resume.pdf");
+
+    const card = screen.getByText("test-resume.pdf").closest("[class*='block']");
+    const deleteBtn = within(card as HTMLElement).getByText("删除");
+    // 常态有 red-500/10 背景
+    expect(deleteBtn.className).toMatch(/bg-red-500\/10/);
+  });
+
+  it("就绪状态徽章与功能键区域分离（用容器包裹）", async () => {
+    renderPage();
+    await screen.findByText("test-resume.pdf");
+
+    const card = screen.getByText("test-resume.pdf").closest("[class*='block']");
+    // 状态徽章在独立容器中
+    const statusGroup = within(card as HTMLElement).getByTestId("resume-status-group");
+    expect(statusGroup).toBeInTheDocument();
+  });
+
+  it("就绪状态徽章带绿色背景", async () => {
+    renderPage();
+    await screen.findByText("test-resume.pdf");
+
+    const badge = screen.getByText("就绪");
+    expect(badge.className).toMatch(/bg-emerald-500\/10/);
+    expect(badge.className).toMatch(/border-emerald-500\/25/);
+    expect(badge.className).toMatch(/text-emerald-400/);
+  });
+
+  it("处理中状态徽章带蓝色背景", async () => {
+    vi.mocked(listResumes).mockResolvedValueOnce({
+      items: [{
+        id: 2,
+        filename: "processing.pdf",
+        parsed_text: "",
+        chunk_count: 0,
+        status: "processing",
+        status_message: "",
+        created_at: "2026-07-27T00:00:00Z",
+      }],
+      total: 1,
+    });
+    renderPage();
+    await screen.findByText("processing.pdf");
+
+    const badge = screen.getByText("处理中");
+    expect(badge.className).toMatch(/bg-sky-500\/10/);
+    expect(badge.className).toMatch(/border-sky-500\/25/);
+    expect(badge.className).toMatch(/text-sky-400/);
+  });
+
+  it("失败状态徽章带红色背景", async () => {
+    vi.mocked(listResumes).mockResolvedValueOnce({
+      items: [{
+        id: 3,
+        filename: "failed.pdf",
+        parsed_text: "",
+        chunk_count: 0,
+        status: "failed",
+        status_message: "解析失败",
+        created_at: "2026-07-27T00:00:00Z",
+      }],
+      total: 1,
+    });
+    renderPage();
+    await screen.findByText("failed.pdf");
+
+    const badge = screen.getByText("失败");
+    expect(badge.className).toMatch(/bg-red-500\/10/);
+    expect(badge.className).toMatch(/border-red-500\/25/);
+    expect(badge.className).toMatch(/text-red-400/);
+  });
 });
 
 // ── Task 5.5: 批量上传 + 批量删除 ──
@@ -454,5 +562,155 @@ describe("Task 5.5: 批量删除", () => {
 
     // 复选框应消失
     expect(screen.queryByRole("checkbox", { name: /选择/ })).toBeNull();
+  });
+});
+
+// ── Task 5.3: 多简历对比按钮 ──
+
+const compareResumeList = [
+  { id: 1, filename: "resume-a.pdf", parsed_text: "a", chunk_count: 3, status: "ready", status_message: "", created_at: "2026-07-27T00:00:00Z" },
+  { id: 2, filename: "resume-b.pdf", parsed_text: "b", chunk_count: 5, status: "ready", status_message: "", created_at: "2026-07-27T01:00:00Z" },
+  { id: 3, filename: "resume-c.pdf", parsed_text: "c", chunk_count: 2, status: "ready", status_message: "", created_at: "2026-07-27T02:00:00Z" },
+];
+
+describe("Task 5.3: 多简历对比按钮", () => {
+  beforeEach(() => {
+    vi.mocked(listResumes).mockResolvedValue({ items: compareResumeList, total: 3 });
+    mockNavigate.mockClear();
+  });
+
+  it("选择模式下选中 2 份简历时，顶部栏显示「对比」按钮", async () => {
+    renderPage();
+    await screen.findByText("resume-a.pdf");
+
+    // 进入选择模式
+    fireEvent.click(screen.getByRole("button", { name: /管理/ }));
+
+    // 勾选 2 份简历
+    const checkboxes = screen.getAllByRole("checkbox", { name: /选择/ });
+    fireEvent.click(checkboxes[0]);
+    fireEvent.click(checkboxes[1]);
+
+    // 「对比」按钮应出现
+    expect(screen.getByRole("button", { name: /对比/ })).toBeInTheDocument();
+  });
+
+  it("选择模式下选中 < 2 份简历时，「对比」按钮不可点击", async () => {
+    renderPage();
+    await screen.findByText("resume-a.pdf");
+
+    fireEvent.click(screen.getByRole("button", { name: /管理/ }));
+
+    // 仅勾选 1 份
+    const checkboxes = screen.getAllByRole("checkbox", { name: /选择/ });
+    fireEvent.click(checkboxes[0]);
+
+    const compareBtn = screen.getByRole("button", { name: /对比/ });
+    expect(compareBtn).toBeDisabled();
+  });
+
+  it("选择模式下未选中任何简历时，「对比」按钮不可点击", async () => {
+    renderPage();
+    await screen.findByText("resume-a.pdf");
+
+    fireEvent.click(screen.getByRole("button", { name: /管理/ }));
+
+    const compareBtn = screen.getByRole("button", { name: /对比/ });
+    expect(compareBtn).toBeDisabled();
+  });
+
+  it("点击「对比」按钮导航到 /compare?ids=1,2", async () => {
+    renderPage();
+    await screen.findByText("resume-a.pdf");
+
+    fireEvent.click(screen.getByRole("button", { name: /管理/ }));
+
+    const checkboxes = screen.getAllByRole("checkbox", { name: /选择/ });
+    fireEvent.click(checkboxes[0]);
+    fireEvent.click(checkboxes[1]);
+
+    fireEvent.click(screen.getByRole("button", { name: /对比/ }));
+
+    expect(mockNavigate).toHaveBeenCalledWith("/compare?ids=1,2");
+  });
+
+  it("点击「对比」按钮后退出选择模式", async () => {
+    renderPage();
+    await screen.findByText("resume-a.pdf");
+
+    fireEvent.click(screen.getByRole("button", { name: /管理/ }));
+
+    const checkboxes = screen.getAllByRole("checkbox", { name: /选择/ });
+    fireEvent.click(checkboxes[0]);
+    fireEvent.click(checkboxes[1]);
+
+    fireEvent.click(screen.getByRole("button", { name: /对比/ }));
+
+    // 选择模式应退出，复选框消失
+    await waitFor(() => {
+      expect(screen.queryByRole("checkbox", { name: /选择/ })).toBeNull();
+    });
+  });
+
+  it("「对比」按钮在 resumeIds 超过 5 时仍然可用（服务端校验）", async () => {
+    // 添加更多简历（共 6 份）
+    const manyResumes = [
+      ...compareResumeList,
+      { id: 4, filename: "d.pdf", parsed_text: "d", chunk_count: 1, status: "ready", status_message: "", created_at: "2026-07-27T03:00:00Z" },
+      { id: 5, filename: "e.pdf", parsed_text: "e", chunk_count: 1, status: "ready", status_message: "", created_at: "2026-07-27T04:00:00Z" },
+      { id: 6, filename: "f.pdf", parsed_text: "f", chunk_count: 1, status: "ready", status_message: "", created_at: "2026-07-27T05:00:00Z" },
+    ];
+    vi.mocked(listResumes).mockResolvedValueOnce({ items: manyResumes, total: 6 });
+
+    renderPage();
+    await screen.findByText("resume-a.pdf");
+
+    fireEvent.click(screen.getByRole("button", { name: /管理/ }));
+
+    // 勾选所有 6 份
+    fireEvent.click(screen.getByRole("checkbox", { name: /全选/ }));
+
+    const compareBtn = screen.getByRole("button", { name: /对比/ });
+    expect(compareBtn).not.toBeDisabled();
+  });
+
+  it("非选择模式下，有 ≥2 份就绪简历时直接显示「对比分析」入口按钮", async () => {
+    vi.mocked(listResumes).mockResolvedValue({ items: compareResumeList, total: 3 });
+    renderPage();
+    await screen.findByText("resume-a.pdf");
+
+    // 非选择模式下应看到"对比分析"按钮
+    const hintBtn = screen.getByRole("button", { name: /对比分析/ });
+    expect(hintBtn).toBeInTheDocument();
+    // 点击后进入选择模式 →「对比分析」按钮应消失
+    fireEvent.click(hintBtn);
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: /对比分析/ })).toBeNull();
+    });
+  });
+
+  it("仅有 1 份就绪简历时，不显示「对比分析」入口按钮", async () => {
+    vi.mocked(listResumes).mockResolvedValue({
+      items: [compareResumeList[0]],
+      total: 1,
+    });
+    renderPage();
+    await screen.findByText("resume-a.pdf");
+
+    expect(screen.queryByRole("button", { name: /对比分析/ })).toBeNull();
+  });
+
+  it("所有简历都未就绪时，不显示「对比分析」入口按钮", async () => {
+    vi.mocked(listResumes).mockResolvedValue({
+      items: [
+        { ...compareResumeList[0], status: "processing" },
+        { ...compareResumeList[1], status: "failed" },
+      ],
+      total: 2,
+    });
+    renderPage();
+    await screen.findByText("resume-a.pdf");
+
+    expect(screen.queryByRole("button", { name: /对比分析/ })).toBeNull();
   });
 });

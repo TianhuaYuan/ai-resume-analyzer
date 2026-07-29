@@ -134,6 +134,26 @@ export async function matchJD(
   }) as Promise<MatchJDResult>;
 }
 
+export interface CompareDimension {
+  skills: Record<string, string[]>;
+  projects: Record<string, string[]>;
+}
+
+export interface CompareResult {
+  resumes: Array<{ id: number; filename: string }>;
+  dimensions: Partial<CompareDimension>;
+}
+
+export async function compareResumes(
+  resumeIds: number[],
+  dimensions: string[] = ["skills", "projects"]
+): Promise<CompareResult> {
+  return api.post("/api/v1/resumes/compare", {
+    resume_ids: resumeIds,
+    dimensions,
+  }) as Promise<CompareResult>;
+}
+
 export async function exportResume(
   id: number,
   format: string = "markdown"

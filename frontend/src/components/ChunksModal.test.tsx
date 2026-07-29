@@ -261,4 +261,134 @@ describe("ChunksModal (Task 3 前端)", () => {
       expect(screen.getByText("#2")).toBeInTheDocument();
     });
   });
+
+  describe("布局结构", () => {
+    it("dialog 本身不可滚动 (overflow-hidden)，防止标题跟内容一起滚", async () => {
+      mockGetChunks.mockResolvedValue({
+        resume_id: 42,
+        total: 3,
+        chunks: SAMPLE_CHUNKS,
+      });
+      renderModal();
+
+      await waitFor(() => {
+        expect(screen.getByText(/基本信息/)).toBeInTheDocument();
+      });
+
+      const dialog = document.querySelector("dialog") as HTMLElement;
+      expect(dialog).not.toBeNull();
+      expect(dialog!.className).toContain("overflow-hidden");
+    });
+
+    it("弹窗内容容器为 flex 列布局 + overflow-hidden 防止双重滚动", async () => {
+      mockGetChunks.mockResolvedValue({
+        resume_id: 42,
+        total: 3,
+        chunks: SAMPLE_CHUNKS,
+      });
+      renderModal();
+
+      await waitFor(() => {
+        expect(screen.getByText(/基本信息/)).toBeInTheDocument();
+      });
+
+      // 内部白色卡片容器：flex-col + overflow-hidden
+      const container = document.querySelector("dialog > div") as HTMLElement;
+      expect(container).not.toBeNull();
+      expect(container.className).toContain("flex");
+      expect(container.className).toContain("flex-col");
+      expect(container.className).toContain("overflow-hidden");
+    });
+
+    it("标题栏 shrink-0 固定置顶，不会随内容滚动", async () => {
+      mockGetChunks.mockResolvedValue({
+        resume_id: 42,
+        total: 3,
+        chunks: SAMPLE_CHUNKS,
+      });
+      renderModal();
+
+      await waitFor(() => {
+        expect(screen.getByText(/基本信息/)).toBeInTheDocument();
+      });
+
+      // 标题栏（含"分块预览"文字的直接父级）有 shrink-0
+      const header = screen.getByText("分块预览").closest(".shrink-0") as HTMLElement;
+      expect(header).not.toBeNull();
+    });
+
+    it("分块列表区域独立滚动 (overflow-y-auto + scrollbarGutter)", async () => {
+      mockGetChunks.mockResolvedValue({
+        resume_id: 42,
+        total: 3,
+        chunks: SAMPLE_CHUNKS,
+      });
+      renderModal();
+
+      await waitFor(() => {
+        expect(screen.getByText(/基本信息/)).toBeInTheDocument();
+      });
+
+      // 内容滚动区域
+      const scrollArea = document.querySelector(".overflow-y-auto") as HTMLElement;
+      expect(scrollArea).not.toBeNull();
+      expect(scrollArea.className).toContain("overflow-y-auto");
+      // scrollbar-gutter: stable 防止滚动条挤压内容
+      expect(scrollArea.style.scrollbarGutter).toBe("stable");
+    });
+
+    it("弹窗容器有响应式宽度断点 (sm/md)", async () => {
+      mockGetChunks.mockResolvedValue({
+        resume_id: 42,
+        total: 3,
+        chunks: SAMPLE_CHUNKS,
+      });
+      renderModal();
+
+      await waitFor(() => {
+        expect(screen.getByText(/基本信息/)).toBeInTheDocument();
+      });
+
+      const container = document.querySelector("dialog > div") as HTMLElement;
+      expect(container).not.toBeNull();
+      // 响应式断点
+      expect(container.className).toContain("sm:max-w-lg");
+      expect(container.className).toContain("md:max-w-2xl");
+    });
+
+    it("弹窗容器有响应式最大高度断点", async () => {
+      mockGetChunks.mockResolvedValue({
+        resume_id: 42,
+        total: 3,
+        chunks: SAMPLE_CHUNKS,
+      });
+      renderModal();
+
+      await waitFor(() => {
+        expect(screen.getByText(/基本信息/)).toBeInTheDocument();
+      });
+
+      const container = document.querySelector("dialog > div") as HTMLElement;
+      expect(container).not.toBeNull();
+      // 移动端和桌面端不同 max-h
+      expect(container.className).toContain("max-h-");
+    });
+
+    it("chunk 列表容器有足够上下间距", async () => {
+      mockGetChunks.mockResolvedValue({
+        resume_id: 42,
+        total: 3,
+        chunks: SAMPLE_CHUNKS,
+      });
+      renderModal();
+
+      await waitFor(() => {
+        expect(screen.getByText(/基本信息/)).toBeInTheDocument();
+      });
+
+      // 列表容器 spacing 从 space-y-2.5 提升到 space-y-3.5
+      const listContainer = document.querySelector(".space-y-3\\.5") as HTMLElement;
+      expect(listContainer).not.toBeNull();
+    });
+  });
 });

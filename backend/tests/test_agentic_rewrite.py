@@ -8,6 +8,7 @@ Agentic RAG — rewrite_node + route_node 单元测试。
 import pytest
 from unittest.mock import AsyncMock, patch
 
+from core.config import settings
 from services.agentic_rag.rewrite import (
     rewrite_node,
     route_node,
@@ -242,7 +243,8 @@ class TestRouteNode:
         """route_node 优先使用 rewritten_query 而非 question。"""
         state = _make_state("他")  # 原问题含指代
         state["rewritten_query"] = "候选人的教育背景"  # 改写后明确
-        with patch(
+        with patch.object(settings, "JUDGE_ENABLED", True), \
+             patch(
             "services.agentic_rag.rewrite._classify_route",
             new_callable=AsyncMock,
             return_value="search",
@@ -250,4 +252,4 @@ class TestRouteNode:
             await route_node(state)
 
         # 传入 _classify_route 的应该是改写后的查询
-        mock_cls.assert_called_once_with("候选人的教育背景")
+        mock_cls.assert_called_once_with("候选人的教育背景", model=settings.JUDGE_MODEL)

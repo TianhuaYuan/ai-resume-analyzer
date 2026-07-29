@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from "react";
-import { Link } from "react-router-dom";
-import { Sparkle, ListBullets, FileText, Target, ArrowClockwise, CheckSquare, TrashSimple, X } from "@phosphor-icons/react";
+import { useNavigate } from "react-router-dom";
+import { Sparkle, ListBullets, FileText, Target, ArrowClockwise, CheckSquare, TrashSimple, Trash, X, ArrowsLeftRight } from "@phosphor-icons/react";
 import {
   listResumes,
   uploadResume,
@@ -52,27 +52,27 @@ function SkeletonList() {
 function StatusBadge({ status }: { status: string }) {
   if (status === "processing") {
     return (
-      <span className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-medium
+      <span className="inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-medium
         font-mono-label tracking-widest uppercase
-        border border-[var(--color-text)] text-[var(--color-text-secondary)]">
-        <span className="w-1.5 h-1.5 bg-[var(--color-text-muted)] animate-progress-pulse" />
+        bg-sky-500/10 border border-sky-500/25 text-sky-400">
+        <span className="w-1.5 h-1.5 bg-sky-400 animate-progress-pulse" />
         处理中
       </span>
     );
   }
   if (status === "failed") {
     return (
-      <span className="inline-flex items-center px-3 py-1 text-xs font-medium
+      <span className="inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-medium
         font-mono-label tracking-widest uppercase
-        border-b-2 border-[var(--color-text)] text-[var(--color-text-secondary)]">
+        bg-red-500/10 border border-red-500/25 text-red-400">
         失败
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center px-3 py-1 text-xs font-medium
+    <span className="inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-medium
       font-mono-label tracking-widest uppercase
-      text-[var(--color-text)]">
+      bg-emerald-500/10 border border-emerald-500/25 text-emerald-400">
       就绪
     </span>
   );
@@ -156,8 +156,10 @@ export default function ResumeListPage() {
   // Task 5.5: 批量操作
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [selectModeShowDelete, setSelectModeShowDelete] = useState(false);
   const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
   const [batchDeleting, setBatchDeleting] = useState(false);
+  const navigate = useNavigate();
   const toast = useToast();
 
   const fetchResumes = async () => {
@@ -439,6 +441,13 @@ export default function ResumeListPage() {
   const exitSelectMode = () => {
     setSelectMode(false);
     setSelectedIds(new Set());
+    setSelectModeShowDelete(false);
+  };
+
+  const handleCompare = () => {
+    const ids = Array.from(selectedIds).join(",");
+    exitSelectMode();
+    navigate(`/compare?ids=${ids}`);
   };
 
   // Task 1.3: 重试失败的简历。调用 retryResume → 状态改回 processing → 重新轮询
@@ -502,15 +511,36 @@ export default function ResumeListPage() {
               style={{position:"absolute",opacity:0,pointerEvents:"none",width:0,height:0,overflow:"hidden"}}
             />
             {resumes.length > 0 && !selectMode && (
-              <button
-                onClick={() => setSelectMode(true)}
-                className="px-3 py-2 rounded-lg text-sm text-[var(--color-text-secondary)]
-                  hover:text-[var(--color-text)] hover:bg-white/8
-                  transition-colors cursor-pointer"
-                aria-label="管理"
-              >
-                <CheckSquare size={18} weight="regular" aria-hidden="true" />
-              </button>
+              <>
+                {/* Task 5.3: 有多份就绪简历时直接显示对比入口 */}
+                {resumes.filter((r) => r.status === "ready").length >= 2 && (
+                  <button
+                    onClick={() => {
+                      setSelectMode(true);
+                      setSelectModeShowDelete(false);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium
+                      text-sky-400 hover:text-sky-300 hover:bg-sky-500/10 rounded-lg
+                      transition-colors cursor-pointer"
+                    aria-label="对比分析"
+                  >
+                    <ArrowsLeftRight size={14} weight="bold" aria-hidden="true" />
+                    对比分析
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    setSelectMode(true);
+                    setSelectModeShowDelete(true);
+                  }}
+                  className="px-3 py-2 rounded-lg text-sm text-[var(--color-text-secondary)]
+                    hover:text-[var(--color-text)] hover:bg-white/8
+                    transition-colors cursor-pointer"
+                  aria-label="管理"
+                >
+                  <CheckSquare size={18} weight="regular" aria-hidden="true" />
+                </button>
+              </>
             )}
             {selectMode && (
               <>
@@ -525,17 +555,31 @@ export default function ResumeListPage() {
                   全选
                 </label>
                 <button
-                  onClick={() => setBatchDeleteOpen(true)}
-                  disabled={selectedIds.size === 0}
+                  onClick={handleCompare}
+                  disabled={selectedIds.size < 2}
                   className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium
-                    text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg
+                    text-sky-400 hover:text-sky-300 hover:bg-sky-500/10 rounded-lg
                     disabled:opacity-40 disabled:cursor-not-allowed
                     transition-colors cursor-pointer"
-                  aria-label="删除所选"
+                  aria-label="对比"
                 >
-                  <TrashSimple size={14} weight="bold" aria-hidden="true" />
-                  删除所选{selectedIds.size > 0 ? ` (${selectedIds.size})` : ""}
+                  <ArrowsLeftRight size={14} weight="bold" aria-hidden="true" />
+                  对比{selectedIds.size >= 2 ? ` (${selectedIds.size})` : ""}
                 </button>
+                {selectModeShowDelete && (
+                  <button
+                    onClick={() => setBatchDeleteOpen(true)}
+                    disabled={selectedIds.size === 0}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium
+                      text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg
+                      disabled:opacity-40 disabled:cursor-not-allowed
+                      transition-colors cursor-pointer"
+                    aria-label="删除所选"
+                  >
+                    <TrashSimple size={14} weight="bold" aria-hidden="true" />
+                    删除所选{selectedIds.size > 0 ? ` (${selectedIds.size})` : ""}
+                  </button>
+                )}
                 <button
                   onClick={exitSelectMode}
                   className="p-1.5 rounded-lg text-[var(--color-text-secondary)]
@@ -597,15 +641,16 @@ export default function ResumeListPage() {
         ) : (
           <div className="space-y-3">
             {resumes.map((r, index) => (
-              <Link
+              <div
                 key={r.id}
-                to={r.status === "ready" ? `/resumes/${r.id}` : "#"}
-                onClick={(e) => {
-                  // P0.2: 失败/处理中状态点击卡片不再跳转，但保留按钮可点击
-                  // 不使用 pointer-events-none，否则会连带禁用删除等操作按钮
-                  if (r.status !== "ready") e.preventDefault();
+                onClick={() => {
+                  if (selectMode) {
+                    toggleSelect(r.id);
+                  } else if (r.status === "ready") {
+                    window.location.href = `/resumes/${r.id}`;
+                  }
                 }}
-                className="block group"
+                className={`block group ${selectMode ? "cursor-pointer" : ""}`}
               >
                 <div
                   className={`flex items-center justify-between p-5
@@ -672,8 +717,13 @@ export default function ResumeListPage() {
                   </div>
 
                   {/* 右侧 */}
-                  <div className="flex items-center gap-3 ml-4 shrink-0">
-                    <StatusBadge status={r.status} />
+                  <div className="flex items-center gap-4 ml-4 shrink-0">
+                    <div
+                      data-testid="resume-status-group"
+                      className="flex items-center"
+                    >
+                      <StatusBadge status={r.status} />
+                    </div>
                     {r.status === "failed" && (
                       <button
                         onClick={(e) => {
@@ -697,85 +747,98 @@ export default function ResumeListPage() {
                     )}
                     {r.status === "ready" && (
                       <>
-                        {/* 大屏按钮组（≥640px） */}
-                        <button
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            setViewerTarget(r);
-                          }}
-                          className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1.5 text-xs
-                            font-mono-label tracking-widest uppercase
-                            text-[var(--color-text-secondary)] hover:text-[var(--color-text)]
-                            hover:border-b hover:border-[var(--color-text)]
-                            border-b border-transparent
-                            transition-colors duration-100 cursor-pointer"
+                        {/* 大屏操作按钮组（≥640px） */}
+                        <div
+                          data-testid="resume-action-group"
+                          className="hidden sm:flex items-center gap-1"
                         >
-                          <FileText size={13} weight="bold" aria-hidden="true" />
-                          预览
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            setChunksTarget(r);
-                          }}
-                          className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1.5 text-xs
-                            font-mono-label tracking-widest uppercase
-                            text-[var(--color-text-secondary)] hover:text-[var(--color-text)]
-                            hover:border-b hover:border-[var(--color-text)]
-                            border-b border-transparent
-                            transition-colors duration-100 cursor-pointer"
+                          <button
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setViewerTarget(r);
+                            }}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs
+                              font-mono-label tracking-widest uppercase
+                              text-[var(--color-text-secondary)] hover:text-[var(--color-text)]
+                              hover:border-b hover:border-[var(--color-text)]
+                              border-b border-transparent
+                              transition-colors duration-100 cursor-pointer"
+                          >
+                            <FileText size={13} weight="bold" aria-hidden="true" />
+                            预览
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setChunksTarget(r);
+                            }}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs
+                              font-mono-label tracking-widest uppercase
+                              text-[var(--color-text-secondary)] hover:text-[var(--color-text)]
+                              hover:border-b hover:border-[var(--color-text)]
+                              border-b border-transparent
+                              transition-colors duration-100 cursor-pointer"
+                          >
+                            <ListBullets size={13} weight="bold" aria-hidden="true" />
+                            分块
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setAnalyzeTarget(r);
+                            }}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs
+                              font-mono-label tracking-widest uppercase
+                              text-[var(--color-text-secondary)] hover:text-[var(--color-text)]
+                              hover:border-b hover:border-[var(--color-text)]
+                              border-b border-transparent
+                              transition-colors duration-100 cursor-pointer"
+                          >
+                            <Sparkle size={13} weight="bold" aria-hidden="true" />
+                            分析
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setJdMatchTarget(r);
+                            }}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs
+                              font-mono-label tracking-widest uppercase
+                              text-[var(--color-text-secondary)] hover:text-[var(--color-text)]
+                              hover:border-b hover:border-[var(--color-text)]
+                              border-b border-transparent
+                              transition-colors duration-100 cursor-pointer"
+                          >
+                            <Target size={13} weight="bold" aria-hidden="true" />
+                            JD匹配
+                          </button>
+                        </div>
+                        <div
+                          data-testid="resume-delete-group"
+                          className="hidden sm:flex items-center"
                         >
-                          <ListBullets size={13} weight="bold" aria-hidden="true" />
-                          分块
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            setAnalyzeTarget(r);
-                          }}
-                          className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1.5 text-xs
-                            font-mono-label tracking-widest uppercase
-                            text-[var(--color-text-secondary)] hover:text-[var(--color-text)]
-                            hover:border-b hover:border-[var(--color-text)]
-                            border-b border-transparent
-                            transition-colors duration-100 cursor-pointer"
-                        >
-                          <Sparkle size={13} weight="bold" aria-hidden="true" />
-                          分析
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            setJdMatchTarget(r);
-                          }}
-                          className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1.5 text-xs
-                            font-mono-label tracking-widest uppercase
-                            text-[var(--color-text-secondary)] hover:text-[var(--color-text)]
-                            hover:border-b hover:border-[var(--color-text)]
-                            border-b border-transparent
-                            transition-colors duration-100 cursor-pointer"
-                        >
-                          <Target size={13} weight="bold" aria-hidden="true" />
-                          JD匹配
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            setDeleteTarget(r);
-                          }}
-                          className="hidden sm:inline-flex px-2.5 py-1.5 text-xs font-mono-label tracking-widest uppercase
-                            text-[var(--color-text-muted)] hover:text-[var(--color-text)]
-                            hover:border-b-2 hover:border-[var(--color-text)]
-                            border-b border-transparent
-                            transition-colors duration-100 cursor-pointer"
-                        >
-                          删除
-                        </button>
+                          {/* 分割线 */}
+                          <div className="w-px h-4 bg-[var(--color-border)] mr-1" />
+                          <button
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setDeleteTarget(r);
+                            }}
+                            className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs
+                              font-mono-label tracking-widest uppercase
+                              text-red-300 bg-red-500/10 border border-red-500/20
+                              hover:bg-red-500/20 hover:border-red-500/40
+                              transition-colors duration-100 cursor-pointer"
+                          >
+                            <Trash size={13} weight="bold" aria-hidden="true" />
+                            删除
+                          </button>
+                        </div>
 
                         {/* 小屏 MoreMenu（<640px）：折叠预览/分块/分析/JD匹配/删除 */}
                         <div className="sm:hidden">
@@ -847,7 +910,7 @@ export default function ResumeListPage() {
                     )}
                   </div>
                 </div>
-              </Link>
+              </div>
             ))}
           </div>
         )}

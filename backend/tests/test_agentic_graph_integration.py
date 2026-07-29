@@ -175,7 +175,7 @@ class TestIntegrationReflexion:
                 _make_response("search"),  # 2. _classify_route
                 _make_response("候选人有3年经验"),  # 3. generate r1
                 _make_response(  # 4. eval r1 (低分)
-                    '{"completeness": 4, "accuracy": 5, "source_credibility": 3, '
+                    '{"completeness": 3, "accuracy": 5, "source_credibility": 3, '
                     '"feedback": "缺少项目细节"}'
                 ),
                 _make_response(  # 5. self_reflection
