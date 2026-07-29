@@ -18,6 +18,8 @@ export interface SSEEvent {
   answer?: string;
   sources?: string[];
   qa_id?: number;
+  /** 错误代码，如 "quota_exceeded" */
+  code?: string;
 }
 
 /**
@@ -193,4 +195,18 @@ export async function submitFeedback(
   rating: "positive" | "negative"
 ): Promise<void> {
   await api.post(`/api/v1/qa/${qa_id}/feedback`, { rating });
+}
+
+/** Token 限额状态。 */
+export interface QuotaResponse {
+  enabled: boolean;
+  used: number;
+  limit: number;
+  remaining: number;
+  reset_at: string | null;
+}
+
+/** 获取当前用户的 token 限额状态。 */
+export async function getQuota(): Promise<QuotaResponse> {
+  return api.get("/api/v1/qa/quota") as Promise<QuotaResponse>;
 }

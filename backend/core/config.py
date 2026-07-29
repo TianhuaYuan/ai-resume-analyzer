@@ -78,6 +78,14 @@ class Settings(BaseSettings):
     # Redis 配置
     REDIS_URL: str = "redis://localhost:6379/0"
 
+    # ── Token 限额配置（仅生产环境生效） ──
+    # 总开关：是否启用每日token限额
+    TOKEN_QUOTA_ENABLED: bool = False
+    # 每日token限额（输入+输出），默认10000
+    TOKEN_QUOTA_DAILY_LIMIT: int = 10000
+    # 预检查时的最小预留额度（低于此值就拒绝请求）
+    TOKEN_QUOTA_MIN_RESERVE: int = 500
+
     # 监控配置
     METRICS_TOKEN: str = ""  # Prometheus /metrics 抓取所需的 Bearer token，生产环境必填
 

@@ -107,3 +107,69 @@ class ForgotPasswordVerifyRequest(BaseModel):
 class MessageResponse(BaseModel):
     """通用消息响应。"""
     detail: str
+
+
+# ── 修改密码 ──────────────────────────────────────────
+
+
+class ChangePasswordRequest(BaseModel):
+    mode: str  # "password" | "code"
+    old_password: str | None = None
+    verification_code: str | None = None
+    new_password: str
+
+    @field_validator("mode")
+    @classmethod
+    def mode_valid(cls, v: str) -> str:
+        if v not in ("password", "code"):
+            raise ValueError("mode 必须是 password 或 code")
+        return v
+
+    @field_validator("verification_code")
+    @classmethod
+    def verification_code_length(cls, v: str | None) -> str | None:
+        if v is not None and (len(v) != 6 or not v.isdigit()):
+            raise ValueError("验证码必须是6位数字")
+        return v
+
+    @field_validator("new_password")
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("密码至少8位")
+        if not any(c.isalpha() for c in v):
+            raise ValueError("密码必须包含字母")
+        if not any(c.isdigit() for c in v):
+            raise ValueError("密码必须包含数字")
+        return v
+
+
+# ── 修改邮箱 ──────────────────────────────────────────
+
+
+class ChangeEmailRequest(BaseModel):
+    new_email: EmailStr
+    verification_code: str
+
+    @field_validator("verification_code")
+    @classmethod
+    def verification_code_length(cls, v: str) -> str:
+        if len(v) != 6 or not v.isdigit():
+            raise ValueError("验证码必须是6位数字")
+        return v
+
+
+# ── 修改用户名 ──────────────────────────────────────────
+
+
+class ChangeUsernameRequest(BaseModel):
+    new_username: str
+
+    @field_validator("new_username")
+    @classmethod
+    def username_min_length(cls, v: str) -> str:
+        if len(v.strip()) < 2:
+            raise ValueError("用户名至少2个字符")
+        if len(v.strip()) > 50:
+            raise ValueError("用户名最多50个字符")
+        return v.strip()

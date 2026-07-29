@@ -74,3 +74,46 @@ export async function forgotPassword(
     }) as { detail: string };
     return data.detail;
 }
+
+/**
+ * 修改密码（登录状态下）。
+ * 支持两种方式：旧密码验证 / 邮箱验证码。
+ */
+export async function changePassword(params: {
+    mode: "password" | "code";
+    old_password?: string;
+    verification_code?: string;
+    new_password: string;
+}): Promise<string> {
+    const data = await api.put("/api/v1/auth/password", params) as { detail: string };
+    return data.detail;
+}
+
+/**
+ * 修改邮箱（登录状态下）。
+ */
+export async function changeEmail(new_email: string, verification_code: string): Promise<string> {
+    const data = await api.put("/api/v1/auth/email", { new_email, verification_code }) as { detail: string };
+    return data.detail;
+}
+
+/**
+ * 修改用户名（登录状态下）。
+ */
+export async function changeUsername(new_username: string): Promise<string> {
+    const data = await api.put("/api/v1/auth/username", { new_username }) as { detail: string };
+    return data.detail;
+}
+
+interface UserInfo {
+    id: number;
+    username: string;
+    email: string;
+}
+
+/**
+ * 获取当前登录用户信息。
+ */
+export async function getCurrentUser(): Promise<UserInfo> {
+    return api.get("/api/v1/auth/me") as Promise<UserInfo>;
+}

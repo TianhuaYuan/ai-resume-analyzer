@@ -6,7 +6,7 @@ import {
   useCallback,
   type ReactNode,
 } from "react";
-import { login as loginApi, register as registerApi, logout as clearTokens, sendCode as sendCodeApi } from "../api/auth";
+import { login as loginApi, register as registerApi, logout as clearTokens, sendCode as sendCodeApi, getCurrentUser } from "../api/auth";
 import { clearSessionAndRedirect } from "../api/client";
 import { safeDecodeJwt } from "../utils/jwt";
 
@@ -32,6 +32,8 @@ interface AuthCtx {
   ) => Promise<void>;
   sendCode: (email: string) => Promise<string>;
   logout: () => Promise<void>;
+  /** 更新本地用户信息（修改用户名/邮箱后同步） */
+  updateUser: (patch: Partial<Pick<User, "username" | "email">>) => void;
   /** 会话过期弹窗状态 */
   sessionDialog: SessionDialogType;
   /** 跳转登录页并清除 token */
@@ -47,22 +49,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // 会话过期弹窗状态
   const [sessionDialog, setSessionDialog] = useState<SessionDialogType>(null);
 
-  // ── 启动时从 token 解码 user 信息 ──────────────────────
+  // ── 启动时从 /me 获取完整用户信息 ──────────────────────
   useEffect(() => {
     const token = localStorage.getItem("access_token");
-    if (token) {
-      const payload = safeDecodeJwt(token);
-      if (payload && payload.exp != null && payload.exp * 1000 > Date.now()) {
-        setUser({
-          id: Number(payload.sub),
-          username: payload.username || "",
-          email: payload.email || "",
-        });
-      } else {
-        clearTokens();
-      }
+    if (!token) {
+      setLoading(false);
+      return;
     }
-    setLoading(false);
+    const payload = safeDecodeJwt(token);
+    if (!payload || payload.exp == null || payload.exp * 1000 <= Date.now()) {
+      clearTokens();
+      setLoading(false);
+      return;
+    }
+    // token 有效 → 调 /me 获取最新用户信息（兼容旧 token 无 username 的情况）
+    getCurrentUser()
+      .then((data) => {
+        setUser({
+          id: data.id,
+          username: data.username,
+          email: data.email,
+        });
+      })
+      .catch(() => {
+        // /me 失败（token 被撤销等）→ 清 token
+        clearTokens();
+      })
+      .finally(() => {
+        setLoading(false);
+      });
   }, []);
 
   // ── 监听 session:expired 事件 ──────────────────────────
@@ -98,16 +113,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // ── 登录 ───────────────────────────────────────────────
   const login = async (email: string, password: string) => {
-    const data = await loginApi(email, password);
-    const payload = safeDecodeJwt(data.access_token);
-    if (!payload) {
-      clearTokens();
-      throw new Error("登录成功，但解析用户凭证失败，请重新登录");
-    }
+    await loginApi(email, password);
+    const userInfo = await getCurrentUser();
     setUser({
-      id: Number(payload.sub),
-      username: payload.username || "",
-      email: payload.email || "",
+      id: userInfo.id,
+      username: userInfo.username,
+      email: userInfo.email,
     });
   };
 
@@ -131,6 +142,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSessionDialog(null);
   };
 
+  const updateUser = useCallback((patch: Partial<Pick<User, "username" | "email">>) => {
+    setUser((prev) => (prev ? { ...prev, ...patch } : prev));
+  }, []);
+
   return (
     <AuthContext.Provider
       value={{
@@ -140,6 +155,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         register,
         sendCode,
         logout,
+        updateUser,
         sessionDialog,
         handleSessionGoLogin,
       }}

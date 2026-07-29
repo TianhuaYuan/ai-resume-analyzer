@@ -9,13 +9,14 @@ vi.mock("../../api/qa", () => ({
   clearHistory: vi.fn(async () => ({ deleted_count: 0 })),
   deleteQa: vi.fn(async () => undefined),
   submitFeedback: vi.fn(async () => undefined),
+  getQuota: vi.fn(async () => ({ enabled: true, used: 1000, limit: 10000, remaining: 9000, reset_at: null })),
 }));
 
 vi.mock("../../api/resumes", () => ({
   listResumes: vi.fn(async () => ({ items: [], total: 0 })),
 }));
 
-import { getHistory, clearHistory, deleteQa, askQuestionStream, submitFeedback } from "../../api/qa";
+import { getHistory, clearHistory, deleteQa, askQuestionStream, submitFeedback, getQuota } from "../../api/qa";
 
 function renderPage(route = "/resumes/42") {
   // P2-12：测试路由与生产 App.tsx 保持一致（/resumes/:id）
@@ -36,6 +37,7 @@ beforeEach(() => {
   vi.mocked(deleteQa).mockResolvedValue(undefined);
   vi.mocked(askQuestionStream).mockReturnValue(() => {});
   vi.mocked(submitFeedback).mockResolvedValue(undefined);
+  vi.mocked(getQuota).mockResolvedValue({ enabled: true, used: 1000, limit: 10000, remaining: 9000, reset_at: null });
   // jsdom 没有 scrollIntoView，QAPage 的 chatEndRef 会调用它
   Element.prototype.scrollIntoView = vi.fn();
 });
@@ -713,5 +715,63 @@ describe("QAPage 顶部栏设计", () => {
     const header = heading.closest("div[class*='sticky'], div[class*='fixed']");
     expect(header).toBeTruthy();
     expect(header!.className).not.toMatch(/backdrop-blur|bg-\[.*\]\/\d+/);
+  });
+});
+
+// ── Token 限额 UI ──
+
+describe("Token 限额 UI", () => {
+  it("初始化时调用 getQuota API", async () => {
+    renderPage();
+    await waitFor(() => {
+      expect(getQuota).toHaveBeenCalled();
+    });
+  });
+
+  it("限额启用时顶部栏显示今日额度", async () => {
+    vi.mocked(getQuota).mockResolvedValue({
+      enabled: true,
+      used: 3500,
+      limit: 10000,
+      remaining: 6500,
+      reset_at: "2026-07-30T00:00:00Z",
+    });
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText(/今日额度/)).toBeInTheDocument();
+    });
+    expect(screen.getByText(/3500/)).toBeInTheDocument();
+    expect(screen.getByText(/10000/)).toBeInTheDocument();
+  });
+
+  it("限额关闭时不显示额度信息", async () => {
+    vi.mocked(getQuota).mockResolvedValue({
+      enabled: false,
+      used: 0,
+      limit: 10000,
+      remaining: 10000,
+      reset_at: null,
+    });
+    renderPage();
+    await waitFor(() => {
+      expect(getQuota).toHaveBeenCalled();
+    });
+    expect(screen.queryByText(/今日额度/)).toBeNull();
+  });
+
+  it("额度不足时发送按钮禁用并显示提示", async () => {
+    vi.mocked(getQuota).mockResolvedValue({
+      enabled: true,
+      used: 9800,
+      limit: 10000,
+      remaining: 200,
+      reset_at: "2026-07-30T00:00:00Z",
+    });
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText(/今日额度/)).toBeInTheDocument();
+    });
+    // 剩余额度不足时应该有提示
+    expect(screen.getByText(/额度不足/)).toBeInTheDocument();
   });
 });

@@ -43,16 +43,16 @@ async def rewrite_query(question: str, model: str | None = None) -> str:
         f"用户问题：{question}\n"
         "改写后的问题："
     )
-    rewritten = await with_retry(
+    result, _ = await with_retry(
         llm_generate,
         system,
         user,
         temperature=0.1,
         max_tokens=200,
         model=model,
-        fallback=question,
+        fallback=(question, {}),
     )
-    return rewritten or question
+    return result or question
 
 
 async def llm_generate(
@@ -61,8 +61,13 @@ async def llm_generate(
     temperature: float = 0.1,
     max_tokens: int | None = None,
     model: str | None = None,
-) -> str:
-    """调 Chat API 生成回答（模型由 settings.CHAT_MODEL 决定，可被 model 参数覆盖），抽出来方便加不同的 temperature 和重试"""
+) -> tuple[str, dict]:
+    """调 Chat API 生成回答。
+
+    Returns:
+        (回答文本, usage dict)
+        usage: {"prompt_tokens": int, "completion_tokens": int, "total_tokens": int}
+    """
     client = get_chat_client()
     kwargs = {
         "model": model or settings.CHAT_MODEL,
@@ -75,7 +80,15 @@ async def llm_generate(
     if max_tokens is not None:
         kwargs["max_tokens"] = max_tokens
     response = await client.chat.completions.create(**kwargs)
-    return (response.choices[0].message.content or "").strip()
+    content = (response.choices[0].message.content or "").strip()
+
+    # 提取 token 使用量
+    usage = {
+        "prompt_tokens": getattr(response.usage, "prompt_tokens", 0) if response.usage else 0,
+        "completion_tokens": getattr(response.usage, "completion_tokens", 0) if response.usage else 0,
+        "total_tokens": getattr(response.usage, "total_tokens", 0) if response.usage else 0,
+    }
+    return content, usage
 
 
 async def _llm_generate_stream(
@@ -83,7 +96,10 @@ async def _llm_generate_stream(
     user: str,
     temperature: float = 0.1,
 ):
-    """流式调 Chat API（模型由 settings.CHAT_MODEL 决定），逐 token yield delta text"""
+    """流式调 Chat API（模型由 settings.CHAT_MODEL 决定），逐 token yield delta text。
+
+    最后 yield 一个 usage dict: {"prompt_tokens": int, "completion_tokens": int}
+    """
     client = get_chat_client()
     stream = await client.chat.completions.create(
         model=settings.CHAT_MODEL,
@@ -93,13 +109,23 @@ async def _llm_generate_stream(
         ],
         temperature=temperature,
         stream=True,
+        stream_options={"include_usage": True},  # 请求返回 token 使用量
     )
     async for chunk in stream:
+        # 检查是否有 usage 信息（在最后一个 chunk）
+        if hasattr(chunk, "usage") and chunk.usage:
+            yield {
+                "type": "usage",
+                "prompt_tokens": getattr(chunk.usage, "prompt_tokens", 0),
+                "completion_tokens": getattr(chunk.usage, "completion_tokens", 0),
+            }
+            continue
+
         if not chunk.choices:
             continue  # DeepSeek 流式 API 偶发空 choices 的信号 chunk
         delta = chunk.choices[0].delta.content
         if delta:
-            yield delta
+            yield {"type": "token", "content": delta}
 
 
 def build_prompt(context_chunks: list[str], question: str) -> dict:

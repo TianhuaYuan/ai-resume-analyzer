@@ -7,8 +7,10 @@ import {
   clearHistory,
   deleteQa,
   submitFeedback,
+  getQuota,
   type SSEEvent,
   type QAMode,
+  type QuotaResponse,
 } from "../api/qa";
 import { listResumes, type ResumeItem } from "../api/resumes";
 import ConfirmDialog from "../components/ConfirmDialog";
@@ -303,6 +305,9 @@ export default function QAPage() {
   // Task 2.3：RAG 模式切换。默认 "stream"（传统流式），可切到 "agentic"（完整 Agentic RAG 图）
   const [qaMode, setQaMode] = useState<QAMode>("stream");
 
+  // Token 限额状态
+  const [quota, setQuota] = useState<QuotaResponse | null>(null);
+
   const chatEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<(() => void) | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -346,6 +351,11 @@ export default function QAPage() {
       if (r) setResume(r);
     });
   }, [resumeId]);
+
+  // 加载 token 限额
+  useEffect(() => {
+    getQuota().then(setQuota).catch(() => {});
+  }, []);
 
   // 防抖 keyword → debouncedKeyword（300ms）
   useEffect(() => {
@@ -561,6 +571,10 @@ export default function QAPage() {
             );
             setAsking(false);
           } else if (event.type === "error") {
+            // 捕获 quota_exceeded 错误，刷新额度状态
+            if (event.code === "quota_exceeded") {
+              getQuota().then(setQuota).catch(() => {});
+            }
             setChat((prev) =>
               prev.map((m) =>
                 m.id === tempId
@@ -688,6 +702,27 @@ export default function QAPage() {
               Agentic
             </label>
           </div>
+
+          {/* Token 限额显示 */}
+          {quota?.enabled && (
+            <div className="shrink-0 px-3 py-1.5 rounded-lg text-xs
+              bg-white/5 border border-[var(--color-border)]
+              flex items-center gap-2">
+              <span className="text-[var(--color-text-muted)]">今日额度</span>
+              <span className={`font-semibold ${
+                quota.remaining < quota.limit * 0.1
+                  ? "text-red-400"
+                  : quota.remaining < quota.limit * 0.3
+                  ? "text-yellow-400"
+                  : "text-indigo-400"
+              }`}>
+                {quota.used}/{quota.limit}
+              </span>
+              {quota.remaining < quota.limit * 0.1 && (
+                <span className="text-red-400 text-[10px]">额度不足</span>
+              )}
+            </div>
+          )}
 
           {/* 搜索框 */}
           <div className="relative shrink-0">

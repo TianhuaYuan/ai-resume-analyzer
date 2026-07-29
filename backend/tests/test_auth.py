@@ -191,3 +191,191 @@ async def test_refresh_with_access_token_fails(client: AsyncClient, registered_u
         },
     )
     assert resp.status_code == 401
+
+
+# ── 修改密码 ──────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_change_password_with_old_password(client: AsyncClient, auth_headers: dict, registered_user: dict):
+    """旧密码验证修改密码 → 200。"""
+    resp = await client.put(
+        "/api/v1/auth/password",
+        json={
+            "mode": "password",
+            "old_password": registered_user["password"],
+            "new_password": "NewPass123!",
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_change_password_wrong_old_password(client: AsyncClient, auth_headers: dict, registered_user: dict):
+    """旧密码错误 → 400。"""
+    resp = await client.put(
+        "/api/v1/auth/password",
+        json={
+            "mode": "password",
+            "old_password": "WrongPassword!",
+            "new_password": "NewPass123!",
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_change_password_with_code(client: AsyncClient, auth_headers: dict, registered_user: dict):
+    """邮箱验证码修改密码 → 200。"""
+    email = registered_user["email"]
+    await client.post("/api/v1/auth/send-code", json={"email": email})
+    from services.verification_service import _in_memory_codes, _CODE_KEY_PREFIX
+    code_key = f"{_CODE_KEY_PREFIX}{email}"
+    code_entry = _in_memory_codes.get(code_key)
+    verification_code = code_entry["code"] if code_entry else "123456"
+
+    resp = await client.put(
+        "/api/v1/auth/password",
+        json={
+            "mode": "code",
+            "verification_code": verification_code,
+            "new_password": "NewPass123!",
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_change_password_weak(client: AsyncClient, auth_headers: dict, registered_user: dict):
+    """新密码强度不够 → 422。"""
+    resp = await client.put(
+        "/api/v1/auth/password",
+        json={
+            "mode": "password",
+            "old_password": registered_user["password"],
+            "new_password": "123",
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_change_password_unauthorized(client: AsyncClient):
+    """未登录 → 401。"""
+    resp = await client.put(
+        "/api/v1/auth/password",
+        json={
+            "mode": "password",
+            "old_password": "Test1234!",
+            "new_password": "NewPass123!",
+        },
+    )
+    assert resp.status_code == 401
+
+
+# ── 修改邮箱 ──────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_change_email_success(client: AsyncClient, auth_headers: dict):
+    """修改邮箱 → 200。"""
+    new_email = "newemail@example.com"
+    await client.post("/api/v1/auth/send-code", json={"email": new_email})
+    from services.verification_service import _in_memory_codes, _CODE_KEY_PREFIX
+    code_key = f"{_CODE_KEY_PREFIX}{new_email}"
+    code_entry = _in_memory_codes.get(code_key)
+    verification_code = code_entry["code"] if code_entry else "123456"
+
+    resp = await client.put(
+        "/api/v1/auth/email",
+        json={
+            "new_email": new_email,
+            "verification_code": verification_code,
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_change_email_duplicate(client: AsyncClient, auth_headers: dict, registered_user: dict):
+    """新邮箱已被注册 → 409。先注册另一个用户。"""
+    email2 = "another@example.com"
+    await client.post("/api/v1/auth/send-code", json={"email": email2})
+    from services.verification_service import _in_memory_codes, _CODE_KEY_PREFIX
+    code_key = f"{_CODE_KEY_PREFIX}{email2}"
+    code_entry = _in_memory_codes.get(code_key)
+    verification_code = code_entry["code"] if code_entry else "123456"
+    await client.post(
+        "/api/v1/auth/register",
+        json={
+            "username": "another",
+            "email": email2,
+            "password": "Abc12345!",
+            "password_confirm": "Abc12345!",
+            "verification_code": verification_code,
+        },
+    )
+
+    # 尝试绑定已存在的邮箱
+    new_email = email2
+    await client.post("/api/v1/auth/send-code", json={"email": new_email})
+    code_key = f"{_CODE_KEY_PREFIX}{new_email}"
+    code_entry = _in_memory_codes.get(code_key)
+    verification_code = code_entry["code"] if code_entry else "123456"
+
+    resp = await client.put(
+        "/api/v1/auth/email",
+        json={
+            "new_email": new_email,
+            "verification_code": verification_code,
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == 409
+
+
+# ── 修改用户名 ──────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_change_username_success(client: AsyncClient, auth_headers: dict):
+    """修改用户名 → 200。"""
+    resp = await client.put(
+        "/api/v1/auth/username",
+        json={
+            "new_username": "newusername",
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_change_username_duplicate(client: AsyncClient, auth_headers: dict, registered_user: dict):
+    """用户名已被注册 → 409。"""
+    resp = await client.put(
+        "/api/v1/auth/username",
+        json={
+            "new_username": registered_user["username"],  # 与当前用户名相同
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == 400  # 相同用户名应被拒绝
+
+
+@pytest.mark.asyncio
+async def test_change_username_too_short(client: AsyncClient, auth_headers: dict):
+    """用户名太短 → 422。"""
+    resp = await client.put(
+        "/api/v1/auth/username",
+        json={
+            "new_username": "a",
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422

@@ -17,6 +17,9 @@ from models.user import User
 from schemas.auth import (
     AdminResetPasswordRequest,
     AdminResetPasswordResponse,
+    ChangeEmailRequest,
+    ChangePasswordRequest,
+    ChangeUsernameRequest,
     ForgotPasswordRequest,
     ForgotPasswordVerifyRequest,
     LoginRequest,
@@ -28,6 +31,9 @@ from schemas.auth import (
 )
 from services.auth_service import (
     admin_reset_password,
+    change_email as change_email_service,
+    change_password as change_password_service,
+    change_username as change_username_service,
     register_user,
     authenticate_user,
     create_tokens,
@@ -223,3 +229,61 @@ async def forgot_password(
         raise HTTPException(status_code=400, detail="验证码无效或已过期")
     await reset_password_by_verification(db, data.email, data.new_password)
     return MessageResponse(detail="密码已重置，请使用新密码登录")
+
+
+# ── 用户资料管理（需登录） ─────────────────────────────
+
+
+@router.put("/password", response_model=MessageResponse)
+async def change_password(
+    data: ChangePasswordRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """修改密码。支持旧密码验证和邮箱验证码两种方式。"""
+    await change_password_service(
+        db=db,
+        user=current_user,
+        mode=data.mode,
+        new_password=data.new_password,
+        old_password=data.old_password,
+        verification_code=data.verification_code,
+    )
+    return MessageResponse(detail="密码修改成功")
+
+
+@router.put("/email", response_model=MessageResponse)
+async def change_email(
+    data: ChangeEmailRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """修改邮箱。需要新邮箱的验证码。"""
+    await change_email_service(
+        db=db,
+        user=current_user,
+        new_email=data.new_email,
+        verification_code=data.verification_code,
+    )
+    return MessageResponse(detail="邮箱修改成功")
+
+
+@router.put("/username", response_model=MessageResponse)
+async def change_username(
+    data: ChangeUsernameRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """修改用户名。"""
+    await change_username_service(
+        db=db,
+        user=current_user,
+        new_username=data.new_username,
+    )
+    return MessageResponse(detail="用户名修改成功")
+
+
+@router.get("/me", response_model=UserResponse)
+async def get_me(current_user: User = Depends(get_current_user)):
+    """获取当前登录用户信息。"""
+    return current_user

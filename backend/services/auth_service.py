@@ -17,6 +17,7 @@ from core.security import (
 )
 from models.user import User
 from schemas.auth import RegisterRequest, TokenResponse
+from services.verification_service import verify_code
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +54,7 @@ async def authenticate_user(db: AsyncSession, email: str, password: str) -> User
 
 def create_tokens(user: User) -> TokenResponse:
     """为一个用户生成 access + refresh token 对。"""
-    data = {"sub": str(user.id)}
+    data = {"sub": str(user.id), "username": user.username, "email": user.email}
     return TokenResponse(
         access_token=create_access_token(data),
         refresh_token=create_refresh_token(data),
@@ -148,4 +149,106 @@ async def reset_password_by_verification(
     user.password_hash = hash_password(new_password)
     await db.commit()
     logger.info("密码重置成功（验证码）: user_id=%s", user.id)
+    return True
+
+
+async def change_password(
+    db: AsyncSession,
+    user: User,
+    mode: str,
+    new_password: str,
+    old_password: str | None = None,
+    verification_code: str | None = None,
+) -> bool:
+    """修改密码。支持旧密码验证和邮箱验证码两种方式。
+
+    Args:
+        db: 数据库会话
+        user: 当前用户
+        mode: "password" 旧密码验证 / "code" 验证码验证
+        new_password: 新密码
+        old_password: 旧密码（mode=password时必填）
+        verification_code: 验证码（mode=code时必填）
+
+    Raises:
+        HTTPException: 验证失败时抛出
+    """
+    if mode == "password":
+        if not old_password:
+            raise HTTPException(status_code=400, detail="请输入旧密码")
+        if not verify_password(old_password, user.password_hash):
+            raise HTTPException(status_code=400, detail="旧密码错误")
+    elif mode == "code":
+        if not verification_code:
+            raise HTTPException(status_code=400, detail="请输入验证码")
+        if not await verify_code(user.email, verification_code):
+            raise HTTPException(status_code=400, detail="验证码无效或已过期")
+
+    user.password_hash = hash_password(new_password)
+    await db.commit()
+    logger.info("密码修改成功: user_id=%s, mode=%s", user.id, mode)
+    return True
+
+
+async def change_email(
+    db: AsyncSession,
+    user: User,
+    new_email: str,
+    verification_code: str,
+) -> bool:
+    """修改邮箱。
+
+    Args:
+        db: 数据库会话
+        user: 当前用户
+        new_email: 新邮箱
+        verification_code: 邮箱验证码
+
+    Raises:
+        HTTPException: 验证失败或邮箱冲突时抛出
+    """
+    if not await verify_code(new_email, verification_code):
+        raise HTTPException(status_code=400, detail="验证码无效或已过期")
+
+    if new_email == user.email:
+        raise HTTPException(status_code=400, detail="新邮箱不能与当前邮箱相同")
+
+    # 检查新邮箱是否已被其他用户使用
+    result = await db.execute(select(User).where(User.email == new_email))
+    existing = result.scalar_one_or_none()
+    if existing is not None and existing.id != user.id:
+        raise HTTPException(status_code=409, detail="该邮箱已被绑定")
+
+    user.email = new_email
+    await db.commit()
+    logger.info("邮箱修改成功: user_id=%s", user.id)
+    return True
+
+
+async def change_username(
+    db: AsyncSession,
+    user: User,
+    new_username: str,
+) -> bool:
+    """修改用户名。
+
+    Args:
+        db: 数据库会话
+        user: 当前用户
+        new_username: 新用户名
+
+    Raises:
+        HTTPException: 用户名冲突时抛出
+    """
+    if new_username == user.username:
+        raise HTTPException(status_code=400, detail="新用户名不能与当前用户名相同")
+
+    result = await db.execute(select(User).where(User.username == new_username))
+    existing = result.scalar_one_or_none()
+    if existing is not None and existing.id != user.id:
+        raise HTTPException(status_code=409, detail="该用户名已被使用")
+
+    user.username = new_username
+    await db.commit()
+    logger.info("用户名修改成功: user_id=%s", user.id)
     return True

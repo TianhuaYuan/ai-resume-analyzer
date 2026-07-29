@@ -4,6 +4,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_current_user
@@ -15,6 +16,16 @@ from models.user import User
 from schemas.qa import AnswerResponse, QADeleteResponse, QuestionRequest, QAHistoryResponse
 from services import qa_service, resume_service
 from services.rag.pipeline import ask_question_stream as _ask_question_stream
+from services.token_quota import check_quota, record_usage, get_quota_status
+
+
+class QuotaResponse(BaseModel):
+    """Token 限额状态响应。"""
+    enabled: bool
+    used: int
+    limit: int
+    remaining: int
+    reset_at: str | None
 
 
 logger = logging.getLogger(__name__)
@@ -145,6 +156,17 @@ async def ask_question_stream(
     _guard_question(data.question)
     await resume_service.get_resume(db, data.resume_id, current_user.id)
 
+    # Token 限额预检查
+    allowed, quota_error = await check_quota(current_user.id)
+    if not allowed:
+        # 返回友好的限额提示（流式）
+        async def quota_exceeded():
+            yield f"data: {json.dumps({'type': 'error', 'message': quota_error, 'code': 'quota_exceeded'}, ensure_ascii=False)}\n\n"
+        return StreamingResponse(
+            quota_exceeded(),
+            media_type="text/event-stream",
+        )
+
     if mode == "agentic":
         answer, sources, tool_errors = await _run_agentic_rag(data.resume_id, data.question)
         if settings.REDACT_PII_OUTPUT:
@@ -194,12 +216,19 @@ async def ask_question_stream(
     async def event_stream():
         from core.database import AsyncSessionLocal
         stream_db = AsyncSessionLocal()
+        prompt_tokens = 0
+        completion_tokens = 0
         try:
             full_answer = ""
             sources_texts: list[str] = []
             try:
                 async for event in _ask_question_stream(data.resume_id, data.question):
-                    if event["type"] == "done":
+                    if event["type"] == "usage":
+                        # 捕获 token 使用量
+                        prompt_tokens = event.get("prompt_tokens", 0)
+                        completion_tokens = event.get("completion_tokens", 0)
+                        continue
+                    elif event["type"] == "done":
                         full_answer = event.get("answer", "")
                         sources_data = event.get("sources", [])
                         sources_for_db = [
@@ -219,6 +248,11 @@ async def ask_question_stream(
                             sources_for_db,
                         )
                         sources_texts = [s["text"] for s in sources_data]
+
+                        # 记录 token 消耗
+                        if prompt_tokens > 0 or completion_tokens > 0:
+                            await record_usage(current_user.id, prompt_tokens, completion_tokens)
+
                         yield f"data: {json.dumps({'type': 'done', 'sources': sources_texts, 'qa_id': record.id}, ensure_ascii=False)}\n\n"
                     else:
                         yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
@@ -310,3 +344,14 @@ async def delete_qa(
             detail="问答记录不存在或无权访问",
         )
     return None
+
+
+@router.get("/quota", response_model=QuotaResponse)
+async def get_quota_status_api(
+    current_user: User = Depends(get_current_user),
+):
+    """获取当前用户的 token 限额状态。
+
+    前端可实时显示今日额度使用情况，env更新后自动生效（无需重启）。
+    """
+    return await get_quota_status(current_user.id)
