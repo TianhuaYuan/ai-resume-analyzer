@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Lock, Mail, Hash, Eye, EyeOff } from "lucide-react";
+import { X, Lock, Hash, Eye, EyeOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type TabType = "password" | "code";

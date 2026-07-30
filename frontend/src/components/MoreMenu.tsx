@@ -59,12 +59,12 @@ export default function MoreMenu({
       }
     };
     document.addEventListener("mousedown", handlePointerDown);
-    document.addEventListener("touchstart", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
+    document.addEventListener("touchstart", handlePointerDown as unknown as EventListener);
+    document.addEventListener("keydown", handleKeyDown as unknown as EventListener);
     return () => {
       document.removeEventListener("mousedown", handlePointerDown);
-      document.removeEventListener("touchstart", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("touchstart", handlePointerDown as unknown as EventListener);
+      document.removeEventListener("keydown", handleKeyDown as unknown as EventListener);
     };
   }, [open]);
 

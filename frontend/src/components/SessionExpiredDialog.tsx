@@ -46,7 +46,7 @@ export default function SessionExpiredDialog({
     e.preventDefault();
   };
 
-  const handleClose = (e: React.DialogEvent<HTMLDialogElement>) => {
+  const handleClose = (e: React.MouseEvent<HTMLDialogElement>) => {
     e.preventDefault();
   };
 

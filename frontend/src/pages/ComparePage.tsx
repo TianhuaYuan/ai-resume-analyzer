@@ -341,9 +341,10 @@ export default function ComparePage() {
                     borderRadius: 4,
                     fontSize: 12,
                   }}
-                  formatter={(value: number, _name: string, props: { payload: { fullName: string } }) => [
-                    value,
-                    props.payload.fullName,
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  formatter={(value: any, _name: any, props: any) => [
+                    typeof value === "number" ? value : 0,
+                    props?.payload?.fullName ?? "",
                   ]}
                 />
                 <Bar

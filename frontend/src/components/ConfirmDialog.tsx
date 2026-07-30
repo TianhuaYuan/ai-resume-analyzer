@@ -55,7 +55,7 @@ export default function ConfirmDialog({
     }
   }, [open]);
 
-  const handleClose = (e: React.DialogEvent<HTMLDialogElement>) => {
+  const handleClose = (e: React.MouseEvent<HTMLDialogElement>) => {
     e.preventDefault();
     if (!loading) onCancel();
   };

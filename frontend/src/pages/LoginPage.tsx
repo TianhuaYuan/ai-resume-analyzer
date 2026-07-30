@@ -61,7 +61,7 @@ function RegisterInput({
 }
 
 export default function LoginPage() {
-  const { login, register } = useAuth();
+  const { login, register, sendCode } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
