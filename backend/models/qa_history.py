@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import Text, JSON, ForeignKey, DateTime
+from sqlalchemy import Integer, Text, JSON, ForeignKey, DateTime
 from sqlalchemy.orm import Mapped, mapped_column
 from core.database import Base
 
@@ -26,3 +26,4 @@ class QAHistory(Base):
         default=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
+    token_usage: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

@@ -11,12 +11,14 @@ import {
   type ResumeItem,
 } from "../api/resumes";
 import AnalysisModal from "../components/AnalysisModal";
+import AnalysisWaitingDialog from "../components/AnalysisWaitingDialog";
 import ChunksModal from "../components/ChunksModal";
 import ResumeViewer from "../components/ResumeViewer";
 import MatchJDModal from "../components/MatchJDModal";
 import MoreMenu from "../components/MoreMenu";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { useToast } from "../components/Toast";
+import { getAnalysisStatus, triggerBackgroundAnalysis } from "../api/resumes";
 
 // ── 骨架屏 ──────────────────────────────────────────────
 
@@ -143,6 +145,7 @@ export default function ResumeListPage() {
   const [newCardId, setNewCardId] = useState<number | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ResumeItem | null>(null);
   const [analyzeTarget, setAnalyzeTarget] = useState<ResumeItem | null>(null);
+  const [waitingAnalyzeTarget, setWaitingAnalyzeTarget] = useState<ResumeItem | null>(null);
   const [chunksTarget, setChunksTarget] = useState<ResumeItem | null>(null);
   const [viewerTarget, setViewerTarget] = useState<ResumeItem | null>(null);
   const [jdMatchTarget, setJdMatchTarget] = useState<ResumeItem | null>(null);
@@ -153,6 +156,8 @@ export default function ResumeListPage() {
   const lastUploadKeyRef = useRef<string | null>(null);
   const lastFileRef = useRef<File | null>(null);
   const [uploadFailed, setUploadFailed] = useState(false);
+  // 正在后台分析中的简历 id 集合（WebSocket 驱动）
+  const [analyzingIds, setAnalyzingIds] = useState<Set<number>>(new Set());
   // Task 5.5: 批量操作
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -168,6 +173,28 @@ export default function ResumeListPage() {
       const data = await listResumes();
       setResumes(data.items);
       setTotal(data.total);
+
+      // 登录后自动扫描：检查每份就绪简历，无缓存则静默触发后台分析
+      const readyIds = data.items.filter((r) => r.status === "ready").map((r) => r.id);
+      if (readyIds.length > 0) {
+        const results = await Promise.allSettled(
+          readyIds.map((id) => getAnalysisStatus(id))
+        );
+        const toAnalyze: number[] = [];
+        results.forEach((result, i) => {
+          if (result.status === "fulfilled" && !result.value.has_cache) {
+            toAnalyze.push(readyIds[i]);
+          }
+        });
+        // 静默触发后台分析（不展示 UI 指示）
+        toAnalyze.forEach((id) => {
+          triggerBackgroundAnalysis(id)
+            .then(() => {
+              setAnalyzingIds((prev) => new Set(prev).add(id));
+            })
+            .catch(() => {});
+        });
+      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "加载失败");
     } finally {
@@ -178,7 +205,67 @@ export default function ResumeListPage() {
   useEffect(() => {
     fetchResumes();
     return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
+      // 不在此清除 pollRef——避免 StrictMode 卸载时清掉运行中的轮询
+    };
+  }, []);
+
+  // 监听 WebSocket 推送的分析状态变化
+  useEffect(() => {
+    const handleAnalysisStart = (e: CustomEvent) => {
+      const resumeId = e.detail?.resume_id;
+      if (resumeId) {
+        setAnalyzingIds((prev) => new Set(prev).add(resumeId));
+      }
+    };
+
+    const handleAnalysisComplete = async (e: CustomEvent) => {
+      const resumeId = e.detail?.resume_id;
+      if (!resumeId) return;
+
+      setAnalyzingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(resumeId);
+        return next;
+      });
+
+      // 刷新该简历的卡片信息
+      try {
+        const r = await getResume(resumeId);
+        setResumes((prev) =>
+          prev.map((item) => (item.id === resumeId ? r : item))
+        );
+      } catch {
+        // 忽略错误
+      }
+    };
+
+    const handleAnalysisFailed = (e: CustomEvent) => {
+      const resumeId = e.detail?.resume_id;
+      if (!resumeId) return;
+
+      setAnalyzingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(resumeId);
+        return next;
+      });
+
+      setResumes((prev) =>
+        prev.map((item) =>
+          item.id === resumeId
+            ? { ...item, status_message: e.detail?.message || "分析失败" }
+            : item
+        )
+      );
+    };
+
+    window.addEventListener("resume:analysis-start", handleAnalysisStart as EventListener);
+    window.addEventListener("resume:analysis-complete", handleAnalysisComplete as EventListener);
+    window.addEventListener("resume:analysis-failed", handleAnalysisFailed as EventListener);
+
+    return () => {
+      window.removeEventListener("resume:analysis-start", handleAnalysisStart as EventListener);
+      window.removeEventListener("resume:analysis-complete", handleAnalysisComplete as EventListener);
+      window.removeEventListener("resume:analysis-failed", handleAnalysisFailed as EventListener);
     };
   }, []);
 
@@ -200,6 +287,16 @@ export default function ResumeListPage() {
           setResumes((prev) =>
             prev.map((item) => (item.id === resumeId ? r : item))
           );
+          // 解析完成后自动检查后台分析状态
+          getAnalysisStatus(resumeId)
+            .then((status) => {
+              if (!status.has_cache) {
+                setAnalyzingIds((prev) => new Set(prev).add(resumeId));
+              }
+            })
+            .catch(() => {
+              // 分析状态查询失败不影响主流程
+            });
           return;
         }
         if (r.status === "failed" || attempts > 30) {
@@ -785,10 +882,30 @@ export default function ResumeListPage() {
                             分块
                           </button>
                           <button
-                            onClick={(e) => {
+                            onClick={async (e) => {
                               e.preventDefault();
                               e.stopPropagation();
-                              setAnalyzeTarget(r);
+                              // 立即打开等待弹窗（零延迟）
+                              setWaitingAnalyzeTarget(r);
+                              // 再查缓存
+                              try {
+                                const status = await getAnalysisStatus(r.id);
+                                if (status.has_cache) {
+                                  setWaitingAnalyzeTarget(null);
+                                  setAnalyzeTarget(r);
+                                  return;
+                                }
+                              } catch {}
+                              // 触发后台分析
+                              if (!analyzingIds.has(r.id)) {
+                                try {
+                                  await triggerBackgroundAnalysis(r.id);
+                                  setAnalyzingIds((prev) => new Set(prev).add(r.id));
+                                } catch {
+                                  setWaitingAnalyzeTarget(null);
+                                  setAnalyzeTarget(r);
+                                }
+                              }
                             }}
                             className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs
                               font-mono-label tracking-widest uppercase
@@ -858,7 +975,26 @@ export default function ResumeListPage() {
                               {
                                 key: "analyze",
                                 label: "分析",
-                                onClick: () => setAnalyzeTarget(r),
+                                onClick: async () => {
+                                  setWaitingAnalyzeTarget(r);
+                                  try {
+                                    const s = await getAnalysisStatus(r.id);
+                                    if (s.has_cache) {
+                                      setWaitingAnalyzeTarget(null);
+                                      setAnalyzeTarget(r);
+                                      return;
+                                    }
+                                  } catch {}
+                                  if (!analyzingIds.has(r.id)) {
+                                    try {
+                                      await triggerBackgroundAnalysis(r.id);
+                                      setAnalyzingIds((prev) => new Set(prev).add(r.id));
+                                    } catch {
+                                      setWaitingAnalyzeTarget(null);
+                                      setAnalyzeTarget(r);
+                                    }
+                                  }
+                                },
                               },
                               {
                                 key: "jd-match",
@@ -939,6 +1075,14 @@ export default function ResumeListPage() {
       loading={batchDeleting}
       onConfirm={handleBatchDelete}
       onCancel={() => setBatchDeleteOpen(false)}
+    />
+
+    {/* ── 简历分析等待弹窗 ── */}
+    <AnalysisWaitingDialog
+      resumeFilename={waitingAnalyzeTarget?.filename ?? ""}
+      resumeId={waitingAnalyzeTarget?.id ?? 0}
+      open={waitingAnalyzeTarget !== null}
+      onClose={() => setWaitingAnalyzeTarget(null)}
     />
 
     {/* ── 简历分析弹窗 ── */}

@@ -11,6 +11,11 @@ export interface WSMessage {
   timestamp?: string;
   data?: Record<string, unknown>;
   message?: string;
+  token_used?: number;
+  completed?: number;
+  total?: number;
+  current_type?: string;
+  current_type_label?: string;
 }
 
 interface UseWebSocketOptions {
@@ -99,11 +104,16 @@ export function useWebSocket({
     }, 30000);
   }, []);
 
-  const connect = useCallback(() => {
-    if (!enabled || !token) return;
+  // 使用 ref 追踪 token/enabled，避免 React 状态闪烁断开 WS
+  const enabledRef = useRef(enabled);
+  const tokenRef = useRef(token);
+  enabledRef.current = enabled;
+  tokenRef.current = token;
 
-    // 构建带 token 的 URL
-    const wsUrl = `${url}?token=${encodeURIComponent(token)}`;
+  const connect = useCallback(() => {
+    if (!enabledRef.current || !tokenRef.current) return;
+
+    const wsUrl = `${url}?token=${encodeURIComponent(tokenRef.current)}`;
 
     try {
       const ws = new WebSocket(wsUrl);
@@ -118,7 +128,6 @@ export function useWebSocket({
       ws.onmessage = (event) => {
         try {
           const msg: WSMessage = JSON.parse(event.data);
-          // 忽略 pong 心跳响应
           if (msg.type === "pong") return;
           onMessageRef.current?.(msg);
         } catch {
@@ -130,45 +139,37 @@ export function useWebSocket({
         // error 事件后通常会跟一个 close 事件
       };
 
-      ws.onclose = () => {
+      ws.onclose = (event: CloseEvent) => {
         setConnected(false);
         clearTimers();
 
-        // 自动重连
+        const isUnmount = event.code === 1000 && event.reason === "component unmount";
         if (
-          enabled &&
+          !isUnmount &&
+          enabledRef.current &&
           reconnectAttemptsRef.current < maxReconnectAttempts
         ) {
           reconnectAttemptsRef.current += 1;
-          // 指数退避：3s, 6s, 12s, 24s, 48s
           const delay = reconnectInterval * Math.pow(2, reconnectAttemptsRef.current - 1);
-          reconnectTimerRef.current = setTimeout(() => {
-            connect();
-          }, delay);
+          reconnectTimerRef.current = setTimeout(() => { connect(); }, delay);
         }
       };
     } catch {
-      // WebSocket 构造失败，尝试重连
-      if (enabled && reconnectAttemptsRef.current < maxReconnectAttempts) {
+      if (enabledRef.current && reconnectAttemptsRef.current < maxReconnectAttempts) {
         reconnectAttemptsRef.current += 1;
         reconnectTimerRef.current = setTimeout(() => connect(), reconnectInterval);
       }
     }
-  }, [url, token, enabled, reconnectInterval, maxReconnectAttempts, clearTimers, startHeartbeat]);
+  }, [url, reconnectInterval, maxReconnectAttempts, clearTimers, startHeartbeat]);
 
-  // 连接/断开
+  // 连接管理：只在 enabled 变化时尝试连接，不主动关闭 WS
   useEffect(() => {
-    if (enabled && token) {
+    if (enabled && token && (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN)) {
       connect();
     }
-
     return () => {
-      if (wsRef.current) {
-        wsRef.current.close(1000, "component unmount");
-        wsRef.current = null;
-      }
+      // 不在此关闭 WS——避免状态闪烁导致断连
       clearTimers();
-      reconnectAttemptsRef.current = 0;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, token]);

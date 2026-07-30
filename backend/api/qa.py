@@ -13,7 +13,7 @@ from core.database import get_db
 from core.limiter import limiter
 from core.security import detect_prompt_injection, redact_pii
 from models.user import User
-from schemas.qa import AnswerResponse, QADeleteResponse, QuestionRequest, QAHistoryResponse
+from schemas.qa import AnswerResponse, QADeleteResponse, QuestionRequest, QAHistoryResponse, TokenUsage
 from services import qa_service, resume_service
 from services.rag.pipeline import ask_question_stream as _ask_question_stream
 from services.token_quota import check_quota, record_usage, get_quota_status
@@ -128,6 +128,9 @@ async def ask_question(
             for s in sources
         ],
     )
+    token_total = 0
+    if answer and answer != "分析失败，请稍后重试":
+        token_total = len(answer) // 2  # 简单估算
     return AnswerResponse(
         id=record.id,
         question=record.question,
@@ -135,6 +138,7 @@ async def ask_question(
         sources=[s["text"] for s in record.sources or []],
         created_at=record.created_at,
         degraded=degraded,
+        token_usage=TokenUsage(total=token_total),
     )
 
 
@@ -253,7 +257,8 @@ async def ask_question_stream(
                         if prompt_tokens > 0 or completion_tokens > 0:
                             await record_usage(current_user.id, prompt_tokens, completion_tokens)
 
-                        yield f"data: {json.dumps({'type': 'done', 'sources': sources_texts, 'qa_id': record.id}, ensure_ascii=False)}\n\n"
+                        token_total = prompt_tokens + completion_tokens
+                        yield f"data: {json.dumps({'type': 'done', 'sources': sources_texts, 'qa_id': record.id, 'token_usage': {'total': token_total, 'prompt': prompt_tokens, 'completion': completion_tokens}}, ensure_ascii=False)}\n\n"
                     else:
                         yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
             except asyncio.CancelledError:

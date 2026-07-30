@@ -11,6 +11,7 @@ async def save_qa(
     question: str,
     answer: str,
     sources: list[dict],
+    token_usage: int = 0,
 ) -> QAHistory:
     record = QAHistory(
         user_id=user_id,
@@ -18,6 +19,7 @@ async def save_qa(
         question=question,
         answer=answer,
         sources=sources,
+        token_usage=token_usage,
     )
     db.add(record)
     await db.commit()
@@ -41,7 +43,6 @@ async def get_history(
     base_filters = [QAHistory.user_id == user_id, QAHistory.resume_id == resume_id]
 
     if keyword:
-        # 关键词同时在 question 和 answer 上做模糊匹配
         pattern = f"%{keyword}%"
         base_filters.append(
             or_(
@@ -70,11 +71,7 @@ async def delete_history_by_resume(
     user_id: int,
     resume_id: int,
 ) -> int:
-    """清空指定用户指定简历的所有问答历史。
-
-    返回被删除的记录数。
-    """
-    # 先查总数（用于返回 deleted_count）
+    """清空指定用户指定简历的所有问答历史。"""
     count_result = await db.execute(
         select(func.count())
         .select_from(QAHistory)
@@ -82,7 +79,6 @@ async def delete_history_by_resume(
     )
     count = count_result.scalar_one()
 
-    # 执行删除
     await db.execute(
         delete(QAHistory).where(QAHistory.user_id == user_id, QAHistory.resume_id == resume_id)
     )
@@ -95,14 +91,9 @@ async def delete_qa_by_id(
     user_id: int,
     qa_id: int,
 ) -> bool:
-    """删单条问答。
-
-    user_id 隔离：非本人记录视为不存在（返回 False）。
-    返回是否删除成功。
-    """
+    """删单条问答。user_id 隔离。"""
     result = await db.execute(
         delete(QAHistory).where(QAHistory.id == qa_id, QAHistory.user_id == user_id)
     )
     await db.commit()
-    # rowcount 表示实际删除的行数
     return result.rowcount > 0

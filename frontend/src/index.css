@@ -43,12 +43,15 @@
 
 [data-theme="dark"] {
   --color-bg: var(--color-dark-bg);
+  --color-bg-secondary: var(--color-dark-surface);
+  --color-bg-tertiary: var(--color-dark-card);
   --color-surface: var(--color-dark-surface);
   --color-card: var(--color-dark-card);
   --color-border: var(--color-dark-border);
   --color-text: var(--color-dark-text);
   --color-text-secondary: var(--color-dark-text-secondary);
   --color-text-muted: var(--color-dark-text-muted);
+  --color-primary: #2a2a2a;
   --color-mono-accent: #ffffff;
   --color-mono-accent-fg: #000000;
   --border-hairline: 1px solid #262626;
@@ -60,12 +63,15 @@
 
 [data-theme="light"] {
   --color-bg: var(--color-light-bg);
+  --color-bg-secondary: var(--color-light-surface);
+  --color-bg-tertiary: var(--color-light-border);
   --color-surface: var(--color-light-surface);
   --color-card: var(--color-light-card);
   --color-border: var(--color-light-border);
   --color-text: var(--color-light-text);
   --color-text-secondary: var(--color-light-text-secondary);
   --color-text-muted: var(--color-light-text-muted);
+  --color-primary: #000000;
   --color-mono-accent: #000000;
   --color-mono-accent-fg: #ffffff;
 }

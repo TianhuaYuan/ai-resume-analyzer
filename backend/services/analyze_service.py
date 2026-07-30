@@ -12,12 +12,14 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.config import settings
 from core.retry import with_retry
 from models.resume import Resume
 from schemas.resume import ScoreDetail
-from services.rag.pipeline import llm_generate
+from services.rag.pipeline import llm_generate, get_chat_client
 from services.resume_analysis_cache import (
     VALID_ANALYSIS_TYPES,
+    get_analysis_cache,
     get_full_analysis_cache,
     set_full_analysis_cache,
 )
@@ -58,10 +60,6 @@ _ANALYSIS_PROMPTS: dict[str, str] = {
         "4. **综合评价**（0-100）：综合以上维度的加权评分\n\n"
         "请严格按以下格式输出：\n\n"
         "## 综合评分\n\n"
-        "### ATS 匹配率: XX/100\n（简要分析）\n\n"
-        "### 关键词覆盖率: XX/100\n（简要分析）\n\n"
-        "### 技能密度: XX/100\n（简要分析）\n\n"
-        "### 综合评价: XX/100\n（简要分析）\n"
     ),
 }
 
@@ -70,53 +68,38 @@ def _parse_scores(analysis: str) -> ScoreDetail | None:
     r"""从 LLM 返回的评分文本中提取量化分数。
 
     Task 2.5: 支持多种 LLM 输出格式，按优先级匹配：
-      1. "XX/100"     → 原始格式（含 "XX/100分" 变体）
-      2. "XX分"       → 中文格式（不能紧跟在 "/" 后，避免匹配 "/100分" 中的 100）
-      3. "score: XX"  → 英文键值
-      4. "得分: XX"   → 中文键值
-
-    约束：
-      - 数字必须 0-100，过滤年份/ID 等误匹配（如 2024、12345）
-        通过 `(?<!\d)` lookbehind 防止从长数字中截取 3 位（如 "2024" 取 "024"）
-      - 至少 4 个有效分数，按出现顺序对应
-        ats_match, keyword_coverage, skill_density, overall
-      - 不足 4 个返回 None，由前端独立 fallback
-
-    Args:
-        analysis: LLM 返回的评分文本
-
-    Returns:
-        ScoreDetail 或 None
+    1. Markdown 表格（最常见）
+    2. JSON 格式
+    3. 键值对格式
     """
     if not analysis:
         return None
 
-    # Combined alternation pattern（finditer 一次扫描，避免多 pattern 分别匹配导致重复）
-    # 顺序：XX/100 → XX分 → score: XX → 得分: XX
-    # (?<!\d): 前面不能是数字，防止 "2024" 被部分匹配为 "024"
-    # (?<!/): 前面不能是 "/"，防止 "/100分" 中的 100 被 XX分 模式重复匹配
-    combined = (
-        r"(?<!\d)(\d{1,3})\s*/\s*100"
-        r"|(?<!\d)(?<!/)(\d{1,3})\s*分"
-        r"|score\s*[:：]\s*(\d{1,3})"
-        r"|得分\s*[:：]\s*(\d{1,3})"
-    )
-
     all_scores: list[int] = []
-    for m in re.finditer(combined, analysis):
-        # alternation 中只有一个分组非 None
-        for g in m.groups():
-            if g is None:
-                continue
-            value = int(g)
-            if value <= 100:
-                all_scores.append(value)
-            break  # 只处理第一个非 None 分组
+
+    # 1. 尝试从 Markdown 表格中提取
+    table_pattern = re.compile(
+        r"\|\s*(?:ATS|关键词|技能密度|综合|评价)\s*\|\s*(\d+)\s*\|"
+    )
+    all_scores = [int(m.group(1)) for m in table_pattern.finditer(analysis)]
+
+    # 2. 尝试 JSON 格式
+    if not all_scores:
+        json_pattern = re.compile(
+            r'"(?:ats_match|keyword_coverage|skill_density|overall)"\s*:\s*(\d+)'
+        )
+        all_scores = [int(m.group(1)) for m in json_pattern.finditer(analysis)]
+
+    # 3. 尝试键值对格式
+    if not all_scores:
+        kv_pattern = re.compile(
+            r"(?:ATS 匹配率|关键词覆盖率|技能密度|综合评价)[：:]?\s*(\d+)"
+        )
+        all_scores = [int(m.group(1)) for m in kv_pattern.finditer(analysis)]
 
     if len(all_scores) < 4:
         return None
 
-    # 取前 4 个，按出现顺序对应 ATS/关键词/技能密度/综合
     return ScoreDetail(
         ats_match=all_scores[0],
         keyword_coverage=all_scores[1],
@@ -131,15 +114,7 @@ async def analyze_resume(
     resume_id: int,
     analysis_type: str,
 ) -> dict:
-    """分析简历内容，返回 {"resume_id", "analysis_type", "analysis"}。
-
-    Raises:
-        HTTPException:
-            422 非法 analysis_type 或简历内容为空
-            404 简历不存在或非本人
-            409 简历未就绪
-            500 LLM 调用失败
-    """
+    """分析简历内容，直接调 Chat API 并捕获 token 消耗。"""
     if analysis_type not in _ANALYSIS_PROMPTS:
         valid = ", ".join(_ANALYSIS_PROMPTS.keys())
         raise HTTPException(
@@ -162,6 +137,18 @@ async def analyze_resume(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"简历未就绪（当前状态: {resume.status}）",
         )
+
+    # 优先返回缓存结果，避免重复 LLM 调用
+    cached = await get_analysis_cache(resume_id, analysis_type)
+    if cached is not None:
+        logger.info("分析缓存命中: resume_id=%d, type=%s", resume_id, analysis_type)
+        return {
+            "resume_id": resume_id,
+            "analysis_type": analysis_type,
+            "analysis": cached.get("analysis", ""),
+            "scores": cached.get("scores"),
+            "cached": True,
+        }
 
     parsed_text = resume.parsed_text
     if not parsed_text:
@@ -186,9 +173,26 @@ async def analyze_resume(
     user_prompt = f"简历内容：\n\n{parsed_text}\n\n请按要求进行分析。"
 
     try:
-        analysis = await with_retry(
-            llm_generate, system_prompt, user_prompt, fallback="分析失败，请稍后重试"
+        client = get_chat_client()
+        response = await client.chat.completions.create(
+            model=settings.CHAT_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.3,
         )
+        analysis = (response.choices[0].message.content or "").strip()
+        usage_info = {}
+        if hasattr(response, "usage") and response.usage:
+            pt = getattr(response.usage, "prompt_tokens", 0) or 0
+            ct = getattr(response.usage, "completion_tokens", 0) or 0
+            usage_info = {"total_tokens": pt + ct, "prompt_tokens": pt, "completion_tokens": ct}
+            logger.info("分析 token: type=%s, prompt=%d, completion=%d, total=%d",
+                        analysis_type, pt, ct, pt + ct)
+        else:
+            logger.info("分析无 usage 返回: type=%s, hasattr=%s",
+                        analysis_type, hasattr(response, "usage"))
     except Exception as e:
         logger.exception("analyze_resume failed for resume %d", resume_id)
         raise HTTPException(
@@ -200,13 +204,14 @@ async def analyze_resume(
         "resume_id": resume_id,
         "analysis_type": analysis_type,
         "analysis": analysis,
+        "usage": usage_info,
     }
 
     # score 类型：解析量化分数
     if analysis_type == "score":
         scores = _parse_scores(analysis)
         if scores is not None:
-            result["scores"] = scores
+            result["scores"] = scores.model_dump()
 
     return result
 
@@ -243,19 +248,21 @@ async def get_full_analysis(
             detail=f"简历未就绪（当前状态: {resume.status}）",
         )
 
-    # 尝试批量读缓存
+    # 优先批量读缓存
     cached = await get_full_analysis_cache(resume_id)
     if cached is not None:
         return {"resume_id": resume_id, **cached}
 
-    # 缓存未命中 → LLM 补齐每种类型
+    # 缓存缺失，逐个调用 LLM
     results: dict[str, dict] = {}
-    for analysis_type in VALID_ANALYSIS_TYPES:
-        r = await analyze_resume(db, user_id, resume_id, analysis_type)
-        results[analysis_type] = r
+    for atype in VALID_ANALYSIS_TYPES:
+        try:
+            r = await analyze_resume(db, user_id, resume_id, atype)
+            results[atype] = r
+        except Exception as e:
+            logger.error("get_full_analysis 补齐 %s 失败: %s", atype, e)
+            raise
 
-    # 异步写回缓存（不阻塞响应）
-    import asyncio
-    asyncio.ensure_future(set_full_analysis_cache(resume_id, results))
-
+    # 写入完整缓存
+    await set_full_analysis_cache(resume_id, results)
     return {"resume_id": resume_id, **results}

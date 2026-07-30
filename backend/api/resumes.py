@@ -26,6 +26,8 @@ from models.user import User
 from schemas.resume import (
     AnalyzeRequest,
     AnalyzeResponse,
+    AnalysisStatusResponse,
+    BackgroundAnalyzeResponse,
     ChunkItem,
     ChunksResponse,
     CompareRequest,
@@ -39,6 +41,8 @@ from schemas.resume import (
 )
 from services import analyze_service, match_jd_service, resume_service
 from services.rag import chunks_service
+from services.resume_analysis_cache import VALID_ANALYSIS_TYPES, get_analysis_cache
+from services.resume_analyze_producer import publish_analyze_task
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/resumes", tags=["resumes"])
@@ -261,6 +265,90 @@ async def get_full_analyze(
         db, current_user.id, resume_id
     )
     return FullAnalyzeResponse(**result)
+
+
+async def _verify_resume_ownership(
+    db: AsyncSession, resume_id: int, user_id: int
+) -> Resume:
+    """校验简历归属并返回简历对象。不存在或非本人 → 404。"""
+    result = await db.execute(
+        select(Resume).where(Resume.id == resume_id, Resume.user_id == user_id)
+    )
+    resume = result.scalar_one_or_none()
+    if resume is None:
+        raise HTTPException(status_code=404, detail="简历不存在或无权访问")
+    return resume
+
+
+@router.get("/{resume_id}/analysis-status", response_model=AnalysisStatusResponse)
+async def get_analysis_status(
+    resume_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """查询简历分析缓存状态。
+
+    返回各类型分析是否已有缓存，供前端判断是否需要触发后台分析。
+    """
+    resume = await _verify_resume_ownership(db, resume_id, current_user.id)
+    if resume.status != "ready":
+        raise HTTPException(
+            status_code=409,
+            detail=f"简历未就绪（当前状态: {resume.status}）",
+        )
+
+    cached_types: list[str] = []
+    for atype in VALID_ANALYSIS_TYPES:
+        cached = await get_analysis_cache(resume_id, atype)
+        if cached is not None:
+            cached_types.append(atype)
+
+    return AnalysisStatusResponse(
+        resume_id=resume_id,
+        has_cache=len(cached_types) == len(VALID_ANALYSIS_TYPES),
+        cached_types=cached_types,
+    )
+
+
+@router.post(
+    "/{resume_id}/analyze-background",
+    response_model=BackgroundAnalyzeResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def post_analyze_background(
+    resume_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """触发后台静默分析。
+
+    将分析任务加入队列（RabbitMQ 或同步 BackgroundTasks），
+    分析完成后通过 WebSocket 推送通知。
+    """
+    resume = await _verify_resume_ownership(db, resume_id, current_user.id)
+    if resume.status != "ready":
+        raise HTTPException(
+            status_code=409,
+            detail=f"简历未就绪（当前状态: {resume.status}）",
+        )
+
+    # 检查是否已有缓存（避免前端等不到通知）
+    from services.resume_analysis_cache import get_full_analysis_cache
+    existing_cache = await get_full_analysis_cache(resume_id)
+    already_cached = existing_cache is not None
+
+    if not already_cached:
+        await publish_analyze_task(
+            resume_id=resume_id,
+            user_id=current_user.id,
+            filename=resume.filename.split("/")[-1].split("\\")[-1],
+        )
+
+    return BackgroundAnalyzeResponse(
+        status="accepted",
+        resume_id=resume_id,
+        message="分析任务已加入队列" if not already_cached else "缓存已存在",
+    )
 
 
 @router.get("/{resume_id}/chunks", response_model=ChunksResponse)

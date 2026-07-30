@@ -131,3 +131,19 @@ class MatchJDRequest(BaseModel):
 class MatchJDResponse(BaseModel):
     resume_id: int
     analysis: str
+
+
+class AnalysisStatusResponse(BaseModel):
+    """简历分析缓存状态。"""
+
+    resume_id: int
+    has_cache: bool
+    cached_types: list[str]
+
+
+class BackgroundAnalyzeResponse(BaseModel):
+    """后台分析任务提交响应。"""
+
+    status: str
+    resume_id: int
+    message: str

@@ -205,6 +205,7 @@ async def ask_question_stream(resume_id: int, question: str):
     try:
         async for event in _llm_generate_stream(prompt["system"], prompt["user"]):
             if event["type"] == "usage":
+                yield event  # 转发 usage 事件给调用方记录 token
                 continue
             content = event.get("content", "")
             full += content

@@ -17,7 +17,7 @@ services:
       - mysql_data:/var/lib/mysql
     # P1-2：仅绑定到 127.0.0.1，便于本地调试，不暴露到公网
     ports:
-      - "127.0.0.1:3306:3306"
+      - "127.0.0.1:3307:3306"
     networks:
       - resume-network
     healthcheck:
@@ -93,17 +93,14 @@ services:
       - ./backend/.env.staging
     environment:
       APP_ENV: staging
-      DATABASE_URL: mysql+aiomysql://root:${MYSQL_ROOT_PASSWORD}@mysql:3306/resume_ai
+      DATABASE_URL: mysql+aiomysql://root:fcecc2794f187ae3fc8e48d85eff95cf45af8f73af6e2757331a03a216fadc0d@mysql:3306/resume_ai
       REDIS_URL: redis://redis:6379/0
-    command: >
+    command: |
       bash -c "
         echo 'Running database migrations...'
         alembic upgrade head || echo 'Migration failed (will retry on next start)'
         echo 'Starting backend...'
-        uvicorn main:app
-        --host 0.0.0.0
-        --port 8000
-        --workers ${UVICORN_WORKERS:-4}
+        exec uvicorn main:app --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS:-4}
       "
     volumes:
       - uploads_data:/app/uploads
@@ -142,6 +139,8 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    volumes:
+      - ./frontend/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     networks:
       - resume-network
     depends_on:

@@ -40,16 +40,22 @@ async def acquire_lock(
             logger.warning("Redis 不可用，跳过分布式锁获取")
             return str(uuid.uuid4())  # 降级：直接返回假锁 ID
 
-        lock_key = f"{LOCK_PREFIX}{user_id}"
+        lock_key = f"{LOCK_PREFIX}{user_id}:{resume_id}"
         lock_id = str(uuid.uuid4())
 
         # SET NX EX：不存在时设置，带过期时间
         acquired = await redis.set(lock_key, lock_id, nx=True, ex=ttl_seconds)
         if acquired:
-            logger.debug("分布式锁获取成功 user_id=%s lock_id=%s", user_id, lock_id)
+            logger.debug(
+                "分布式锁获取成功 user_id=%s resume_id=%s",
+                user_id, resume_id,
+            )
             return lock_id
         else:
-            logger.debug("分布式锁获取失败 user_id=%s（已有分析任务在执行）", user_id)
+            logger.debug(
+                "分布式锁获取失败 user_id=%s resume_id=%s（已有分析任务在执行）",
+                user_id, resume_id,
+            )
             return None
 
     except Exception as e:
@@ -57,7 +63,7 @@ async def acquire_lock(
         return None
 
 
-async def release_lock(user_id: int, lock_id: str) -> bool:
+async def release_lock(user_id: int, resume_id: int, lock_id: str) -> bool:
     """释放分布式锁。
 
     只释放自己持有的锁（通过比对 lock_id 防止误删）。
@@ -74,7 +80,7 @@ async def release_lock(user_id: int, lock_id: str) -> bool:
         if redis is None:
             return True  # 降级：Redis 不可用时直接放行
 
-        lock_key = f"{LOCK_PREFIX}{user_id}"
+        lock_key = f"{LOCK_PREFIX}{user_id}:{resume_id}"
 
         # Lua 脚本：原子性地检查并删除锁
         lua_script = """
@@ -86,10 +92,13 @@ async def release_lock(user_id: int, lock_id: str) -> bool:
         """
         result = await redis.eval(lua_script, 1, lock_key, lock_id)
         if result == 1:
-            logger.debug("分布式锁释放成功 user_id=%s", user_id)
+            logger.debug("分布式锁释放成功 user_id=%s resume_id=%s", user_id, resume_id)
             return True
         else:
-            logger.debug("分布式锁释放失败 user_id=%s（锁已过期或被他人持有）", user_id)
+            logger.debug(
+                "分布式锁释放失败 user_id=%s resume_id=%s（锁已过期或被他人持有）",
+                user_id, resume_id,
+            )
             return False
 
     except Exception as e:

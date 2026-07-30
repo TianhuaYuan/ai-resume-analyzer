@@ -75,6 +75,10 @@ async def process_analyze_task(payload: dict) -> None:
                 "用户%d已有分析任务在执行，跳过 resume_id=%d",
                 user_id, resume_id,
             )
+            # 通知前端分析已在运行
+            await _push_progress(
+                user_id, resume_id, 0, 4, "pending"
+            )
             return
 
         # 2. 检查 Redis 缓存（幂等）
@@ -97,13 +101,14 @@ async def process_analyze_task(payload: dict) -> None:
             return
 
         # 4. 初始化数据库 session
-        from core.database import async_session
+        from core.database import AsyncSessionLocal as async_session
         async with async_session() as db:
             # 5. 批量分析 4 种类型
             results = {}
             total_tokens = 0
 
-            for analysis_type in VALID_ANALYSIS_TYPES:
+            total_types = len(VALID_ANALYSIS_TYPES)
+            for i, analysis_type in enumerate(VALID_ANALYSIS_TYPES):
                 try:
                     result = await asyncio.wait_for(
                         analyze_resume(db, user_id, resume_id, analysis_type),
@@ -118,6 +123,11 @@ async def process_analyze_task(payload: dict) -> None:
                     logger.info(
                         "分析完成: resume_id=%d, type=%s",
                         resume_id, analysis_type,
+                    )
+
+                    # 每完成一项就推送进度
+                    await _push_progress(
+                        user_id, resume_id, i + 1, total_types, analysis_type
                     )
 
                 except asyncio.TimeoutError:
@@ -140,8 +150,8 @@ async def process_analyze_task(payload: dict) -> None:
             if total_tokens > 0:
                 await record_usage(user_id, total_tokens)
 
-            # 8. 推送完成通知
-            await _push_notification(user_id, resume_id, "completed", results)
+            # 8. 推送完成通知（附带 token 消耗）
+            await _push_notification(user_id, resume_id, "completed", results, total_tokens)
 
             logger.info(
                 "分析任务完成: resume_id=%d, user_id=%d, tokens=%d",
@@ -166,7 +176,37 @@ async def process_analyze_task(payload: dict) -> None:
     finally:
         # 释放分布式锁
         if lock_id:
-            await release_lock(user_id, lock_id)
+            await release_lock(user_id, resume_id, lock_id)
+
+
+async def _push_progress(
+    user_id: int,
+    resume_id: int,
+    completed: int,
+    total: int,
+    current_type: str,
+) -> None:
+    """推送分析进度到 WebSocket。"""
+    type_labels = {
+        "summary": "总结", "skills": "技能",
+        "experience": "经历", "score": "评分",
+    }
+    type_label = type_labels.get(current_type, current_type)
+    message = {
+        "type": "analysis_progress",
+        "resume_id": resume_id,
+        "user_id": user_id,
+        "completed": completed,
+        "total": total,
+        "current_type": current_type,
+        "current_type_label": type_label,
+        "timestamp": datetime.now(BEIJING_TZ).isoformat(),
+    }
+    await ws_manager.send_to_user(user_id, message)
+    logger.info(
+        "分析进度推送: resume_id=%d, %d/%d (当前: %s)",
+        resume_id, completed, total, type_label,
+    )
 
 
 async def _push_notification(
@@ -174,6 +214,7 @@ async def _push_notification(
     resume_id: int,
     status: str,
     data: Optional[dict] = None,
+    token_used: int = 0,
 ) -> None:
     """通过 WebSocket 推送分析状态通知。
 
@@ -190,6 +231,8 @@ async def _push_notification(
         "user_id": user_id,
         "timestamp": datetime.now(BEIJING_TZ).isoformat(),
     }
+    if token_used > 0:
+        message["token_used"] = token_used
     if data:
         # 清理过大的数据（只保留摘要）
         if status == "completed" and isinstance(data, dict):
@@ -198,6 +241,10 @@ async def _push_notification(
             message["data"] = data
 
     await ws_manager.send_to_user(user_id, message)
+    logger.info(
+        "分析状态通知推送: user_id=%d, resume_id=%d, status=%s, tokens=%d",
+        user_id, resume_id, status, token_used,
+    )
 
 
 def _summarize_results(results: dict) -> dict:

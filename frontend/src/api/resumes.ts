@@ -174,3 +174,27 @@ export async function exportResume(
   if (!resp.ok) throw new Error(`导出失败: ${resp.status}`);
   return resp.text();
 }
+
+export interface AnalysisStatusResult {
+  resume_id: number;
+  has_cache: boolean;
+  cached_types: string[];
+}
+
+export async function getAnalysisStatus(
+  id: number
+): Promise<AnalysisStatusResult> {
+  return api.get(`/api/v1/resumes/${id}/analysis-status`) as Promise<AnalysisStatusResult>;
+}
+
+export interface BackgroundAnalyzeResult {
+  status: string;
+  resume_id: number;
+  message: string;
+}
+
+export async function triggerBackgroundAnalysis(
+  id: number
+): Promise<BackgroundAnalyzeResult> {
+  return api.post(`/api/v1/resumes/${id}/analyze-background`) as Promise<BackgroundAnalyzeResult>;
+}

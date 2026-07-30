@@ -34,20 +34,25 @@ _in_memory_codes: dict[str, dict[str, str | datetime]] = {}
 
 
 async def store_code(email: str, code: str) -> None:
-    """存储验证码。优先使用 Redis，降级到内存。"""
+    """存储验证码。优先使用 Redis/InMemoryRedis，同时写入 fallback 内存字典。"""
     redis = await get_redis()
     expire_seconds = _CODE_EXPIRE_MINUTES * 60
     key = f"{_CODE_KEY_PREFIX}{email}"
 
+    # 优先用 Redis（可能返回 InMemoryRedis 实例）
     if redis is not None:
         await redis.setex(key, expire_seconds, code)
-        logger.debug("验证码已存储到 Redis: email=%s, expire=%d秒", email, expire_seconds)
-    else:
-        _in_memory_codes[key] = {
-            "code": code,
-            "expire_at": datetime.now() + timedelta(minutes=_CODE_EXPIRE_MINUTES),
-        }
-        logger.debug("验证码已存储到内存: email=%s", email)
+
+    # 同时始终写入 fallback 内存字典（测试/热重载场景可读）
+    _in_memory_codes[key] = {
+        "code": code,
+        "expire_at": datetime.now() + timedelta(minutes=_CODE_EXPIRE_MINUTES),
+    }
+
+    logger.debug(
+        "验证码已存储: email=%s, backend=%s",
+        email, "redis" if redis is not None else "memory",
+    )
 
 
 async def verify_code(email: str, code: str) -> bool:
@@ -78,13 +83,12 @@ async def verify_code(email: str, code: str) -> bool:
 
 
 async def clear_code(email: str) -> None:
-    """清除验证码。"""
+    """清除验证码（Redis + 内存同时清理）。"""
     redis = await get_redis()
     key = f"{_CODE_KEY_PREFIX}{email}"
 
     if redis is not None:
         await redis.delete(key)
-    else:
-        _in_memory_codes.pop(key, None)
+    _in_memory_codes.pop(key, None)
 
     logger.debug("验证码已清除: email=%s", email)

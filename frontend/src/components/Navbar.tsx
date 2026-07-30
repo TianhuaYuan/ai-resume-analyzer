@@ -8,6 +8,57 @@ import ChangePasswordDialog from "./ChangePasswordDialog";
 import ChangeEmailDialog from "./ChangeEmailDialog";
 import ChangeUsernameDialog from "./ChangeUsernameDialog";
 
+function QuotaBadge() {
+  const [quota, setQuota] = useState<{
+    enabled: boolean;
+    used: number;
+    limit: number;
+    remaining: number;
+  } | null>(null);
+
+  useEffect(() => {
+    const fetch = () => {
+      import("../api/qa").then(({ getQuota }) => {
+        getQuota()
+          .then((data) => {
+            console.log("[QuotaBadge] fetched:", data);
+            setQuota(data);
+          })
+          .catch(() => {});
+      });
+    };
+    fetch();
+    const handler = () => {
+      console.log("[QuotaBadge] refresh event received");
+      fetch();
+    };
+    window.addEventListener("quota:refresh", handler);
+    const interval = setInterval(fetch, 30000);
+    return () => {
+      window.removeEventListener("quota:refresh", handler);
+      clearInterval(interval);
+    };
+  }, []);
+
+  if (!quota?.enabled) return null;
+
+  const isLow = quota.remaining < quota.limit * 0.1;
+  const isMedium = quota.remaining < quota.limit * 0.3;
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1 px-2 py-1 text-[10px] font-mono-label rounded
+        ${isLow ? "text-red-400 bg-red-500/10" : isMedium ? "text-yellow-400 bg-yellow-500/10" : "text-indigo-400 bg-indigo-500/10"}`}
+      title={`今日额度: ${quota.used}/${quota.limit}`}
+    >
+      <span className={`w-1.5 h-1.5 rounded-full ${
+        isLow ? "bg-red-400" : isMedium ? "bg-yellow-400" : "bg-indigo-400"
+      }`} />
+      {quota.remaining}
+    </span>
+  );
+}
+
 export default function Navbar() {
   const { user, logout, updateUser } = useAuth();
   const { theme, toggleTheme } = useTheme();
@@ -73,6 +124,9 @@ export default function Navbar() {
           </span>
         </Link>
         <div className="flex items-center gap-4 text-sm">
+          {/* Token 限额徽标 */}
+          <QuotaBadge />
+
           {/* 用户名下拉菜单 */}
           <div className="relative" ref={menuRef}>
             <button
@@ -129,7 +183,6 @@ export default function Navbar() {
         </div>
       </nav>
 
-      {/* 弹窗 */}
       <ChangePasswordDialog
         open={passwordDialogOpen}
         onClose={() => setPasswordDialogOpen(false)}

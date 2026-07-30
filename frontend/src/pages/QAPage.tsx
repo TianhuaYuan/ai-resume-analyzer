@@ -26,6 +26,8 @@ interface ChatMessage {
   feedback?: "positive" | "negative" | null;
   /** 创建时间，用于排序和显示 */
   created_at?: string;
+  /** Token 消耗 */
+  token_usage?: { total: number; prompt: number; completion: number };
 }
 
 // Task 5.1: 预设提问
@@ -207,6 +209,9 @@ function MessageBubble({ msg, deleting, onDelete, onFeedback }: MessageBubblePro
                     className="text-[10px] text-[var(--color-text-muted)] mt-1 block"
                   >
                     {formatTimestamp(msg.created_at)}
+                    {msg.token_usage?.total ? (
+                      <span className="ml-2 font-mono-label">· {msg.token_usage.total} tokens</span>
+                    ) : null}
                   </span>
                 )}
                 <SourceToggle sources={msg.sources} />
@@ -327,6 +332,7 @@ export default function QAPage() {
           sources: it.sources,
           streaming: false,
           created_at: it.created_at,
+          token_usage: it.token_usage,
         }));
         // 保留正在流式输出的消息，避免搜索时把刚发出的问题冲掉
         // 按 id 升序排列（id 自增，等价于时间正序），确保旧在上、新在下
@@ -438,11 +444,13 @@ export default function QAPage() {
                       id: event.qa_id ?? tempId,
                       sources: event.sources ?? [],
                       streaming: false,
+                      token_usage: event.token_usage,
                     }
                   : m
               )
             );
             setAsking(false);
+            window.dispatchEvent(new CustomEvent("quota:refresh"));
           } else if (event.type === "error") {
             setChat((prev) =>
               prev.map((m) =>
@@ -574,11 +582,13 @@ export default function QAPage() {
                       id: event.qa_id ?? tempId,
                       sources: event.sources ?? [],
                       streaming: false,
+                      token_usage: event.token_usage,
                     }
                   : m
               )
             );
             setAsking(false);
+            window.dispatchEvent(new CustomEvent("quota:refresh"));
           } else if (event.type === "error") {
             // 捕获 quota_exceeded 错误，刷新额度状态
             if (event.code === "quota_exceeded") {

@@ -143,7 +143,7 @@ async def check_quota(user_id: int, estimated_tokens: int = 0) -> tuple[bool, Op
         return True, None
 
 
-async def record_usage(user_id: int, prompt_tokens: int, completion_tokens: int) -> int:
+async def record_usage(user_id: int, prompt_tokens: int, completion_tokens: int = 0) -> int:
     """记录用户的 token 消耗。
 
     Args:
