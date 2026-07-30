@@ -32,7 +32,7 @@ function ScoreBar({ label, value }: { label: string; value: number }) {
     <div className="space-y-1">
       <div className="flex justify-between text-xs">
         <span className="text-[var(--color-text-secondary)]">{label}</span>
-        <span className="text-[var(--color-text)] font-medium">{value}/100</span>
+        <span className="text-[var(--color-text)] font-medium font-mono tabular-nums">{value}/100</span>
       </div>
       <div className="h-2 rounded-full bg-white/8 overflow-hidden">
         <div

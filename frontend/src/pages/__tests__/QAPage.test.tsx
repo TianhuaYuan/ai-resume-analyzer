@@ -648,8 +648,8 @@ describe("QAPage Markdown 渲染", () => {
 
     // MarkdownRenderer 会渲染加粗文本和列表
     expect(screen.getByText("加粗")).toBeInTheDocument();
-    expect(document.querySelector(".markdown-strong-badge")).toBeInTheDocument();
-    expect(document.querySelector(".markdown-li-card")).toBeInTheDocument();
+    expect(document.querySelector(".markdown-strong-inline")).toBeInTheDocument();
+    expect(document.querySelector(".markdown-li")).toBeInTheDocument();
   });
 });
 

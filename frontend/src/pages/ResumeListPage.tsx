@@ -592,7 +592,7 @@ export default function ResumeListPage() {
           <div>
             <h1 className="font-display text-4xl md:text-5xl font-bold tracking-tight text-[var(--color-text)]">
               我的简历
-              <span className="font-mono-label text-sm font-normal tracking-widest text-[var(--color-text-muted)] ml-3 uppercase">
+              <span className="font-mono-label tabular-nums text-sm font-normal tracking-widest text-[var(--color-text-muted)] ml-3 uppercase">
                 {total} 份
               </span>
             </h1>
@@ -661,7 +661,7 @@ export default function ResumeListPage() {
                   aria-label="对比"
                 >
                   <ArrowsLeftRight size={14} weight="bold" aria-hidden="true" />
-                  对比{selectedIds.size >= 2 ? ` (${selectedIds.size})` : ""}
+                  对比{selectedIds.size >= 2 ? <> (<span className="tabular-nums">{selectedIds.size}</span>)</> : ""}
                 </button>
                 {selectModeShowDelete && (
                   <button
@@ -674,7 +674,7 @@ export default function ResumeListPage() {
                     aria-label="删除所选"
                   >
                     <TrashSimple size={14} weight="bold" aria-hidden="true" />
-                    删除所选{selectedIds.size > 0 ? ` (${selectedIds.size})` : ""}
+                    删除所选{selectedIds.size > 0 ? <> (<span className="tabular-nums">{selectedIds.size}</span>)</> : ""}
                   </button>
                 )}
                 <button
@@ -801,7 +801,7 @@ export default function ResumeListPage() {
                         ) : (
                           <>
                             <span className="text-xs text-[var(--color-text-muted)]">
-                              {r.chunk_count} 个分块
+                              <span className="tabular-nums">{r.chunk_count}</span> 个分块
                             </span>
                             <span className="text-xs text-[var(--color-text-muted)]">·</span>
                             <span className="text-xs text-[var(--color-text-muted)]">

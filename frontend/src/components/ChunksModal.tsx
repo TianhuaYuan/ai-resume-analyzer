@@ -121,7 +121,7 @@ export default function ChunksModal({
               {resumeFilename}
               {status === "success" && (
                 <span className="ml-2 text-[var(--color-text-secondary)]">
-                  共 <span className="text-[var(--color-text)] font-medium">{chunks.length}</span> 个分块
+                  共 <span className="text-[var(--color-text)] font-medium font-mono tabular-nums">{chunks.length}</span> 个分块
                 </span>
               )}
             </p>
@@ -198,7 +198,7 @@ export default function ChunksModal({
                     >
                       <span
                         className="inline-flex items-center justify-center
-                          text-[11px] font-mono font-medium
+                          text-[11px] font-mono font-medium tabular-nums
                           px-1.5 py-0.5 rounded
                           bg-indigo-500/15 text-indigo-300
                           border border-indigo-500/25
@@ -210,7 +210,7 @@ export default function ChunksModal({
                         <span className="block text-sm font-medium text-[var(--color-text)] truncate">
                           {chunk.section || "(无标题)"}
                         </span>
-                        <span className="block text-[11px] text-[var(--color-text-muted)] mt-0.5 font-mono">
+                        <span className="block text-[11px] text-[var(--color-text-muted)] mt-0.5 font-mono tabular-nums">
                           chars {chunk.start_char}-{chunk.end_char}
                         </span>
                       </span>

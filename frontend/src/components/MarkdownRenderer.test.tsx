@@ -40,6 +40,12 @@ describe("MarkdownRenderer (Task 2.4)", () => {
     );
     const items = screen.getAllByRole("listitem");
     expect(items).toHaveLength(3);
+    // 验证 ol 有 list-decimal，li 没有 list-none（数字标记不会被覆盖）
+    const ol = document.querySelector("ol");
+    expect(ol?.className).toContain("list-decimal");
+    items.forEach((item) => {
+      expect(item.className).not.toContain("list-none");
+    });
   });
 
   it("渲染加粗和行内代码", () => {
@@ -154,7 +160,7 @@ describe("MarkdownRenderer (Task 2.4)", () => {
     expect(container.firstChild).not.toBeNull();
   });
 
-  it("职位推荐列表：列表项渲染为卡片样式", () => {
+  it("职位推荐列表：列表项渲染为轻量样式", () => {
     render(
       <MarkdownRenderer>
         {"- **AI应用开发工程师**：您有 LLM 应用开发经验\n- **后端开发工程师**：具备 FastAPI 技能"}
@@ -162,12 +168,13 @@ describe("MarkdownRenderer (Task 2.4)", () => {
     );
     const items = screen.getAllByRole("listitem");
     expect(items).toHaveLength(2);
-    // 验证列表项有卡片样式类名
-    expect(items[0].className).toContain("markdown-li-card");
-    expect(items[1].className).toContain("markdown-li-card");
+    // 验证列表项有基础样式类名，无重卡片样式
+    expect(items[0].className).toContain("markdown-li");
+    expect(items[1].className).toContain("markdown-li");
+    expect(items[0].className).not.toContain("markdown-li-card");
   });
 
-  it("职位推荐列表：strong 渲染为徽章样式", () => {
+  it("职位推荐列表：strong 渲染为内联高亮样式", () => {
     render(
       <MarkdownRenderer>
         {"- **AI应用开发工程师**：描述文本"}
@@ -175,6 +182,9 @@ describe("MarkdownRenderer (Task 2.4)", () => {
     );
     const strong = screen.getByText("AI应用开发工程师");
     expect(strong.tagName).toBe("STRONG");
-    expect(strong.className).toContain("markdown-strong-badge");
+    expect(strong.className).toContain("markdown-strong-inline");
+    // 不应有 inline-block 徽章样式
+    expect(strong.className).not.toContain("markdown-strong-badge");
+    expect(strong.className).not.toContain("inline-block");
   });
 });

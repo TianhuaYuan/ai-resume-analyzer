@@ -20,18 +20,12 @@ function QuotaBadge() {
     const fetch = () => {
       import("../api/qa").then(({ getQuota }) => {
         getQuota()
-          .then((data) => {
-            console.log("[QuotaBadge] fetched:", data);
-            setQuota(data);
-          })
+          .then((data) => setQuota(data))
           .catch(() => {});
       });
     };
     fetch();
-    const handler = () => {
-      console.log("[QuotaBadge] refresh event received");
-      fetch();
-    };
+    const handler = () => fetch();
     window.addEventListener("quota:refresh", handler);
     const interval = setInterval(fetch, 30000);
     return () => {
@@ -54,7 +48,7 @@ function QuotaBadge() {
       <span className={`w-1.5 h-1.5 rounded-full ${
         isLow ? "bg-red-400" : isMedium ? "bg-yellow-400" : "bg-indigo-400"
       }`} />
-      {quota.remaining}
+      <span className="tabular-nums">{quota.remaining}</span>
     </span>
   );
 }
@@ -124,10 +118,8 @@ export default function Navbar() {
           </span>
         </Link>
         <div className="flex items-center gap-4 text-sm">
-          {/* Token 限额徽标 */}
           <QuotaBadge />
 
-          {/* 用户名下拉菜单 */}
           <div className="relative" ref={menuRef}>
             <button
               onClick={() => setMenuOpen(!menuOpen)}

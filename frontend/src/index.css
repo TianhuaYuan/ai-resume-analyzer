@@ -1,5 +1,19 @@
 @import "tailwindcss";
 
+/* ── 等宽数字字体面：只对数字/百分号/斜杠生效，其他字符回退到正文字体 ──
+   Georgia 不支持 tabular-nums OpenType 特性，数字比例宽度导致大小不一。
+   用 unicode-range 将数字字符路由到等宽字体，不改变整体衬线风格。 */
+@font-face {
+  font-family: "MonoDigits";
+  src: local("Cascadia Code"), local("Consolas"), local("SF Mono"), local("Menlo"), local("DejaVu Sans Mono");
+  unicode-range: U+0030-0039, /* 0-9 */
+                 U+0025,       /* % */
+                 U+002F,       /* / */
+                 U+002E,       /* . */
+                 U+002D,       /* - */
+                 U+FF10-FF19;  /* 全角数字 ０-９ */
+}
+
 @theme {
   /* ── Minimalist Monochrome: Pure Black & White ── */
   --color-light-bg: #ffffff;
@@ -21,9 +35,9 @@
   --color-mono-accent: #000000;
   --color-mono-accent-fg: #ffffff;
 
-  /* Typography: Serif system stack */
-  --font-display: Georgia, "Noto Serif SC", "宋体", serif;
-  --font-body: Georgia, "Noto Serif SC", "宋体", serif;
+  /* Typography: Serif system stack — MonoDigits 优先，仅数字字符走等宽 */
+  --font-display: "MonoDigits", Georgia, "Noto Serif SC", "宋体", serif;
+  --font-body: "MonoDigits", Georgia, "Noto Serif SC", "宋体", serif;
   --font-mono: "Cascadia Code", "Source Code Pro", "Microsoft YaHei Mono", monospace;
 
   /* Border radii: ALL ZERO */
@@ -288,4 +302,44 @@ body {
 }
 .mono-input:focus {
   border-bottom-width: 4px;
+}
+
+/* ── Markdown 列表标记保障 ──
+   Tailwind v4 preflight 会重置 ol/ul { list-style: none }，
+   此处显式声明确保 markdown 区域的列表标记不被覆盖。 */
+.markdown-ol {
+  list-style-type: decimal;
+  list-style-position: outside;
+  font-variant-numeric: tabular-nums;
+}
+.markdown-ul {
+  list-style-type: disc;
+  list-style-position: outside;
+}
+.markdown-ol > li,
+.markdown-ul > li {
+  list-style-type: inherit;
+  padding-left: 0.25rem;
+}
+.markdown-ol > li::marker,
+.markdown-ul > li::marker {
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85em;
+}
+/* Markdown 区域内所有数字统一等宽对齐（覆盖 LLM 输出中的分数、百分比等） */
+.markdown-p,
+.markdown-td,
+.markdown-th,
+.markdown-h1,
+.markdown-h2,
+.markdown-h3,
+.markdown-h4,
+.markdown-blockquote,
+.markdown-li,
+.markdown-strong,
+.markdown-em,
+.markdown-del,
+.markdown-a {
+  font-variant-numeric: tabular-nums;
 }

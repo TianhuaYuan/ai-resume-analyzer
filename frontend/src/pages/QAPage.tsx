@@ -74,7 +74,7 @@ function SourceToggle({ sources }: { sources: string[] }) {
           hover:text-indigo-400 hover:bg-indigo-500/8 px-2 py-1 rounded-md
           transition-colors cursor-pointer"
       >
-        来源 ({sources.length}) {expanded ? "▲" : "▼"}
+        来源 (<span className="tabular-nums">{sources.length}</span>) {expanded ? "▲" : "▼"}
       </button>
       {expanded && (
         <div className="mt-2 space-y-2 animate-fade-in-up">
@@ -192,7 +192,7 @@ function MessageBubble({ msg, deleting, onDelete, onFeedback }: MessageBubblePro
             {msg.streaming && !msg.answer ? (
               <span className="text-[var(--color-text-muted)]">思考中...</span>
             ) : (
-              <MarkdownRenderer className="whitespace-pre-wrap">
+              <MarkdownRenderer>
                 {msg.answer}
               </MarkdownRenderer>
             )}
@@ -210,7 +210,7 @@ function MessageBubble({ msg, deleting, onDelete, onFeedback }: MessageBubblePro
                   >
                     {formatTimestamp(msg.created_at)}
                     {msg.token_usage?.total ? (
-                      <span className="ml-2 font-mono-label">· {msg.token_usage.total} tokens</span>
+                      <span className="ml-2 font-mono-label tabular-nums">· {msg.token_usage.total} tokens</span>
                     ) : null}
                   </span>
                 )}
@@ -668,7 +668,7 @@ export default function QAPage() {
             </h2>
             {resume && (
               <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
-                {resume.chunk_count} 个分块
+                <span className="tabular-nums">{resume.chunk_count}</span> 个分块
               </p>
             )}
           </div>
@@ -728,7 +728,7 @@ export default function QAPage() {
               bg-white/5 border border-[var(--color-border)]
               flex items-center gap-2">
               <span className="text-[var(--color-text-muted)]">今日额度</span>
-              <span className={`font-semibold ${
+              <span className={`font-mono tabular-nums ${
                 quota.remaining < quota.limit * 0.1
                   ? "text-red-400"
                   : quota.remaining < quota.limit * 0.3

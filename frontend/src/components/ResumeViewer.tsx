@@ -201,7 +201,7 @@ export default function ResumeViewer({
           <div className="px-6 py-3 border-t border-[var(--color-border)] shrink-0">
             <div className="flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
               <FileText size={12} weight="bold" aria-hidden="true" />
-              <span>{resume.chunk_count} 个分块</span>
+              <span><span className="font-mono tabular-nums">{resume.chunk_count}</span> 个分块</span>
               <span className="text-[var(--color-text-muted)]">·</span>
               <span>{new Date(resume.created_at).toLocaleDateString("zh-CN")}</span>
             </div>

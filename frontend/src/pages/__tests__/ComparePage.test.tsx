@@ -130,7 +130,10 @@ describe("ComparePage", () => {
     renderPage();
     await waitFor(() => {
       expect(screen.getByText("多简历对比")).toBeInTheDocument();
-      expect(screen.getByText(/2 份简历/)).toBeInTheDocument();
+      // 数字被 tabular-nums span 包裹，匹配 p 标签的完整 textContent
+      expect(screen.getByText((content, node) =>
+        (node?.tagName === "P" && node.textContent?.includes("2 份简历")) ?? false
+      )).toBeInTheDocument();
     });
   });
 

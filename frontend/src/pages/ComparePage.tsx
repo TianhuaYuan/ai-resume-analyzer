@@ -145,7 +145,7 @@ export default function ComparePage() {
           多简历对比
         </h1>
         <p className="text-sm text-[var(--color-text-secondary)] mt-2">
-          对比 {resumes.length} 份简历的总结、技能、经验、评分和项目维度
+          对比 <span className="tabular-nums">{resumes.length}</span> 份简历的总结、技能、经验、评分和项目维度
         </p>
       </div>
 
@@ -303,7 +303,7 @@ export default function ComparePage() {
                         className="flex items-center justify-between p-2 bg-[var(--color-bg-secondary)] rounded"
                       >
                         <span className="text-[var(--color-text-muted)]">{metric.label}</span>
-                        <span className="font-mono font-semibold text-[var(--color-text)]">
+                        <span className="font-mono tabular-nums font-semibold text-[var(--color-text)]">
                           {detail[metric.key]}
                         </span>
                       </div>

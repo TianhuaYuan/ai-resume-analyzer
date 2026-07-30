@@ -154,7 +154,7 @@ export default function AnalysisWaitingDialog({
               <div className="space-y-1.5">
                 <div className="flex justify-between text-xs">
                   <span className="text-[var(--color-text-secondary)]">总体进度</span>
-                  <span className="text-[var(--color-text)] font-medium">{percent}%</span>
+                  <span className="text-[var(--color-text)] font-medium tabular-nums">{percent}%</span>
                 </div>
                 <div className="h-2 bg-[var(--color-border)] rounded-full overflow-hidden">
                   <motion.div
@@ -209,7 +209,7 @@ export default function AnalysisWaitingDialog({
                   {displayCompleted
                     ? "当前的分析结果已完成，可点击分析功能查看"
                     : displayProgress
-                    ? `已完成 ${completedCount}/${displayProgress.total} 项分析`
+                    ? <span className="tabular-nums">{`已完成 ${completedCount}/${displayProgress.total} 项分析`}</span>
                     : "正在启动分析..."}
                 </p>
                 <button
