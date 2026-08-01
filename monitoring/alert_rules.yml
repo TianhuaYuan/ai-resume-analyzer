@@ -121,3 +121,51 @@ groups:
         annotations:
           summary: "进程线程数超过 200"
           description: "当前线程数 {{ $value }}，可能存在线程泄漏"
+
+  - name: agent_alerts
+    rules:
+      - alert: AgentToolFailureRate
+        expr: |
+          sum(rate(rag_agent_tool_calls_total{status="error"}[10m]))
+          /
+          sum(rate(rag_agent_tool_calls_total[10m]))
+          > 0.3
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Agent 工具调用失败率超过 30%"
+          description: "工具 {{ $labels.tool_name }} 失败率 {{ $value | humanizePercentage }}"
+
+      - alert: AgentLoopTimeoutRate
+        expr: |
+          sum(rate(rag_agent_loop_total{status="timeout"}[10m])) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Agent 循环超时率异常"
+          description: "每秒 timeout 收尾的 Agent 循环 {{ $value }} 次，可能存在超时问题"
+
+      - alert: AgentHighTokenConsumption
+        expr: |
+          sum(rate(rag_agent_tokens_total[5m])) > 50000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Agent token 消耗异常偏高"
+          description: "当前 token 消耗速率 {{ $value }}/s，超过 50000 tokens/s，可能存在异常循环"
+
+      - alert: BuilderHighErrorRate
+        expr: |
+          sum(rate(resume_parse_total{status="error"}[10m]))
+          /
+          sum(rate(resume_parse_total[10m]))
+          > 0.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "简历反解析错误率超过 50%"
+          description: "反解析错误率 {{ $value | humanizePercentage }}，LLM 输出可能持续异常"

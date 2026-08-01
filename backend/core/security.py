@@ -2,10 +2,11 @@ import logging
 import re
 import uuid
 from datetime import datetime, timedelta, timezone
-from urllib.parse import unquote
+from urllib.parse import unquote, urlparse
 
 import bcrypt
 import jwt
+from fastapi import HTTPException, Request, status
 from jwt.exceptions import PyJWTError as JWTError
 
 from .config import settings
@@ -229,3 +230,59 @@ def redact_pii(text: str) -> str:
     for pattern, mask in _PII_PATTERNS:
         result = pattern.sub(mask, result)
     return result
+
+
+# ── T7 Origin/Referer 校验（敏感路由防 CSRF）──
+
+_DEV_ENVIRONMENTS_ORIGIN = {"development", "dev", "test"}
+
+
+def _get_allowed_origins() -> list[str]:
+    """从 CORS_ORIGINS 解析允许的来源列表。"""
+    return [o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()]
+
+
+def verify_origin(request: Request) -> bool:
+    """校验敏感请求的 Origin/Referer，防止 CSRF。
+
+    规则：
+    1. 开发/测试环境自动跳过
+    2. 有 Origin 头 → 必须在 CORS_ORIGINS 白名单中
+    3. 无 Origin 有 Referer → 提取 origin 部分，在白名单中允许
+    4. 既无 Origin 也无 Referer → 允许（某些合法客户端可能不带）
+
+    校验失败抛 403，不抛 401（认证问题与来源问题是两回事）。
+    """
+    if settings.ENVIRONMENT in _DEV_ENVIRONMENTS_ORIGIN:
+        return True
+
+    allowed = _get_allowed_origins()
+    if not allowed:
+        # 白名单为空时放行（配置问题不应阻断服务）
+        return True
+
+    origin = request.headers.get("origin")
+    if origin:
+        if origin in allowed:
+            return True
+        logger.warning("Origin rejected: %s (allowed: %s)", origin, allowed)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="非法来源",
+        )
+
+    # fallback 到 Referer
+    referer = request.headers.get("referer")
+    if referer:
+        parsed = urlparse(referer)
+        referer_origin = f"{parsed.scheme}://{parsed.netloc}"
+        if referer_origin in allowed:
+            return True
+        logger.warning("Referer rejected: %s → %s (allowed: %s)", referer, referer_origin, allowed)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="非法来源",
+        )
+
+    # 既无 Origin 也无 Referer，放行
+    return True

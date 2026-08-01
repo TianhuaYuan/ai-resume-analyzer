@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Lock, Hash, Eye, EyeOff } from "lucide-react";
+import { X, LockSimple, Hash, Eye, EyeSlash } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 
 type TabType = "password" | "code";
@@ -185,7 +185,7 @@ export default function ChangePasswordDialog({ open, onClose, currentEmail }: Pr
               {/* 旧密码输入 */}
               {tab === "password" && (
                 <div className="relative">
-                  <Lock className={cn(
+                  <LockSimple className={cn(
                     "absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors",
                     focusedInput === "oldPassword" ? "text-[var(--color-text)]" : "text-[var(--color-text-muted)]"
                   )} />
@@ -203,7 +203,7 @@ export default function ChangePasswordDialog({ open, onClose, currentEmail }: Pr
                     onClick={() => setShowOld(!showOld)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
                   >
-                    {showOld ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    {showOld ? <EyeSlash className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
               )}
@@ -240,7 +240,7 @@ export default function ChangePasswordDialog({ open, onClose, currentEmail }: Pr
 
               {/* 新密码输入 */}
               <div className="relative">
-                <Lock className={cn(
+                <LockSimple className={cn(
                   "absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors",
                   focusedInput === "newPassword" ? "text-[var(--color-text)]" : "text-[var(--color-text-muted)]"
                 )} />
@@ -258,13 +258,13 @@ export default function ChangePasswordDialog({ open, onClose, currentEmail }: Pr
                   onClick={() => setShowNew(!showNew)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
                 >
-                  {showNew ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  {showNew ? <EyeSlash className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
 
               {/* 确认新密码输入 */}
               <div className="relative">
-                <Lock className={cn(
+                <LockSimple className={cn(
                   "absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors",
                   focusedInput === "confirmPassword" ? "text-[var(--color-text)]" : "text-[var(--color-text-muted)]"
                 )} />
@@ -282,7 +282,7 @@ export default function ChangePasswordDialog({ open, onClose, currentEmail }: Pr
                   onClick={() => setShowConfirm(!showConfirm)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
                 >
-                  {showConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  {showConfirm ? <EyeSlash className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
 

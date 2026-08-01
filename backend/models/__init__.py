@@ -2,5 +2,24 @@ from core.database import Base
 from models.user import User
 from models.resume import Resume
 from models.qa_history import QAHistory
+from models.resume_module import ResumeModule
+from models.job_application import JobApplication
+from models.audit_log import AuditLog
+from models.qa_feedback import QAFeedback
+from models.user_feedback import UserFeedback
+from models.qa_conversation import QAConversation
+from models.analytics_event import AnalyticsEvent
 
-__all__ = ["Base", "User", "Resume", "QAHistory"]
+__all__ = [
+    "Base",
+    "User",
+    "Resume",
+    "QAHistory",
+    "QAConversation",
+    "ResumeModule",
+    "JobApplication",
+    "AuditLog",
+    "QAFeedback",
+    "UserFeedback",
+    "AnalyticsEvent",
+]

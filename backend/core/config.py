@@ -122,6 +122,23 @@ class Settings(BaseSettings):
     # 前端基础 URL，用于拼接密码重置链接（如 http://localhost:5173）
     FRONTEND_BASE_URL: str = "http://localhost:5173"
 
+    # ── React Agent 配置 ──
+    REACT_MAX_TOOL_ROUNDS: int = 6
+    REACT_MAX_ITER_TOKENS: int = 16000
+    REACT_TOOL_RESULT_MAX_CHARS: int = 2000
+    REACT_KEEP_LAST_ROUNDS: int = 4
+
+    # ── Thinking 配置 ──
+    THINKING_ENABLED: bool = True
+    THINKING_EFFORT: str = "high"
+
+    # ── 简历编辑器配置 ──
+    TEMPLATE_DIR: str = "backend/templates"
+    BUILDER_PARSE_MODEL: str = ""  # 空 = 使用 CHAT_MODEL
+
+    # ── /ask/agent 独立限流（LLM 调用放大器） ──
+    RATE_LIMIT_ASK_AGENT: str = "8/minute"
+
     # ── RAG 共享常量 ──
     DEFAULT_HYBRID_TOP_K: int = 20
     DEFAULT_RERANK_TOP_K: int = 5

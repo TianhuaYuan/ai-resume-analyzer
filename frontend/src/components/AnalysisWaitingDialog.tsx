@@ -34,8 +34,16 @@ export default function AnalysisWaitingDialog({
   const [progress, setProgress] = useState<ProgressInfo | null>(cached ?? null);
   const [completed, setCompleted] = useState(false);
 
-  // 渲染阶段即算出显示值
-  const displayProgress = progress ?? (cached ?? null) ?? (open ? { completed: 0, total: 4, current_type: "pending", current_type_label: "" } : null);
+  // 渲染阶段即算出显示值：progress > 全局缓存 > 打开时的占位 > null
+  let displayProgress: ProgressInfo | null = progress ?? cached ?? null;
+  if (displayProgress === null && open) {
+    displayProgress = {
+      completed: 0,
+      total: 4,
+      current_type: "pending",
+      current_type_label: "",
+    };
+  }
   const displayCompleted = completed;
 
   // 监听实时进度事件

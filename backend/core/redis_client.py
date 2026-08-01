@@ -102,20 +102,30 @@ class InMemoryRedis:
         return [self._data.get(k) for k in keys]
 
     async def eval(self, script: str, num_keys: int, *args: str) -> int:
-        """简易 Lua eval — 仅支持 GET/DEL 比对锁的脚本。"""
-        # 仅支持分布式锁的 Lua 脚本:
-        # if redis.call("GET", KEYS[1]) == ARGV[1] then
-        #     return redis.call("DEL", KEYS[1])
-        # else
-        #     return 0
+        """简易 Lua eval — 按脚本内容区分 RELEASE（DEL）与 RENEW（EXPIRE）。
+
+        真实 Redis 的 eval 会完整执行 Lua；内存实现只覆盖 edit_lock 用到的两个脚本：
+        - _RELEASE_SCRIPT（含 "DEL"）：GET == ARGV[1] 则 DEL，返回 1
+        - _RENEW_SCRIPT（含 "EXPIRE"）：GET == ARGV[1] 则续期 TTL，返回 1
+        其余脚本一律返回 0（保守行为，避免误删/误改）。
+
+        修复背景：原实现把所有脚本都当 DEL 执行，导致续期（EXPIRE）时把锁删了，
+        后续心跳全部 409。
+        """
         if num_keys > 0 and args:
             key = args[0]
             expected = args[1] if len(args) > 1 else None
             current = self._data.get(key)
             if current is not None and current == expected:
-                del self._data[key]
-                self._expire_at.pop(key, None)
-                return 1
+                if "EXPIRE" in script:
+                    # RENEW：续期 TTL（args[2] = 新 TTL 秒数）
+                    ttl = int(args[2]) if len(args) > 2 else 120
+                    self._expire_at[key] = time.time() + ttl
+                    return 1
+                if "DEL" in script:
+                    del self._data[key]
+                    self._expire_at.pop(key, None)
+                    return 1
         return 0
 
 

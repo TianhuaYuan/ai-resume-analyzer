@@ -1,20 +1,45 @@
-import { useEffect, useState, useRef, useCallback, type FormEvent } from "react";
-import { useParams, Link } from "react-router-dom";
-import { ChatCircleDots, MagnifyingGlass, Trash, ThumbsUp, ThumbsDown, X } from "@phosphor-icons/react";
+import { useEffect, useState, useRef, useCallback, memo, type FormEvent } from "react";
+import { useParams } from "react-router-dom";
 import {
-  askQuestionStream,
+  ChatCircleDots,
+  MagnifyingGlass,
+  Trash,
+  ThumbsUp,
+  ThumbsDown,
+  X,
+  Upload,
+  Columns,
+  FileText,
+  Target,
+  PencilSimple,
+  Microphone,
+  Translate,
+  Swap,
+  Plus,
+  CaretDown,
+} from "@phosphor-icons/react";
+import {
+  askAgentStream,
   getHistory,
   clearHistory,
   deleteQa,
   submitFeedback,
   getQuota,
-  type SSEEvent,
-  type QAMode,
+  getConversations,
+  createConversation,
+  renameConversation,
+  deleteConversation,
+  type AgentSSEEvent,
+  type AgentStep,
   type QuotaResponse,
+  type ConversationItem,
 } from "../api/qa";
-import { listResumes, type ResumeItem } from "../api/resumes";
+import { listResumes, uploadResume, type ResumeItem } from "../api/resumes";
+import { fetchPreviewHtml } from "../api/builder";
 import ConfirmDialog from "../components/ConfirmDialog";
+import { CompareSelectDialog } from "../components/CompareSelectDialog";
 import MarkdownRenderer from "../components/MarkdownRenderer";
+import AgentProcessPanel from "../components/AgentProcessPanel";
 
 interface ChatMessage {
   id: number | string;
@@ -28,14 +53,26 @@ interface ChatMessage {
   created_at?: string;
   /** Token 消耗 */
   token_usage?: { total: number; prompt: number; completion: number };
+  /** T18: Agent 推理步骤 */
+  agent_steps?: AgentStep[];
 }
 
-// Task 5.1: 预设提问
+// T19: 预设提问（3 个）
 const PRESET_QUESTIONS = [
   "这份简历的亮点是什么？",
   "适合什么岗位？",
   "技能匹配度如何？",
 ];
+
+// T19: 功能引导卡（6 个）
+const GUIDE_CARDS = [
+  { icon: FileText, label: "诊断简历", question: "请全面诊断这份简历的优点和不足" },
+  { icon: Target, label: "匹配 JD", question: "__JD__" }, // 特殊标记：弹粘贴框
+  { icon: PencilSimple, label: "改写段落", question: "请帮我改写简历中较弱的部分" },
+  { icon: Microphone, label: "模拟面试", question: "请根据这份简历模拟一场面试" },
+  { icon: Translate, label: "翻译简历", question: "请将这份简历翻译为英文" },
+  { icon: Swap, label: "对比简历", question: "__COMPARE__" }, // 特殊标记：弹勾选
+] as const;
 
 // ── 来源引用组件 ────────────────────────────────────────
 
@@ -114,49 +151,101 @@ function formatTimestamp(dateStr?: string): string | null {
 
 // ── 空状态 ──────────────────────────────────────────────
 
-function EmptyChat({
+function EmptyState({
   searching,
   asking,
   onPresetClick,
+  onGuideClick,
+  onUploadClick,
 }: {
   searching: boolean;
   asking: boolean;
   onPresetClick: (q: string) => void;
+  onGuideClick: (card: { label: string; question: string }) => void;
+  onUploadClick: () => void;
 }) {
+  if (searching) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center py-16">
+        <div className="w-16 h-16 rounded-2xl bg-indigo-500/10 border border-indigo-500/15
+          flex items-center justify-center text-indigo-400 mb-5">
+          <ChatCircleDots size={28} weight="duotone" aria-hidden="true" />
+        </div>
+        <p className="text-base text-[var(--color-text-secondary)] mb-1.5">没有匹配的问答</p>
+        <p className="text-sm text-[var(--color-text-muted)]">换个关键词试试</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex-1 flex flex-col items-center justify-center py-16">
+    <div className="flex-1 flex flex-col items-center justify-center py-10">
       <div className="w-16 h-16 rounded-2xl bg-indigo-500/10 border border-indigo-500/15
         flex items-center justify-center text-indigo-400 mb-5">
         <ChatCircleDots size={28} weight="duotone" aria-hidden="true" />
       </div>
-      <p className="text-base text-[var(--color-text-secondary)] mb-1.5">
-        {searching ? "没有匹配的问答" : "开始提问"}
-      </p>
-      <p className="text-sm text-[var(--color-text-muted)] mb-4">
-        {searching
-          ? "换个关键词试试"
-          : "点击下方问题快速开始"}
-      </p>
-      {!searching && (
-        <div className="flex flex-wrap justify-center gap-2">
-          {PRESET_QUESTIONS.map((q) => (
+      <p className="text-base text-[var(--color-text-secondary)] mb-1.5">开始提问</p>
+      <p className="text-sm text-[var(--color-text-muted)] mb-5">AI Agent 为你全方位分析简历</p>
+
+      {/* 3 问答预设 */}
+      <div className="flex flex-wrap justify-center gap-2 mb-6">
+        {PRESET_QUESTIONS.map((q) => (
+          <button
+            key={q}
+            onClick={() => onPresetClick(q)}
+            disabled={asking}
+            className="px-4 py-2 rounded-xl text-xs text-[var(--color-text-secondary)]
+              bg-white/5 border border-[var(--color-border)]
+              hover:border-indigo-500/40 hover:text-indigo-300 hover:bg-indigo-500/8
+              active:scale-[0.97] motion-reduce:active:scale-100
+              transition-all cursor-pointer
+              disabled:opacity-40 disabled:cursor-not-allowed"
+            aria-label={q}
+          >
+            {q}
+          </button>
+        ))}
+      </div>
+
+      {/* 6 功能引导卡 */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-w-lg w-full mb-6">
+        {GUIDE_CARDS.map((card) => {
+          const Icon = card.icon;
+          return (
             <button
-              key={q}
-              onClick={() => onPresetClick(q)}
+              key={card.label}
+              onClick={() => onGuideClick(card)}
               disabled={asking}
-              className="px-4 py-2 rounded-xl text-xs text-[var(--color-text-secondary)]
+              className="flex flex-col items-center gap-2 p-4 rounded-xl
                 bg-white/5 border border-[var(--color-border)]
-                hover:border-indigo-500/40 hover:text-indigo-300 hover:bg-indigo-500/8
+                hover:border-indigo-500/40 hover:bg-indigo-500/8
+                hover:text-indigo-300
                 active:scale-[0.97] motion-reduce:active:scale-100
                 transition-all cursor-pointer
                 disabled:opacity-40 disabled:cursor-not-allowed"
-              aria-label={q}
+              aria-label={card.label}
             >
-              {q}
+              <Icon size={20} weight="duotone" className="text-indigo-400" aria-hidden="true" />
+              <span className="text-xs font-medium text-[var(--color-text-secondary)]">{card.label}</span>
             </button>
-          ))}
-        </div>
-      )}
+          );
+        })}
+      </div>
+
+      {/* 上传入口 */}
+      <button
+        onClick={onUploadClick}
+        disabled={asking}
+        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs
+          text-[var(--color-text-muted)] border border-dashed border-[var(--color-border)]
+          hover:text-indigo-400 hover:border-indigo-500/40
+          active:scale-[0.97] motion-reduce:active:scale-100
+          transition-all cursor-pointer
+          disabled:opacity-40 disabled:cursor-not-allowed"
+        aria-label="上传新简历"
+      >
+        <Upload size={14} weight="regular" aria-hidden="true" />
+        上传新简历
+      </button>
     </div>
   );
 }
@@ -170,7 +259,7 @@ interface MessageBubbleProps {
   onFeedback: (id: number | string, rating: "positive" | "negative") => void;
 }
 
-function MessageBubble({ msg, deleting, onDelete, onFeedback }: MessageBubbleProps) {
+const MessageBubble = memo(function MessageBubble({ msg, deleting, onDelete, onFeedback }: MessageBubbleProps) {
   // 流式消息（id 仍是字符串 tempId）不显示删除按钮和反馈按钮
   const canDelete = !msg.streaming && typeof msg.id === "number";
   const canFeedback = !msg.streaming && typeof msg.id === "number";
@@ -189,7 +278,11 @@ function MessageBubble({ msg, deleting, onDelete, onFeedback }: MessageBubblePro
         <div className="max-w-[82%]">
           <div className="px-4 py-3.5 rounded-2xl rounded-bl-md leading-relaxed text-sm
             bg-white/5 border border-[var(--color-border)] backdrop-blur-sm">
-            {msg.streaming && !msg.answer ? (
+            {/* T18: Agent 推理过程面板（#11: streaming 开始即显示占位，用户立即看到反馈） */}
+            {msg.streaming || (msg.agent_steps && msg.agent_steps.length > 0) ? (
+              <AgentProcessPanel steps={msg.agent_steps ?? []} streaming={msg.streaming} />
+            ) : null}
+            {msg.streaming && !msg.answer && !(msg.agent_steps && msg.agent_steps.length > 0) ? (
               <span className="text-[var(--color-text-muted)]">思考中...</span>
             ) : (
               <MarkdownRenderer>
@@ -285,7 +378,7 @@ function MessageBubble({ msg, deleting, onDelete, onFeedback }: MessageBubblePro
       </div>
     </div>
   );
-}
+});
 
 // ── 主组件 ──────────────────────────────────────────────
 
@@ -299,6 +392,19 @@ export default function QAPage() {
   const [asking, setAsking] = useState(false);
   const [error, setError] = useState("");
 
+  // 对话会话状态
+  const [conversations, setConversations] = useState<ConversationItem[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<number | null>(null);
+  const [conversationMenuOpen, setConversationMenuOpen] = useState(false);
+  const [conversationLoading, setConversationLoading] = useState(true);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameValue, setRenameValue] = useState("");
+  const [renameTargetId, setRenameTargetId] = useState<number | null>(null);
+  const [deleteConvOpen, setDeleteConvOpen] = useState(false);
+  const [deleteConvTargetId, setDeleteConvTargetId] = useState<number | null>(null);
+  const [deletingConv, setDeletingConv] = useState(false);
+  const [creatingConv, setCreatingConv] = useState(false);
+
   // Task 4：搜索 + 删除相关状态
   const [keyword, setKeyword] = useState("");
   const [debouncedKeyword, setDebouncedKeyword] = useState("");
@@ -307,8 +413,33 @@ export default function QAPage() {
   const [clearing, setClearing] = useState(false);
   const [deletingId, setDeletingId] = useState<number | string | null>(null);
 
-  // Task 2.3：RAG 模式切换。默认 "stream"（传统流式），可切到 "agentic"（完整 Agentic RAG 图）
-  const [qaMode, setQaMode] = useState<QAMode>("stream");
+  // T19: 对比弹窗 + JD 输入 + 上传 + 分屏
+  const [compareOpen, setCompareOpen] = useState(false);
+  const [compareIds, setCompareIds] = useState<number[]>([]);
+  const [jdOpen, setJdOpen] = useState(false);
+  const [jdText, setJdText] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+  const [splitOpen, setSplitOpen] = useState(false);
+  // T19: 分屏预览 HTML（fetch 带 Authorization header → srcDoc，避免 iframe src 无法带 header 而 401）
+  const [splitHtml, setSplitHtml] = useState("");
+  const [splitLoading, setSplitLoading] = useState(false);
+  // agent 改写类工具写库后递增，触发分屏预览重取最新模块
+  const [splitRefreshKey, setSplitRefreshKey] = useState(0);
+
+  // 打开分屏时加载预览 HTML
+  useEffect(() => {
+    if (!splitOpen) return;
+    let cancelled = false;
+    setSplitLoading(true);
+    fetchPreviewHtml(resumeId)
+      .then((html) => { if (!cancelled) setSplitHtml(html); })
+      .catch(() => { if (!cancelled) setSplitHtml(""); })
+      .finally(() => { if (!cancelled) setSplitLoading(false); });
+    return () => { cancelled = true; };
+  }, [splitOpen, resumeId, splitRefreshKey]);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Token 限额状态
   const [quota, setQuota] = useState<QuotaResponse | null>(null);
@@ -318,13 +449,16 @@ export default function QAPage() {
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // 加载历史（封装成函数，便于搜索时复用）
+  // 加载历史（封装成函数，便于搜索时复用）。conversationId 为空则加载该简历全部历史。
   const loadHistory = useCallback(
-    async (kw: string) => {
+    async (kw: string, conversationId: number | null) => {
       setHistoryLoading(true);
       setError("");
       try {
-        const data = await getHistory(resumeId, 20, 0, kw || undefined);
+        const data = await getHistory(
+          resumeId, 20, 0, kw || undefined,
+          conversationId ?? undefined,
+        );
         const historyItems: ChatMessage[] = data.items.map((it) => ({
           id: it.id,
           question: it.question,
@@ -383,26 +517,62 @@ export default function QAPage() {
     };
   }, [keyword]);
 
-  // debouncedKeyword 变化时重新加载历史（含初次加载）
+  // 首次加载简历下的对话列表：有则选中最近活跃的，无则自动创建一个默认对话
   useEffect(() => {
-    loadHistory(debouncedKeyword);
-  }, [debouncedKeyword, loadHistory]);
+    let cancelled = false;
+    setConversationLoading(true);
+    getConversations(resumeId)
+      .then(async (list) => {
+        if (cancelled) return;
+        if (list.length > 0) {
+          setConversations(list);
+          // 默认选中最近活跃的对话（列表已按 updated_at 降序）
+          setActiveConversationId(list[0].id);
+          return;
+        }
+        // 无任何对话 → 自动创建一个
+        const conv = await createConversation(resumeId);
+        if (cancelled) return;
+        setConversations([conv]);
+        setActiveConversationId(conv.id);
+      })
+      .catch(() => {
+        if (!cancelled) setError("加载对话列表失败");
+      })
+      .finally(() => {
+        if (!cancelled) setConversationLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [resumeId]);
 
+  // debouncedKeyword / activeConversationId 变化时重新加载历史（含初次加载）
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    loadHistory(debouncedKeyword, activeConversationId);
+  }, [debouncedKeyword, activeConversationId, loadHistory]);
+
+  // 滚动到底部：仅在新消息添加或流式回答增长时触发，避免每个 token 都 smooth scroll
+  const prevChatLenRef = useRef(0);
+  const prevLastAnswerRef = useRef("");
+  useEffect(() => {
+    const len = chat.length;
+    const lastMsg = chat[len - 1];
+    const lastAnswer = lastMsg?.answer ?? "";
+    // 新消息加入 OR 流式回答内容增长 → 滚动
+    if (len > prevChatLenRef.current ||
+        (lastMsg?.streaming && lastAnswer !== prevLastAnswerRef.current)) {
+      chatEndRef.current?.scrollIntoView({ behavior: "auto" });
+    }
+    prevChatLenRef.current = len;
+    prevLastAnswerRef.current = lastAnswer;
   }, [chat]);
 
   useEffect(() => {
     return () => abortRef.current?.();
   }, []);
 
-  const handleAsk = useCallback(
-    (e: FormEvent) => {
-      e.preventDefault();
-      const q = question.trim();
-      if (!q || asking) return;
-
-      setQuestion("");
+  // T19: 统一走 Agent 模式（去模式切换），支持 compare_ids
+  const sendQuestion = useCallback(
+    (q: string) => {
       setError("");
       setAsking(true);
 
@@ -416,48 +586,160 @@ export default function QAPage() {
       };
       setChat((prev) => [...prev, newMsg]);
 
-      abortRef.current = askQuestionStream(
+      abortRef.current = askAgentStream(
         resumeId,
         q,
-        (event: SSEEvent) => {
-          if (event.type === "reset") {
-            // 流式降级时，后端通知客户端丢弃已收到的部分 token
+        (event: AgentSSEEvent) => {
+          if (event.type === "agent_start") {
             setChat((prev) =>
               prev.map((m) =>
-                m.id === tempId ? { ...m, answer: "" } : m
+                m.id === tempId ? { ...m, agent_steps: [] } : m
               )
             );
-          } else if (event.type === "token" && event.content) {
+          } else if (event.type === "agent_thought") {
+            // Spec A#7: LLM 推理过程内容，作为推理步骤展示
             setChat((prev) =>
               prev.map((m) =>
                 m.id === tempId
-                  ? { ...m, answer: m.answer + event.content }
+                  ? {
+                      ...m,
+                      agent_steps: [
+                        ...(m.agent_steps ?? []),
+                        {
+                          type: "agent_thought" as const,
+                          name: "思考",
+                          detail: event.content,
+                        },
+                      ],
+                    }
                   : m
               )
             );
-          } else if (event.type === "done") {
+          } else if (event.type === "tool_call") {
+            setChat((prev) =>
+              prev.map((m) =>
+                m.id === tempId
+                  ? {
+                      ...m,
+                      agent_steps: [
+                        ...(m.agent_steps ?? []),
+                        {
+                          type: "tool_call" as const,
+                          name: event.tool_name ?? "",
+                          detail: event.args,
+                          id: event.id,
+                        },
+                      ],
+                    }
+                  : m
+              )
+            );
+          } else if (event.type === "tool_result") {
+            setChat((prev) =>
+              prev.map((m) =>
+                m.id === tempId
+                  ? {
+                      ...m,
+                      agent_steps: [
+                        ...(m.agent_steps ?? []),
+                        {
+                          type: "tool_result" as const,
+                          name: event.tool_name ?? "",
+                          detail: event.summary,
+                          id: event.id,
+                        },
+                      ],
+                    }
+                  : m
+              )
+            );
+          } else if (event.type === "tool_error") {
+            setChat((prev) =>
+              prev.map((m) =>
+                m.id === tempId
+                  ? {
+                      ...m,
+                      agent_steps: [
+                        ...(m.agent_steps ?? []),
+                        {
+                          type: "tool_error" as const,
+                          name: event.tool_name ?? "",
+                          detail: event.error,
+                          id: event.id,
+                        },
+                      ],
+                    }
+                  : m
+              )
+            );
+          } else if (event.type === "agent_done") {
             setChat((prev) =>
               prev.map((m) =>
                 m.id === tempId
                   ? {
                       ...m,
                       id: event.qa_id ?? tempId,
-                      sources: event.sources ?? [],
+                      answer: event.answer ?? "",
                       streaming: false,
-                      token_usage: event.token_usage,
+                      token_usage: event.token_usage
+                        ? {
+                            total:
+                              event.token_usage.prompt_tokens +
+                              event.token_usage.completion_tokens,
+                            prompt: event.token_usage.prompt_tokens,
+                            completion: event.token_usage.completion_tokens,
+                          }
+                        : undefined,
+                      // Spec: process_trace 是紧凑摘要（rounds/tool_sequence/duration_ms），
+                      // 不是 AgentStep[]，不能覆盖 agent_steps
+                      // agent_steps 保留实时累积的步骤
+                      sources: event.sources?.map((s) => s.text) ?? [],
                     }
                   : m
               )
             );
             setAsking(false);
             window.dispatchEvent(new CustomEvent("quota:refresh"));
+            // 问答完成 → 递增当前会话的消息数
+            if (activeConversationId != null && event.qa_id != null) {
+              setConversations((prev) =>
+                prev.map((c) =>
+                  c.id === activeConversationId
+                    ? { ...c, message_count: c.message_count + 1 }
+                    : c
+                )
+              );
+            }
+            // QA 改写类工具（rewrite_star/translate）写库后：刷新分屏预览 + 通知编辑页/侧栏同步
+            const wroteModules = (event.process_trace?.tool_sequence ?? []).some(
+              (t) => t === "rewrite_star" || t === "translate",
+            );
+            if (wroteModules) {
+              setSplitRefreshKey((k) => k + 1);
+              window.dispatchEvent(new Event("resume:modules-refresh"));
+              window.dispatchEvent(new Event("resume:list-refresh"));
+            }
+          } else if (event.type === "quota_exceeded") {
+            setChat((prev) =>
+              prev.map((m) =>
+                m.id === tempId
+                  ? {
+                      ...m,
+                      answer: event.message ?? "今日额度已用完",
+                      streaming: false,
+                    }
+                  : m
+              )
+            );
+            setAsking(false);
+            getQuota().then(setQuota).catch(() => {});
           } else if (event.type === "error") {
             setChat((prev) =>
               prev.map((m) =>
                 m.id === tempId
                   ? {
                       ...m,
-                      answer: event.message ?? "生成失败",
+                      answer: event.message ?? "Agent 处理失败",
                       streaming: false,
                     }
                   : m
@@ -477,7 +759,6 @@ export default function QAPage() {
           );
           setAsking(false);
         },
-        // C2：兜底。即使后端中途断开、没发 done 事件，也复位 asking 并结束该条流式消息。
         () => {
           setAsking(false);
           setChat((prev) =>
@@ -486,11 +767,24 @@ export default function QAPage() {
             )
           );
         },
-        // Task 2.3：透传 RAG 模式。stream=普通流式，agentic=完整 Agentic RAG 图
-        { mode: qaMode }
+        {
+          compareIds: compareIds.length > 0 ? compareIds : undefined,
+          conversationId: activeConversationId ?? undefined,
+        },
       );
     },
-    [question, asking, resumeId, qaMode]
+    [resumeId, compareIds, activeConversationId]
+  );
+
+  const handleAsk = useCallback(
+    (e: FormEvent) => {
+      e.preventDefault();
+      const q = question.trim();
+      if (!q || asking) return;
+      setQuestion("");
+      sendQuestion(q);
+    },
+    [question, asking, sendQuestion]
   );
 
   const handleCancel = () => {
@@ -506,16 +800,24 @@ export default function QAPage() {
     inputRef.current?.focus();
   };
 
-  // Task 4：清空整份简历的问答历史
+  // Task 4：清空当前对话的问答历史（对话维度）
   const handleConfirmClear = async () => {
     setClearing(true);
     setError("");
     try {
-      await clearHistory(resumeId);
+      await clearHistory(resumeId, activeConversationId ?? undefined);
       setChat([]);
       setKeyword("");
       setDebouncedKeyword("");
       setClearConfirmOpen(false);
+      // 刷新对话消息数
+      if (activeConversationId != null) {
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.id === activeConversationId ? { ...c, message_count: 0 } : c
+          )
+        );
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "清空失败");
     } finally {
@@ -524,113 +826,37 @@ export default function QAPage() {
   };
 
   // Task 4：删单条问答
-  const handleDeleteMessage = async (msgId: number | string) => {
+  const handleDeleteMessage = useCallback(async (msgId: number | string) => {
     if (typeof msgId !== "number") return;
     setDeletingId(msgId);
     setError("");
     try {
       await deleteQa(msgId);
       setChat((prev) => prev.filter((m) => m.id !== msgId));
+      // 递减当前会话消息数
+      if (activeConversationId != null) {
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.id === activeConversationId
+              ? { ...c, message_count: Math.max(0, c.message_count - 1) }
+              : c
+          )
+        );
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "删除失败");
     } finally {
       setDeletingId(null);
     }
-  };
+  }, [activeConversationId]);
 
   // Task 5.1：预设提问 — 直接发送预设问题
   const handlePresetAsk = useCallback(
     (q: string) => {
       if (asking || !q.trim()) return;
-      setError("");
-      setAsking(true);
-
-      const tempId = `streaming-${Date.now()}`;
-      const newMsg: ChatMessage = {
-        id: tempId,
-        question: q.trim(),
-        answer: "",
-        sources: [],
-        streaming: true,
-      };
-      setChat((prev) => [...prev, newMsg]);
-
-      abortRef.current = askQuestionStream(
-        resumeId,
-        q.trim(),
-        (event: SSEEvent) => {
-          if (event.type === "reset") {
-            setChat((prev) =>
-              prev.map((m) =>
-                m.id === tempId ? { ...m, answer: "" } : m
-              )
-            );
-          } else if (event.type === "token" && event.content) {
-            setChat((prev) =>
-              prev.map((m) =>
-                m.id === tempId
-                  ? { ...m, answer: m.answer + event.content }
-                  : m
-              )
-            );
-          } else if (event.type === "done") {
-            setChat((prev) =>
-              prev.map((m) =>
-                m.id === tempId
-                  ? {
-                      ...m,
-                      id: event.qa_id ?? tempId,
-                      sources: event.sources ?? [],
-                      streaming: false,
-                      token_usage: event.token_usage,
-                    }
-                  : m
-              )
-            );
-            setAsking(false);
-            window.dispatchEvent(new CustomEvent("quota:refresh"));
-          } else if (event.type === "error") {
-            // 捕获 quota_exceeded 错误，刷新额度状态
-            if (event.code === "quota_exceeded") {
-              getQuota().then(setQuota).catch(() => {});
-            }
-            setChat((prev) =>
-              prev.map((m) =>
-                m.id === tempId
-                  ? {
-                      ...m,
-                      answer: event.message ?? "生成失败",
-                      streaming: false,
-                    }
-                  : m
-              )
-            );
-            setAsking(false);
-          }
-        },
-        (err: Error) => {
-          setError(err.message);
-          setChat((prev) =>
-            prev.map((m) =>
-              m.id === tempId
-                ? { ...m, answer: "生成失败，请重试", streaming: false }
-                : m
-            )
-          );
-          setAsking(false);
-        },
-        () => {
-          setAsking(false);
-          setChat((prev) =>
-            prev.map((m) =>
-              m.id === tempId ? { ...m, streaming: false } : m
-            )
-          );
-        },
-        { mode: qaMode }
-      );
+      sendQuestion(q.trim());
     },
-    [asking, resumeId, qaMode]
+    [asking, sendQuestion]
   );
 
   // Task 5.1：质量反馈
@@ -657,10 +883,169 @@ export default function QAPage() {
     []
   );
 
+  // ── 对话会话操作 ──────────────────────────────────────────
+
+  // 新建对话
+  const handleCreateConversation = async () => {
+    if (creatingConv) return;
+    setCreatingConv(true);
+    setError("");
+    try {
+      const conv = await createConversation(resumeId);
+      setConversations((prev) => [conv, ...prev]);
+      setActiveConversationId(conv.id);
+      setChat([]);
+      setKeyword("");
+      setDebouncedKeyword("");
+      setConversationMenuOpen(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "新建对话失败");
+    } finally {
+      setCreatingConv(false);
+    }
+  };
+
+  // 切换对话
+  const handleSwitchConversation = (convId: number) => {
+    if (convId === activeConversationId) return;
+    setActiveConversationId(convId);
+    setChat([]);
+    setKeyword("");
+    setDebouncedKeyword("");
+    setConversationMenuOpen(false);
+  };
+
+  // 打开重命名弹窗
+  const handleRenameOpen = (convId: number) => {
+    const conv = conversations.find((c) => c.id === convId);
+    setRenameTargetId(convId);
+    setRenameValue(conv?.title ?? "");
+    setRenameOpen(true);
+    setConversationMenuOpen(false);
+  };
+
+  // 确认重命名
+  const handleRenameConfirm = async () => {
+    const title = renameValue.trim();
+    if (!title || renameTargetId == null) return;
+    try {
+      const updated = await renameConversation(renameTargetId, title);
+      setConversations((prev) =>
+        prev.map((c) => (c.id === updated.id ? updated : c))
+      );
+      setRenameOpen(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "重命名失败");
+    }
+  };
+
+  // 打开删除确认
+  const handleDeleteConvOpen = (convId: number) => {
+    setDeleteConvTargetId(convId);
+    setDeleteConvOpen(true);
+    setConversationMenuOpen(false);
+  };
+
+  // 确认删除对话
+  const handleDeleteConvConfirm = async () => {
+    if (deleteConvTargetId == null) return;
+    setDeletingConv(true);
+    setError("");
+    try {
+      await deleteConversation(deleteConvTargetId);
+      const remaining = conversations.filter((c) => c.id !== deleteConvTargetId);
+      setConversations(remaining);
+      if (deleteConvTargetId === activeConversationId) {
+        // 当前对话被删 → 切到剩余对话（最近活跃）或清空
+        if (remaining.length > 0) {
+          setActiveConversationId(remaining[0].id);
+        } else {
+          setActiveConversationId(null);
+        }
+        setChat([]);
+        setKeyword("");
+        setDebouncedKeyword("");
+      }
+      setDeleteConvOpen(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "删除对话失败");
+    } finally {
+      setDeletingConv(false);
+    }
+  };
+
+  // T19: 功能引导卡点击 — 根据卡片类型分流
+  const handleGuideClick = useCallback(
+    (card: { label: string; question: string }) => {
+      if (asking) return;
+      if (card.question === "__JD__") {
+        setJdOpen(true);
+      } else if (card.question === "__COMPARE__") {
+        setCompareOpen(true);
+      } else {
+        sendQuestion(card.question);
+      }
+    },
+    [asking, sendQuestion]
+  );
+
+  // T19: JD 粘贴框确认
+  const handleJdConfirm = () => {
+    const jd = jdText.trim();
+    if (!jd) return;
+    setJdOpen(false);
+    sendQuestion(`请分析这份简历与以下岗位描述的匹配度：\n\n${jd}`);
+    setJdText("");
+  };
+
+  // T19: 对比确认 — 设置 compareIds 并发送
+  const handleCompareConfirm = (selectedIds: number[]) => {
+    setCompareIds(selectedIds);
+    setCompareOpen(false);
+    sendQuestion("请对比我选中的简历，分析各自的优劣势");
+  };
+
+  // T19: 上传简历
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+
+    // 文件校验
+    const validTypes = [
+      "application/pdf",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ];
+    const ext = file.name.split(".").pop()?.toLowerCase();
+    if (!validTypes.includes(file.type) && ext !== "pdf" && ext !== "docx") {
+      setUploadError("仅支持 PDF / DOCX 格式");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setUploadError("文件大小不能超过 10MB");
+      return;
+    }
+
+    setUploading(true);
+    setUploadError("");
+    try {
+      await uploadResume(file);
+      // 上传成功后刷新简历列表（让用户可以在对比中选到新简历）
+      listResumes().then(() => {}).catch(() => {});
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "上传失败");
+    } finally {
+      setUploading(false);
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-[var(--color-bg)] flex flex-col">
+    <div
+      className="flex-1 flex flex-col bg-[var(--color-bg)] overflow-hidden"
+      onClick={() => setConversationMenuOpen(false)}
+    >
       {/* ── 顶栏 ── */}
-      <div className="sticky top-[49px] z-30 bg-[var(--color-bg)] px-6 py-4 border-b border-[var(--color-border)] shrink-0">
+      <div className="shrink-0 z-30 bg-[var(--color-bg)] px-6 py-4 border-b border-[var(--color-border)]">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="min-w-0 flex-1">
             <h2 className="text-base font-semibold text-[var(--color-text)] truncate">
@@ -671,56 +1056,151 @@ export default function QAPage() {
                 <span className="tabular-nums">{resume.chunk_count}</span> 个分块
               </p>
             )}
+
+            {/* 对话会话选择器 */}
+            {!conversationLoading && (
+              <div className="relative mt-2 inline-block">
+                <button
+                  onClick={(e) => { e.stopPropagation(); setConversationMenuOpen((v) => !v); }}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs
+                    bg-white/5 border border-[var(--color-border)]
+                    text-[var(--color-text-secondary)]
+                    hover:text-indigo-400 hover:border-indigo-500/30 hover:bg-indigo-500/8
+                    active:scale-[0.98] motion-reduce:active:scale-100
+                    transition-all cursor-pointer"
+                  aria-label="切换对话"
+                  aria-expanded={conversationMenuOpen}
+                >
+                  <span className="max-w-[180px] truncate">
+                    {conversations.find((c) => c.id === activeConversationId)?.title ?? "新对话"}
+                  </span>
+                  <CaretDown size={12} weight="bold" aria-hidden="true" />
+                </button>
+
+                {conversationMenuOpen && (
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    className="absolute left-0 top-full mt-1 w-64 rounded-xl z-50
+                    bg-[var(--color-bg-secondary)] border border-[var(--color-border)] shadow-2xl
+                    animate-fade-in-up"
+                  >
+                    <div className="py-1.5">
+                      {conversations.length === 0 ? (
+                        <p className="px-3 py-2 text-xs text-[var(--color-text-muted)]">暂无对话</p>
+                      ) : (
+                        conversations.map((conv) => {
+                          const active = conv.id === activeConversationId;
+                          return (
+                            <div
+                              key={conv.id}
+                              onClick={() => handleSwitchConversation(conv.id)}
+                              className={`group flex items-center gap-2 px-3 py-2 mx-1 rounded-lg text-xs
+                                transition-all cursor-pointer
+                                ${active
+                                  ? "bg-indigo-500/10 text-indigo-300"
+                                  : "text-[var(--color-text-secondary)] hover:bg-white/5 hover:text-[var(--color-text)]"
+                                }`}
+                            >
+                              <span className="flex-1 min-w-0 truncate">{conv.title}</span>
+                              <span className="shrink-0 text-[10px] text-[var(--color-text-muted)] tabular-nums">
+                                {conv.message_count} 条
+                              </span>
+                              <span
+                                role="button"
+                                aria-label="重命名对话"
+                                onClick={(e) => { e.stopPropagation(); handleRenameOpen(conv.id); }}
+                                className="shrink-0 p-1 rounded-md text-[var(--color-text-muted)]
+                                  opacity-0 group-hover:opacity-100 hover:text-indigo-400 hover:bg-white/8 transition-all cursor-pointer"
+                              >
+                                <PencilSimple size={12} weight="regular" aria-hidden="true" />
+                              </span>
+                              <span
+                                role="button"
+                                aria-label="删除对话"
+                                onClick={(e) => { e.stopPropagation(); handleDeleteConvOpen(conv.id); }}
+                                className="shrink-0 p-1 rounded-md text-[var(--color-text-muted)]
+                                  opacity-0 group-hover:opacity-100 hover:text-red-400 hover:bg-red-500/10 transition-all cursor-pointer"
+                              >
+                                <Trash size={12} weight="regular" aria-hidden="true" />
+                              </span>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                    <div className="border-t border-[var(--color-border)] px-2 py-1.5">
+                      <button
+                        onClick={handleCreateConversation}
+                        disabled={creatingConv}
+                        className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg
+                          text-xs font-medium border border-dashed border-[var(--color-border)]
+                          text-[var(--color-text-muted)]
+                          hover:text-indigo-400 hover:border-indigo-500/40 hover:bg-indigo-500/8
+                          active:scale-[0.98] motion-reduce:active:scale-100
+                          transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {creatingConv ? (
+                          <span className="inline-block w-3 h-3 rounded-full border-2 border-current border-t-transparent animate-spin" aria-hidden="true" />
+                        ) : (
+                          <Plus size={12} weight="bold" aria-hidden="true" />
+                        )}
+                        新建对话
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
-          {/* Task 2.3：RAG 模式 Segmented Control */}
-          <div
-            role="radiogroup"
-            aria-label="RAG 模式"
-            className="shrink-0 inline-flex items-center p-0.5 rounded-lg
-              bg-white/5 border border-[var(--color-border)]"
+          {/* T19: 上传 + 分屏按钮 */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            onChange={handleUpload}
+            className="hidden"
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading || asking}
+            className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg
+              text-xs font-medium border border-[var(--color-border)] text-[var(--color-text-secondary)]
+              hover:text-indigo-400 hover:border-indigo-500/30 hover:bg-indigo-500/8
+              active:scale-[0.98] motion-reduce:active:scale-100
+              transition-all cursor-pointer
+              disabled:opacity-40 disabled:cursor-not-allowed"
+            aria-label="上传简历"
           >
-            <label
-              className={`px-3 py-1 rounded-md text-xs font-medium cursor-pointer
-                transition-all duration-150
-                ${
-                  qaMode === "stream"
-                    ? "bg-indigo-500/20 text-indigo-300 border border-indigo-500/40"
-                    : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] border border-transparent"
-                }`}
-            >
-              <input
-                type="radio"
-                name="qa-mode"
-                value="stream"
-                checked={qaMode === "stream"}
-                onChange={() => setQaMode("stream")}
-                disabled={asking}
-                className="sr-only"
-              />
-              传统
-            </label>
-            <label
-              className={`px-3 py-1 rounded-md text-xs font-medium cursor-pointer
-                transition-all duration-150
-                ${
-                  qaMode === "agentic"
-                    ? "bg-indigo-500/20 text-indigo-300 border border-indigo-500/40"
-                    : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] border border-transparent"
-                }`}
-            >
-              <input
-                type="radio"
-                name="qa-mode"
-                value="agentic"
-                checked={qaMode === "agentic"}
-                onChange={() => setQaMode("agentic")}
-                disabled={asking}
-                className="sr-only"
-              />
-              Agentic
-            </label>
-          </div>
+            {uploading ? (
+              <span className="inline-block w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" aria-hidden="true" />
+            ) : (
+              <Upload size={14} weight="regular" aria-hidden="true" />
+            )}
+            上传
+          </button>
+          <button
+            onClick={() => setSplitOpen((v) => !v)}
+            className={`shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg
+              text-xs font-medium border transition-all cursor-pointer
+              ${splitOpen
+                ? "bg-indigo-500/20 text-indigo-300 border-indigo-500/40"
+                : "border-[var(--color-border)] text-[var(--color-text-secondary)] hover:text-indigo-400 hover:border-indigo-500/30 hover:bg-indigo-500/8"
+              }`}
+            aria-label="切换分屏"
+          >
+            <Columns size={14} weight="regular" aria-hidden="true" />
+            分屏
+          </button>
+
+          {/* T19: 对比已选指示器 */}
+          {compareIds.length > 0 && (
+            <span className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-md
+              text-[10px] bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+              <Swap size={10} weight="bold" aria-hidden="true" />
+              已选 {compareIds.length} 份对比
+            </span>
+          )}
 
           {/* Token 限额显示 */}
           {quota?.enabled && (
@@ -792,51 +1272,101 @@ export default function QAPage() {
             <Trash size={14} weight="regular" aria-hidden="true" />
             清除历史
           </button>
-
-          <Link
-            to="/"
-            className="shrink-0 text-xs text-[var(--color-text-muted)] hover:text-indigo-400 transition-colors"
-          >
-            ← 返回列表
-          </Link>
         </div>
       </div>
 
-      {/* ── 聊天区 ── */}
-      <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-6">
-        <div className="max-w-3xl mx-auto">
-          {historyLoading && chat.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16">
-              <span
-                className="inline-block w-6 h-6 rounded-full border-2 border-indigo-400 border-t-transparent animate-spin"
-                aria-hidden="true"
+      {/* ── 聊天区（T19: 支持分屏） ── */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* 左侧：聊天主区 */}
+        <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-6">
+          <div className="max-w-3xl mx-auto">
+            {historyLoading && chat.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16">
+                <span
+                  className="inline-block w-6 h-6 rounded-full border-2 border-indigo-400 border-t-transparent animate-spin"
+                  aria-hidden="true"
+                />
+                <p className="text-xs text-[var(--color-text-muted)] mt-3">加载历史中...</p>
+              </div>
+            ) : chat.length === 0 ? (
+              <EmptyState
+                searching={debouncedKeyword.length > 0}
+                asking={asking}
+                onPresetClick={handlePresetAsk}
+                onGuideClick={handleGuideClick}
+                onUploadClick={() => fileInputRef.current?.click()}
               />
-              <p className="text-xs text-[var(--color-text-muted)] mt-3">加载历史中...</p>
-            </div>
-          ) : chat.length === 0 ? (
-            <EmptyChat searching={debouncedKeyword.length > 0} asking={asking} onPresetClick={handlePresetAsk} />
-          ) : (
-            chat.map((msg) => (
-              <MessageBubble
-                key={String(msg.id)}
-                msg={msg}
-                deleting={deletingId === msg.id}
-                onDelete={handleDeleteMessage}
-                onFeedback={handleFeedback}
-              />
-            ))
-          )}
+            ) : (
+              chat.map((msg) => (
+                <MessageBubble
+                  key={String(msg.id)}
+                  msg={msg}
+                  deleting={deletingId === msg.id}
+                  onDelete={handleDeleteMessage}
+                  onFeedback={handleFeedback}
+                />
+              ))
+            )}
 
-          {/* 错误提示 */}
-          {error && (
-            <div className="max-w-3xl mx-auto mb-4 p-3 rounded-xl
-              bg-red-500/10 border border-red-500/20 text-red-400 text-sm animate-shake">
-              {error}
-            </div>
-          )}
+            {/* 错误提示 */}
+            {error && (
+              <div className="max-w-3xl mx-auto mb-4 p-3 rounded-xl
+                bg-red-500/10 border border-red-500/20 text-red-400 text-sm animate-shake">
+                {error}
+              </div>
+            )}
 
-          <div ref={chatEndRef} />
+            {/* T19: 上传错误提示 */}
+            {uploadError && (
+              <div className="max-w-3xl mx-auto mb-4 p-3 rounded-xl
+                bg-red-500/10 border border-red-500/20 text-red-400 text-sm
+                flex items-center justify-between gap-2">
+                <span>{uploadError}</span>
+                <button
+                  onClick={() => setUploadError("")}
+                  aria-label="关闭错误提示"
+                  className="shrink-0 text-red-400 hover:text-red-300 cursor-pointer"
+                >
+                  <X size={14} weight="bold" aria-hidden="true" />
+                </button>
+              </div>
+            )}
+
+            <div ref={chatEndRef} />
+          </div>
         </div>
+
+        {/* T19: 右侧 — 分屏简历预览（iframe 占位，preview 待 T27） */}
+        {splitOpen && (
+          <div className="w-2/5 border-l border-[var(--color-border)] bg-[var(--color-bg-secondary)] flex flex-col">
+            <div className="shrink-0 px-4 py-3 border-b border-[var(--color-border)] flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <FileText size={14} weight="duotone" className="text-indigo-400" aria-hidden="true" />
+                <span className="text-xs font-medium text-[var(--color-text-secondary)]">简历预览</span>
+              </div>
+              <button
+                onClick={() => setSplitOpen(false)}
+                aria-label="关闭分屏"
+                className="p-1 rounded-md text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-white/8 transition-all cursor-pointer"
+              >
+                <X size={14} weight="bold" aria-hidden="true" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              {splitLoading && (
+                <div className="h-full flex items-center justify-center text-xs text-[var(--color-text-muted)]">
+                  加载预览...
+                </div>
+              )}
+              <iframe
+                srcDoc={splitHtml || "<html><body style='background:#fff'></body></html>"}
+                className="w-full h-full border-0"
+                sandbox="allow-scripts"
+                title="简历预览"
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── 输入区 ── */}
@@ -890,13 +1420,157 @@ export default function QAPage() {
       <ConfirmDialog
         open={clearConfirmOpen}
         title="清空问答历史？"
-        description={`将删除本简历下所有问答记录，共 ${chat.length} 条，操作不可恢复。`}
+        description={`将删除当前对话下的所有问答记录，共 ${chat.length} 条，操作不可恢复。`}
         confirmText="清空"
         cancelText="取消"
         danger
         loading={clearing}
         onConfirm={handleConfirmClear}
         onCancel={() => setClearConfirmOpen(false)}
+      />
+
+      {/* ── 删除对话确认 ── */}
+      <ConfirmDialog
+        open={deleteConvOpen}
+        title="删除对话？"
+        description="将删除该对话及其下所有问答记录，操作不可恢复。"
+        confirmText="删除"
+        cancelText="取消"
+        danger
+        loading={deletingConv}
+        onConfirm={handleDeleteConvConfirm}
+        onCancel={() => setDeleteConvOpen(false)}
+      />
+
+      {/* ── 重命名对话弹窗 ── */}
+      {renameOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm motion-reduce:backdrop-blur-none"
+          role="dialog"
+          aria-modal="true"
+          aria-label="重命名对话"
+          onClick={() => setRenameOpen(false)}
+        >
+          <div
+            className="w-full max-w-sm mx-4 p-6 rounded-2xl bg-[var(--color-bg-secondary)] border border-[var(--color-border)] shadow-2xl animate-fade-in-up motion-reduce:animate-none"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-indigo-500/15 text-indigo-400">
+                  <PencilSimple size={18} weight="bold" aria-hidden="true" />
+                </div>
+                <h3 className="text-base font-semibold text-[var(--color-text)]">
+                  重命名对话
+                </h3>
+              </div>
+              <button
+                onClick={() => setRenameOpen(false)}
+                aria-label="关闭"
+                className="p-1.5 rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-white/8 active:scale-[0.95] motion-reduce:active:scale-100 transition-all cursor-pointer"
+              >
+                <X size={16} weight="bold" aria-hidden="true" />
+              </button>
+            </div>
+            <input
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") handleRenameConfirm(); }}
+              placeholder="输入对话标题"
+              maxLength={100}
+              autoFocus
+              className="w-full px-4 py-3 rounded-xl text-sm text-[var(--color-text)]
+                bg-white/5 border border-[var(--color-border)]
+                placeholder:text-[var(--color-text-muted)]
+                focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50
+                transition-all duration-200"
+            />
+            <div className="flex justify-end gap-2 mt-4">
+              <button
+                onClick={() => setRenameOpen(false)}
+                className="px-3.5 py-1.5 text-sm font-medium rounded-lg border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-white/8 active:scale-[0.98] motion-reduce:active:scale-100 transition-all cursor-pointer"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleRenameConfirm}
+                disabled={!renameValue.trim()}
+                className="px-3.5 py-1.5 text-sm font-medium rounded-lg bg-linear-to-br from-indigo-500 to-purple-600 text-white active:scale-[0.98] motion-reduce:active:scale-100 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                保存
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── T19: JD 粘贴弹窗 ── */}
+      {jdOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm motion-reduce:backdrop-blur-none"
+          role="dialog"
+          aria-modal="true"
+          aria-label="粘贴岗位描述"
+          onClick={() => setJdOpen(false)}
+        >
+          <div
+            className="w-full max-w-lg mx-4 p-6 rounded-2xl bg-[var(--color-bg-secondary)] border border-[var(--color-border)] shadow-2xl animate-fade-in-up motion-reduce:animate-none"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-indigo-500/15 text-indigo-400">
+                  <Target size={18} weight="bold" aria-hidden="true" />
+                </div>
+                <h3 className="text-base font-semibold text-[var(--color-text)]">
+                  粘贴岗位描述
+                </h3>
+              </div>
+              <button
+                onClick={() => setJdOpen(false)}
+                aria-label="关闭"
+                className="p-1.5 rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-white/8 active:scale-[0.95] motion-reduce:active:scale-100 transition-all cursor-pointer"
+              >
+                <X size={16} weight="bold" aria-hidden="true" />
+              </button>
+            </div>
+            <textarea
+              value={jdText}
+              onChange={(e) => setJdText(e.target.value)}
+              placeholder="粘贴目标岗位的 JD（Job Description），AI 将分析简历与岗位的匹配度..."
+              rows={8}
+              autoFocus
+              className="w-full px-4 py-3 rounded-xl text-sm text-[var(--color-text)]
+                bg-white/5 border border-[var(--color-border)]
+                placeholder:text-[var(--color-text-muted)]
+                focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50
+                resize-none transition-all duration-200"
+            />
+            <div className="flex justify-end gap-2 mt-4">
+              <button
+                onClick={() => setJdOpen(false)}
+                className="px-3.5 py-1.5 text-sm font-medium rounded-lg border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-white/8 active:scale-[0.98] motion-reduce:active:scale-100 transition-all cursor-pointer"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleJdConfirm}
+                disabled={!jdText.trim()}
+                className="px-3.5 py-1.5 text-sm font-medium rounded-lg bg-linear-to-br from-indigo-500 to-purple-600 text-white active:scale-[0.98] motion-reduce:active:scale-100 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                分析匹配度
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── T19: 对比简历选择弹窗 ── */}
+      <CompareSelectDialog
+        open={compareOpen}
+        currentResumeId={resumeId}
+        onConfirm={handleCompareConfirm}
+        onCancel={() => setCompareOpen(false)}
       />
     </div>
   );

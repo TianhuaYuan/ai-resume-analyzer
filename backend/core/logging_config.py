@@ -184,3 +184,14 @@ def setup_logging(level: str = "INFO") -> None:
     logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
+    # 临时：埋点缺表 / 开发环境无 Redis，导致多个 logger 高频打印 WARNING/INFO 刷屏，
+    # 先统一静音便于调试（redis 相关提到 ERROR 才能隐藏 WARNING），配 Redis / 建表后恢复。
+    logging.getLogger("services.analytics_service").setLevel(logging.ERROR)
+    for _quiet_logger in (
+        "core.redis_client",
+        "core.security",
+        "slowapi",
+        "services.edit_lock",
+        "services.resume_template",
+    ):
+        logging.getLogger(_quiet_logger).setLevel(logging.ERROR)

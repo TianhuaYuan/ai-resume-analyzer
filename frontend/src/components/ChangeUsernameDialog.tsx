@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, User } from "lucide-react";
+import { X, User } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 
 interface Props {

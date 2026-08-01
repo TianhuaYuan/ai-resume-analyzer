@@ -1,10 +1,11 @@
 import { useState, useEffect, type FormEvent } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
-import { User, Mail, Lock, ArrowRight, Hash } from "lucide-react";
+import { User, EnvelopeSimple, LockSimple, ArrowRight, Hash } from "@phosphor-icons/react";
 import { useAuth } from "../context/AuthContext";
 import { SignInCard2 } from "../components/ui/sign-in-card-2";
 import { cn } from "@/lib/utils";
+import { trackEvent, getCtaSource } from "../api/analytics";
 
 function FieldError({ error }: { error?: string }) {
   if (!error) return null;
@@ -150,6 +151,8 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await login(email, password);
+      // T37: 登录成功埋点（best-effort，携带 CTA 来源渠道）
+      void trackEvent("user.login", getCtaSource());
       navigate("/");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "登录失败");
@@ -172,6 +175,8 @@ export default function LoginPage() {
       await register(username, regEmail, regPassword, regConfirm, verificationCode);
       // 注册成功 → 自动登录
       await login(regEmail, regPassword);
+      // T37: 注册后自动登录成功，同样记录 user.login（携带 CTA 来源渠道）
+      void trackEvent("user.login", getCtaSource());
       // 登录成功 → 跳转首页
       navigate("/");
     } catch (err: unknown) {
@@ -295,7 +300,7 @@ export default function LoginPage() {
               onChange={setRegEmail}
               placeholder="your@email.com"
               error={fieldErrors.regEmail}
-              icon={Mail}
+              icon={EnvelopeSimple}
             />
             <RegisterInput
               id="reg-password"
@@ -305,7 +310,7 @@ export default function LoginPage() {
               onChange={setRegPassword}
               placeholder="至少8位，需包含字母和数字"
               error={fieldErrors.regPassword}
-              icon={Lock}
+              icon={LockSimple}
             />
             <RegisterInput
               id="reg-confirm"
@@ -315,7 +320,7 @@ export default function LoginPage() {
               onChange={setRegConfirm}
               placeholder="再输一遍"
               error={fieldErrors.regConfirm}
-              icon={Lock}
+              icon={LockSimple}
             />
             <div className="flex gap-2">
               <RegisterInput

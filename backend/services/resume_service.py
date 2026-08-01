@@ -193,6 +193,15 @@ async def process_resume_background(resume_id: int, file_path: str, user_id: int
                 except Exception as e:
                     logger.warning("发布分析任务失败（不影响主流程）: %s", e)
 
+            # T15: L3 画像构建钩子（ready 转换共享点）
+            # 只调 summary + skills 两种，不阻塞热路径，错误不外抛
+            if user_id:
+                try:
+                    from services.react_agent.memory import build_l3_profile_background
+                    await build_l3_profile_background(resume_id=resume_id, user_id=user_id)
+                except Exception as e:
+                    logger.warning("L3 画像构建失败（不影响主流程）: %s", e)
+
         except Exception:
             # P1-10：logger.exception 保留完整 traceback，便于定位根因
             logger.exception("Background processing failed for resume %d", resume_id)

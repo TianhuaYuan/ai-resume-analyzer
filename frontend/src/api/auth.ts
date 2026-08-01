@@ -109,6 +109,8 @@ interface UserInfo {
     id: number;
     username: string;
     email: string;
+    /** #9: 是否管理员 */
+    is_admin?: boolean;
 }
 
 /**

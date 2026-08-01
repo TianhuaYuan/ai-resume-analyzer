@@ -5,7 +5,7 @@ import {
   useMotionValue,
   useTransform,
 } from "framer-motion";
-import { Mail, Lock, Eye, EyeClosed, ArrowRight } from "lucide-react";
+import { EnvelopeSimple, LockSimple, Eye, EyeClosed, ArrowRight } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 
 export interface SignInCard2Props {
@@ -145,7 +145,7 @@ export function SignInCard2({
                   )}
                 >
                   <div className="relative flex items-center overflow-hidden rounded-lg">
-                    <Mail
+                    <EnvelopeSimple
                       className={cn(
                         "absolute left-3 w-4 h-4 transition-colors duration-300",
                         focusedInput === "email" ? "text-white" : "text-white/40"
@@ -171,7 +171,7 @@ export function SignInCard2({
                   )}
                 >
                   <div className="relative flex items-center overflow-hidden rounded-lg">
-                    <Lock
+                    <LockSimple
                       className={cn(
                         "absolute left-3 w-4 h-4 transition-colors duration-300",
                         focusedInput === "password" ? "text-white" : "text-white/40"

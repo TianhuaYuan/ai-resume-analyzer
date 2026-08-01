@@ -12,6 +12,10 @@ class TokenUsage(BaseModel):
 class QuestionRequest(BaseModel):
     resume_id: int
     question: str
+    """T19: 可选对比简历 ID 列表，Agent 调 compare_resumes 工具时使用。"""
+    compare_ids: list[int] | None = None
+    """可选：指定对话会话 ID，将问答归入该会话下。不传则归入默认流。"""
+    conversation_id: int | None = None
 
     @field_validator("resume_id")
     @classmethod
@@ -28,6 +32,17 @@ class QuestionRequest(BaseModel):
             raise ValueError("问题不能为空")
         if len(v) > 500:
             raise ValueError("问题不超过500字")
+        return v
+
+    @field_validator("compare_ids")
+    @classmethod
+    def compare_ids_validate(cls, v: list[int] | None) -> list[int] | None:
+        if v is None:
+            return None
+        if len(v) < 1:
+            raise ValueError("compare_ids 至少 1 个")
+        if len(v) > 5:
+            raise ValueError("compare_ids 最多 5 个")
         return v
 
 
@@ -50,4 +65,59 @@ class QAHistoryResponse(BaseModel):
 
 class QADeleteResponse(BaseModel):
     """清空历史问答的响应：返回被删除的记录数。"""
+    deleted_count: int
+
+
+# ── 对话会话 Schema ──────────────────────────────────────
+
+
+class ConversationCreateRequest(BaseModel):
+    """创建新对话。title 可选，默认"新对话"。"""
+    title: str | None = None
+
+    @field_validator("title")
+    @classmethod
+    def title_not_too_long(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip()
+        if not v:
+            return None
+        if len(v) > 100:
+            raise ValueError("对话标题不超过100字")
+        return v
+
+
+class ConversationRenameRequest(BaseModel):
+    """重命名对话。"""
+    title: str
+
+    @field_validator("title")
+    @classmethod
+    def title_valid(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("标题不能为空")
+        if len(v) > 100:
+            raise ValueError("对话标题不超过100字")
+        return v
+
+
+class ConversationResponse(BaseModel):
+    id: int
+    title: str
+    created_at: datetime
+    updated_at: datetime
+    message_count: int = 0
+
+    model_config = {"from_attributes": True}
+
+
+class ConversationListResponse(BaseModel):
+    items: list[ConversationResponse]
+    total: int
+
+
+class ConversationDeleteResponse(BaseModel):
+    """删除对话的响应：返回被删除的问答记录数。"""
     deleted_count: int

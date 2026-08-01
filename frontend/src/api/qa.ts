@@ -7,6 +7,7 @@ export interface AnswerResponse {
   answer: string;
   sources: string[];
   created_at: string;
+  token_usage?: { total: number; prompt: number; completion: number };
 }
 
 export interface SSEEvent {
@@ -34,7 +35,7 @@ export function shouldSkipEvent(seen: Set<string>, event: SSEEvent): boolean {
   return false;
 }
 
-export type QAMode = "stream" | "agentic";
+export type QAMode = "stream" | "agentic" | "agent";
 
 export interface AskQuestionOptions {
   /**
@@ -44,6 +45,8 @@ export interface AskQuestionOptions {
    *              完成后一次性推送完整答案
    */
   mode?: QAMode;
+  compareIds?: number[];
+  conversationId?: number;
 }
 
 /**
@@ -80,7 +83,14 @@ export function askQuestionStream(
       : {}),
   });
 
-  const body = JSON.stringify({ resume_id, question });
+  const body = JSON.stringify({
+    resume_id,
+    question,
+    ...(options?.compareIds?.length ? { compare_ids: options.compareIds } : {}),
+    ...(options?.conversationId != null
+      ? { conversation_id: options.conversationId }
+      : {}),
+  });
 
   (async () => {
     try {
@@ -156,17 +166,221 @@ export function askQuestionStream(
   return () => abort.abort();
 }
 
+// ── Agent SSE 事件（T18 + Spec 对齐） ──────────────────────
+
+/** Agent 推理过程的一步（用于面板展示，由实时 SSE 事件累积构建） */
+export interface AgentStep {
+  type: "tool_call" | "tool_result" | "tool_error" | "agent_thought";
+  name: string;
+  /** 工具参数（tool_call）、结果摘要（tool_result）、错误文本（tool_error）或推理内容（agent_thought） */
+  detail?: string;
+  id?: string;
+}
+
+/** 结构化引用来源（Spec A#10: search_resume 来源聚合） */
+export interface SourceItem {
+  text: string;
+  score?: number;
+  chunk_id?: string;
+}
+
+/** 紧凑过程追踪摘要（Spec SSE done.process_trace，非全量事件列表） */
+export interface CompactTrace {
+  rounds: number;
+  tool_sequence: string[];
+  duration_ms: number;
+}
+
+/**
+ * Agent SSE 事件类型 — 对应后端 react_loop_stream 产出的事件。
+ *
+ * 字段命名与后端 streaming.py _transform_event 输出一致：
+ * - tool_call: { tool_name, args, id }
+ * - tool_result: { tool_name, summary, detail, id }
+ * - tool_error: { tool_name, error, id }
+ * - agent_thought: { content }
+ * - usage: { prompt_tokens, completion_tokens, total }
+ * - agent_done: { answer, qa_id, sources, token_usage, process_trace, degraded }
+ */
+export interface AgentSSEEvent {
+  type:
+    | "agent_start"
+    | "agent_thought"
+    | "usage"
+    | "tool_call"
+    | "tool_result"
+    | "tool_error"
+    | "agent_done"
+    | "quota_exceeded"
+    | "error";
+
+  // ── agent_start ──
+  resume_id?: number;
+  tools?: { name: string; description: string }[];
+
+  // ── agent_thought ──
+  /** LLM 推理过程内容（Spec A#7: reasoning_content） */
+  content?: string;
+
+  // ── usage ──
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total?: { prompt_tokens: number; completion_tokens: number };
+
+  // ── tool_call / tool_result / tool_error 共有 ──
+  /** 工具名（SSE 协议字段，后端 _transform_event 输出） */
+  tool_name?: string;
+  /** tool_call 的参数 JSON 字符串 */
+  args?: string;
+  /** tool_result 的截断摘要（≤2000 字符，Spec A#11） */
+  summary?: string;
+  /** tool_result 的完整结果文本 */
+  detail?: string;
+  /** tool_error 的错误文本 */
+  error?: string;
+  /** 工具事件 ID（用于 tool_call ↔ tool_result/tool_error 配对） */
+  id?: string;
+
+  // ── agent_done ──
+  answer?: string;
+  qa_id?: number;
+  /** 引用来源列表（结构化，Spec A#10） */
+  sources?: SourceItem[];
+  /** token 使用量（SSE 协议字段，对应旧 usage） */
+  token_usage?: { prompt_tokens: number; completion_tokens: number };
+  /** 紧凑过程追踪摘要（轮数/工具序列/耗时，非全量事件） */
+  process_trace?: CompactTrace;
+  /** 是否降级（含 tool_error，Spec A#30） */
+  degraded?: boolean;
+
+  // ── quota_exceeded / error ──
+  message?: string;
+}
+
+/**
+ * T18: Agent SSE 流式问答。调用 POST /api/v1/qa/ask/agent。
+ *
+ * 与 askQuestionStream 的区别：
+ * - 独立限流（8/min vs 20/min）
+ * - 事件类型不同（agent_start/tool_call/tool_result/tool_error/agent_done）
+ * - 实时展示 Agent 推理过程
+ *
+ * T19: 新增可选 compare_ids 参数，用于对比功能。
+ *
+ * 返回 abort 函数用于取消请求。
+ */
+export function askAgentStream(
+  resume_id: number,
+  question: string,
+  onEvent: (event: AgentSSEEvent) => void,
+  onError: (err: Error) => void,
+  onDone?: () => void,
+  options?: { compareIds?: number[]; conversationId?: number },
+): () => void {
+  const abort = new AbortController();
+  let aborted = false;
+
+  const url = "/api/v1/qa/ask/agent";
+
+  const buildHeaders = (): Record<string, string> => ({
+    "Content-Type": "application/json",
+    ...(localStorage.getItem("access_token")
+      ? { Authorization: `Bearer ${localStorage.getItem("access_token")}` }
+      : {}),
+  });
+
+  const body = JSON.stringify({
+    resume_id,
+    question,
+    ...(options?.compareIds?.length ? { compare_ids: options.compareIds } : {}),
+    ...(options?.conversationId != null
+      ? { conversation_id: options.conversationId }
+      : {}),
+  });
+
+  (async () => {
+    try {
+      let res = await fetch(url, {
+        method: "POST",
+        headers: buildHeaders(),
+        body,
+        signal: abort.signal,
+      });
+
+      // 401 自动刷新 token 重试
+      if (res.status === 401) {
+        const ok = await refreshToken();
+        if (!ok) {
+          notifySessionExpired();
+          throw new Error("登录已过期");
+        }
+        res = await fetch(url, {
+          method: "POST",
+          headers: buildHeaders(),
+          body,
+          signal: abort.signal,
+        });
+      }
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: "请求失败" }));
+        throw new Error((err as { detail?: string }).detail || "请求失败");
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("无法读取响应流");
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop() || "";
+
+        for (const part of parts) {
+          const line = part.trim();
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const data: AgentSSEEvent = JSON.parse(line.slice(6));
+            onEvent(data);
+          } catch {
+            // 跳过解析失败的行
+          }
+        }
+      }
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        aborted = true;
+        return;
+      }
+      onError(err instanceof Error ? err : new Error("Agent 请求失败"));
+    } finally {
+      if (!aborted) onDone?.();
+    }
+  })();
+
+  return () => abort.abort();
+}
+
 export async function getHistory(
   resume_id: number,
   limit = 20,
   offset = 0,
-  keyword?: string
+  keyword?: string,
+  conversationId?: number,
 ) {
   const params = new URLSearchParams();
   params.set("limit", String(limit));
   params.set("offset", String(offset));
   if (keyword && keyword.trim()) {
     params.set("keyword", keyword.trim());
+  }
+  if (conversationId != null) {
+    params.set("conversation_id", String(conversationId));
   }
   return api.get(
     `/api/v1/qa/history/${resume_id}?${params.toString()}`
@@ -177,10 +391,16 @@ export interface QADeleteResult {
   deleted_count: number;
 }
 
-/** 清空指定简历的所有问答历史，返回被删除的记录数。 */
-export async function clearHistory(resume_id: number): Promise<QADeleteResult> {
+/** 清空指定简历（或指定对话）的问答历史，返回被删除的记录数。 */
+export async function clearHistory(
+  resume_id: number,
+  conversationId?: number,
+): Promise<QADeleteResult> {
+  const params = conversationId != null
+    ? `?conversation_id=${conversationId}`
+    : "";
   return api.delete(
-    `/api/v1/qa/history/${resume_id}`
+    `/api/v1/qa/history/${resume_id}${params}`
   ) as Promise<QADeleteResult>;
 }
 
@@ -209,4 +429,55 @@ export interface QuotaResponse {
 /** 获取当前用户的 token 限额状态。 */
 export async function getQuota(): Promise<QuotaResponse> {
   return api.get("/api/v1/qa/quota") as Promise<QuotaResponse>;
+}
+
+// ── 对话会话 API ──────────────────────────────────────────
+
+export interface ConversationItem {
+  id: number;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  message_count: number;
+}
+
+/** 列出某简历下的所有对话。 */
+export async function getConversations(
+  resumeId: number,
+): Promise<ConversationItem[]> {
+  const data = await api.get(
+    `/api/v1/qa/conversations/${resumeId}`,
+  ) as { items: ConversationItem[]; total: number };
+  return data.items;
+}
+
+/** 创建新对话。 */
+export async function createConversation(
+  resumeId: number,
+  title?: string,
+): Promise<ConversationItem> {
+  return api.post(
+    `/api/v1/qa/conversations/${resumeId}`,
+    title ? { title } : {},
+  ) as Promise<ConversationItem>;
+}
+
+/** 重命名对话。 */
+export async function renameConversation(
+  conversationId: number,
+  title: string,
+): Promise<ConversationItem> {
+  return api.put(
+    `/api/v1/qa/conversations/${conversationId}`,
+    { title },
+  ) as Promise<ConversationItem>;
+}
+
+/** 删除对话及其所有问答。 */
+export async function deleteConversation(
+  conversationId: number,
+): Promise<{ deleted_count: number }> {
+  return api.delete(
+    `/api/v1/qa/conversations/${conversationId}`,
+  ) as Promise<{ deleted_count: number }>;
 }

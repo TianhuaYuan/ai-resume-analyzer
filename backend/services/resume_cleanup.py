@@ -1,0 +1,159 @@
+"""简历清理服务 — 级联删除、孤儿扫描、stale processing 清扫。
+
+设计原则（spec A6）：DB-first + 外部尽力清理 + 孤儿扫描兜底。
+- delete_resume_full: 先删 DB（事务），再尽力清外部资源（Chroma/缓存/磁盘）
+- cleanup_stale_processing: 定时清扫卡住超过 30min 的 processing 简历
+- orphan_scan: 扫描没有 DB 记录的孤儿文件和 Chroma collection
+"""
+
+import logging
+import os
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from core import cache as embedding_cache
+from core.config import settings
+from core.database import AsyncSessionLocal
+from models.resume import Resume
+from services.rag.clients import get_chroma_client
+from services.rag.pipeline import clear_resume_vectors
+
+logger = logging.getLogger(__name__)
+
+UPLOAD_DIR = Path(settings.UPLOAD_DIR).resolve()
+
+# stale processing 超时阈值
+STALE_PROCESSING_MINUTES = 30
+
+
+async def delete_resume_full(db: AsyncSession, resume: Resume) -> None:
+    """DB 事务先行 → 外部资源尽力清理 → 日志记录。
+
+    与 resume_service.delete_resume 的区别：
+    - delete_resume: 先清外部再删 DB（外部失败可重试删除）
+    - delete_resume_full: 先删 DB 再清外部（用于确定要删的场景，如用户确认删账户）
+
+    外部资源清理失败不抛异常，仅记录 warning，避免阻塞主流程。
+    """
+    resume_id = resume.id
+    file_path = resume.file_path
+
+    # 1. DB 事务先行
+    await db.delete(resume)
+    await db.commit()
+    logger.info("Resume %d deleted from DB", resume_id)
+
+    # 2. 清 ChromaDB 向量（尽力，不阻塞）
+    try:
+        await clear_resume_vectors(resume_id)
+        logger.info("Cleared Chroma vectors for resume %d", resume_id)
+    except Exception as e:
+        logger.warning("Failed to clear Chroma vectors for resume %d: %s", resume_id, e)
+
+    # 3. 清 Embedding 内存缓存
+    try:
+        cleared = await embedding_cache.clear_resume(resume_id)
+        logger.info("Cleared %d embedding cache entries for resume %d", cleared, resume_id)
+    except Exception as e:
+        logger.warning("Failed to clear embedding cache for resume %d: %s", resume_id, e)
+
+    # 4. 删上传文件
+    if file_path and os.path.exists(file_path):
+        try:
+            os.remove(file_path)
+            logger.info("Deleted resume file: %s", file_path)
+        except Exception as e:
+            logger.warning("Failed to delete resume file %s: %s", file_path, e)
+
+
+async def cleanup_stale_processing() -> int:
+    """清扫创建时间超过 30min 的 processing 简历。
+
+    Returns:
+        被清扫的简历数量
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=STALE_PROCESSING_MINUTES)
+
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(Resume).where(
+                Resume.status == "processing",
+                Resume.created_at < cutoff,
+            )
+        )
+        stale_resumes = result.scalars().all()
+        if not stale_resumes:
+            return 0
+
+        for resume in stale_resumes:
+            resume.status = "failed"
+            resume.status_message = f"处理超时（>{STALE_PROCESSING_MINUTES}分钟未完成的自动标记为失败，请重试）"
+            logger.warning(
+                "Stale processing resume %d marked as failed (created_at=%s)",
+                resume.id, resume.created_at,
+            )
+
+        await db.commit()
+        return len(stale_resumes)
+
+
+async def orphan_scan() -> dict[str, list[str]]:
+    """扫描孤儿文件和 Chroma collection。
+
+    Returns:
+        {"files": [...], "chromadb": [...]}
+    """
+    orphans: dict[str, list[str]] = {"files": [], "chromadb": []}
+
+    async with AsyncSessionLocal() as db:
+        # 获取所有 resume 的文件路径
+        result = await db.execute(select(Resume.file_path))
+        db_files = {row[0] for row in result.all() if row[0]}
+        # 只取文件名部分用于比对
+        db_file_names = {Path(f).name for f in db_files}
+
+        # 获取所有 resume ID
+        result = await db.execute(select(Resume.id))
+        db_resume_ids = {row[0] for row in result.all()}
+
+    # 1. 扫描磁盘孤儿文件
+    if UPLOAD_DIR.exists():
+        try:
+            for entry in os.listdir(UPLOAD_DIR):
+                full_path = UPLOAD_DIR / entry
+                if full_path.is_file() and entry not in db_file_names:
+                    orphans["files"].append(entry)
+        except Exception as e:
+            logger.warning("Failed to scan upload directory: %s", e)
+
+    # 2. 扫描 Chroma 孤儿 collection
+    try:
+        client = get_chroma_client()
+        collections = client.list_collections()
+        for coll in collections:
+            # list_collections 可能返回 Collection 对象或字符串
+            coll_name = getattr(coll, "name", coll)
+            if not isinstance(coll_name, str):
+                continue
+            # collection 名格式: resume_<id>
+            if coll_name.startswith("resume_"):
+                try:
+                    resume_id = int(coll_name.split("_", 1)[1])
+                    if resume_id not in db_resume_ids:
+                        orphans["chromadb"].append(coll_name)
+                except (ValueError, IndexError):
+                    # 不符合命名规范的 collection，也标记为孤儿
+                    orphans["chromadb"].append(coll_name)
+    except Exception as e:
+        logger.warning("Failed to scan Chroma collections: %s", e)
+
+    if orphans["files"] or orphans["chromadb"]:
+        logger.info(
+            "Orphan scan found %d files, %d chromadb collections",
+            len(orphans["files"]), len(orphans["chromadb"]),
+        )
+
+    return orphans

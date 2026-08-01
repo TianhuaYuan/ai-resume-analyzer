@@ -41,6 +41,7 @@ _CHAT_TIMEOUT = 60.0
 _EMBEDDING_TIMEOUT = 30.0
 
 _chat_client: AsyncOpenAI | None = None
+_judge_client: AsyncOpenAI | None = None
 _embedding_client: AsyncOpenAI | None = None
 _chroma_client = None
 
@@ -54,6 +55,18 @@ def get_chat_client() -> AsyncOpenAI:
             timeout=_CHAT_TIMEOUT,
         )
     return _chat_client
+
+
+def get_judge_client() -> AsyncOpenAI:
+    """T10: JUDGE_MODEL 客户端（中间轮快速推理用，独立 API key/base_url）。"""
+    global _judge_client
+    if _judge_client is None:
+        _judge_client = AsyncOpenAI(
+            api_key=settings.JUDGE_API_KEY or settings.CHAT_API_KEY,
+            base_url=settings.JUDGE_BASE_URL,
+            timeout=_CHAT_TIMEOUT,
+        )
+    return _judge_client
 
 
 def get_embedding_client() -> AsyncOpenAI:

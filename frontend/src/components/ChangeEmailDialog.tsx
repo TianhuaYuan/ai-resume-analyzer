@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Mail, Hash } from "lucide-react";
+import { X, EnvelopeSimple, Hash } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -155,7 +155,7 @@ export default function ChangeEmailDialog({ open, onClose, currentEmail, onSucce
 
               {/* 新邮箱输入 */}
               <div className="relative">
-                <Mail className={cn(
+                <EnvelopeSimple className={cn(
                   "absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors",
                   focusedInput === "newEmail" ? "text-[var(--color-text)]" : "text-[var(--color-text-muted)]"
                 )} />

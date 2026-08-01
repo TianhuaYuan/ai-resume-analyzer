@@ -13,9 +13,23 @@ from core.database import get_db
 from core.limiter import limiter
 from core.security import detect_prompt_injection, redact_pii
 from models.user import User
-from schemas.qa import AnswerResponse, QADeleteResponse, QuestionRequest, QAHistoryResponse, TokenUsage
+from schemas.feedback import QAFeedbackRequest
+from schemas.qa import (
+    AnswerResponse,
+    ConversationCreateRequest,
+    ConversationDeleteResponse,
+    ConversationListResponse,
+    ConversationRenameRequest,
+    ConversationResponse,
+    QADeleteResponse,
+    QuestionRequest,
+    QAHistoryResponse,
+    TokenUsage,
+)
 from services import qa_service, resume_service
+from services.feedback_service import submit_qa_feedback
 from services.rag.pipeline import ask_question_stream as _ask_question_stream
+from services.react_agent.streaming import react_loop_stream
 from services.token_quota import check_quota, record_usage, get_quota_status
 
 
@@ -127,6 +141,7 @@ async def ask_question(
             {"chunk_id": s["chunk_index"], "text": s["text"], "section": s["section"]}
             for s in sources
         ],
+        conversation_id=data.conversation_id,
     )
     token_total = 0
     if answer and answer != "分析失败，请稍后重试":
@@ -199,6 +214,7 @@ async def ask_question_stream(
                     data.question,
                     answer,
                     sources_for_db,
+                    conversation_id=data.conversation_id,
                 )
                 yield f"data: {json.dumps({'type': 'done', 'answer': answer, 'sources': sources_texts, 'qa_id': record.id, 'degraded': degraded}, ensure_ascii=False)}\n\n"
             except Exception as e:
@@ -226,7 +242,7 @@ async def ask_question_stream(
             full_answer = ""
             sources_texts: list[str] = []
             try:
-                async for event in _ask_question_stream(data.resume_id, data.question):
+                async for event in _ask_question_stream(data.resume_id, data.question, user_id=current_user.id):
                     if event["type"] == "usage":
                         # 捕获 token 使用量
                         prompt_tokens = event.get("prompt_tokens", 0)
@@ -250,6 +266,7 @@ async def ask_question_stream(
                             data.question,
                             full_answer,
                             sources_for_db,
+                            conversation_id=data.conversation_id,
                         )
                         sources_texts = [s["text"] for s in sources_data]
 
@@ -281,25 +298,178 @@ async def ask_question_stream(
     )
 
 
+@router.post("/ask/agent")
+@limiter.limit(settings.RATE_LIMIT_ASK_AGENT)
+async def ask_agent(
+    request: Request,
+    data: QuestionRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Agent SSE 流式问答。
+
+    走 ReAct Agent 循环（工具调用 + 三层记忆 + 配额管理），
+    实时推送事件：agent_start → tool_call → tool_result/tool_error → agent_done。
+
+    独立限流（RATE_LIMIT_ASK_AGENT=8/min），与普通 /ask/stream 隔离。
+    """
+    _guard_question(data.question)
+    await resume_service.get_resume(db, data.resume_id, current_user.id)
+
+    # T19: 如果带 compare_ids，注入到问题上下文供 Agent 的 compare_resumes 工具使用
+    effective_question = data.question
+    if data.compare_ids:
+        ids_str = ", ".join(str(i) for i in data.compare_ids)
+        effective_question = f"{data.question}\n\n[可对比简历 ID: {ids_str}]"
+
+    async def agent_stream():
+        from core.database import AsyncSessionLocal
+
+        stream_db = AsyncSessionLocal()
+        try:
+            async for event in react_loop_stream(
+                db=stream_db,
+                user_id=current_user.id,
+                resume_id=data.resume_id,
+                question=effective_question,
+                conversation_id=data.conversation_id,
+            ):
+                # PII 脱敏（对 agent_done 的 answer）
+                if event.get("type") == "agent_done" and settings.REDACT_PII_OUTPUT:
+                    event["answer"] = redact_pii(event.get("answer", ""))
+
+                # 记录 token 消耗
+                if event.get("type") == "agent_done" and "usage" in event:
+                    usage = event["usage"]
+                    if usage.get("prompt_tokens", 0) > 0 or usage.get("completion_tokens", 0) > 0:
+                        await record_usage(
+                            current_user.id,
+                            usage["prompt_tokens"],
+                            usage["completion_tokens"],
+                        )
+
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        except asyncio.CancelledError:
+            logger.info(
+                "Client disconnected from agent stream: user=%d, resume=%d",
+                current_user.id,
+                data.resume_id,
+            )
+            raise
+        except Exception as e:
+            logger.error("Agent stream error: %s", e)
+            yield f"data: {json.dumps({'type': 'error', 'message': 'Agent 处理失败，请重试'}, ensure_ascii=False)}\n\n"
+        finally:
+            await stream_db.close()
+
+    return StreamingResponse(
+        agent_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.post("/ask/builder")
+@limiter.limit(settings.RATE_LIMIT_ASK_AGENT)
+async def ask_builder(
+    request: Request,
+    data: QuestionRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Builder Agent SSE 流式问答。
+
+    走 ReAct Agent 循环（builder 工具集：generate_module/check_module/modify_module/rewrite_resume/ask_info），
+    实时推送事件：agent_start → tool_call → tool_result/tool_error → agent_done。
+
+    复用 RATE_LIMIT_ASK_AGENT 限流（8/min）。
+    """
+    _guard_question(data.question)
+    await resume_service.get_resume(db, data.resume_id, current_user.id)
+
+    async def builder_stream():
+        from core.database import AsyncSessionLocal
+
+        stream_db = AsyncSessionLocal()
+        try:
+            async for event in react_loop_stream(
+                db=stream_db,
+                user_id=current_user.id,
+                resume_id=data.resume_id,
+                question=data.question,
+                tool_mode="builder",
+                conversation_id=data.conversation_id,
+            ):
+                # PII 脱敏
+                if event.get("type") == "agent_done" and settings.REDACT_PII_OUTPUT:
+                    event["answer"] = redact_pii(event.get("answer", ""))
+
+                # 记录 token 消耗
+                if event.get("type") == "agent_done" and "usage" in event:
+                    usage = event["usage"]
+                    if usage.get("prompt_tokens", 0) > 0 or usage.get("completion_tokens", 0) > 0:
+                        await record_usage(
+                            current_user.id,
+                            usage["prompt_tokens"],
+                            usage["completion_tokens"],
+                        )
+
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        except asyncio.CancelledError:
+            logger.info(
+                "Client disconnected from builder stream: user=%d, resume=%d",
+                current_user.id,
+                data.resume_id,
+            )
+            raise
+        except Exception as e:
+            logger.error("Builder stream error: %s", e)
+            yield f"data: {json.dumps({'type': 'error', 'message': 'Builder 处理失败，请重试'}, ensure_ascii=False)}\n\n"
+        finally:
+            await stream_db.close()
+
+    return StreamingResponse(
+        builder_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @router.get("/history/{resume_id}", response_model=QAHistoryResponse)
 async def get_history(
     resume_id: int,
     limit: int = Query(20, ge=1, le=100, description="每页数量，1-100"),
     offset: int = Query(0, ge=0, description="偏移量，>=0"),
     keyword: str | None = None,
+    conversation_id: int | None = Query(None, description="可选：按对话筛选"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """分页查某份简历的问答历史。
+    """分页查某份简历（可选某对话）的问答历史。
 
     可选 keyword 参数：在 question / answer 上做模糊匹配（不区分大小写）。
+    可选 conversation_id 参数：只查指定对话的问答。
     空字符串或 None → 不过滤。
 
     P1-16: limit/offset 加上限校验，防止恶意大请求拉取全量数据。
     """
     await resume_service.get_resume(db, resume_id, current_user.id)
     items, total = await qa_service.get_history(
-        db, current_user.id, resume_id, limit, offset, keyword=keyword
+        db,
+        current_user.id,
+        resume_id,
+        limit,
+        offset,
+        keyword=keyword,
+        conversation_id=conversation_id,
     )
     return QAHistoryResponse(
         items=[
@@ -319,16 +489,19 @@ async def get_history(
 @router.delete("/history/{resume_id}", response_model=QADeleteResponse)
 async def delete_history(
     resume_id: int,
+    conversation_id: int | None = Query(None, description="可选：只清空指定对话"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """清空指定简历的所有问答历史。
+    """清空指定简历（或指定对话）的所有问答历史。
 
     归属校验：resume_id 必须属于当前用户（不存在或非本人 → 404）。
     返回被删除的记录数。
     """
     await resume_service.get_resume(db, resume_id, current_user.id)
-    deleted_count = await qa_service.delete_history_by_resume(db, current_user.id, resume_id)
+    deleted_count = await qa_service.delete_history_by_resume(
+        db, current_user.id, resume_id, conversation_id=conversation_id,
+    )
     return QADeleteResponse(deleted_count=deleted_count)
 
 
@@ -351,6 +524,105 @@ async def delete_qa(
     return None
 
 
+# ── 对话会话 CRUD ─────────────────────────────────────────
+
+
+@router.get("/conversations/{resume_id}", response_model=ConversationListResponse)
+async def list_conversations(
+    resume_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """列出某简历下的所有对话，按最近活跃降序排列。"""
+    await resume_service.get_resume(db, resume_id, current_user.id)
+    conversations = await qa_service.get_conversations(db, current_user.id, resume_id)
+    items = []
+    for conv in conversations:
+        count = await qa_service.get_conversation_message_count(db, conv.id)
+        items.append(
+            ConversationResponse(
+                id=conv.id,
+                title=conv.title,
+                created_at=conv.created_at,
+                updated_at=conv.updated_at,
+                message_count=count,
+            )
+        )
+    return ConversationListResponse(items=items, total=len(items))
+
+
+@router.post(
+    "/conversations/{resume_id}",
+    response_model=ConversationResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_conversation(
+    resume_id: int,
+    data: ConversationCreateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """为指定简历创建新对话。"""
+    await resume_service.get_resume(db, resume_id, current_user.id)
+    conv = await qa_service.create_conversation(
+        db, current_user.id, resume_id, data.title,
+    )
+    return ConversationResponse(
+        id=conv.id,
+        title=conv.title,
+        created_at=conv.created_at,
+        updated_at=conv.updated_at,
+        message_count=0,
+    )
+
+
+@router.put("/conversations/{conversation_id}", response_model=ConversationResponse)
+async def rename_conversation(
+    conversation_id: int,
+    data: ConversationRenameRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """重命名对话。"""
+    conv = await qa_service.rename_conversation(
+        db, current_user.id, conversation_id, data.title,
+    )
+    if conv is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="对话不存在或无权访问",
+        )
+    count = await qa_service.get_conversation_message_count(db, conv.id)
+    return ConversationResponse(
+        id=conv.id,
+        title=conv.title,
+        created_at=conv.created_at,
+        updated_at=conv.updated_at,
+        message_count=count,
+    )
+
+
+@router.delete(
+    "/conversations/{conversation_id}",
+    response_model=ConversationDeleteResponse,
+)
+async def delete_conversation(
+    conversation_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """删除对话及其所有问答。"""
+    deleted_count = await qa_service.delete_conversation(
+        db, current_user.id, conversation_id,
+    )
+    if deleted_count is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="对话不存在或无权访问",
+        )
+    return ConversationDeleteResponse(deleted_count=deleted_count)
+
+
 @router.get("/quota", response_model=QuotaResponse)
 async def get_quota_status_api(
     current_user: User = Depends(get_current_user),
@@ -360,3 +632,36 @@ async def get_quota_status_api(
     前端可实时显示今日额度使用情况，env更新后自动生效（无需重启）。
     """
     return await get_quota_status(current_user.id)
+
+
+@router.post("/{qa_id}/feedback", status_code=status.HTTP_204_NO_CONTENT)
+async def create_qa_feedback(
+    qa_id: int,
+    data: QAFeedbackRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """对单条问答提交赞/踩反馈。
+
+    - rating: "positive" | "negative"
+    - 同一 qa_id 重复提交会覆盖旧反馈
+    - 只能对自己的问答记录提交反馈
+    """
+    try:
+        await submit_qa_feedback(
+            db,
+            user_id=current_user.id,
+            qa_id=qa_id,
+            rating=data.rating,
+        )
+    except LookupError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="问答记录不存在",
+        )
+    except PermissionError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="无权访问该问答记录",
+        )
+    return None

@@ -87,7 +87,7 @@ def classify_error(err: Exception) -> ErrorCategory:
     if openai_rate_limit and isinstance(err, openai_rate_limit):
         return ErrorCategory.RATE_LIMIT
 
-    # 4. 认证失败
+    # 4. 认证失败 / HTTP 状态码分类
     openai_auth_error = _try_import_class("openai", "AuthenticationError")
     if openai_auth_error and isinstance(err, openai_auth_error):
         return ErrorCategory.AUTH
@@ -100,6 +100,12 @@ def classify_error(err: Exception) -> ErrorCategory:
                 return ErrorCategory.AUTH
             if status_code == 404:
                 return ErrorCategory.NOT_FOUND
+            if status_code == 429:
+                return ErrorCategory.RATE_LIMIT
+            if status_code and status_code >= 500:
+                return ErrorCategory.NETWORK  # 5xx 服务端错误，可重试
+            if status_code and status_code >= 400:
+                return ErrorCategory.NON_RETRYABLE  # 4xx 客户端错误（除 429 外），不重试
 
     # 5. NotFound
     openai_not_found = _try_import_class("openai", "NotFoundError")

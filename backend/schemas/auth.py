@@ -1,5 +1,5 @@
 from datetime import datetime
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 class RegisterRequest(BaseModel):
@@ -8,6 +8,8 @@ class RegisterRequest(BaseModel):
     password: str
     password_confirm: str
     verification_code: str
+    # T37: CTA 来源渠道（?source=linkedin 之类），记录到产品分析事件
+    source: str | None = Field(None, max_length=50, description="CTA 来源渠道")
 
     @field_validator("username")
     @classmethod
@@ -62,6 +64,8 @@ class UserResponse(BaseModel):
     username: str
     email: str
     created_at: datetime
+    # #9: 是否管理员（前端据此隐藏/显示管理后台入口）
+    is_admin: bool = False
 
     model_config = {"from_attributes": True}  # 允许直接从ORM对象构建
 

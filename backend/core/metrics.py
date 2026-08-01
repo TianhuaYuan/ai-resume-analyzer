@@ -86,17 +86,19 @@ rag_retry_count = Counter(
     registry=REGISTRY,
 )
 
+# OBS-005 / T36：为 LLM 指标新增 call_site 标签，定位调用来源。
+# call_site 默认 "unknown"，既有调用方无需改动即可向后兼容。
 llm_call_count = Counter(
     "app_llm_calls_total",
     "LLM API 调用总数",
-    ["model", "operation"],
+    ["model", "operation", "call_site"],
     registry=REGISTRY,
 )
 
 llm_call_duration = Histogram(
     "app_llm_call_duration_seconds",
     "LLM API 调用耗时（秒）",
-    ["model", "operation"],
+    ["model", "operation", "call_site"],
     buckets=LLM_BUCKETS,
     registry=REGISTRY,
 )
@@ -104,14 +106,14 @@ llm_call_duration = Histogram(
 llm_token_usage = Counter(
     "app_llm_tokens_total",
     "LLM Token 消耗",
-    ["model", "type"],
+    ["model", "type", "call_site"],
     registry=REGISTRY,
 )
 
 llm_call_errors = Counter(
     "app_llm_call_errors_total",
     "LLM API 调用错误计数",
-    ["model", "operation", "error_type"],
+    ["model", "operation", "error_type", "call_site"],
     registry=REGISTRY,
 )
 
@@ -133,6 +135,56 @@ qa_session_count = Counter(
     "app_qa_sessions_total",
     "问答会话总数",
     ["mode"],
+    registry=REGISTRY,
+)
+
+# ── T36：Agent / Builder / 反解析 指标 ──────────────────────────────────────────
+# Agent 循环：统计 success / timeout / error 三态收尾
+rag_agent_loop_total = Counter(
+    "rag_agent_loop_total",
+    "Agent 循环总次数",
+    ["status"],  # success / timeout / error
+    registry=REGISTRY,
+)
+
+# Agent 工具调用：按 tool_name + status 维度统计调用次数与错误率
+rag_agent_tool_calls_total = Counter(
+    "rag_agent_tool_calls_total",
+    "Agent 工具调用总次数",
+    ["tool_name", "status"],  # success / error
+    registry=REGISTRY,
+)
+
+# Agent 工具执行耗时直方图（按 tool_name 切片定位慢工具）
+rag_agent_tool_duration_seconds = Histogram(
+    "rag_agent_tool_duration_seconds",
+    "Agent 工具执行耗时（秒）",
+    ["tool_name"],
+    buckets=DEFAULT_BUCKETS,
+    registry=REGISTRY,
+)
+
+# Agent token 消耗：prompt / completion 分别计数，核算成本
+rag_agent_tokens_total = Counter(
+    "rag_agent_tokens_total",
+    "Agent token 消耗",
+    ["type"],  # prompt / completion
+    registry=REGISTRY,
+)
+
+# 简历构建：create / draft / complete 三态
+resume_builder_total = Counter(
+    "resume_builder_total",
+    "简历构建总次数",
+    ["action"],  # create / draft / complete
+    registry=REGISTRY,
+)
+
+# 简历反解析：success / error
+resume_parse_total = Counter(
+    "resume_parse_total",
+    "简历反解析总次数",
+    ["status"],  # success / error
     registry=REGISTRY,
 )
 
@@ -291,34 +343,81 @@ class async_timer_context:
         return False  # 不吞异常，原样向上抛
 
 
-def track_llm_call(model: str, operation: str) -> Callable:
+def track_llm_call(model: str, operation: str, call_site: str = "unknown") -> Callable:
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         async def wrapper(*args: Any, **kwargs: Any) -> Any:
-            llm_call_count.labels(model=model, operation=operation).inc()
+            llm_call_count.labels(
+                model=model, operation=operation, call_site=call_site
+            ).inc()
             start = time.perf_counter()
             try:
                 result = await func(*args, **kwargs)
                 return result
             except Exception as exc:
                 llm_call_errors.labels(
-                    model=model, operation=operation, error_type=type(exc).__name__
+                    model=model,
+                    operation=operation,
+                    error_type=type(exc).__name__,
+                    call_site=call_site,
                 ).inc()
                 raise
             finally:
                 elapsed = time.perf_counter() - start
-                llm_call_duration.labels(model=model, operation=operation).observe(elapsed)
+                llm_call_duration.labels(
+                    model=model, operation=operation, call_site=call_site
+                ).observe(elapsed)
 
         return wrapper
 
     return decorator
 
 
-def record_token_usage(model: str, prompt_tokens: int, completion_tokens: int) -> None:
+def record_token_usage(
+    model: str,
+    prompt_tokens: int,
+    completion_tokens: int,
+    call_site: str = "unknown",
+) -> None:
     if prompt_tokens > 0:
-        llm_token_usage.labels(model=model, type="prompt").inc(prompt_tokens)
+        llm_token_usage.labels(
+            model=model, type="prompt", call_site=call_site
+        ).inc(prompt_tokens)
     if completion_tokens > 0:
-        llm_token_usage.labels(model=model, type="completion").inc(completion_tokens)
+        llm_token_usage.labels(
+            model=model, type="completion", call_site=call_site
+        ).inc(completion_tokens)
+
+
+# ── T36：Agent / Builder / 反解析 便捷函数 ─────────────────────────────────────
+# 封装 .labels(...).inc() 样板，调用方一行即可埋点，降低漏标 label 的风险。
+def record_agent_loop(status: str) -> None:
+    """记录一次 Agent 循环收尾状态（success / timeout / error）。"""
+    rag_agent_loop_total.labels(status=status).inc()
+
+
+def record_agent_tool_call(tool_name: str, status: str, duration: float) -> None:
+    """记录一次 Agent 工具调用：计数 + 耗时直方图。"""
+    rag_agent_tool_calls_total.labels(tool_name=tool_name, status=status).inc()
+    rag_agent_tool_duration_seconds.labels(tool_name=tool_name).observe(duration)
+
+
+def record_agent_tokens(prompt_tokens: int, completion_tokens: int) -> None:
+    """记录 Agent 循环 token 消耗（prompt / completion 分计）。"""
+    if prompt_tokens > 0:
+        rag_agent_tokens_total.labels(type="prompt").inc(prompt_tokens)
+    if completion_tokens > 0:
+        rag_agent_tokens_total.labels(type="completion").inc(completion_tokens)
+
+
+def record_resume_builder(action: str) -> None:
+    """记录一次简历构建动作（create / draft / complete）。"""
+    resume_builder_total.labels(action=action).inc()
+
+
+def record_resume_parse(status: str) -> None:
+    """记录一次简历反解析结果（success / error）。"""
+    resume_parse_total.labels(status=status).inc()
 
 
 def initialize_app_info(version: str, environment: str, python_version: str) -> None:

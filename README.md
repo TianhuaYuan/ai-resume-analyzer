@@ -87,6 +87,16 @@ graph TB
 | **限流** | slowapi 路由级限流（默认 60/min，登录 10/min，问答 20/min） |
 | **全局异常** | 统一 JSON 错误格式 + request_id 追踪 |
 
+### 产品能力
+
+| 能力 | 说明 |
+|------|------|
+| **ReAct Agent 问答** | 手写 asyncio ReAct 循环：9 工具（检索/JD 匹配/诊断/对比/STAR 改写/翻译/面试教练/打招呼/HR 回复）+ 三层记忆（L1 上下文/L2 历史/L3 画像）+ 坏 tool_call 自动回灌收敛 |
+| **简历编辑器** | 15 个结构化模块表单 + AI 生成/检查/修改模块 + 实时预览 iframe + 3 套模板（default/minimal/business）+ PDF/Markdown 导出 |
+| **求职工作台** | 求职申请 CRUD + 看板统计（投递趋势/公司/城市/状态漏斗，recharts 可视化） |
+| **管理后台** | 意见箱反馈 / 审计日志查询 / 用户与系统统计 / 模板列表 / Grafana 面板（ADMIN_EMAILS 鉴权） |
+| **SSE 过程面板** | Agent 工具调用链实时可视化（agent_start → tool_call → tool_result → agent_done） |
+
 ---
 
 ## 技术栈
@@ -248,6 +258,18 @@ flowchart TD
 ### SSE 流式失败为什么降级同步？
 
 流式依赖长连接，如果中间代理断开或客户端断连，用户得不到任何响应。降级到同步后至少返回完整答案。实现上捕获流式异常后调用同一个生成函数，不重复执行图。
+
+---
+
+## 文档
+
+| 文档 | 内容 |
+|------|------|
+| [docs/index.md](docs/index.md) | 文档索引 + 快速开始导航 |
+| [docs/architecture.md](docs/architecture.md) | 系统架构、数据流图（上传/QA/ReAct Agent）、关键设计决策、15 模块清单、安全设计 |
+| [docs/api.md](docs/api.md) | 全部 API 端点参考（请求/响应/错误码）+ SSE 事件协议 |
+| [docs/deployment.md](docs/deployment.md) | 裸机与 Docker 部署、环境变量表、监控告警、排障指南 |
+| [scripts/perf_e2e.py](scripts/perf_e2e.py) | 端到端性能测试脚本（真实模型） |
 
 ---
 
@@ -506,20 +528,16 @@ ai-resume-analyzer/
 │   ├── services/
 │   │   ├── auth_service.py     # 注册 + 登录 + JWT
 │   │   ├── resume_service.py   # 简历快速创建 + 后台处理
-│   │   ├── rag_service.py      # 混合检索 + rerank + 生成
-│   │   ├── qa_service.py       # 问答历史 CRUD
-│   │   └── agentic_rag/        # ★ LangGraph Agentic RAG
-│   │       ├── state.py        #   18 字段 TypedDict
-│   │       ├── rewrite.py      #   查询改写 + 路由
-│   │       ├── search.py       #   检索 + rerank
-│   │       ├── generate.py     #   生成 + 三维度评估
-│   │       ├── reflection.py   #   Reflexion 自纠正
-│   │       ├── graph.py        #   直接模式 StateGraph
-│   │       ├── mcp_nodes.py    #   MCP 模式节点
-│   │       └── mcp_graph.py    #   MCP 模式 StateGraph
+│   │   ├── rag/                # 分块 / 检索 / 重排 / 生成管线
+│   │   ├── agentic_rag/        # ★ LangGraph Agentic RAG（改写→检索→重排→生成→评估→反思）
+│   │   ├── react_agent/        # ★ 手写 asyncio ReAct 循环 + 14 工具 + 三层记忆
+│   │   ├── resume_builder.py   # 简历编辑器（草稿 last-write-wins / 保存并完成向量化）
+│   │   ├── resume_export.py    # PDF/Markdown 导出
+│   │   ├── resume_preview.py   # 预览（content hash 缓存）
+│   │   └── edit_lock.py        # 编辑锁（TTL + 心跳）
 │   ├── mcp_server/             # MCP Server（5 Tool + 2 Resource）
 │   ├── mcp_client/             # MCP Client（JSON-RPC 2.0）
-│   ├── tests/                  # 400+ 测试
+│   ├── tests/                  # 500+ 测试
 │   ├── alembic/                # 数据库迁移
 │   └── rag_tuning/             # RAG 参数调优实验框架
 │
@@ -527,9 +545,11 @@ ai-resume-analyzer/
 │   └── src/
 │       ├── api/                # API 封装 + JWT 管理
 │       ├── context/            # AuthContext 状态管理
-│       ├── components/         # Navbar / ErrorBoundary / ConfirmDialog
-│       └── pages/              # LoginPage / ResumeListPage / QAPage
+│       ├── components/         # AgentProcessPanel / builder/* / Navbar ...
+│       └── pages/              # Login / ResumeList / QA / Builder / Compare / Workbench / Admin
 │
+├── docs/                       # 架构 / API / 部署文档
+├── scripts/perf_e2e.py         # 端到端性能测试脚本
 ├── deploy/                     # CD 部署配置
 ├── monitoring/                 # Prometheus + Grafana
 ├── docker-compose.staging.yml  # 本地 staging 环境（Docker）
@@ -570,10 +590,12 @@ Authorization: Bearer <access_token>
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/api/v1/resumes/upload` | 上传（202 异步） |
+| POST | `/api/v1/resumes` | 上传（202 异步，支持 Idempotency-Key） |
 | GET | `/api/v1/resumes/` | 列表 |
 | GET | `/api/v1/resumes/{id}` | 详情 + 状态 |
 | DELETE | `/api/v1/resumes/{id}` | 删除 |
+
+> 完整端点参考（含 builder 编辑、导出、预览、编辑锁、Agent 问答 SSE 协议）见 [docs/api.md](docs/api.md)。
 
 #### QA
 

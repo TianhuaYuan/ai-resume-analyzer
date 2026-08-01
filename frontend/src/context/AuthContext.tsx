@@ -4,6 +4,7 @@ import {
   useState,
   useEffect,
   useCallback,
+  useMemo,
   type ReactNode,
 } from "react";
 import { login as loginApi, register as registerApi, logout as clearTokens, sendCode as sendCodeApi, getCurrentUser } from "../api/auth";
@@ -14,6 +15,8 @@ interface User {
   id: number;
   username: string;
   email: string;
+  /** #9: 是否管理员（控制管理后台入口可见性） */
+  is_admin?: boolean;
 }
 
 /** 会话弹窗类型：null=不弹、expired=已过期（refresh_token 也失效时） */
@@ -69,6 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           id: data.id,
           username: data.username,
           email: data.email,
+          is_admin: data.is_admin ?? false,
         });
       })
       .catch(() => {
@@ -112,17 +116,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // ── 登录 ───────────────────────────────────────────────
-  const login = async (email: string, password: string) => {
+  const login = useCallback(async (email: string, password: string) => {
     await loginApi(email, password);
     const userInfo = await getCurrentUser();
     setUser({
       id: userInfo.id,
       username: userInfo.username,
       email: userInfo.email,
+      is_admin: userInfo.is_admin ?? false,
     });
-  };
+  }, []);
 
-  const register = async (
+  const register = useCallback(async (
     username: string,
     email: string,
     password: string,
@@ -130,36 +135,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     verification_code: string
   ) => {
     await registerApi(username, email, password, password_confirm, verification_code);
-  };
+  }, []);
 
-  const sendCode = async (email: string) => {
+  const sendCode = useCallback(async (email: string) => {
     return await sendCodeApi(email);
-  };
+  }, []);
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     await clearTokens();
     setUser(null);
     setSessionDialog(null);
-  };
+  }, []);
 
   const updateUser = useCallback((patch: Partial<Pick<User, "username" | "email">>) => {
     setUser((prev) => (prev ? { ...prev, ...patch } : prev));
   }, []);
 
+  // ── memoize context value，避免每次 AuthProvider 渲染时创建新对象 → 所有消费者重渲染 ──
+  const value = useMemo<AuthCtx>(
+    () => ({
+      user,
+      loading,
+      login,
+      register,
+      sendCode,
+      logout,
+      updateUser,
+      sessionDialog,
+      handleSessionGoLogin,
+    }),
+    [user, loading, login, register, sendCode, logout, updateUser, sessionDialog, handleSessionGoLogin]
+  );
+
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        loading,
-        login,
-        register,
-        sendCode,
-        logout,
-        updateUser,
-        sessionDialog,
-        handleSessionGoLogin,
-      }}
-    >
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );

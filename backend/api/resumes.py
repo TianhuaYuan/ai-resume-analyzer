@@ -14,6 +14,7 @@ from fastapi import (
     status,
 )
 from fastapi.responses import PlainTextResponse
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,6 +23,7 @@ from api.deps import get_current_user
 from core.database import get_db
 from core.security import detect_prompt_injection
 from models.resume import Resume
+from models.resume_module import ResumeModule
 from models.user import User
 from schemas.resume import (
     AnalyzeRequest,
@@ -39,10 +41,33 @@ from schemas.resume import (
     ResumeResponse,
     UploadAsyncResponse,
 )
+from schemas.resume_module import (
+    BuilderCreateRequest,
+    BuilderDraftUpdateRequest,
+    BuilderResumeResponse,
+    BuilderUpdateRequest,
+    ResumeModuleCreate,
+    ResumeModuleResponse,
+    ResumeStyle,
+)
 from services import analyze_service, match_jd_service, resume_service
+from services.analytics_service import record_event
+from services.edit_lock import (
+    acquire_edit_lock,
+    get_lock_holder,
+    is_edit_locked,
+    release_edit_lock,
+    renew_edit_lock,
+)
 from services.rag import chunks_service
 from services.resume_analysis_cache import VALID_ANALYSIS_TYPES, get_analysis_cache
 from services.resume_analyze_producer import publish_analyze_task
+from services.resume_builder import (
+    complete_resume,
+    create_builder_resume,
+    get_resume_with_modules,
+    update_resume_draft,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/resumes", tags=["resumes"])
@@ -141,6 +166,9 @@ async def upload_resume(
             detail="简历上传失败，请重试",
         )
 
+    # T37: 漏斗埋点（best-effort，失败不影响上传主流程）
+    await record_event(db, user_id, "resume.upload")
+
     if background is not None:
         background.add_task(
             resume_service.process_resume_background,
@@ -153,6 +181,55 @@ async def upload_resume(
         filename=resume.filename,
         status=resume.status,
     )
+
+
+def _to_builder_response(resume: Resume, modules: list) -> BuilderResumeResponse:
+    """将 Resume + ResumeModule 列表转为 BuilderResumeResponse。
+
+    模块按 sort_order 排序返回，保证 POST/PUT/GET 响应一致。
+    """
+    sorted_modules = sorted(modules, key=lambda m: (m.sort_order, m.id))
+    return BuilderResumeResponse(
+        id=resume.id,
+        filename=resume.filename,
+        status=resume.status,
+        source=resume.source,
+        style=resume.style,
+        version=resume.version,
+        created_at=resume.created_at,
+        modules=[
+            ResumeModuleResponse(
+                id=m.id,
+                resume_id=m.resume_id,
+                module_type=m.module_type,
+                content=m.content,
+                sort_order=m.sort_order,
+                created_at=m.created_at,
+            )
+            for m in sorted_modules
+        ],
+    )
+
+
+@router.post("/builder", response_model=BuilderResumeResponse, status_code=status.HTTP_201_CREATED)
+async def create_builder_resume_endpoint(
+    body: BuilderCreateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """新建 builder 简历（source=builder, status=draft）+ 初始模块。
+
+    spec F 端点第 258 行：POST /api/v1/resumes/builder 建行 + resume_modules + parsed_text。
+    草稿阶段 parsed_text 为空，T24 保存并完成时从模块合并生成。
+
+    错误码：
+    - 401 未登录
+    - 422 模块 content 校验失败（T22 schema）
+    """
+    resume, modules = await create_builder_resume(db, current_user.id, body)
+    # T37: 漏斗埋点（best-effort，失败不影响构建主流程）
+    await record_event(db, current_user.id, "resume.builder_create")
+    return _to_builder_response(resume, modules)
 
 
 @router.get("", response_model=ResumeListResponse)
@@ -178,6 +255,125 @@ async def get_resume(
 ):
     """查单份简历（含处理状态）。非本人→404。"""
     return await resume_service.get_resume(db, resume_id, current_user.id)
+
+
+@router.put("/{resume_id}", response_model=BuilderResumeResponse)
+async def update_resume_endpoint(
+    resume_id: int,
+    mode: str = Query(..., description="保存模式: draft（草稿 last-write-wins）| complete（保存并完成）"),
+    body: BuilderUpdateRequest = None,  # type: ignore[assignment]
+    background_tasks: BackgroundTasks = None,  # type: ignore[assignment]
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """编辑保存简历。
+
+    spec F 端点第 259 行：请求体显式 mode: draft|complete。
+    - mode=draft: last-write-wins（不查 version、不 bump version），spec A5#66。
+    - mode=complete: 带版本乐观锁 → 合并 parsed_text → drop/rebuild Chroma → ready → 触发 L3。
+
+    错误码：
+    - 401 未登录
+    - 404 简历不存在或非本人
+    - 409 version 不匹配 / 非 draft/ready 状态
+    - 422 mode 不支持 / version 缺失 / 模块 content 校验失败
+    - 500 向量化重建失败
+    """
+    if mode == "complete":
+        if body is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="请求体不能为空",
+            )
+
+        resume, modules = await complete_resume(db, current_user.id, resume_id, body)
+
+        # T15: L3 画像构建（后台，不阻塞响应）
+        if background_tasks is not None:
+            from services.react_agent.memory import build_l3_profile_background
+            background_tasks.add_task(
+                build_l3_profile_background,
+                resume_id=resume.id,
+                user_id=current_user.id,
+            )
+
+        return _to_builder_response(resume, modules)
+
+    if mode != "draft":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"不支持的 mode: {mode}，仅支持 draft | complete",
+        )
+
+    if body is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="请求体不能为空",
+        )
+
+    # draft 模式：忽略 version，转为 BuilderDraftUpdateRequest
+    draft_body = BuilderDraftUpdateRequest(
+        filename=body.filename,
+        modules=body.modules,
+        style=body.style,
+    )
+    resume, modules = await update_resume_draft(db, current_user.id, resume_id, draft_body)
+    return _to_builder_response(resume, modules)
+
+
+@router.get("/{resume_id}/builder", response_model=BuilderResumeResponse)
+async def get_builder_resume(
+    resume_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """获取 builder 简历 + 模块列表。
+
+    BuilderPage 加载时调用，返回 resume 信息 + 所有模块。
+    上传简历（source=upload）首次打开 builder 时，若 0 模块但有 parsed_text，
+    尝试调用 LLM 解析为结构化模块并持久化。解析失败时不阻断 builder 加载。
+
+    错误码：
+    - 401 未登录
+    - 404 简历不存在或非本人
+    """
+    resume, modules = await get_resume_with_modules(db, current_user.id, resume_id)
+
+    # 上传简历首次打开 builder：尝试自动解析模块（容错 — 失败不阻断）
+    if not modules and resume.source == "upload" and resume.parsed_text:
+        logger.info("Auto-parsing modules for uploaded resume: id=%d", resume_id)
+        try:
+            from services.resume_parser import parse_text_to_modules
+
+            parsed = await parse_text_to_modules(
+                resume.parsed_text, user_id=current_user.id
+            )
+            # 批量写入数据库
+            new_modules = []
+            for idx, mod in enumerate(parsed):
+                module = ResumeModule(
+                    resume_id=resume.id,
+                    module_type=mod.module_type.value,
+                    content=mod.content,
+                    sort_order=idx,
+                )
+                db.add(module)
+                new_modules.append(module)
+            await db.commit()
+            for m in new_modules:
+                await db.refresh(m)
+            modules = new_modules
+            logger.info(
+                "Auto-parsed %d modules for resume id=%d", len(modules), resume_id
+            )
+        except Exception:
+            logger.warning(
+                "Auto-parse failed for resume %d, returning empty modules",
+                resume_id,
+                exc_info=True,
+            )
+
+    return _to_builder_response(resume, modules)
 
 
 @router.delete("/{resume_id}", status_code=204)
@@ -410,64 +606,443 @@ async def post_match_jd(
     return MatchJDResponse(**result)
 
 
-@router.get("/{resume_id}/export", response_class=PlainTextResponse)
+@router.get("/{resume_id}/export")
 async def export_resume(
     resume_id: int,
-    export_format: str = "markdown",
+    format: str = Query("markdown", description="导出格式: markdown | pdf"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """导出简历分析报告。
+    """导出简历为 PDF 或 Markdown。
 
-    当前仅支持 export_format=markdown。
-    返回包含简历原文 + 评分的 Markdown 报告。
+    T26: 从 resume_modules 渲染导出，含零模块守卫。
+    - format=markdown: 从模块拼接 Markdown 文本
+    - format=pdf: render_resume HTML → WeasyPrint PDF
+
     错误码：
     - 401 未登录
     - 404 简历不存在或非本人
-    - 409 简历未就绪
+    - 422 零模块 / 不支持的格式
+    - 503 PDF 服务不可用（WeasyPrint/GTK 未安装）
     """
-    resume = await resume_service.get_resume(db, resume_id, current_user.id)
+    from services.resume_export import export_resume_markdown, export_resume_pdf
 
-    if resume.status != "ready":
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"简历未就绪（当前状态: {resume.status}）",
+    if format == "pdf":
+        pdf_bytes, filename = await export_resume_pdf(db, current_user.id, resume_id)
+        # T37: 漏斗埋点（best-effort，失败不影响导出主流程）
+        await record_event(
+            db, current_user.id, "resume.export", metadata={"format": "pdf"}
+        )
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
-    if export_format != "markdown":
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"不支持的导出格式: {export_format}，目前仅支持 markdown",
+    if format == "markdown":
+        markdown_str, filename = await export_resume_markdown(db, current_user.id, resume_id)
+        # T37: 漏斗埋点（best-effort，失败不影响导出主流程）
+        await record_event(
+            db, current_user.id, "resume.export", metadata={"format": "markdown"}
+        )
+        return PlainTextResponse(
+            content=markdown_str,
+            media_type="text/markdown; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
-    # 构建 Markdown 报告
-    lines = [
-        f"# 简历分析报告",
-        "",
-        f"**文件名**: {resume.filename}",
-        f"**创建时间**: {resume.created_at.strftime('%Y-%m-%d %H:%M')}",
-        f"**分块数量**: {resume.chunk_count}",
-        "",
-        "---",
-        "",
-        "## 简历原文",
-        "",
-        resume.parsed_text or "（空）",
-        "",
-        "---",
-        "",
-        "*报告由 AI Resume Analyzer 自动生成*",
-    ]
+    raise HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        detail=f"不支持的导出格式: {format}，仅支持 markdown | pdf",
+    )
 
-    content = "\n".join(lines)
-    # Content-Disposition 文件名只使用 ASCII 安全字符，中文用 resume_id 代替
-    return PlainTextResponse(
-        content=content,
-        media_type="text/markdown; charset=utf-8",
+
+@router.post("/{resume_id}/avatar")
+async def upload_avatar(
+    resume_id: int,
+    file: UploadFile = File(..., description="头像图片（JPEG/PNG/WebP，最大 5MB）"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """上传简历头像。
+
+    T26: 照片安全 — MIME 白名单 / 5MB 限制 / PIL 校验 / UUID 文件名。
+    上传后更新 basic_info 模块的 avatar 字段。
+
+    错误码：
+    - 401 未登录
+    - 404 简历不存在或非本人
+    - 422 MIME 不支持 / 不是有效图片
+    - 413 文件过大
+    """
+    from services.avatar_service import save_avatar
+    from services.resume_builder import get_resume_with_modules
+
+    # 校验归属
+    resume, modules = await get_resume_with_modules(db, current_user.id, resume_id)
+
+    # 保存头像
+    avatar_url = await save_avatar(file, resume_id)
+
+    # 更新 basic_info 模块的 avatar 字段
+    basic_info_module = None
+    for mod in modules:
+        if mod.module_type == "basic_info":
+            basic_info_module = mod
+            break
+
+    if basic_info_module:
+        content = basic_info_module.content or {}
+        content["avatar"] = avatar_url
+        basic_info_module.content = content
+    else:
+        # 如果没有 basic_info 模块，创建一个只含 avatar 的
+        new_module = ResumeModule(
+            resume_id=resume_id,
+            module_type="basic_info",
+            content={"name": "未命名", "avatar": avatar_url},
+            sort_order=0,
+        )
+        db.add(new_module)
+
+    await db.commit()
+
+    logger.info("Avatar uploaded: resume=%d, url=%s", resume_id, avatar_url)
+    return {"avatar_url": avatar_url}
+
+
+@router.get("/{resume_id}/preview")
+async def get_preview(
+    resume_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """获取简历预览 HTML。
+
+    T27: content hash 缓存（TTL 5min）。
+    BuilderPage iframe 实时预览调用此端点。
+    零模块时返回空模板（不报 422）。
+
+    错误码：
+    - 401 未登录
+    - 404 简历不存在或非本人
+    """
+    from services.resume_preview import get_resume_preview
+
+    html, cache_hit = await get_resume_preview(db, current_user.id, resume_id)
+    return Response(
+        content=html,
+        media_type="text/html; charset=utf-8",
         headers={
-            "Content-Disposition": f'attachment; filename="resume_{resume_id}_report.md"'
+            "X-Cache-Hit": "true" if cache_hit else "false",
+            "Cache-Control": "private, max-age=300",
         },
     )
+
+
+@router.post("/{resume_id}/preview")
+async def preview_with_data(
+    resume_id: int,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """用前端传入的 modules + style 实时渲染预览 HTML（不读数据库）。
+
+    BuilderPage 编辑时样式/内容变更 → 立即 POST 当前数据 → 返回渲染 HTML。
+    避免等待 5s 自动保存后 GET /preview 才能拿到最新样式的问题。
+
+    请求体：{modules: [{module_type, content, sort_order}], style: {...}}
+    """
+    from services.resume_builder import get_resume_with_modules
+    from services.resume_template import render_resume
+
+    # 校验归属（只需确认简历存在且属于当前用户）
+    resume, _ = await get_resume_with_modules(db, current_user.id, resume_id)
+
+    # 解析传入的 modules
+    raw_modules = body.get("modules", [])
+    modules = [
+        ResumeModuleCreate(
+            module_type=m["module_type"],
+            content=m.get("content", {}),
+            sort_order=m.get("sort_order", idx),
+        )
+        for idx, m in enumerate(raw_modules)
+    ]
+
+    # 解析 style
+    raw_style = body.get("style")
+    style = ResumeStyle(**raw_style) if raw_style else ResumeStyle()
+
+    # 渲染
+    html = render_resume(modules, style, resume.filename)
+    return Response(content=html, media_type="text/html; charset=utf-8")
+
+
+@router.post("/parse-to-modules")
+async def parse_to_modules(
+    body: dict,
+    current_user: User = Depends(get_current_user),
+):
+    """将简历纯文本反解析为结构化模块列表。
+
+    T27: LLM 解析 → pydantic 校验 → 格式错误回灌重试 1 次。
+    用于上传简历后自动填充 builder 模块。
+
+    请求体：
+    - text: 简历纯文本（必填，长度 10-50000）
+
+    错误码：
+    - 401 未登录
+    - 422 文本为空 / 过短 / 过长
+    - 500 LLM 调用失败 / 校验失败
+    """
+    from services.resume_parser import parse_text_to_modules
+
+    text = body.get("text", "") if isinstance(body, dict) else ""
+    if not text or len(text.strip()) < 10:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="简历文本不能为空且至少 10 个字符",
+        )
+    if len(text) > 50000:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="简历文本过长（超过 50000 字符）",
+        )
+
+    try:
+        modules = await parse_text_to_modules(text, user_id=current_user.id)
+    except ValueError as e:
+        logger.warning("parse_to_modules failed: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(e),
+        ) from e
+    except Exception as e:
+        logger.exception("parse_to_modules unexpected error")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="简历反解析失败，请稍后重试",
+        ) from e
+
+    return {
+        "modules": [
+            {
+                "module_type": m.module_type.value,
+                "content": m.content,
+                "sort_order": m.sort_order,
+            }
+            for m in modules
+        ],
+        "total": len(modules),
+    }
+
+
+# ═══════════════════════════════════════════════════════════
+# 内联 AI 端点（UP 简历对齐：一键优化 / 智能检查 / 智能改写）
+# ═══════════════════════════════════════════════════════════
+
+
+class AIOptimizeRequest(BaseModel):
+    """一键优化请求。"""
+    text: str
+    module_type: str = "basic_info"
+
+
+class AICheckRequest(BaseModel):
+    """智能检查请求。"""
+    text: str
+    module_type: str = "basic_info"
+
+
+class AIRewriteRequest(BaseModel):
+    """智能改写请求。"""
+    text: str
+    instruction: str = ""
+    module_type: str = "basic_info"
+
+
+class AICheckIssue(BaseModel):
+    """智能检查发现的问题。"""
+    severity: str  # high / medium / low
+    category: str  # 量化问题 / 描述模糊 / 角色不清 等
+    description: str
+
+
+class AICheckResponse(BaseModel):
+    """智能检查结果。"""
+    issues: list[AICheckIssue]
+
+
+@router.post("/{resume_id}/ai/optimize")
+async def ai_optimize(
+    resume_id: int,
+    body: AIOptimizeRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """一键优化模块文本。
+
+    调用 LLM 对文本进行专业润色优化，返回优化后的文本。
+    - 强化动词（如"专注于"→"深耕"）
+    - 增加量化描述建议
+    - 优化结构清晰度
+
+    错误码：401 / 404 / 422 文本为空 / 500 LLM 调用失败
+    """
+    if not body.text or len(body.text.strip()) < 5:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="文本内容过短，无法优化",
+        )
+
+    system_prompt = (
+        "你是一位资深简历优化专家。请对用户提供的简历文本进行一键优化，"
+        "使其更专业、更有吸引力。要求：\n"
+        "1. 使用更强的动词（如'深耕'代替'专注于'，'主导'代替'参与'）\n"
+        "2. 结构更清晰，适当使用分段或要点\n"
+        "3. 保留原文的核心信息和技术栈，不编造数据\n"
+        "4. 语言更精炼，去除冗余表述\n"
+        "5. 直接输出优化后的文本，不要加任何解释或前缀\n"
+    )
+
+    try:
+        from services.rag.pipeline import llm_generate
+
+        result = await llm_generate(
+            system=system_prompt,
+            user=f"模块类型：{body.module_type}\n\n请优化以下文本：\n\n{body.text}",
+            temperature=0.3,
+            user_id=current_user.id,
+        )
+        return {"optimized_text": result, "original_text": body.text}
+    except Exception as e:
+        logger.exception("AI optimize failed: resume=%d", resume_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"AI 优化失败：{e}",
+        ) from e
+
+
+@router.post("/{resume_id}/ai/check")
+async def ai_check(
+    resume_id: int,
+    body: AICheckRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """智能检查模块文本。
+
+    分析文本中的常见简历问题，返回分类问题列表。
+    检查维度：
+    - 量化问题：缺少数据支撑
+    - 描述模糊：技术栈罗列未说明解决的问题
+    - 角色不清：个人贡献与团队协作边界模糊
+
+    错误码：401 / 404 / 422 文本为空 / 500 LLM 调用失败
+    """
+    if not body.text or len(body.text.strip()) < 5:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="文本内容过短，无法检查",
+        )
+
+    system_prompt = (
+        "你是一位资深简历审查专家。请分析用户提供的简历文本，找出其中的问题。\n"
+        "检查维度：\n"
+        "1. 量化问题：关键成就缺少数据支撑（如性能指标、业务价值、效率提升比例）\n"
+        "2. 描述模糊：技术栈罗列但未说明解决的核心问题或独特架构方案\n"
+        "3. 角色不清：个人贡献与团队协作边界模糊，动词强度不一致\n\n"
+        "请以 JSON 格式返回结果，格式如下：\n"
+        '{"issues": [{"severity": "high|medium|low", "category": "问题分类", "description": "具体问题描述"}]}\n\n'
+        "severity 取值：high（红色，严重影响）、medium（黄色，建议改进）、low（绿色，小问题）\n"
+        "category 使用简洁中文标签，如'量化问题'、'描述模糊'、'角色不清'\n"
+        "只返回 JSON，不要加任何其他文字。\n"
+    )
+
+    try:
+        from services.rag.pipeline import llm_generate
+        import json
+
+        raw = await llm_generate(
+            system=system_prompt,
+            user=f"模块类型：{body.module_type}\n\n请检查以下文本：\n\n{body.text}",
+            temperature=0.2,
+            user_id=current_user.id,
+        )
+
+        # 尝试解析 JSON
+        try:
+            data = json.loads(raw)
+            issues = data.get("issues", [])
+        except (json.JSONDecodeError, ValueError):
+            # 如果 LLM 没返回合法 JSON，包装为单个 issue
+            issues = [
+                {
+                    "severity": "medium",
+                    "category": "分析结果",
+                    "description": raw[:500] if raw else "无法生成检查结果",
+                }
+            ]
+
+        return {"issues": issues}
+    except Exception as e:
+        logger.exception("AI check failed: resume=%d", resume_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"AI 检查失败：{e}",
+        ) from e
+
+
+@router.post("/{resume_id}/ai/rewrite")
+async def ai_rewrite(
+    resume_id: int,
+    body: AIRewriteRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """智能改写模块文本。
+
+    根据用户提供的指令对文本进行定制化改写。
+    常见指令：更简洁专业 / 突出技术能力 / 增加量化数据 / 针对XX职位优化
+
+    错误码：401 / 404 / 422 文本为空 / 500 LLM 调用失败
+    """
+    if not body.text or len(body.text.strip()) < 5:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="文本内容过短，无法改写",
+        )
+
+    instruction = body.instruction.strip() if body.instruction else "更简洁专业"
+
+    system_prompt = (
+        "你是一位资深简历改写专家。请根据用户的改写指令，对简历文本进行定制化改写。\n"
+        "要求：\n"
+        "1. 严格遵循用户的改写指令\n"
+        "2. 保留原文的核心事实和技术栈，不编造数据\n"
+        "3. 直接输出改写后的文本，不要加任何解释或前缀\n"
+    )
+
+    try:
+        from services.rag.pipeline import llm_generate
+
+        result = await llm_generate(
+            system=system_prompt,
+            user=(
+                f"模块类型：{body.module_type}\n"
+                f"改写指令：{instruction}\n\n"
+                f"请改写以下文本：\n\n{body.text}"
+            ),
+            temperature=0.4,
+            user_id=current_user.id,
+        )
+        return {"rewritten_text": result, "original_text": body.text}
+    except Exception as e:
+        logger.exception("AI rewrite failed: resume=%d", resume_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"AI 改写失败：{e}",
+        ) from e
 
 
 @router.post("/compare", response_model=CompareResponse)
@@ -488,3 +1063,93 @@ async def compare_resumes(
         db, current_user.id, body.resume_ids, body.dimensions
     )
     return CompareResponse(**result)
+
+
+# ═══════════════════════════════════════════════════════════════
+# 编辑锁 API（T28 edit_lock 服务层 → HTTP 端点）
+# ═══════════════════════════════════════════════════════════════
+
+
+class EditLockResponse(BaseModel):
+    """编辑锁响应。"""
+    locked: bool
+    lock_token: str | None = None
+    holder_id: int | None = None
+
+
+class EditLockHeartbeatRequest(BaseModel):
+    """心跳续期请求。"""
+    lock_token: str
+
+
+@router.post("/{resume_id}/lock", response_model=EditLockResponse)
+async def acquire_lock(
+    resume_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """获取简历编辑锁。
+
+    - 成功 → 200 + lock_token（前端需保存，用于续期/释放）
+    - 已被他人持有 → 409 + holder_id
+    """
+    await resume_service.get_resume(db, resume_id, current_user.id)
+
+    token = await acquire_edit_lock(resume_id, current_user.id)
+    if token is None:
+        holder = await get_lock_holder(resume_id)
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "locked": True,
+                "holder_id": holder,
+                "message": "该简历正在被其他用户编辑",
+            },
+        )
+
+    return EditLockResponse(locked=True, lock_token=token, holder_id=current_user.id)
+
+
+@router.post("/{resume_id}/lock/heartbeat", response_model=EditLockResponse)
+async def renew_lock(
+    resume_id: int,
+    body: EditLockHeartbeatRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """心跳续期编辑锁。
+
+    前端每 60s 调用一次，延长锁 TTL。
+    - 成功 → 200
+    - 锁不存在/token 不匹配 → 409
+    """
+    success = await renew_edit_lock(resume_id, current_user.id, body.lock_token)
+    if not success:
+        raise HTTPException(
+            status_code=409,
+            detail={"locked": False, "message": "编辑锁已过期或无效，请重新获取"},
+        )
+
+    return EditLockResponse(locked=True, lock_token=body.lock_token, holder_id=current_user.id)
+
+
+@router.delete("/{resume_id}/lock", status_code=200)
+async def release_lock(
+    resume_id: int,
+    lock_token: str = Query(..., description="获取锁时返回的 token"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """释放编辑锁。
+
+    - 成功 → 200
+    - token 不匹配 → 409
+    """
+    success = await release_edit_lock(resume_id, current_user.id, lock_token)
+    if not success:
+        raise HTTPException(
+            status_code=409,
+            detail={"message": "锁 token 不匹配或锁已过期"},
+        )
+
+    return {"released": True}

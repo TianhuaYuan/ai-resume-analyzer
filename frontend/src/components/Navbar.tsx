@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronDown, Key, Mail, User } from "lucide-react";
+import { CaretDown, Key, EnvelopeSimple, User, Briefcase, Shield } from "@phosphor-icons/react";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
 import ChangePasswordDialog from "./ChangePasswordDialog";
@@ -57,6 +57,7 @@ export default function Navbar() {
   const { user, logout, updateUser } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
+  const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
@@ -90,7 +91,7 @@ export default function Navbar() {
       "data-testid": "menu-change-password",
     },
     {
-      icon: <Mail className="w-4 h-4" />,
+      icon: <EnvelopeSimple className="w-4 h-4" />,
       label: "重新绑定邮箱",
       onClick: () => { setEmailDialogOpen(true); setMenuOpen(false); },
       "data-testid": "menu-change-email",
@@ -107,16 +108,45 @@ export default function Navbar() {
     <>
       <nav className="flex items-center justify-between px-6 py-3
         border-b border-[var(--color-border)] bg-[var(--color-bg)] sticky top-0 z-40">
-        <Link to="/" className="flex items-center gap-2.5 no-underline">
-          <svg viewBox="0 0 64 64" className="w-7 h-7">
-            <polygon points="32,6 54,18 32,30 10,18" fill="#F5C547"/>
-            <polygon points="10,18 32,30 32,54 10,42" fill="#38D4D4"/>
-            <polygon points="32,30 54,18 54,42 32,54" fill="#8B5CF6"/>
-          </svg>
-          <span className="text-sm font-semibold text-[var(--color-text)]">
-            AI Resume Analyzer
-          </span>
-        </Link>
+        <div className="flex items-center gap-6">
+          <Link to="/" className="flex items-center gap-2.5 no-underline">
+            <svg viewBox="0 0 64 64" className="w-7 h-7">
+              <polygon points="32,6 54,18 32,30 10,18" fill="#F5C547"/>
+              <polygon points="10,18 32,30 32,54 10,42" fill="#38D4D4"/>
+              <polygon points="32,30 54,18 54,42 32,54" fill="#8B5CF6"/>
+            </svg>
+            <span className="text-sm font-semibold text-[var(--color-text)]">
+              AI Resume Analyzer
+            </span>
+          </Link>
+          <Link
+            to="/workbench"
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors no-underline
+              ${location.pathname === "/workbench"
+                ? "text-indigo-300 bg-indigo-500/10"
+                : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] hover:bg-white/5"
+              }`}
+            aria-label="求职看板"
+          >
+            <Briefcase className="w-3.5 h-3.5" />
+            求职看板
+          </Link>
+          {/* #9: 管理后台入口仅对管理员显示 */}
+          {user.is_admin && (
+            <Link
+              to="/admin"
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors no-underline
+                ${location.pathname.startsWith("/admin")
+                  ? "text-indigo-300 bg-indigo-500/10"
+                  : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] hover:bg-white/5"
+                }`}
+              aria-label="管理员后台"
+            >
+              <Shield className="w-3.5 h-3.5" />
+              管理后台
+            </Link>
+          )}
+        </div>
         <div className="flex items-center gap-4 text-sm">
           <QuotaBadge />
 
@@ -130,7 +160,7 @@ export default function Navbar() {
                 animate={{ rotate: menuOpen ? 180 : 0 }}
                 transition={{ duration: 0.2 }}
               >
-                <ChevronDown className="w-3.5 h-3.5" />
+                <CaretDown className="w-3.5 h-3.5" />
               </motion.div>
             </button>
 

@@ -11,6 +11,13 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
+# 前向引用避免循环导入（circuit_breaker 不依赖 retry，但 retry 可选使用 breaker）
+try:
+    from core.circuit_breaker import CircuitBreaker, CircuitBreakerOpenError
+except ImportError:
+    CircuitBreaker = None  # type: ignore[misc,assignment]
+    CircuitBreakerOpenError = Exception  # type: ignore[misc,assignment]
+
 # 单次退避默认封顶（即使指数增长也不会超过 60s）
 DEFAULT_MAX_CAP = 60.0
 
@@ -70,9 +77,10 @@ async def with_retry(
     base_delay: float = 1.0,
     fallback: T | None = None,
     budget: RetryBudget | None = None,
+    breaker: "CircuitBreaker | None" = None,
     **kwargs: Any,
 ) -> T:
-    """指数退避重试（Full Jitter + 错误分类 + timeout 落实）。
+    """指数退避重试（Full Jitter + 错误分类 + timeout 落实 + 可选熔断器）。
 
     - 支持同步 callable（如 ``parse_resume``）与异步 callable（如 ``llm_generate``）：
       同步函数直接调用，不再 ``await`` 其返回值。
@@ -98,6 +106,10 @@ async def with_retry(
         max_retries = budget.max_retries
         base_delay = budget.base_delay
 
+    # T4: 熔断器前置检查（OPEN 时直接失败，不重试）
+    if breaker is not None:
+        await breaker.check()
+
     last_error: Exception | None = None
     is_async_fn = inspect.iscoroutinefunction(fn)
 
@@ -106,12 +118,23 @@ async def with_retry(
             if is_async_fn:
                 # 异步 callable：可选套 asyncio.wait_for 落实 timeout
                 if budget is not None and budget.timeout is not None:
-                    return await asyncio.wait_for(
+                    result = await asyncio.wait_for(
                         fn(*args, **kwargs), timeout=budget.timeout
                     )
-                return await fn(*args, **kwargs)
-            # 同步 callable：直接调用
-            return fn(*args, **kwargs)
+                else:
+                    result = await fn(*args, **kwargs)
+            else:
+                # 同步 callable：直接调用
+                result = fn(*args, **kwargs)
+
+            # 成功：通知 breaker 并返回
+            if breaker is not None:
+                await breaker.report_success()
+            return result  # type: ignore[return-value]
+
+        except asyncio.CancelledError:
+            # 客户端断连：不通知 breaker，直接抛出
+            raise
         except Exception as e:
             last_error = e
             category = classify_error(e)
@@ -153,6 +176,10 @@ async def with_retry(
                 attempt + 1, max_retries, category.value, delay, e,
             )
             await asyncio.sleep(delay)
+
+    # 最终失败：通知 breaker
+    if breaker is not None:
+        await breaker.report_failure()
 
     if fallback is not None:
         return fallback

@@ -17,6 +17,7 @@ from core.retry import with_retry
 from models.resume import Resume
 from schemas.resume import ScoreDetail
 from services.rag.pipeline import llm_generate, get_chat_client
+from services.rag.usage import record_llm_usage
 from services.resume_analysis_cache import (
     VALID_ANALYSIS_TYPES,
     get_analysis_cache,
@@ -188,6 +189,8 @@ async def analyze_resume(
             pt = getattr(response.usage, "prompt_tokens", 0) or 0
             ct = getattr(response.usage, "completion_tokens", 0) or 0
             usage_info = {"total_tokens": pt + ct, "prompt_tokens": pt, "completion_tokens": ct}
+            # T3: 统一记账
+            await record_llm_usage(user_id, pt, ct)
             logger.info("分析 token: type=%s, prompt=%d, completion=%d, total=%d",
                         analysis_type, pt, ct, pt + ct)
         else:

@@ -78,7 +78,11 @@ async def match_jd(
 
     try:
         analysis = await with_retry(
-            llm_generate, _SYSTEM_PROMPT, user_prompt, fallback="分析失败，请稍后重试"
+            llm_generate,
+            _SYSTEM_PROMPT,
+            user_prompt,
+            user_id=user_id,
+            fallback="分析失败，请稍后重试",
         )
     except Exception as e:
         logger.exception("match_jd failed for resume %d", resume_id)

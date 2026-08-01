@@ -34,7 +34,7 @@ export async function listResumes(limit = 20, offset = 0) {
  * 2. lastModified 已能区分"用户修改后重新上传"场景
  * 3. 元信息 hash 已足够防"双击/网络重发"场景
  *
- * 导出供调用方（如 ResumeListPage）预先计算 key 并保存，
+ * 导出供调用方（如 HomePage / Sidebar）预先计算 key 并保存，
  * 用于网络失败重试时复用同 key 实现真正幂等。
  */
 export async function generateIdempotencyKey(file: File): Promise<string> {

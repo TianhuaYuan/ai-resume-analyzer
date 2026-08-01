@@ -23,5 +23,10 @@ def get_real_ip(request: Request) -> str:
     return "unknown"
 
 
-limiter = Limiter(key_func=get_real_ip, default_limits=[settings.RATE_LIMIT_DEFAULT])
+limiter = Limiter(
+    key_func=get_real_ip,
+    default_limits=[settings.RATE_LIMIT_DEFAULT],
+    storage_uri=settings.REDIS_URL,
+    in_memory_fallback_enabled=True,
+)
 

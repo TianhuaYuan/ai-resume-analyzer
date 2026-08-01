@@ -8,6 +8,7 @@
 """
 
 from collections.abc import AsyncGenerator
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -18,11 +19,28 @@ from core.database import Base, get_db
 from core.limiter import limiter
 from main import app
 
-# SQLite 内存数据库，每个测试函数独立
-TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+# SQLite 文件数据库（测试期间共享同一文件，测试后自动清理）
+import tempfile
+import os
+
+_test_db_file = tempfile.mktemp(suffix=".db")
+TEST_DATABASE_URL = f"sqlite+aiosqlite:///{_test_db_file}"
 
 engine_test = create_async_engine(TEST_DATABASE_URL, echo=False)
 AsyncSessionTest = async_sessionmaker(engine_test, class_=AsyncSession, expire_on_commit=False)
+
+
+def _cleanup_test_db():
+    """清理临时测试数据库文件。"""
+    try:
+        if os.path.exists(_test_db_file):
+            os.unlink(_test_db_file)
+    except Exception:
+        pass
+
+
+import atexit
+atexit.register(_cleanup_test_db)
 
 
 # P2-9: SQLite 默认关闭外键约束，CASCADE 不会生效。生产 MySQL 默认开启，
@@ -53,6 +71,34 @@ def disable_rate_limit():
     limiter.enabled = True
 
 
+class _FakeToolAsyncSession:
+    """模拟 AsyncSessionLocal() 返回的独立 session（async context manager）。
+
+    不能直接 mock 成 AsyncMock 实例：AsyncMock 的 __call__ 是 async 的，
+    `AsyncSessionLocal()` 会返回 coroutine 而不是支持 `async with` 的对象。
+    """
+
+    def __init__(self) -> None:
+        self.session = AsyncMock()
+
+    async def __aenter__(self) -> AsyncMock:
+        return self.session
+
+    async def __aexit__(self, *exc_info) -> bool:
+        return False
+
+
+@pytest.fixture(autouse=True)
+def _mock_loop_tool_db():
+    """react_loop 工具执行的独立 session 用 mock 替代，避免测试连真实 MySQL。
+
+    P0-4：loop._execute_tool_call_with_limit 为每个工具开独立 AsyncSessionLocal，
+    测试中不需要真实 DB，全局 mock 掉该工厂。
+    """
+    with patch("services.react_agent.loop.AsyncSessionLocal", new=_FakeToolAsyncSession):
+        yield
+
+
 async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
     """覆盖 FastAPI 的 get_db 依赖，指向测试数据库。"""
     async with AsyncSessionTest() as session:
@@ -60,6 +106,13 @@ async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
 
 
 app.dependency_overrides[get_db] = override_get_db
+
+
+@pytest.fixture
+async def db_session() -> AsyncGenerator[AsyncSession, None]:
+    """提供直接操作测试数据库的会话。"""
+    async with AsyncSessionTest() as session:
+        yield session
 
 
 @pytest.fixture

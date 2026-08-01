@@ -6,7 +6,7 @@ import {
   useMotionValue,
   useTransform,
 } from "framer-motion";
-import { Mail, Lock, Hash, ArrowRight } from "lucide-react";
+import { EnvelopeSimple, LockSimple, Hash, ArrowRight } from "@phosphor-icons/react";
 import { forgotPassword, sendCode } from "../api/auth";
 import { cn } from "@/lib/utils";
 
@@ -217,7 +217,7 @@ export default function ForgotPasswordPage() {
                 )}
               >
                 <div className="relative flex items-center overflow-hidden rounded-lg">
-                  <Mail
+                  <EnvelopeSimple
                     className={cn(
                       "absolute left-3 w-4 h-4 transition-colors duration-300",
                       focusedInput === "email" ? "text-white" : "text-white/40"
@@ -294,7 +294,7 @@ export default function ForgotPasswordPage() {
                 )}
               >
                 <div className="relative flex items-center overflow-hidden rounded-lg">
-                  <Lock
+                  <LockSimple
                     className={cn(
                       "absolute left-3 w-4 h-4 transition-colors duration-300",
                       focusedInput === "newPassword" ? "text-white" : "text-white/40"
@@ -323,7 +323,7 @@ export default function ForgotPasswordPage() {
                 )}
               >
                 <div className="relative flex items-center overflow-hidden rounded-lg">
-                  <Lock
+                  <LockSimple
                     className={cn(
                       "absolute left-3 w-4 h-4 transition-colors duration-300",
                       focusedInput === "confirmPassword" ? "text-white" : "text-white/40"

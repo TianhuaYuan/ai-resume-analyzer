@@ -94,6 +94,23 @@ async def refresh_token(db: AsyncSession, token_str: str, access_token_jti: str 
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用户不存在")
 
+    # S1-T8: 改密后旧 refresh_token 失效（iat < password_changed_at）
+    # 注意：JWT iat 只有秒级精度，比较时需截断到秒级
+    if user.password_changed_at is not None:
+        iat = payload.get("iat")
+        if iat is not None:
+            from datetime import datetime, timezone
+            iat_dt = datetime.fromtimestamp(iat, tz=timezone.utc)
+            pwd_changed = user.password_changed_at
+            if pwd_changed.tzinfo is None:
+                pwd_changed = pwd_changed.replace(tzinfo=timezone.utc)
+            pwd_changed = pwd_changed.replace(microsecond=0)
+            if iat_dt < pwd_changed:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="密码已修改，请重新登录",
+                )
+
     # 撤销旧 refresh token，防止 token 轮换后旧 token 仍可使用
     await revoke_token(payload.get("jti"))
 
@@ -162,6 +179,8 @@ async def change_password(
 ) -> bool:
     """修改密码。支持旧密码验证和邮箱验证码两种方式。
 
+    S1-T8: 改密后更新 password_changed_at，使旧 token（iat < password_changed_at）失效。
+
     Args:
         db: 数据库会话
         user: 当前用户
@@ -173,6 +192,8 @@ async def change_password(
     Raises:
         HTTPException: 验证失败时抛出
     """
+    from datetime import datetime, timezone
+
     if mode == "password":
         if not old_password:
             raise HTTPException(status_code=400, detail="请输入旧密码")
@@ -185,6 +206,7 @@ async def change_password(
             raise HTTPException(status_code=400, detail="验证码无效或已过期")
 
     user.password_hash = hash_password(new_password)
+    user.password_changed_at = datetime.now(timezone.utc)
     await db.commit()
     logger.info("密码修改成功: user_id=%s, mode=%s", user.id, mode)
     return True

@@ -12,6 +12,7 @@ from core.security import (
     extract_token_from_request,
     revoke_token,
     set_auth_cookies,
+    verify_origin,
 )
 from models.user import User
 from schemas.auth import (
@@ -29,6 +30,7 @@ from schemas.auth import (
     TokenResponse,
     UserResponse,
 )
+from services.audit_log_service import write_audit_log
 from services.auth_service import (
     admin_reset_password,
     change_email as change_email_service,
@@ -40,6 +42,8 @@ from services.auth_service import (
     refresh_token,
     reset_password_by_verification,
 )
+from services.analytics_service import record_event
+from services.user_cleanup_service import delete_user_account
 from services.verification_service import generate_code, store_code, verify_code
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -55,17 +59,29 @@ def _cookie_max_age() -> tuple[int, int]:
 
 @router.post("/register", response_model=UserResponse, status_code=201)
 @limiter.limit(settings.RATE_LIMIT_REGISTER)
-async def register(request: Request, data: RegisterRequest, db: AsyncSession = Depends(get_db)):
+async def register(
+    request: Request,
+    data: RegisterRequest,
+    db: AsyncSession = Depends(get_db),
+    _: bool = Depends(verify_origin),
+):
     """注册。需要先调用 /send-code 获取验证码。"""
     if not await verify_code(data.email, data.verification_code):
         raise HTTPException(status_code=400, detail="验证码无效或已过期")
     user = await register_user(db, data)
+    # T37: 漏斗埋点（best-effort，失败不影响注册主流程）
+    await record_event(db, user.id, "user.register", source=data.source)
     return user
 
 
 @router.post("/send-code", response_model=MessageResponse)
 @limiter.limit("3/minute")
-async def send_code(request: Request, data: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
+async def send_code(
+    request: Request,
+    data: ForgotPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+    _: bool = Depends(verify_origin),
+):
     """发送邮箱验证码（注册/忘记密码共用）。"""
     code = generate_code()
     await store_code(data.email, code)
@@ -85,6 +101,7 @@ async def login(
     response: Response,
     data: LoginRequest,
     db: AsyncSession = Depends(get_db),
+    _: bool = Depends(verify_origin),
 ):
     """登录（JSON）。前端调这个，POST body 传 {email, password}。
 
@@ -111,6 +128,7 @@ async def login_form(
     response: Response,
     form: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db),
+    _: bool = Depends(verify_origin),
 ):
     """登录（form）。Swagger UI 的 Authorize 按钮走的这个，username 字段填邮箱。"""
     user = await authenticate_user(db, form.username, form.password)
@@ -133,6 +151,7 @@ async def refresh(
     response: Response,
     data: RefreshRequest,
     db: AsyncSession = Depends(get_db),
+    _: bool = Depends(verify_origin),
 ):
     """刷新 token。用 refresh_token 换新的 access_token 对。
 
@@ -217,6 +236,7 @@ async def forgot_password(
     request: Request,
     data: ForgotPasswordVerifyRequest,
     db: AsyncSession = Depends(get_db),
+    _: bool = Depends(verify_origin),
 ):
     """新流程：验证码通过后直接修改密码（无需邮件链接）。
 
@@ -236,9 +256,11 @@ async def forgot_password(
 
 @router.put("/password", response_model=MessageResponse)
 async def change_password(
+    request: Request,
     data: ChangePasswordRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: bool = Depends(verify_origin),
 ):
     """修改密码。支持旧密码验证和邮箱验证码两种方式。"""
     await change_password_service(
@@ -249,14 +271,27 @@ async def change_password(
         old_password=data.old_password,
         verification_code=data.verification_code,
     )
+
+    # S1-T8: 记录审计日志
+    await write_audit_log(
+        db,
+        user_id=current_user.id,
+        action="change_password",
+        target_type="user",
+        target_id=str(current_user.id),
+        detail={"mode": data.mode, "ip": request.client.host if request.client else None},
+    )
+
     return MessageResponse(detail="密码修改成功")
 
 
 @router.put("/email", response_model=MessageResponse)
 async def change_email(
+    request: Request,
     data: ChangeEmailRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: bool = Depends(verify_origin),
 ):
     """修改邮箱。需要新邮箱的验证码。"""
     await change_email_service(
@@ -270,9 +305,11 @@ async def change_email(
 
 @router.put("/username", response_model=MessageResponse)
 async def change_username(
+    request: Request,
     data: ChangeUsernameRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: bool = Depends(verify_origin),
 ):
     """修改用户名。"""
     await change_username_service(
@@ -285,5 +322,30 @@ async def change_username(
 
 @router.get("/me", response_model=UserResponse)
 async def get_me(current_user: User = Depends(get_current_user)):
-    """获取当前登录用户信息。"""
-    return current_user
+    """获取当前登录用户信息（#9: 含 is_admin 用于前端控制管理入口可见性）。"""
+    resp = UserResponse.model_validate(current_user)
+    resp.is_admin = _is_admin(current_user)
+    return resp
+
+
+@router.delete("/account", status_code=204)
+async def delete_account(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """删除当前用户账户，级联清理所有数据。"""
+    user_id = current_user.id
+
+    # S1-T8: 先写审计日志（用户删除后外键会失效）
+    await write_audit_log(
+        db,
+        user_id=user_id,
+        action="delete_account",
+        target_type="user",
+        target_id=str(user_id),
+        detail={"ip": request.client.host if request.client else None},
+    )
+
+    await delete_user_account(db, current_user)
+    return Response(status_code=204)

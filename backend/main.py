@@ -170,6 +170,47 @@ async def limit_request_body(request: Request, call_next):
     return await call_next(request)
 
 
+# ── T7 ASGI 层请求体真实读取量限制（与 Content-Length 预检互补）──
+# 防 Content-Length 伪造 / chunked encoding DoS：
+# 包装 receive 跟踪实际读取字节数，超限后清空 body 并强制返回 413。
+@app.middleware("http")
+async def limit_request_body_stream(request: Request, call_next):
+    max_bytes = settings.MAX_REQUEST_BODY_MB * 1024 * 1024
+    original_receive = request.receive
+    bytes_read = 0
+    rejected = False
+
+    async def wrapped_receive():
+        nonlocal bytes_read, rejected
+        message = await original_receive()
+        if message["type"] == "http.request":
+            chunk = message.get("body", b"")
+            if not rejected:
+                bytes_read += len(chunk)
+                if bytes_read > max_bytes:
+                    rejected = True
+                    # 清空当前 body，阻止后续路由使用超大内容
+                    message = dict(message)
+                    message["body"] = b""
+            else:
+                # 已超限，持续清空所有后续 body 片段
+                message = dict(message)
+                message["body"] = b""
+        return message
+
+    request._receive = wrapped_receive
+    response = await call_next(request)
+
+    # 如果实际读取量超限，强制返回 413（覆盖路由可能返回的 200/422）
+    if rejected:
+        return Response(
+            content='{"detail":"请求体过大"}',
+            status_code=413,
+            media_type="application/json",
+        )
+    return response
+
+
 @app.exception_handler(RateLimitExceeded)
 async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
     # P2-14：添加 Retry-After 头，让用户知道多久后可重试
@@ -192,8 +233,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
     allow_credentials=True,
-    # 3.2 SEC-016：收紧允许的方法（仅实际使用的 GET/POST/DELETE）
-    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    # 3.2 SEC-016：收紧允许的方法（仅实际使用的 GET/POST/PUT/DELETE）
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     # 3.2 SEC-016：收紧允许的头（前端实际发送的自定义头白名单，禁止 *）
     allow_headers=["Authorization", "Content-Type", "X-Request-ID", "Idempotency-Key"],
 )
@@ -280,6 +321,14 @@ async def security_headers(request: Request, call_next):
     # SEC-017：老 IE 下载嗅探防护 + 禁止跨域 Flash/PDF 策略文件
     response.headers["X-Download-Options"] = "noopen"
     response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
+    # T7 CSP：API 后端最小 CSP，防 XSS + 禁止 iframe 嵌入
+    # token 在 localStorage，主要威胁是 XSS 注入脚本
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'none'; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
+    )
     return response
 
 
