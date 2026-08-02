@@ -38,6 +38,28 @@ def _make_tool_call(name="search_resume", arguments=None, call_id="tc_1"):
     )
 
 
+def _make_stream_response(content="", tool_calls=None, usage=None, reasoning=""):
+    """构造模拟 llm_generate_with_tools_stream 的 async generator。
+
+    中间轮改流式后，react_loop 通过 _stream_middle_round 消费该流。
+    对应 pipeline.py 流式事件协议：reasoning / token / usage / done。
+    注意：async generator 不可复用，多轮需各自生成独立实例。
+    """
+    async def _gen():
+        if reasoning:
+            yield {"type": "reasoning", "content": reasoning}
+        if content:
+            yield {"type": "token", "content": content}
+        if usage:
+            yield {
+                "type": "usage",
+                "prompt_tokens": usage.get("prompt_tokens", 0),
+                "completion_tokens": usage.get("completion_tokens", 0),
+            }
+        yield {"type": "done", "content": content, "tool_calls": tool_calls or []}
+    return _gen()
+
+
 def _patch_loop():
     """批量 patch loop 依赖，返回 (patches_dict, mock_dict)。"""
     mock_llm = AsyncMock()
@@ -71,9 +93,22 @@ class TestTokenAccumulation:
         mock_tool_class = MagicMock()
         mock_tool_class.return_value.execute = AsyncMock(return_value="结果")
 
+        # 两轮都走中间轮流式：第一轮调工具（200/80），第二轮直接答（150/60）
+        stream_mock = MagicMock(side_effect=[
+            _make_stream_response(
+                tool_calls=[_make_tool_call()],
+                usage={"prompt_tokens": 200, "completion_tokens": 80},
+            ),
+            _make_stream_response(
+                content="最终答案",
+                usage={"prompt_tokens": 150, "completion_tokens": 60},
+            ),
+        ])
+
         with patch("services.react_agent.loop.assemble_system_prompt", new_callable=AsyncMock) as mock_sys, \
              patch("services.react_agent.loop.check_quota", new_callable=AsyncMock) as mock_quota, \
              patch("services.react_agent.loop.llm_generate_with_tools", new_callable=AsyncMock) as mock_llm, \
+             patch("services.react_agent.loop.llm_generate_with_tools_stream", stream_mock), \
              patch("services.react_agent.loop.get_tool_by_name", return_value=mock_tool_class), \
              patch("services.react_agent.loop.get_agent_schemas", return_value=[]), \
              patch("services.react_agent.loop.manage_l1_context") as mock_l1:
@@ -82,18 +117,7 @@ class TestTokenAccumulation:
             mock_quota.return_value = (True, None)
             mock_l1.side_effect = lambda msgs, **kw: msgs
 
-            # 第一轮：调工具，消耗 prompt=200 completion=80
-            # 第二轮：直接回答，消耗 prompt=150 completion=60
-            mock_llm.side_effect = [
-                _make_response(
-                    tool_calls=[_make_tool_call()],
-                    usage={"prompt_tokens": 200, "completion_tokens": 80},
-                ),
-                _make_response(
-                    content="最终答案",
-                    usage={"prompt_tokens": 150, "completion_tokens": 60},
-                ),
-            ]
+            mock_llm.return_value = _make_response(content="不应到达")
 
             result = await react_loop(db=AsyncMock(), user_id=1, resume_id=1, question="测试")
 
@@ -124,10 +148,14 @@ class TestTokenAccumulation:
         from services.react_agent.loop import react_loop, MAX_BAD_TOOL_RETRIES
 
         # 构造连续 MAX_BAD_TOOL_RETRIES 次坏调用 + 强制收敛
-        bad_response = _make_response(
-            tool_calls=[_make_tool_call(name="nonexistent")],
-            usage={"prompt_tokens": 50, "completion_tokens": 10},
-        )
+        # 连续坏调用走中间轮流式（各 50/10），强制收敛走最终轮非流式（300/100）
+        stream_mock = MagicMock(side_effect=[
+            _make_stream_response(
+                tool_calls=[_make_tool_call(name="nonexistent")],
+                usage={"prompt_tokens": 50, "completion_tokens": 10},
+            )
+            for _ in range(MAX_BAD_TOOL_RETRIES)
+        ])
         final_response = _make_response(
             content="强制收敛答案",
             usage={"prompt_tokens": 300, "completion_tokens": 100},
@@ -136,6 +164,7 @@ class TestTokenAccumulation:
         with patch("services.react_agent.loop.assemble_system_prompt", new_callable=AsyncMock) as mock_sys, \
              patch("services.react_agent.loop.check_quota", new_callable=AsyncMock) as mock_quota, \
              patch("services.react_agent.loop.llm_generate_with_tools", new_callable=AsyncMock) as mock_llm, \
+             patch("services.react_agent.loop.llm_generate_with_tools_stream", stream_mock), \
              patch("services.react_agent.loop.get_tool_by_name", return_value=None), \
              patch("services.react_agent.loop.get_agent_schemas", return_value=[]), \
              patch("services.react_agent.loop.manage_l1_context") as mock_l1:
@@ -144,7 +173,7 @@ class TestTokenAccumulation:
             mock_quota.return_value = (True, None)
             mock_l1.side_effect = lambda msgs, **kw: msgs
 
-            mock_llm.side_effect = [bad_response] * MAX_BAD_TOOL_RETRIES + [final_response]
+            mock_llm.return_value = final_response
 
             result = await react_loop(db=AsyncMock(), user_id=1, resume_id=1, question="测试")
 
@@ -176,9 +205,15 @@ class TestEventCallback:
         async def callback(event: dict):
             events_received.append(event)
 
+        stream_mock = MagicMock(side_effect=[
+            _make_stream_response(tool_calls=[_make_tool_call(name="search_resume")]),
+            _make_stream_response(content="最终答案"),
+        ])
+
         with patch("services.react_agent.loop.assemble_system_prompt", new_callable=AsyncMock) as mock_sys, \
              patch("services.react_agent.loop.check_quota", new_callable=AsyncMock) as mock_quota, \
              patch("services.react_agent.loop.llm_generate_with_tools", new_callable=AsyncMock) as mock_llm, \
+             patch("services.react_agent.loop.llm_generate_with_tools_stream", stream_mock), \
              patch("services.react_agent.loop.get_tool_by_name", return_value=mock_tool_class), \
              patch("services.react_agent.loop.get_agent_schemas", return_value=[]), \
              patch("services.react_agent.loop.manage_l1_context") as mock_l1:
@@ -187,10 +222,7 @@ class TestEventCallback:
             mock_quota.return_value = (True, None)
             mock_l1.side_effect = lambda msgs, **kw: msgs
 
-            mock_llm.side_effect = [
-                _make_response(tool_calls=[_make_tool_call(name="search_resume")]),
-                _make_response(content="最终答案"),
-            ]
+            mock_llm.return_value = _make_response(content="不应到达")
 
             result = await react_loop(
                 db=AsyncMock(), user_id=1, resume_id=1, question="测试",
@@ -240,9 +272,15 @@ class TestEventCallback:
         async def callback(event: dict):
             events_received.append(event)
 
+        stream_mock = MagicMock(side_effect=[
+            _make_stream_response(tool_calls=[_make_tool_call(name="bad_tool")]),
+            _make_stream_response(content="最终答案"),
+        ])
+
         with patch("services.react_agent.loop.assemble_system_prompt", new_callable=AsyncMock) as mock_sys, \
              patch("services.react_agent.loop.check_quota", new_callable=AsyncMock) as mock_quota, \
              patch("services.react_agent.loop.llm_generate_with_tools", new_callable=AsyncMock) as mock_llm, \
+             patch("services.react_agent.loop.llm_generate_with_tools_stream", stream_mock), \
              patch("services.react_agent.loop.get_tool_by_name", return_value=None), \
              patch("services.react_agent.loop.get_agent_schemas", return_value=[]), \
              patch("services.react_agent.loop.manage_l1_context") as mock_l1:
@@ -251,10 +289,7 @@ class TestEventCallback:
             mock_quota.return_value = (True, None)
             mock_l1.side_effect = lambda msgs, **kw: msgs
 
-            mock_llm.side_effect = [
-                _make_response(tool_calls=[_make_tool_call(name="bad_tool")]),
-                _make_response(content="最终答案"),
-            ]
+            mock_llm.return_value = _make_response(content="不应到达")
 
             await react_loop(
                 db=AsyncMock(), user_id=1, resume_id=1, question="测试",
@@ -282,9 +317,17 @@ class TestBadJsonArgs:
         mock_tool_class = MagicMock()
         mock_tool_class.return_value.execute = AsyncMock(return_value="不应到达")
 
+        # 构造 arguments 为非法 JSON 的 ToolCall
+        bad_call = ToolCall(id="tc_bad", name="search_resume", arguments="{invalid json}")
+        stream_mock = MagicMock(side_effect=[
+            _make_stream_response(tool_calls=[bad_call]),
+            _make_stream_response(content="恢复后的答案"),
+        ])
+
         with patch("services.react_agent.loop.assemble_system_prompt", new_callable=AsyncMock) as mock_sys, \
              patch("services.react_agent.loop.check_quota", new_callable=AsyncMock) as mock_quota, \
              patch("services.react_agent.loop.llm_generate_with_tools", new_callable=AsyncMock) as mock_llm, \
+             patch("services.react_agent.loop.llm_generate_with_tools_stream", stream_mock), \
              patch("services.react_agent.loop.get_tool_by_name", return_value=mock_tool_class), \
              patch("services.react_agent.loop.get_agent_schemas", return_value=[]), \
              patch("services.react_agent.loop.manage_l1_context") as mock_l1:
@@ -293,12 +336,7 @@ class TestBadJsonArgs:
             mock_quota.return_value = (True, None)
             mock_l1.side_effect = lambda msgs, **kw: msgs
 
-            # 构造 arguments 为非法 JSON 的 ToolCall
-            bad_call = ToolCall(id="tc_bad", name="search_resume", arguments="{invalid json}")
-            mock_llm.side_effect = [
-                _make_response(tool_calls=[bad_call]),
-                _make_response(content="恢复后的答案"),
-            ]
+            mock_llm.return_value = _make_response(content="不应到达")
 
             result = await react_loop(db=AsyncMock(), user_id=1, resume_id=1, question="测试")
 
@@ -314,9 +352,16 @@ class TestBadJsonArgs:
         mock_tool_class = MagicMock()
         mock_tool_class.return_value.execute = AsyncMock(return_value="工具结果")
 
+        empty_call = ToolCall(id="tc_empty", name="diagnose_resume", arguments="")
+        stream_mock = MagicMock(side_effect=[
+            _make_stream_response(tool_calls=[empty_call]),
+            _make_stream_response(content="最终答案"),
+        ])
+
         with patch("services.react_agent.loop.assemble_system_prompt", new_callable=AsyncMock) as mock_sys, \
              patch("services.react_agent.loop.check_quota", new_callable=AsyncMock) as mock_quota, \
              patch("services.react_agent.loop.llm_generate_with_tools", new_callable=AsyncMock) as mock_llm, \
+             patch("services.react_agent.loop.llm_generate_with_tools_stream", stream_mock), \
              patch("services.react_agent.loop.get_tool_by_name", return_value=mock_tool_class), \
              patch("services.react_agent.loop.get_agent_schemas", return_value=[]), \
              patch("services.react_agent.loop.manage_l1_context") as mock_l1:
@@ -325,11 +370,7 @@ class TestBadJsonArgs:
             mock_quota.return_value = (True, None)
             mock_l1.side_effect = lambda msgs, **kw: msgs
 
-            empty_call = ToolCall(id="tc_empty", name="diagnose_resume", arguments="")
-            mock_llm.side_effect = [
-                _make_response(tool_calls=[empty_call]),
-                _make_response(content="最终答案"),
-            ]
+            mock_llm.return_value = _make_response(content="不应到达")
 
             result = await react_loop(db=AsyncMock(), user_id=1, resume_id=1, question="测试")
 
@@ -352,15 +393,20 @@ class TestConsecutiveBadCallsConvergence:
 
         assert MAX_BAD_TOOL_RETRIES == 2, "测试预期 MAX_BAD_TOOL_RETRIES=2"
 
-        bad_response = _make_response(
-            tool_calls=[_make_tool_call(name="nonexistent")],
-            content="中间思考",
-        )
+        # 2 轮坏调用走中间轮流式，强制收敛走最终轮非流式（tools=None）
+        stream_mock = MagicMock(side_effect=[
+            _make_stream_response(
+                tool_calls=[_make_tool_call(name="nonexistent")],
+                content="中间思考",
+            )
+            for _ in range(MAX_BAD_TOOL_RETRIES)
+        ])
         final_response = _make_response(content="强制收敛答案")
 
         with patch("services.react_agent.loop.assemble_system_prompt", new_callable=AsyncMock) as mock_sys, \
              patch("services.react_agent.loop.check_quota", new_callable=AsyncMock) as mock_quota, \
              patch("services.react_agent.loop.llm_generate_with_tools", new_callable=AsyncMock) as mock_llm, \
+             patch("services.react_agent.loop.llm_generate_with_tools_stream", stream_mock), \
              patch("services.react_agent.loop.get_tool_by_name", return_value=None), \
              patch("services.react_agent.loop.get_agent_schemas", return_value=[]), \
              patch("services.react_agent.loop.manage_l1_context") as mock_l1:
@@ -369,16 +415,16 @@ class TestConsecutiveBadCallsConvergence:
             mock_quota.return_value = (True, None)
             mock_l1.side_effect = lambda msgs, **kw: msgs
 
-            # 2 轮坏调用 + 1 轮强制收敛
-            mock_llm.side_effect = [bad_response] * MAX_BAD_TOOL_RETRIES + [final_response]
+            mock_llm.return_value = final_response
 
             result = await react_loop(db=AsyncMock(), user_id=1, resume_id=1, question="测试")
 
         assert "强制收敛" in result.answer
-        # 总调用次数 = 2 轮坏 + 1 轮收敛 = 3
-        assert mock_llm.call_count == MAX_BAD_TOOL_RETRIES + 1
+        # 中间轮 2 次坏调用 + 最终轮 1 次强制收敛
+        assert stream_mock.call_count == MAX_BAD_TOOL_RETRIES
+        assert mock_llm.call_count == 1
 
-        # 最后一轮调 LLM 时 tools=None（强制无工具）
+        # 最终轮调 LLM 时 tools=None（强制无工具）
         last_call = mock_llm.call_args_list[-1]
         assert last_call.kwargs.get("tools") is None
 
@@ -390,9 +436,26 @@ class TestConsecutiveBadCallsConvergence:
         mock_tool_class = MagicMock()
         mock_tool_class.return_value.execute = AsyncMock(return_value="正常结果")
 
+        # 第 1 轮：坏调用（工具不存在 → 但 get_tool_by_name 有返回值，用坏 arguments）
+        # 第 2 轮：正常工具调用
+        # 第 3 轮：坏调用（工具不存在）
+        # 第 4 轮：直接回答
+        # 坏计数器在第 2 轮被重置，所以第 3 轮不会触发强制收敛
+        bad_call_1 = ToolCall(id="bad1", name="search_resume", arguments="{invalid}")
+        good_call = _make_tool_call(name="search_resume", arguments={"resume_id": 1, "query": "test"})
+        bad_call_2 = ToolCall(id="bad2", name="search_resume", arguments="{also_invalid}")
+
+        stream_mock = MagicMock(side_effect=[
+            _make_stream_response(tool_calls=[bad_call_1]),
+            _make_stream_response(tool_calls=[good_call]),
+            _make_stream_response(tool_calls=[bad_call_2]),
+            _make_stream_response(content="最终答案"),
+        ])
+
         with patch("services.react_agent.loop.assemble_system_prompt", new_callable=AsyncMock) as mock_sys, \
              patch("services.react_agent.loop.check_quota", new_callable=AsyncMock) as mock_quota, \
              patch("services.react_agent.loop.llm_generate_with_tools", new_callable=AsyncMock) as mock_llm, \
+             patch("services.react_agent.loop.llm_generate_with_tools_stream", stream_mock), \
              patch("services.react_agent.loop.get_tool_by_name", return_value=mock_tool_class), \
              patch("services.react_agent.loop.get_agent_schemas", return_value=[]), \
              patch("services.react_agent.loop.manage_l1_context") as mock_l1:
@@ -401,27 +464,14 @@ class TestConsecutiveBadCallsConvergence:
             mock_quota.return_value = (True, None)
             mock_l1.side_effect = lambda msgs, **kw: msgs
 
-            # 第 1 轮：坏调用（工具不存在 → 但 get_tool_by_name 有返回值，用坏 arguments）
-            # 第 2 轮：正常工具调用
-            # 第 3 轮：坏调用（工具不存在）
-            # 第 4 轮：直接回答
-            # 坏计数器在第 2 轮被重置，所以第 3 轮不会触发强制收敛
-            bad_call_1 = ToolCall(id="bad1", name="search_resume", arguments="{invalid}")
-            good_call = _make_tool_call(name="search_resume", arguments={"resume_id": 1, "query": "test"})
-            bad_call_2 = ToolCall(id="bad2", name="search_resume", arguments="{also_invalid}")
-
-            mock_llm.side_effect = [
-                _make_response(tool_calls=[bad_call_1]),
-                _make_response(tool_calls=[good_call]),
-                _make_response(tool_calls=[bad_call_2]),
-                _make_response(content="最终答案"),
-            ]
+            mock_llm.return_value = _make_response(content="不应到达")
 
             result = await react_loop(db=AsyncMock(), user_id=1, resume_id=1, question="测试")
 
         assert "最终答案" in result.answer
-        # 4 轮 LLM 调用（没有强制收敛）
-        assert mock_llm.call_count == 4
+        # 4 轮全走中间轮流式（没有强制收敛，最终轮不调用）
+        assert mock_llm.call_count == 0
+        assert stream_mock.call_count == 4
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -437,21 +487,19 @@ class TestHistoryParameter:
         """history 参数的消息被加入 messages。"""
         from services.react_agent.loop import react_loop
 
-        captured_messages: list[list[dict]] = []
-
-        async def capture_llm(*args, **kwargs):
-            captured_messages.append(list(kwargs.get("messages", [])))
-            return _make_response(content="答案")
+        stream_mock = MagicMock(side_effect=[_make_stream_response(content="答案")])
 
         with patch("services.react_agent.loop.assemble_system_prompt", new_callable=AsyncMock) as mock_sys, \
              patch("services.react_agent.loop.check_quota", new_callable=AsyncMock) as mock_quota, \
-             patch("services.react_agent.loop.llm_generate_with_tools", new=capture_llm), \
+             patch("services.react_agent.loop.llm_generate_with_tools", new_callable=AsyncMock) as mock_llm, \
+             patch("services.react_agent.loop.llm_generate_with_tools_stream", stream_mock), \
              patch("services.react_agent.loop.get_agent_schemas", return_value=[]), \
              patch("services.react_agent.loop.manage_l1_context") as mock_l1:
 
             mock_sys.return_value = "system"
             mock_quota.return_value = (True, None)
             mock_l1.side_effect = lambda msgs, **kw: msgs
+            mock_llm.return_value = _make_response(content="不应到达")
 
             history = [
                 {"role": "user", "content": "之前的问题"},
@@ -463,7 +511,8 @@ class TestHistoryParameter:
                 history=history,
             )
 
-        first_call_messages = captured_messages[0]
+        # 中间轮流式第一次调用的 messages 即完整注入后的消息
+        first_call_messages = stream_mock.call_args_list[0].kwargs["messages"]
         roles = [m["role"] for m in first_call_messages]
         # system + history(user) + history(assistant) + user(新问题)
         assert roles == ["system", "user", "assistant", "user"]
@@ -475,16 +524,19 @@ class TestHistoryParameter:
         """不传 history 时正常工作。"""
         from services.react_agent.loop import react_loop
 
+        stream_mock = MagicMock(side_effect=[_make_stream_response(content="答案")])
+
         with patch("services.react_agent.loop.assemble_system_prompt", new_callable=AsyncMock) as mock_sys, \
              patch("services.react_agent.loop.check_quota", new_callable=AsyncMock) as mock_quota, \
              patch("services.react_agent.loop.llm_generate_with_tools", new_callable=AsyncMock) as mock_llm, \
+             patch("services.react_agent.loop.llm_generate_with_tools_stream", stream_mock), \
              patch("services.react_agent.loop.get_agent_schemas", return_value=[]), \
              patch("services.react_agent.loop.manage_l1_context") as mock_l1:
 
             mock_sys.return_value = "system"
             mock_quota.return_value = (True, None)
             mock_l1.side_effect = lambda msgs, **kw: msgs
-            mock_llm.return_value = _make_response(content="答案")
+            mock_llm.return_value = _make_response(content="不应到达")
 
             result = await react_loop(db=AsyncMock(), user_id=1, resume_id=1, question="测试")
 
@@ -520,9 +572,14 @@ class TestMaxRoundsAndPerRoundQuota:
         async def cb(event: dict):
             events.append(event)
 
+        stream_mock = MagicMock(side_effect=[
+            _make_stream_response(tool_calls=[_make_tool_call()]),
+        ])
+
         with patch("services.react_agent.loop.assemble_system_prompt", new_callable=AsyncMock) as mock_sys, \
              patch("services.react_agent.loop.check_quota", new_callable=AsyncMock) as mock_quota, \
              patch("services.react_agent.loop.llm_generate_with_tools", new_callable=AsyncMock) as mock_llm, \
+             patch("services.react_agent.loop.llm_generate_with_tools_stream", stream_mock), \
              patch("services.react_agent.loop.get_tool_by_name", return_value=mock_tool_class), \
              patch("services.react_agent.loop.get_agent_schemas", return_value=[]), \
              patch("services.react_agent.loop.manage_l1_context") as mock_l1:
@@ -532,10 +589,7 @@ class TestMaxRoundsAndPerRoundQuota:
             mock_quota.side_effect = [(True, None), (False, "额度用完")]
             mock_l1.side_effect = lambda msgs, **kw: msgs
             # 第 1 轮调工具；第 2 轮不应到达（quota 先拦截）
-            mock_llm.side_effect = [
-                _make_response(tool_calls=[_make_tool_call()]),
-                _make_response(content="不应到达"),
-            ]
+            mock_llm.return_value = _make_response(content="不应到达")
 
             result = await react_loop(
                 db=AsyncMock(), user_id=1, resume_id=1, question="测试",
@@ -544,7 +598,8 @@ class TestMaxRoundsAndPerRoundQuota:
 
         types = [e["type"] for e in events]
         assert "quota_exceeded" in types
-        assert mock_llm.call_count == 1
+        assert mock_llm.call_count == 0  # 第 2 轮被 quota 拦截，最终轮不调用
+        assert stream_mock.call_count == 1
         assert "不应到达" not in result.answer
 
 
@@ -571,9 +626,18 @@ class TestParallelToolExecution:
 
         mock_tool_class.return_value.execute = tracked_execute
 
+        stream_mock = MagicMock(side_effect=[
+            _make_stream_response(tool_calls=[
+                _make_tool_call(call_id="tc_1"),
+                _make_tool_call(call_id="tc_2"),
+            ]),
+            _make_stream_response(content="最终答案"),
+        ])
+
         with patch("services.react_agent.loop.assemble_system_prompt", new_callable=AsyncMock) as mock_sys, \
              patch("services.react_agent.loop.check_quota", new_callable=AsyncMock) as mock_quota, \
              patch("services.react_agent.loop.llm_generate_with_tools", new_callable=AsyncMock) as mock_llm, \
+             patch("services.react_agent.loop.llm_generate_with_tools_stream", stream_mock), \
              patch("services.react_agent.loop.get_tool_by_name", return_value=mock_tool_class), \
              patch("services.react_agent.loop.get_agent_schemas", return_value=[]), \
              patch("services.react_agent.loop.manage_l1_context") as mock_l1:
@@ -582,13 +646,7 @@ class TestParallelToolExecution:
             mock_quota.return_value = (True, None)
             mock_l1.side_effect = lambda msgs, **kw: msgs
 
-            mock_llm.side_effect = [
-                _make_response(tool_calls=[
-                    _make_tool_call(call_id="tc_1"),
-                    _make_tool_call(call_id="tc_2"),
-                ]),
-                _make_response(content="最终答案"),
-            ]
+            mock_llm.return_value = _make_response(content="不应到达")
 
             await react_loop(db=AsyncMock(), user_id=1, resume_id=1, question="测试")
 
@@ -609,9 +667,18 @@ class TestParallelToolExecution:
         async def callback(event: dict):
             events_received.append(event)
 
+        stream_mock = MagicMock(side_effect=[
+            _make_stream_response(tool_calls=[
+                _make_tool_call(call_id="tc_1", name="search_resume"),
+                _make_tool_call(call_id="tc_2", name="diagnose_resume"),
+            ]),
+            _make_stream_response(content="最终答案"),
+        ])
+
         with patch("services.react_agent.loop.assemble_system_prompt", new_callable=AsyncMock) as mock_sys, \
              patch("services.react_agent.loop.check_quota", new_callable=AsyncMock) as mock_quota, \
              patch("services.react_agent.loop.llm_generate_with_tools", new_callable=AsyncMock) as mock_llm, \
+             patch("services.react_agent.loop.llm_generate_with_tools_stream", stream_mock), \
              patch("services.react_agent.loop.get_tool_by_name", return_value=mock_tool_class), \
              patch("services.react_agent.loop.get_agent_schemas", return_value=[]), \
              patch("services.react_agent.loop.manage_l1_context") as mock_l1:
@@ -620,13 +687,7 @@ class TestParallelToolExecution:
             mock_quota.return_value = (True, None)
             mock_l1.side_effect = lambda msgs, **kw: msgs
 
-            mock_llm.side_effect = [
-                _make_response(tool_calls=[
-                    _make_tool_call(call_id="tc_1", name="search_resume"),
-                    _make_tool_call(call_id="tc_2", name="diagnose_resume"),
-                ]),
-                _make_response(content="最终答案"),
-            ]
+            mock_llm.return_value = _make_response(content="不应到达")
 
             await react_loop(
                 db=AsyncMock(), user_id=1, resume_id=1, question="测试",
@@ -658,9 +719,18 @@ class TestParallelToolExecution:
         async def callback(event: dict):
             events_received.append(event)
 
+        stream_mock = MagicMock(side_effect=[
+            _make_stream_response(tool_calls=[
+                _make_tool_call(call_id="tc_1", name="nonexistent"),
+                _make_tool_call(call_id="tc_2", name="search_resume"),
+            ]),
+            _make_stream_response(content="最终答案"),
+        ])
+
         with patch("services.react_agent.loop.assemble_system_prompt", new_callable=AsyncMock) as mock_sys, \
              patch("services.react_agent.loop.check_quota", new_callable=AsyncMock) as mock_quota, \
              patch("services.react_agent.loop.llm_generate_with_tools", new_callable=AsyncMock) as mock_llm, \
+             patch("services.react_agent.loop.llm_generate_with_tools_stream", stream_mock), \
              patch("services.react_agent.loop.get_tool_by_name", side_effect=get_tool_mock), \
              patch("services.react_agent.loop.get_agent_schemas", return_value=[]), \
              patch("services.react_agent.loop.manage_l1_context") as mock_l1:
@@ -669,13 +739,7 @@ class TestParallelToolExecution:
             mock_quota.return_value = (True, None)
             mock_l1.side_effect = lambda msgs, **kw: msgs
 
-            mock_llm.side_effect = [
-                _make_response(tool_calls=[
-                    _make_tool_call(call_id="tc_1", name="nonexistent"),
-                    _make_tool_call(call_id="tc_2", name="search_resume"),
-                ]),
-                _make_response(content="最终答案"),
-            ]
+            mock_llm.return_value = _make_response(content="不应到达")
 
             result = await react_loop(
                 db=AsyncMock(), user_id=1, resume_id=1, question="测试",
@@ -695,22 +759,18 @@ class TestParallelToolExecution:
         mock_tool_class = MagicMock()
         mock_tool_class.return_value.execute = AsyncMock(return_value="工具结果")
 
-        captured_messages: list[list[dict]] = []
-        call_count = [0]
-
-        async def llm_with_capture(*args, **kwargs):
-            call_count[0] += 1
-            if call_count[0] == 1:
-                return _make_response(tool_calls=[
-                    _make_tool_call(call_id="tc_1"),
-                    _make_tool_call(call_id="tc_2"),
-                ])
-            captured_messages.append(list(kwargs.get("messages", [])))
-            return _make_response(content="最终答案")
+        stream_mock = MagicMock(side_effect=[
+            _make_stream_response(tool_calls=[
+                _make_tool_call(call_id="tc_1"),
+                _make_tool_call(call_id="tc_2"),
+            ]),
+            _make_stream_response(content="最终答案"),
+        ])
 
         with patch("services.react_agent.loop.assemble_system_prompt", new_callable=AsyncMock) as mock_sys, \
              patch("services.react_agent.loop.check_quota", new_callable=AsyncMock) as mock_quota, \
-             patch("services.react_agent.loop.llm_generate_with_tools", new=llm_with_capture), \
+             patch("services.react_agent.loop.llm_generate_with_tools", new_callable=AsyncMock) as mock_llm, \
+             patch("services.react_agent.loop.llm_generate_with_tools_stream", stream_mock), \
              patch("services.react_agent.loop.get_tool_by_name", return_value=mock_tool_class), \
              patch("services.react_agent.loop.get_agent_schemas", return_value=[]), \
              patch("services.react_agent.loop.manage_l1_context") as mock_l1:
@@ -719,9 +779,12 @@ class TestParallelToolExecution:
             mock_quota.return_value = (True, None)
             mock_l1.side_effect = lambda msgs, **kw: msgs
 
+            mock_llm.return_value = _make_response(content="不应到达")
+
             await react_loop(db=AsyncMock(), user_id=1, resume_id=1, question="测试")
 
-        second_call_msgs = captured_messages[0]
+        # 第二轮（中间轮流式）的 messages 应包含 2 条 tool 回灌
+        second_call_msgs = stream_mock.call_args_list[1].kwargs["messages"]
         tool_msgs = [m for m in second_call_msgs if m.get("role") == "tool"]
         assert len(tool_msgs) == 2
         tool_ids = {m["tool_call_id"] for m in tool_msgs}
@@ -749,9 +812,19 @@ class TestAgentThoughtAndUsageEvents:
         async def cb(event: dict):
             events.append(event)
 
+        # 中间轮流式：第一轮产出 reasoning（实时 emit agent_thought）
+        stream_mock = MagicMock(side_effect=[
+            _make_stream_response(
+                tool_calls=[_make_tool_call()],
+                reasoning="让我想想应该用什么工具...",
+            ),
+            _make_stream_response(content="最终答案"),
+        ])
+
         with patch("services.react_agent.loop.assemble_system_prompt", new_callable=AsyncMock) as mock_sys, \
              patch("services.react_agent.loop.check_quota", new_callable=AsyncMock) as mock_quota, \
              patch("services.react_agent.loop.llm_generate_with_tools", new_callable=AsyncMock) as mock_llm, \
+             patch("services.react_agent.loop.llm_generate_with_tools_stream", stream_mock), \
              patch("services.react_agent.loop.get_tool_by_name", return_value=mock_tool_class), \
              patch("services.react_agent.loop.get_agent_schemas", return_value=[]), \
              patch("services.react_agent.loop.manage_l1_context") as mock_l1:
@@ -760,13 +833,7 @@ class TestAgentThoughtAndUsageEvents:
             mock_quota.return_value = (True, None)
             mock_l1.side_effect = lambda msgs, **kw: msgs
 
-            mock_llm.side_effect = [
-                _make_response(
-                    tool_calls=[_make_tool_call()],
-                    reasoning="让我想想应该用什么工具...",
-                ),
-                _make_response(content="最终答案"),
-            ]
+            mock_llm.return_value = _make_response(content="不应到达")
 
             await react_loop(
                 db=AsyncMock(), user_id=1, resume_id=1, question="测试",
@@ -790,9 +857,16 @@ class TestAgentThoughtAndUsageEvents:
         async def cb(event: dict):
             events.append(event)
 
+        # 中间轮流式无 reasoning → 不 emit agent_thought
+        stream_mock = MagicMock(side_effect=[
+            _make_stream_response(tool_calls=[_make_tool_call()]),
+            _make_stream_response(content="最终答案"),
+        ])
+
         with patch("services.react_agent.loop.assemble_system_prompt", new_callable=AsyncMock) as mock_sys, \
              patch("services.react_agent.loop.check_quota", new_callable=AsyncMock) as mock_quota, \
              patch("services.react_agent.loop.llm_generate_with_tools", new_callable=AsyncMock) as mock_llm, \
+             patch("services.react_agent.loop.llm_generate_with_tools_stream", stream_mock), \
              patch("services.react_agent.loop.get_tool_by_name", return_value=mock_tool_class), \
              patch("services.react_agent.loop.get_agent_schemas", return_value=[]), \
              patch("services.react_agent.loop.manage_l1_context") as mock_l1:
@@ -801,11 +875,7 @@ class TestAgentThoughtAndUsageEvents:
             mock_quota.return_value = (True, None)
             mock_l1.side_effect = lambda msgs, **kw: msgs
 
-            # reasoning 默认为 None（_make_response 不传 reasoning）
-            mock_llm.side_effect = [
-                _make_response(tool_calls=[_make_tool_call()]),
-                _make_response(content="最终答案"),
-            ]
+            mock_llm.return_value = _make_response(content="不应到达")
 
             await react_loop(
                 db=AsyncMock(), user_id=1, resume_id=1, question="测试",
@@ -828,9 +898,22 @@ class TestAgentThoughtAndUsageEvents:
         async def cb(event: dict):
             events.append(event)
 
+        # 两轮中间轮流式，usage 事件分别 200/80 和 150/60
+        stream_mock = MagicMock(side_effect=[
+            _make_stream_response(
+                tool_calls=[_make_tool_call()],
+                usage={"prompt_tokens": 200, "completion_tokens": 80},
+            ),
+            _make_stream_response(
+                content="最终答案",
+                usage={"prompt_tokens": 150, "completion_tokens": 60},
+            ),
+        ])
+
         with patch("services.react_agent.loop.assemble_system_prompt", new_callable=AsyncMock) as mock_sys, \
              patch("services.react_agent.loop.check_quota", new_callable=AsyncMock) as mock_quota, \
              patch("services.react_agent.loop.llm_generate_with_tools", new_callable=AsyncMock) as mock_llm, \
+             patch("services.react_agent.loop.llm_generate_with_tools_stream", stream_mock), \
              patch("services.react_agent.loop.get_tool_by_name", return_value=mock_tool_class), \
              patch("services.react_agent.loop.get_agent_schemas", return_value=[]), \
              patch("services.react_agent.loop.manage_l1_context") as mock_l1:
@@ -839,16 +922,7 @@ class TestAgentThoughtAndUsageEvents:
             mock_quota.return_value = (True, None)
             mock_l1.side_effect = lambda msgs, **kw: msgs
 
-            mock_llm.side_effect = [
-                _make_response(
-                    tool_calls=[_make_tool_call()],
-                    usage={"prompt_tokens": 200, "completion_tokens": 80},
-                ),
-                _make_response(
-                    content="最终答案",
-                    usage={"prompt_tokens": 150, "completion_tokens": 60},
-                ),
-            ]
+            mock_llm.return_value = _make_response(content="不应到达")
 
             await react_loop(
                 db=AsyncMock(), user_id=1, resume_id=1, question="测试",
@@ -856,7 +930,7 @@ class TestAgentThoughtAndUsageEvents:
             )
 
         usage_events = [e for e in events if e["type"] == "usage"]
-        # 2 次 LLM 调用 → 2 个 usage 事件
+        # 2 轮中间轮 → 2 个 usage 事件
         assert len(usage_events) == 2
         # 第一个 usage 事件：本次 200+80，累计 200+80
         assert usage_events[0]["usage"]["prompt_tokens"] == 200
@@ -912,9 +986,15 @@ class TestSourcesAggregation:
         mock_tool_instance.execute = AsyncMock(return_value="检索结果")
         mock_tool_class = MagicMock(return_value=mock_tool_instance)
 
+        stream_mock = MagicMock(side_effect=[
+            _make_stream_response(tool_calls=[_make_tool_call(name="search_resume")]),
+            _make_stream_response(content="最终答案"),
+        ])
+
         with patch("services.react_agent.loop.assemble_system_prompt", new_callable=AsyncMock) as mock_sys, \
              patch("services.react_agent.loop.check_quota", new_callable=AsyncMock) as mock_quota, \
              patch("services.react_agent.loop.llm_generate_with_tools", new_callable=AsyncMock) as mock_llm, \
+             patch("services.react_agent.loop.llm_generate_with_tools_stream", stream_mock), \
              patch("services.react_agent.loop.get_tool_by_name", return_value=mock_tool_class), \
              patch("services.react_agent.loop.get_agent_schemas", return_value=[]), \
              patch("services.react_agent.loop.manage_l1_context") as mock_l1:
@@ -923,10 +1003,7 @@ class TestSourcesAggregation:
             mock_quota.return_value = (True, None)
             mock_l1.side_effect = lambda msgs, **kw: msgs
 
-            mock_llm.side_effect = [
-                _make_response(tool_calls=[_make_tool_call(name="search_resume")]),
-                _make_response(content="最终答案"),
-            ]
+            mock_llm.return_value = _make_response(content="不应到达")
 
             result = await react_loop(db=AsyncMock(), user_id=1, resume_id=1, question="测试")
 
@@ -943,9 +1020,15 @@ class TestSourcesAggregation:
         mock_tool_class.return_value.execute = AsyncMock(return_value="结果")
         # 不设置 sources 属性
 
+        stream_mock = MagicMock(side_effect=[
+            _make_stream_response(tool_calls=[_make_tool_call(name="diagnose_resume")]),
+            _make_stream_response(content="最终答案"),
+        ])
+
         with patch("services.react_agent.loop.assemble_system_prompt", new_callable=AsyncMock) as mock_sys, \
              patch("services.react_agent.loop.check_quota", new_callable=AsyncMock) as mock_quota, \
              patch("services.react_agent.loop.llm_generate_with_tools", new_callable=AsyncMock) as mock_llm, \
+             patch("services.react_agent.loop.llm_generate_with_tools_stream", stream_mock), \
              patch("services.react_agent.loop.get_tool_by_name", return_value=mock_tool_class), \
              patch("services.react_agent.loop.get_agent_schemas", return_value=[]), \
              patch("services.react_agent.loop.manage_l1_context") as mock_l1:
@@ -954,10 +1037,7 @@ class TestSourcesAggregation:
             mock_quota.return_value = (True, None)
             mock_l1.side_effect = lambda msgs, **kw: msgs
 
-            mock_llm.side_effect = [
-                _make_response(tool_calls=[_make_tool_call(name="diagnose_resume")]),
-                _make_response(content="最终答案"),
-            ]
+            mock_llm.return_value = _make_response(content="不应到达")
 
             result = await react_loop(db=AsyncMock(), user_id=1, resume_id=1, question="测试")
 
@@ -990,9 +1070,16 @@ class TestSourcesAggregation:
             call_count[0] += 1
             return MagicMock(return_value=mock_tool_1 if call_count[0] == 1 else mock_tool_2)
 
+        stream_mock = MagicMock(side_effect=[
+            _make_stream_response(tool_calls=[_make_tool_call(name="search_resume", call_id="tc_1")]),
+            _make_stream_response(tool_calls=[_make_tool_call(name="search_resume", call_id="tc_2")]),
+            _make_stream_response(content="最终答案"),
+        ])
+
         with patch("services.react_agent.loop.assemble_system_prompt", new_callable=AsyncMock) as mock_sys, \
              patch("services.react_agent.loop.check_quota", new_callable=AsyncMock) as mock_quota, \
              patch("services.react_agent.loop.llm_generate_with_tools", new_callable=AsyncMock) as mock_llm, \
+             patch("services.react_agent.loop.llm_generate_with_tools_stream", stream_mock), \
              patch("services.react_agent.loop.get_tool_by_name", side_effect=get_tool_mock), \
              patch("services.react_agent.loop.get_agent_schemas", return_value=[]), \
              patch("services.react_agent.loop.manage_l1_context") as mock_l1:
@@ -1001,11 +1088,7 @@ class TestSourcesAggregation:
             mock_quota.return_value = (True, None)
             mock_l1.side_effect = lambda msgs, **kw: msgs
 
-            mock_llm.side_effect = [
-                _make_response(tool_calls=[_make_tool_call(name="search_resume", call_id="tc_1")]),
-                _make_response(tool_calls=[_make_tool_call(name="search_resume", call_id="tc_2")]),
-                _make_response(content="最终答案"),
-            ]
+            mock_llm.return_value = _make_response(content="不应到达")
 
             result = await react_loop(db=AsyncMock(), user_id=1, resume_id=1, question="测试")
 
@@ -1035,9 +1118,18 @@ class TestSourcesAggregation:
                 return MagicMock(return_value=mock_tool_1)
             return MagicMock(return_value=mock_tool_2)
 
+        stream_mock = MagicMock(side_effect=[
+            _make_stream_response(tool_calls=[
+                _make_tool_call(name="search_resume", call_id="tc_1"),
+                _make_tool_call(name="other_tool", call_id="tc_2"),
+            ]),
+            _make_stream_response(content="最终答案"),
+        ])
+
         with patch("services.react_agent.loop.assemble_system_prompt", new_callable=AsyncMock) as mock_sys, \
              patch("services.react_agent.loop.check_quota", new_callable=AsyncMock) as mock_quota, \
              patch("services.react_agent.loop.llm_generate_with_tools", new_callable=AsyncMock) as mock_llm, \
+             patch("services.react_agent.loop.llm_generate_with_tools_stream", stream_mock), \
              patch("services.react_agent.loop.get_tool_by_name", side_effect=get_tool_mock), \
              patch("services.react_agent.loop.get_agent_schemas", return_value=[]), \
              patch("services.react_agent.loop.manage_l1_context") as mock_l1:
@@ -1046,13 +1138,7 @@ class TestSourcesAggregation:
             mock_quota.return_value = (True, None)
             mock_l1.side_effect = lambda msgs, **kw: msgs
 
-            mock_llm.side_effect = [
-                _make_response(tool_calls=[
-                    _make_tool_call(name="search_resume", call_id="tc_1"),
-                    _make_tool_call(name="other_tool", call_id="tc_2"),
-                ]),
-                _make_response(content="最终答案"),
-            ]
+            mock_llm.return_value = _make_response(content="不应到达")
 
             result = await react_loop(db=AsyncMock(), user_id=1, resume_id=1, question="测试")
 
@@ -1076,16 +1162,19 @@ class TestDbTraceCapture:
         """ReactLoopResult 有 db_trace 字段。"""
         from services.react_agent.loop import react_loop
 
+        stream_mock = MagicMock(side_effect=[_make_stream_response(content="答案")])
+
         with patch("services.react_agent.loop.assemble_system_prompt", new_callable=AsyncMock) as mock_sys, \
              patch("services.react_agent.loop.check_quota", new_callable=AsyncMock) as mock_quota, \
              patch("services.react_agent.loop.llm_generate_with_tools", new_callable=AsyncMock) as mock_llm, \
+             patch("services.react_agent.loop.llm_generate_with_tools_stream", stream_mock), \
              patch("services.react_agent.loop.get_agent_schemas", return_value=[]), \
              patch("services.react_agent.loop.manage_l1_context") as mock_l1:
 
             mock_sys.return_value = "system"
             mock_quota.return_value = (True, None)
             mock_l1.side_effect = lambda msgs, **kw: msgs
-            mock_llm.return_value = _make_response(content="答案")
+            mock_llm.return_value = _make_response(content="不应到达")
 
             result = await react_loop(db=AsyncMock(), user_id=1, resume_id=1, question="测试")
 
@@ -1097,16 +1186,19 @@ class TestDbTraceCapture:
         """db_trace 包含组装后的 system_prompt。"""
         from services.react_agent.loop import react_loop
 
+        stream_mock = MagicMock(side_effect=[_make_stream_response(content="答案")])
+
         with patch("services.react_agent.loop.assemble_system_prompt", new_callable=AsyncMock) as mock_sys, \
              patch("services.react_agent.loop.check_quota", new_callable=AsyncMock) as mock_quota, \
              patch("services.react_agent.loop.llm_generate_with_tools", new_callable=AsyncMock) as mock_llm, \
+             patch("services.react_agent.loop.llm_generate_with_tools_stream", stream_mock), \
              patch("services.react_agent.loop.get_agent_schemas", return_value=[]), \
              patch("services.react_agent.loop.manage_l1_context") as mock_l1:
 
             mock_sys.return_value = "你是简历助手，以下是用户画像：3年Python后端"
             mock_quota.return_value = (True, None)
             mock_l1.side_effect = lambda msgs, **kw: msgs
-            mock_llm.return_value = _make_response(content="答案")
+            mock_llm.return_value = _make_response(content="不应到达")
 
             result = await react_loop(db=AsyncMock(), user_id=1, resume_id=1, question="测试")
 
@@ -1121,9 +1213,15 @@ class TestDbTraceCapture:
         mock_tool_class = MagicMock()
         mock_tool_class.return_value.execute = AsyncMock(return_value="结果")
 
+        stream_mock = MagicMock(side_effect=[
+            _make_stream_response(tool_calls=[_make_tool_call()]),
+            _make_stream_response(content="最终答案"),
+        ])
+
         with patch("services.react_agent.loop.assemble_system_prompt", new_callable=AsyncMock) as mock_sys, \
              patch("services.react_agent.loop.check_quota", new_callable=AsyncMock) as mock_quota, \
              patch("services.react_agent.loop.llm_generate_with_tools", new_callable=AsyncMock) as mock_llm, \
+             patch("services.react_agent.loop.llm_generate_with_tools_stream", stream_mock), \
              patch("services.react_agent.loop.get_tool_by_name", return_value=mock_tool_class), \
              patch("services.react_agent.loop.get_agent_schemas", return_value=[]), \
              patch("services.react_agent.loop.manage_l1_context") as mock_l1:
@@ -1132,10 +1230,7 @@ class TestDbTraceCapture:
             mock_quota.return_value = (True, None)
             mock_l1.side_effect = lambda msgs, **kw: msgs
 
-            mock_llm.side_effect = [
-                _make_response(tool_calls=[_make_tool_call()]),
-                _make_response(content="最终答案"),
-            ]
+            mock_llm.return_value = _make_response(content="不应到达")
 
             result = await react_loop(db=AsyncMock(), user_id=1, resume_id=1, question="测试")
 
@@ -1153,9 +1248,15 @@ class TestDbTraceCapture:
         mock_tool_class = MagicMock()
         mock_tool_class.return_value.execute = AsyncMock(return_value="结果")
 
+        stream_mock = MagicMock(side_effect=[
+            _make_stream_response(tool_calls=[_make_tool_call(name="search_resume")]),
+            _make_stream_response(content="最终答案"),
+        ])
+
         with patch("services.react_agent.loop.assemble_system_prompt", new_callable=AsyncMock) as mock_sys, \
              patch("services.react_agent.loop.check_quota", new_callable=AsyncMock) as mock_quota, \
              patch("services.react_agent.loop.llm_generate_with_tools", new_callable=AsyncMock) as mock_llm, \
+             patch("services.react_agent.loop.llm_generate_with_tools_stream", stream_mock), \
              patch("services.react_agent.loop.get_tool_by_name", return_value=mock_tool_class), \
              patch("services.react_agent.loop.get_agent_schemas", return_value=[]), \
              patch("services.react_agent.loop.manage_l1_context") as mock_l1:
@@ -1164,10 +1265,7 @@ class TestDbTraceCapture:
             mock_quota.return_value = (True, None)
             mock_l1.side_effect = lambda msgs, **kw: msgs
 
-            mock_llm.side_effect = [
-                _make_response(tool_calls=[_make_tool_call(name="search_resume")]),
-                _make_response(content="最终答案"),
-            ]
+            mock_llm.return_value = _make_response(content="不应到达")
 
             result = await react_loop(db=AsyncMock(), user_id=1, resume_id=1, question="测试")
 
@@ -1185,9 +1283,15 @@ class TestDbTraceCapture:
         mock_tool_class = MagicMock()
         mock_tool_class.return_value.execute = AsyncMock(return_value="结果")
 
+        stream_mock = MagicMock(side_effect=[
+            _make_stream_response(tool_calls=[_make_tool_call()]),
+            _make_stream_response(content="最终答案"),
+        ])
+
         with patch("services.react_agent.loop.assemble_system_prompt", new_callable=AsyncMock) as mock_sys, \
              patch("services.react_agent.loop.check_quota", new_callable=AsyncMock) as mock_quota, \
              patch("services.react_agent.loop.llm_generate_with_tools", new_callable=AsyncMock) as mock_llm, \
+             patch("services.react_agent.loop.llm_generate_with_tools_stream", stream_mock), \
              patch("services.react_agent.loop.get_tool_by_name", return_value=mock_tool_class), \
              patch("services.react_agent.loop.get_agent_schemas", return_value=[]), \
              patch("services.react_agent.loop.manage_l1_context") as mock_l1:
@@ -1196,10 +1300,7 @@ class TestDbTraceCapture:
             mock_quota.return_value = (True, None)
             mock_l1.side_effect = lambda msgs, **kw: msgs
 
-            mock_llm.side_effect = [
-                _make_response(tool_calls=[_make_tool_call()]),
-                _make_response(content="最终答案"),
-            ]
+            mock_llm.return_value = _make_response(content="不应到达")
 
             result = await react_loop(db=AsyncMock(), user_id=1, resume_id=1, question="测试")
 
@@ -1219,15 +1320,12 @@ class TestBuilderModeWiring:
     async def test_builder_mode_passes_builder_schemas_to_llm(self):
         from services.react_agent.loop import react_loop
 
-        captured: dict = {}
-
-        async def llm_with_capture(**kwargs):
-            captured["tools"] = kwargs.get("tools")
-            return _make_response(content="答案")
+        stream_mock = MagicMock(side_effect=[_make_stream_response(content="答案")])
 
         with patch("services.react_agent.loop.assemble_system_prompt", new_callable=AsyncMock) as mock_sys, \
              patch("services.react_agent.loop.check_quota", new_callable=AsyncMock) as mock_quota, \
-             patch("services.react_agent.loop.llm_generate_with_tools", new=llm_with_capture), \
+             patch("services.react_agent.loop.llm_generate_with_tools", new_callable=AsyncMock) as mock_llm, \
+             patch("services.react_agent.loop.llm_generate_with_tools_stream", stream_mock), \
              patch("services.react_agent.loop.get_builder_schemas", return_value=[{"dummy": 1}]), \
              patch("services.react_agent.loop.get_agent_schemas", return_value=[]), \
              patch("services.react_agent.loop.manage_l1_context") as mock_l1:
@@ -1235,11 +1333,14 @@ class TestBuilderModeWiring:
             mock_sys.return_value = "system"
             mock_quota.return_value = (True, None)
             mock_l1.side_effect = lambda msgs, **kw: msgs
+            mock_llm.return_value = _make_response(content="不应到达")
 
             result = await react_loop(
                 db=AsyncMock(), user_id=1, resume_id=1,
                 question="测试", tool_mode="builder",
             )
 
-        assert captured["tools"] == [{"dummy": 1}]
+        # builder schemas 传给中间轮流式调用
+        captured_tools = stream_mock.call_args_list[0].kwargs["tools"]
+        assert captured_tools == [{"dummy": 1}]
         assert result.answer == "答案"

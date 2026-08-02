@@ -92,23 +92,64 @@ export function BuilderAIChat({
               ),
             );
           } else if (event.type === "agent_thought") {
-            // Spec A#7: LLM 推理过程内容
+            // Spec A#7: LLM 推理过程内容，流式分段 emit，需追加到最后一个 agent_thought step
             setMessages((prev) =>
-              prev.map((m) =>
-                m.id === tempId
-                  ? {
-                      ...m,
-                      agent_steps: [
-                        ...(m.agent_steps ?? []),
-                        {
-                          type: "agent_thought" as const,
-                          name: "思考",
-                          detail: event.content,
-                        },
-                      ],
-                    }
-                  : m,
-              ),
+              prev.map((m) => {
+                if (m.id !== tempId) return m;
+                const steps = m.agent_steps ?? [];
+                const lastStep = steps[steps.length - 1];
+                if (lastStep && lastStep.type === "agent_thought") {
+                  const updatedSteps = [...steps];
+                  updatedSteps[updatedSteps.length - 1] = {
+                    ...lastStep,
+                    detail: (lastStep.detail ?? "") + event.content,
+                  };
+                  return { ...m, agent_steps: updatedSteps };
+                }
+                return {
+                  ...m,
+                  agent_steps: [
+                    ...steps,
+                    {
+                      type: "agent_thought" as const,
+                      name: "思考",
+                      detail: event.content,
+                    },
+                  ],
+                };
+              }),
+            );
+          } else if (event.type === "tool_stream") {
+            // T17: 工具内部 LLM 流式 token → 追加到最后一个同工具 tool_stream step（边出边看）
+            setMessages((prev) =>
+              prev.map((m) => {
+                if (m.id !== tempId) return m;
+                const steps = m.agent_steps ?? [];
+                const lastStep = steps[steps.length - 1];
+                if (
+                  lastStep &&
+                  lastStep.type === "tool_stream" &&
+                  lastStep.name === event.tool_name
+                ) {
+                  const updatedSteps = [...steps];
+                  updatedSteps[updatedSteps.length - 1] = {
+                    ...lastStep,
+                    detail: (lastStep.detail ?? "") + event.content,
+                  };
+                  return { ...m, agent_steps: updatedSteps };
+                }
+                return {
+                  ...m,
+                  agent_steps: [
+                    ...steps,
+                    {
+                      type: "tool_stream" as const,
+                      name: event.tool_name ?? "",
+                      detail: event.content ?? "",
+                    },
+                  ],
+                };
+              }),
             );
           } else if (event.type === "tool_call") {
             setMessages((prev) =>
@@ -295,7 +336,7 @@ export function BuilderAIChat({
           <ChatCircleDots
             size={14}
             weight="duotone"
-            className="text-indigo-400"
+            className="text-brand"
             aria-hidden="true"
           />
           <h3 className="text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">
@@ -305,7 +346,7 @@ export function BuilderAIChat({
         <button
           onClick={onToggle}
           className="p-1 rounded-md text-[var(--color-text-muted)]
-            hover:text-[var(--color-text)] hover:bg-white/8
+            hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]
             transition-all cursor-pointer"
           aria-label="关闭 AI 助手"
         >
@@ -317,8 +358,8 @@ export function BuilderAIChat({
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center">
-            <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 border border-indigo-500/15
-              flex items-center justify-center text-indigo-400 mb-4">
+            <div className="w-14 h-14 rounded-2xl bg-brand/10 border border-brand/15
+              flex items-center justify-center text-brand mb-4">
               <ChatCircleDots size={24} weight="duotone" aria-hidden="true" />
             </div>
             <p className="text-sm text-[var(--color-text-secondary)] mb-1">
@@ -333,7 +374,7 @@ export function BuilderAIChat({
             <div key={String(msg.id)} className="animate-fade-in-up">
               {/* 用户问题 */}
               <div className="flex justify-end mb-3">
-                <div className="max-w-[85%] px-3 py-2 bg-linear-to-br from-indigo-500 to-purple-600
+                <div className="max-w-[85%] px-3 py-2 bg-brand
                   text-white text-xs leading-relaxed rounded-2xl rounded-br-md">
                   {msg.question}
                 </div>
@@ -343,7 +384,7 @@ export function BuilderAIChat({
               <div className="flex justify-start mb-3">
                 <div className="max-w-[90%] w-full">
                   <div className="px-3 py-2.5 rounded-2xl rounded-bl-md leading-relaxed text-sm
-                    bg-white/5 border border-[var(--color-border)]">
+                    bg-[var(--color-bg-secondary)] border border-[var(--color-border)]">
                     {/* Agent 推理过程 */}
                     {msg.agent_steps && msg.agent_steps.length > 0 && (
                       <AgentProcessPanel
@@ -359,7 +400,7 @@ export function BuilderAIChat({
                       <MarkdownRenderer>{msg.answer}</MarkdownRenderer>
                     )}
                     {msg.streaming && msg.answer && (
-                      <span className="inline-block w-0.5 h-4 bg-indigo-400 ml-0.5
+                      <span className="inline-block w-0.5 h-4 bg-brand ml-0.5
                         align-middle animate-cursor-blink" />
                     )}
                   </div>
@@ -388,10 +429,10 @@ export function BuilderAIChat({
             placeholder="输入问题..."
             disabled={asking}
             className="flex-1 px-3 py-2 rounded-xl text-xs text-[var(--color-text)]
-              bg-white/5 border border-[var(--color-border)]
+              bg-[#F2F2F7] border border-transparent
               placeholder:text-[var(--color-text-muted)]
-              focus:outline-none focus:ring-2 focus:ring-indigo-500/40
-              focus:border-indigo-500/50
+              focus:outline-none focus:bg-white focus:ring-4 focus:ring-brand/15
+              focus:border-brand/40
               disabled:opacity-50 transition-all duration-150"
           />
           {asking ? (
@@ -411,7 +452,7 @@ export function BuilderAIChat({
               type="submit"
               disabled={!question.trim()}
               className="shrink-0 p-2 rounded-xl text-white
-                bg-linear-to-br from-indigo-500 to-purple-600
+                bg-brand
                 hover:brightness-110
                 disabled:opacity-40 disabled:cursor-not-allowed
                 transition-all cursor-pointer"

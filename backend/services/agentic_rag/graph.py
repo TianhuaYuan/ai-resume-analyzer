@@ -3,11 +3,14 @@
 阶段11 合并：原 `mcp_graph.py` 的节点/边已并入本文件，两种模式现在同处一模块：
 - `create_agentic_rag_graph()`    标准模式（直连：search/rerank/generate 节点）。
                                   这是稳定导入点（api/qa.py 的 /ask 路由与阶段7 懒导入都依赖它）。
-- `create_mcp_agentic_rag_graph()` MCP 模式（mcp_search/mcp_rerank/mcp_generate 节点）。
 
 合并保留：所有节点、条件边、Reflexion 循环（≤2 轮）、阶段4 加的 self-reflection
-节点与 degraded 路由、阶段2 加的 mcp 节点。两图共享 direct_answer_node /
-output_node / _route_after_evaluate（逻辑一致）。
+节点与 degraded 路由。两图共享 direct_answer_node / output_node /
+_route_after_evaluate（逻辑一致）。
+
+T14：MCP 模式图已退役——`create_mcp_agentic_rag_graph` 不再引用 mcp_nodes，
+改为抛 NotImplementedError。生产代码请改走 mcp_server 的 answer_from_index
+原子工具（mcp_server/tools/answer.py）或 runner.run_answer_from_index。
 """
 
 import json
@@ -247,19 +250,16 @@ def create_agentic_rag_graph(checkpointer=None):
 
 
 def create_mcp_agentic_rag_graph(checkpointer=None):
-    """MCP 模式图：经 MCP 客户端调用（mcp_search/mcp_rerank/mcp_generate 节点）。"""
-    from services.agentic_rag.mcp_nodes import mcp_generate_node, mcp_rerank_node, mcp_search_node
+    """T14 退役：MCP 模式图已退役，改用 mcp_server answer_from_index 原子工具。
 
-    compiled = _build_rag_graph(
-        search_node_fn=mcp_search_node,
-        rerank_node_fn=mcp_rerank_node,
-        generate_node_fn=mcp_generate_node,
-        route_after_route_fn=_route_after_route_mcp,
-        route_after_reflection_fn=_route_after_reflection_mcp,
-        search_node_name=MCP_SEARCH_NODE,
-        rerank_node_name=MCP_RERANK_NODE,
-        generate_node_name=MCP_GENERATE_NODE,
-        checkpointer=checkpointer,
+    原实现基于 mcp_nodes（mcp_search/mcp_rerank/mcp_generate 节点级 MCP 调用链），
+    已被 mcp_server/tools/answer.py 的 answer_from_index 取代（检索+反思+生成一次完成）。
+
+    此函数保留签名仅为兼容旧测试与旧 shim（mcp_graph.py）的导入；生产代码请改走
+    runner.run_answer_from_index 或 MCP answer_from_index 工具。
+    """
+    raise NotImplementedError(
+        "create_mcp_agentic_rag_graph is retired (T14): "
+        "use mcp_server answer_from_index atomic tool or "
+        "services.agentic_rag.runner.run_answer_from_index instead"
     )
-    logger.info("mcp_agentic_rag graph compiled successfully")
-    return compiled

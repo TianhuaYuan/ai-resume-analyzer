@@ -9,7 +9,7 @@ import { trackEvent, getCtaSource } from "../api/analytics";
 
 function FieldError({ error }: { error?: string }) {
   if (!error) return null;
-  return <p className="text-xs text-red-400 mt-1">{error}</p>;
+  return <p className="text-xs text-red-500 mt-1">{error}</p>;
 }
 
 function RegisterInput({
@@ -37,12 +37,12 @@ function RegisterInput({
     <div className="space-y-1.5">
       <label
         htmlFor={id}
-        className="block text-xs font-medium text-white/60"
+        className="block text-xs font-medium text-[var(--color-text-secondary)]"
       >
         {label}
       </label>
-      <div className="relative flex items-center overflow-hidden rounded-lg">
-        <Icon className="absolute left-3 w-4 h-4 text-white/40" />
+      <div className="relative flex items-center overflow-hidden rounded-xl">
+        <Icon className="absolute left-3 w-4 h-4 text-[var(--color-text-muted)]" />
         <input
           id={id}
           type={type}
@@ -51,8 +51,8 @@ function RegisterInput({
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
           className={cn(
-            "w-full bg-white/5 border h-10 text-white placeholder:text-white/30 transition-all duration-300 pl-10 pr-3 focus:bg-white/10 rounded-lg outline-none",
-            error ? "border-red-500/60" : "border-white/10 focus:border-white/20"
+            "w-full bg-[#F2F2F7] border h-10 text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] transition-all duration-300 pl-10 pr-3 focus:bg-white rounded-xl focus:ring-4 focus:ring-brand/15 outline-none",
+            error ? "border-red-500/60" : "border-transparent focus:border-brand/40"
           )}
         />
       </div>
@@ -206,18 +206,18 @@ export default function LoginPage() {
         />
         {/* 全局错误/成功提示：浮动在卡片上方 */}
         {error && (
-          <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-lg bg-red-500/20 border border-red-500/30 text-red-300 text-sm backdrop-blur-xl">
+          <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-lg bg-red-500/10 border border-red-500/20 text-red-500 text-sm backdrop-blur-xl">
             {error}
           </div>
         )}
         {success && (
-          <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-sm backdrop-blur-xl">
+          <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 text-sm backdrop-blur-xl">
             {success}
           </div>
         )}
         {/* 字段错误提示 */}
         {(fieldErrors.email || fieldErrors.password) && (
-          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-lg bg-red-500/20 border border-red-500/30 text-red-300 text-xs backdrop-blur-xl">
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-lg bg-red-500/10 border border-red-500/20 text-red-500 text-xs backdrop-blur-xl">
             {fieldErrors.email && <p>{fieldErrors.email}</p>}
             {fieldErrors.password && <p>{fieldErrors.password}</p>}
           </div>
@@ -228,11 +228,11 @@ export default function LoginPage() {
 
   // ═══ 注册视图：同风格卡片 ═══
   return (
-    <div className="min-h-screen w-full bg-black relative overflow-hidden flex items-center justify-center">
-      {/* 背景渐变 */}
-      <div className="absolute inset-0 bg-gradient-to-b from-purple-500/30 via-purple-700/40 to-black" />
+    <div className="min-h-screen w-full bg-[var(--color-bg)] relative overflow-hidden flex items-center justify-center">
+      {/* 背景渐变：淡品牌色径向氛围 */}
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_60%_50%_at_50%_-10%,rgba(0,113,227,0.10),transparent_70%)]" />
       <motion.div
-        className="absolute top-0 left-1/2 -translate-x-1/2 w-[100vh] h-[60vh] rounded-b-full bg-purple-400/20 blur-[80px]"
+        className="absolute top-0 left-1/2 -translate-x-1/2 w-[100vh] h-[60vh] rounded-b-full bg-brand/15 blur-[80px]"
         animate={{ opacity: [0.15, 0.3, 0.15], scale: [0.98, 1.02, 0.98] }}
         transition={{ duration: 8, repeat: Infinity, repeatType: "mirror" }}
       />
@@ -244,8 +244,8 @@ export default function LoginPage() {
         transition={{ duration: 0.8 }}
         className="w-full max-w-sm relative z-10 px-6"
       >
-        <div className="relative bg-black/40 backdrop-blur-xl rounded-2xl p-6 border border-white/[0.05] shadow-2xl overflow-hidden">
-          <div className="absolute -inset-[0.5px] rounded-2xl bg-gradient-to-r from-white/5 via-white/10 to-white/5 pointer-events-none" />
+        <div className="relative glass-card p-6 shadow-[0_20px_60px_rgba(0,0,0,0.08)] overflow-hidden">
+          <div className="absolute -inset-[0.5px] rounded-[24px] bg-gradient-to-r from-transparent via-brand/10 to-transparent pointer-events-none" />
 
           {/* 标题 */}
           <div className="text-center space-y-1 mb-5 relative">
@@ -253,7 +253,7 @@ export default function LoginPage() {
               initial={{ scale: 0.5, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ type: "spring", duration: 0.8 }}
-              className="mx-auto w-12 h-12 rounded-full border border-white/10 flex items-center justify-center relative overflow-hidden bg-white/5"
+              className="mx-auto w-12 h-12 rounded-full border border-[var(--color-border)] bg-white flex items-center justify-center relative overflow-hidden shadow-[0_8px_24px_rgba(0,0,0,0.08)]"
             >
               <img
                 src="/favicon.svg"
@@ -261,22 +261,22 @@ export default function LoginPage() {
                 className="w-7 h-7"
               />
             </motion.div>
-            <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-b from-white to-white/80">
+            <h1 className="text-[22px] font-bold display-tight text-[var(--color-text)]">
               创建账号
             </h1>
-            <p className="text-white/60 text-xs">
+            <p className="text-[var(--color-text-muted)] text-xs">
               注册以开始分析简历
             </p>
           </div>
 
           {/* 全局错误/成功提示 */}
           {error && (
-            <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+            <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-500 text-sm">
               {error}
             </div>
           )}
           {success && (
-            <div className="mb-4 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm">
+            <div className="mb-4 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 text-sm">
               {success}
             </div>
           )}
@@ -336,10 +336,10 @@ export default function LoginPage() {
                 type="button"
                 disabled={sendCodeLoading || sendCodeCooldown > 0}
                 onClick={handleSendCode}
-                className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white text-sm rounded-lg transition-colors duration-300 flex items-center justify-center self-end mt-3"
+                className="px-4 py-2 bg-[#E5E5EA] hover:bg-[#D1D1D6] text-[var(--color-text)] text-sm rounded-full transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center self-end mt-3"
               >
                 {sendCodeLoading ? (
-                  <div className="w-4 h-4 border-2 border-white/70 border-t-transparent rounded-full animate-spin" />
+                  <div className="w-4 h-4 border-2 border-[var(--color-text-muted)] border-t-transparent rounded-full animate-spin" />
                 ) : sendCodeCooldown > 0 ? (
                   `${sendCodeCooldown}s`
                 ) : (
@@ -356,9 +356,9 @@ export default function LoginPage() {
               data-testid="register-submit-btn"
               className="w-full relative mt-2"
             >
-              <div className="relative overflow-hidden bg-white text-black font-medium h-10 rounded-lg transition-all duration-300 flex items-center justify-center gap-1">
+              <div className="relative overflow-hidden bg-brand text-white font-medium h-10 rounded-full transition-all duration-300 flex items-center justify-center gap-1 shadow-[0_8px_24px_rgba(0,113,227,0.25)] hover:bg-[#0077ed] hover:shadow-[0_12px_32px_rgba(0,113,227,0.35)]">
                 {loading ? (
-                  <div className="w-4 h-4 border-2 border-black/70 border-t-transparent rounded-full animate-spin" />
+                  <div className="w-4 h-4 border-2 border-white/70 border-t-transparent rounded-full animate-spin" />
                 ) : (
                   <span className="flex items-center justify-center gap-1 text-sm font-medium">
                     注册
@@ -369,7 +369,7 @@ export default function LoginPage() {
             </motion.button>
 
             {/* 返回登录 */}
-            <p className="text-center text-xs text-white/60 mt-4">
+            <p className="text-center text-xs text-[var(--color-text-muted)] mt-4">
               已有账号？{" "}
               <button
                 type="button"
@@ -381,7 +381,7 @@ export default function LoginPage() {
                   setRegPassword("");
                   setRegConfirm("");
                 }}
-                className="text-white hover:text-white/70 transition-colors duration-300 font-medium cursor-pointer"
+                className="text-brand hover:text-[#0077ed] transition-colors duration-300 font-medium cursor-pointer"
               >
                 返回登录
               </button>

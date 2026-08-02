@@ -9,6 +9,10 @@ from models.qa_feedback import QAFeedback
 from models.user_feedback import UserFeedback
 from models.qa_conversation import QAConversation
 from models.analytics_event import AnalyticsEvent
+from models.knowledge_asset import KnowledgeAsset
+from models.campus_track import CampusTrack
+from models.feedback_like import FeedbackLike
+from models.market_asset import MarketAsset
 
 __all__ = [
     "Base",
@@ -22,4 +26,8 @@ __all__ = [
     "QAFeedback",
     "UserFeedback",
     "AnalyticsEvent",
+    "KnowledgeAsset",
+    "CampusTrack",
+    "FeedbackLike",
+    "MarketAsset",
 ]

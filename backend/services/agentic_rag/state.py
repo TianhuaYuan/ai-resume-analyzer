@@ -3,7 +3,13 @@ from typing import TypedDict
 
 class AgenticRAGState(TypedDict):
     question: str
-    resume_id: int
+    resume_id: int  # legacy：单简历模式（T9 过渡期保留，T14 退役 mcp_nodes 后移除）
+    user_id: int
+    # T9 泛化：检索 scope（asset_type → asset_ids）+ 过滤条件（默认 version=latest）
+    scope: dict[str, list[int]]
+    filters: dict
+    # T10 反思：识别"当前 scope 缺哪类资产"时写入，供图扩展 scope 或返回 agent
+    scope_expansion: list[str]
     rewritten_query: str
     route_decision: str  # "search" | "direct_answer"
     chunks: list[dict]

@@ -178,7 +178,7 @@ export default function AnalysisModal({
             onClick={onClose}
             aria-label="关闭"
             className="ml-3 p-1.5 rounded-lg text-[var(--color-text-secondary)]
-              hover:text-[var(--color-text)] hover:bg-white/8
+              hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]
               active:scale-[0.95] motion-reduce:active:scale-100
               transition-all cursor-pointer shrink-0"
           >
@@ -199,7 +199,7 @@ export default function AnalysisModal({
                   active:scale-[0.98] motion-reduce:active:scale-100
                   ${
                     active
-                      ? "text-[var(--color-text)] border-indigo-500"
+                      ? "text-[var(--color-text)] border-brand"
                       : "text-[var(--color-text-muted)] border-transparent hover:text-[var(--color-text-secondary)]"
                   }`}
                 aria-pressed={active}
@@ -276,7 +276,7 @@ export default function AnalysisModal({
                   onClick={handleExport}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5
                     text-xs font-medium rounded-lg
-                    bg-white/5 hover:bg-white/10
+                    bg-[var(--color-bg-secondary)] hover:bg-[#E5E5EA]
                     border border-[var(--color-border)]
                     text-[var(--color-text-secondary)]
                     active:scale-[0.98] motion-reduce:active:scale-100

@@ -162,14 +162,14 @@ export const SOCIAL_LINK_FIELDS: FieldConfig[] = [
 // ── 通用输入样式 ──────────────────────────────────────────────
 
 export const INPUT_CLASS =
-  "w-full px-3 py-2 rounded-lg text-sm text-[var(--color-text)] " +
-  "bg-white/5 border border-[var(--color-border)] " +
+  "w-full px-3 py-2 rounded-xl text-sm text-[var(--color-text)] " +
+  "bg-[#F2F2F7] border border-transparent " +
   "placeholder:text-[var(--color-text-muted)] " +
-  "focus:outline-none focus:ring-2 focus:ring-indigo-500/40 " +
-  "focus:border-indigo-500/50 transition-all duration-150";
+  "focus:outline-none focus:bg-white focus:border-brand/40 " +
+  "focus:ring-4 focus:ring-brand/15 transition-all duration-150";
 
 export const LABEL_CLASS =
-  "block text-xs font-medium text-[var(--color-text-secondary)] mb-1";
+  "block text-xs font-medium text-[var(--color-text-muted)] mb-1";
 
 // ── 单字段渲染组件 ────────────────────────────────────────────
 
@@ -313,7 +313,7 @@ export function EntriesEditor({ content, onChange, fields, moduleLabel }: Entrie
       {entries.map((entry, index) => (
         <div
           key={index}
-          className="p-3 rounded-xl bg-white/3 border border-[var(--color-border)] space-y-3"
+          className="p-3 rounded-xl bg-[var(--color-bg-secondary)] border border-[var(--color-border)] space-y-3"
         >
           {/* 条目头部：序号 + 排序/删除按钮 */}
           <div className="flex items-center justify-between">
@@ -325,7 +325,7 @@ export function EntriesEditor({ content, onChange, fields, moduleLabel }: Entrie
                 onClick={() => handleMoveUp(index)}
                 disabled={index === 0}
                 className="p-1 rounded text-[var(--color-text-muted)]
-                  hover:text-indigo-400 hover:bg-indigo-500/10
+                  hover:text-brand hover:bg-brand/10
                   disabled:opacity-30 disabled:cursor-not-allowed
                   transition-all cursor-pointer"
                 aria-label="上移"
@@ -336,7 +336,7 @@ export function EntriesEditor({ content, onChange, fields, moduleLabel }: Entrie
                 onClick={() => handleMoveDown(index)}
                 disabled={index === entries.length - 1}
                 className="p-1 rounded text-[var(--color-text-muted)]
-                  hover:text-indigo-400 hover:bg-indigo-500/10
+                  hover:text-brand hover:bg-brand/10
                   disabled:opacity-30 disabled:cursor-not-allowed
                   transition-all cursor-pointer"
                 aria-label="下移"
@@ -391,7 +391,7 @@ export function EntriesEditor({ content, onChange, fields, moduleLabel }: Entrie
         className="w-full flex items-center justify-center gap-1.5 py-2.5
           rounded-xl text-xs font-medium text-[var(--color-text-secondary)]
           border border-dashed border-[var(--color-border)]
-          hover:text-indigo-400 hover:border-indigo-500/30 hover:bg-indigo-500/5
+          hover:text-brand hover:border-brand/30 hover:bg-brand/5
           active:scale-[0.98] motion-reduce:active:scale-100
           transition-all cursor-pointer"
       >
@@ -452,7 +452,7 @@ export function SkillsForm({ content, onChange }: SkillsFormProps) {
       {categories.map((cat, index) => (
         <div
           key={index}
-          className="p-3 rounded-xl bg-white/3 border border-[var(--color-border)] space-y-3"
+          className="p-3 rounded-xl bg-[var(--color-bg-secondary)] border border-[var(--color-border)] space-y-3"
         >
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-[var(--color-text-muted)]">
@@ -498,7 +498,7 @@ export function SkillsForm({ content, onChange }: SkillsFormProps) {
         className="w-full flex items-center justify-center gap-1.5 py-2.5
           rounded-xl text-xs font-medium text-[var(--color-text-secondary)]
           border border-dashed border-[var(--color-border)]
-          hover:text-indigo-400 hover:border-indigo-500/30 hover:bg-indigo-500/5
+          hover:text-brand hover:border-brand/30 hover:bg-brand/5
           active:scale-[0.98] motion-reduce:active:scale-100
           transition-all cursor-pointer"
       >
@@ -661,8 +661,8 @@ export function CustomFieldsEditor({
     updateFields(fields.filter((_, i) => i !== index));
 
   const inputCls =
-    "px-2 py-1.5 rounded-lg text-xs bg-white/5 border border-[var(--color-border)] " +
-    "focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 " +
+    "px-2 py-1.5 rounded-lg text-xs bg-[#F2F2F7] border border-transparent " +
+    "focus:outline-none focus:bg-white focus:border-brand/40 focus:ring-4 focus:ring-brand/15 " +
     "text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] transition-all duration-150";
 
   return (
@@ -673,8 +673,8 @@ export function CustomFieldsEditor({
         </span>
         <button
           onClick={addField}
-          className="px-2 py-1 rounded-md text-[11px] text-indigo-400
-            hover:text-indigo-300 hover:bg-indigo-500/10
+          className="px-2 py-1 rounded-md text-[11px] text-brand
+            hover:text-[#0077ed] hover:bg-brand/10
             transition-colors cursor-pointer"
           aria-label="添加自定义字段"
         >

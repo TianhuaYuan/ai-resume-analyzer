@@ -111,7 +111,7 @@ export function PreviewPanel({
         <button
           onClick={onToggleCollapse}
           className="p-2 rounded-lg text-[var(--color-text-muted)]
-            hover:text-indigo-400 hover:bg-indigo-500/10
+            hover:text-brand hover:bg-brand/10
             transition-all cursor-pointer"
           aria-label="展开预览"
           title="展开预览"
@@ -141,7 +141,7 @@ export function PreviewPanel({
             <SpinnerGap
               size={12}
               weight="bold"
-              className="text-indigo-400 animate-spin"
+              className="text-brand animate-spin"
               aria-hidden="true"
             />
           )}
@@ -174,7 +174,7 @@ export function PreviewPanel({
             disabled={exporting !== null}
             className="inline-flex items-center gap-1 px-2 py-1 rounded-md
               text-[11px] text-[var(--color-text-muted)]
-              hover:text-indigo-400 hover:bg-indigo-500/8
+              hover:text-brand hover:bg-brand/10
               disabled:opacity-40 disabled:cursor-not-allowed
               transition-all cursor-pointer"
             aria-label="导出 Markdown"
@@ -193,7 +193,7 @@ export function PreviewPanel({
             onClick={handleManualRefresh}
             disabled={loading}
             className="p-1 rounded-md text-[var(--color-text-muted)]
-              hover:text-indigo-400 hover:bg-indigo-500/8
+              hover:text-brand hover:bg-brand/10
               disabled:opacity-40 disabled:cursor-not-allowed
               transition-all cursor-pointer"
             aria-label="刷新预览"
@@ -211,7 +211,7 @@ export function PreviewPanel({
           <button
             onClick={onToggleCollapse}
             className="p-1 rounded-md text-[var(--color-text-muted)]
-              hover:text-indigo-400 hover:bg-indigo-500/8
+              hover:text-brand hover:bg-brand/10
               transition-all cursor-pointer"
             aria-label="收起预览"
             title="收起预览"
@@ -237,7 +237,7 @@ export function PreviewPanel({
             <div className="flex flex-col items-center gap-2">
               <span
                 className="inline-block w-6 h-6 rounded-full border-2
-                  border-indigo-400 border-t-transparent animate-spin"
+                  border-brand border-t-transparent animate-spin"
                 aria-hidden="true"
               />
               <span className="text-xs text-[var(--color-text-muted)]">
@@ -254,8 +254,8 @@ export function PreviewPanel({
               <button
                 onClick={handleManualRefresh}
                 className="px-3 py-1.5 rounded-lg text-xs font-medium
-                  bg-indigo-500/15 text-indigo-300 border border-indigo-500/30
-                  hover:bg-indigo-500/25 transition-all cursor-pointer"
+                  bg-brand/10 text-brand border border-brand/30
+                  hover:bg-brand/20 transition-all cursor-pointer"
               >
                 重试
               </button>

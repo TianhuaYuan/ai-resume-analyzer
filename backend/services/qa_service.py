@@ -46,6 +46,16 @@ async def save_qa(
     return record
 
 
+async def mark_qa_interrupted(db: AsyncSession, qa_id: int) -> None:
+    """标记中断的 QA 记录（会话断连）为 failed，避免 status=streaming 空记录污染历史。"""
+    await db.execute(
+        update(QAHistory)
+        .where(QAHistory.id == qa_id, QAHistory.status == "streaming")
+        .values(status="failed")
+    )
+    await db.commit()
+
+
 async def get_history(
     db: AsyncSession,
     user_id: int,
@@ -61,6 +71,8 @@ async def get_history(
     conversation_id 非空时，只查该对话下的问答。
     """
     base_filters = [QAHistory.user_id == user_id, QAHistory.resume_id == resume_id]
+    # 只显示已完成的问答（过滤 streaming/failed 等未完成记录，避免中断空记录污染历史）
+    base_filters.append(QAHistory.status == "complete")
 
     if keyword:
         pattern = f"%{keyword}%"

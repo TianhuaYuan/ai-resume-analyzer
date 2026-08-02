@@ -130,7 +130,7 @@ export default function ChunksModal({
             onClick={onClose}
             aria-label="关闭"
             className="ml-3 p-1.5 rounded-lg text-[var(--color-text-secondary)]
-              hover:text-[var(--color-text)] hover:bg-white/8
+              hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]
               active:scale-[0.95] motion-reduce:active:scale-100
               transition-all cursor-pointer shrink-0"
           >
@@ -200,8 +200,8 @@ export default function ChunksModal({
                         className="inline-flex items-center justify-center
                           text-[11px] font-mono font-medium tabular-nums
                           px-1.5 py-0.5 rounded
-                          bg-indigo-500/15 text-indigo-300
-                          border border-indigo-500/25
+                          bg-brand/15 text-brand
+                          border border-brand/25
                           shrink-0"
                       >
                         #{chunk.chunk_index}

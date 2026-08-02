@@ -87,13 +87,13 @@ export function CompareSelectDialog({
       onClick={onCancel}
     >
       <div
-        className="w-full max-w-md mx-4 p-6 rounded-2xl bg-[var(--color-bg-secondary)] border border-[var(--color-border)] shadow-2xl animate-fade-in-up motion-reduce:animate-none"
+        className="w-full max-w-md mx-4 p-6 rounded-2xl glass-card shadow-2xl animate-fade-in-up motion-reduce:animate-none"
         onClick={(e) => e.stopPropagation()}
       >
         {/* ── 标题栏 ── */}
         <div className="flex items-center justify-between mb-1">
           <div className="flex items-center gap-2">
-            <div className="p-1.5 rounded-lg bg-indigo-500/15 text-indigo-400">
+            <div className="p-1.5 rounded-lg bg-brand/15 text-brand">
               <Checks size={18} weight="bold" aria-hidden="true" />
             </div>
             <h3 className="text-base font-semibold text-[var(--color-text)]">
@@ -103,7 +103,7 @@ export function CompareSelectDialog({
           <button
             onClick={onCancel}
             aria-label="关闭"
-            className="p-1.5 rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-white/8 active:scale-[0.95] motion-reduce:active:scale-100 transition-all cursor-pointer"
+            className="p-1.5 rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)] active:scale-[0.95] motion-reduce:active:scale-100 transition-all cursor-pointer"
           >
             <X size={16} weight="bold" aria-hidden="true" />
           </button>
@@ -117,7 +117,7 @@ export function CompareSelectDialog({
           <div className="flex flex-col items-center justify-center py-12 gap-2">
             <Spinner
               size={24}
-              className="animate-spin text-indigo-400"
+              className="animate-spin text-brand"
               aria-hidden="true"
             />
             <span className="text-sm text-[var(--color-text-secondary)]">
@@ -151,8 +151,8 @@ export function CompareSelectDialog({
                     key={r.id}
                     className={`flex items-center gap-3 p-3 rounded-xl border transition-all
                       ${checked
-                        ? "bg-indigo-500/10 border-indigo-500/40"
-                        : "bg-white/5 border-[var(--color-border)] hover:border-indigo-500/30"}
+                        ? "bg-brand/10 border-brand/40"
+                        : "bg-[var(--color-bg-secondary)] border-[var(--color-border)] hover:border-brand/30"}
                       ${disabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer"}`}
                   >
                     <input
@@ -166,7 +166,7 @@ export function CompareSelectDialog({
                     <span
                       className={`w-5 h-5 shrink-0 rounded-md border flex items-center justify-center transition-colors
                         ${checked
-                          ? "bg-indigo-500 border-indigo-500"
+                          ? "bg-brand border-brand"
                           : "border-[var(--color-border)]"}`}
                     >
                       {checked && (
@@ -206,14 +206,14 @@ export function CompareSelectDialog({
               <div className="flex items-center gap-2">
                 <button
                   onClick={onCancel}
-                  className="px-3.5 py-1.5 text-sm font-medium rounded-lg border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-white/8 active:scale-[0.98] motion-reduce:active:scale-100 transition-all cursor-pointer"
+                  className="px-3.5 py-1.5 text-sm font-medium rounded-lg bg-[var(--color-bg-secondary)] hover:bg-[#E5E5EA] border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:text-[var(--color-text)] active:scale-[0.98] motion-reduce:active:scale-100 transition-all cursor-pointer"
                 >
                   取消
                 </button>
                 <button
                   onClick={() => canConfirm && onConfirm(selectedIds)}
                   disabled={!canConfirm}
-                  className="px-3.5 py-1.5 text-sm font-medium rounded-lg bg-linear-to-br from-indigo-500 to-purple-600 text-white active:scale-[0.98] motion-reduce:active:scale-100 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-3.5 py-1.5 text-sm font-medium rounded-full bg-brand text-white active:scale-[0.98] motion-reduce:active:scale-100 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   确认
                 </button>

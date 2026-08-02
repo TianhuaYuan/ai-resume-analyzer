@@ -1,3 +1,14 @@
+"""T14 退役：MCP 模式节点（mcp_search_node / mcp_rerank_node / mcp_generate_node）。
+
+这些节点通过 mcp_client 做节点级 MCP 工具调用链（search → rerank → generate），
+已被 mcp_server/tools/answer.py 的 `answer_from_index` 原子工具取代（检索+反思+
+生成一次完成，且带 scope 鉴权）。graph.py 的 `create_mcp_agentic_rag_graph` 已
+不再引用本模块（改为抛 NotImplementedError）。
+
+本文件保留函数定义（不删文件），仅供仍引用这些节点的旧测试导入使用；
+生产代码禁止从本模块导入新逻辑。
+"""
+
 import logging
 import time
 from typing import Any

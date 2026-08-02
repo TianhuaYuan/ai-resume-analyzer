@@ -82,6 +82,8 @@ export interface BuilderResume {
   style: ResumeStyle | null;
   version: number;
   created_at: string;
+  is_indexed?: boolean;
+  is_stale?: boolean;
   modules: ResumeModule[];
 }
 

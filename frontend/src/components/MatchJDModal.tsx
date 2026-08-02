@@ -114,7 +114,7 @@ export default function MatchJDModal({
             onClick={onClose}
             aria-label="关闭"
             className="ml-3 p-1.5 rounded-lg text-[var(--color-text-secondary)]
-              hover:text-[var(--color-text)] hover:bg-white/8
+              hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]
               active:scale-[0.95] motion-reduce:active:scale-100
               transition-all cursor-pointer shrink-0"
           >
@@ -137,20 +137,20 @@ export default function MatchJDModal({
                 disabled={status === "loading"}
                 rows={6}
                 className="w-full px-3 py-2.5 text-sm text-[var(--color-text)]
-                  bg-white/5 border border-[var(--color-border)] rounded-lg
+                  bg-[#F2F2F7] border border-transparent rounded-xl
                   placeholder:text-[var(--color-text-muted)]
-                  focus:outline-none focus:border-indigo-500/50
+                  focus:outline-none focus:bg-white focus:border-brand/40 focus:ring-4 focus:ring-brand/15
                   resize-y disabled:opacity-50
-                  transition-colors"
+                  transition-all duration-200"
               />
               <button
                 onClick={handleMatch}
                 disabled={status === "loading" || !jdText.trim()}
                 className="mt-3 inline-flex items-center gap-1.5 px-4 py-2
-                  text-sm font-medium rounded-lg
-                  bg-linear-to-r from-indigo-500 to-purple-600
+                  text-sm font-medium rounded-full
+                  bg-brand
                   text-white
-                  hover:brightness-110 hover:shadow-lg hover:shadow-indigo-500/25
+                  hover:bg-[#0077ed] hover:shadow-lg hover:shadow-brand/25
                   active:scale-[0.98] motion-reduce:active:scale-100
                   disabled:opacity-50 disabled:cursor-not-allowed
                   transition-all cursor-pointer"
@@ -198,7 +198,7 @@ export default function MatchJDModal({
                 }}
                 className="mt-4 inline-flex items-center gap-1.5 px-3 py-1.5
                   text-xs font-medium rounded-lg
-                  bg-white/5 border border-[var(--color-border)]
+                  bg-[var(--color-bg-secondary)] hover:bg-[#E5E5EA] border border-[var(--color-border)]
                   text-[var(--color-text-secondary)] hover:text-[var(--color-text)]
                   active:scale-[0.98] motion-reduce:active:scale-100
                   transition-all cursor-pointer"

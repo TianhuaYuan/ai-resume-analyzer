@@ -99,7 +99,27 @@ def reconnect_chroma():
 
 
 def _collection_name(resume_id: int) -> str:
+    """（旧）每简历集合名，T7 前兼容保留；新写入/读取走 knowledge_collection_name。"""
     return f"resume_{resume_id}"
+
+
+def knowledge_collection_name(user_id: int) -> str:
+    """每用户知识资产集合名（T7, D1）。
+
+    一个用户的所有资产（resume/jd/interview/note）共用一个集合，
+    内部按 metadata（asset_id/version/is_latest）过滤，支持跨资产单查询。
+    """
+    return f"knowledge_{user_id}"
+
+
+def market_collection_name() -> str:
+    """公共市场资产集合名（所有用户共享一份）。
+
+    与每用户 knowledge_{user_id} 并行：市场数据（JD/范文/攻略）是公共资产，
+    只建一份向量索引，任何用户都可检索；检索时 collection 参数显式传入，
+    与个人集合隔离，互不污染。
+    """
+    return "market_public"
 
 
 def _cleanup_orphan_segments() -> int:

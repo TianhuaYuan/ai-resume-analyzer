@@ -154,7 +154,7 @@ function ApplicationFormModal({
     >
       <div
         className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2
-          bg-[var(--color-bg-elevated,var(--color-surface))] border border-[var(--color-border)] rounded-2xl
+          glass-card
           max-w-lg w-full mx-4 shadow-2xl
           animate-fade-in-up motion-reduce:animate-none"
       >
@@ -167,7 +167,7 @@ function ApplicationFormModal({
             onClick={onClose}
             aria-label="关闭"
             className="p-1.5 rounded-lg text-[var(--color-text-secondary)]
-              hover:text-[var(--color-text)] hover:bg-white/8
+              hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]
               transition-all cursor-pointer"
           >
             <X size={18} weight="bold" aria-hidden="true" />
@@ -187,9 +187,9 @@ function ApplicationFormModal({
                 onChange={(e) => setForm({ ...form, company: e.target.value })}
                 required
                 maxLength={100}
-                className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)]
+                className="w-full px-3 py-2 rounded-xl bg-[#F2F2F7] border border-transparent
                   text-sm text-[var(--color-text)]
-                  focus:outline-none focus:border-indigo-500 transition-colors"
+                  focus:outline-none focus:bg-white focus:border-brand/40 focus:ring-4 focus:ring-brand/15 transition-colors"
                 placeholder="如：字节跳动"
               />
             </div>
@@ -203,9 +203,9 @@ function ApplicationFormModal({
                 onChange={(e) => setForm({ ...form, position: e.target.value })}
                 required
                 maxLength={100}
-                className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)]
+                className="w-full px-3 py-2 rounded-xl bg-[#F2F2F7] border border-transparent
                   text-sm text-[var(--color-text)]
-                  focus:outline-none focus:border-indigo-500 transition-colors"
+                  focus:outline-none focus:bg-white focus:border-brand/40 focus:ring-4 focus:ring-brand/15 transition-colors"
                 placeholder="如：后端工程师"
               />
             </div>
@@ -221,9 +221,9 @@ function ApplicationFormModal({
                 value={form.city ?? ""}
                 onChange={(e) => setForm({ ...form, city: e.target.value })}
                 maxLength={50}
-                className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)]
+                className="w-full px-3 py-2 rounded-xl bg-[#F2F2F7] border border-transparent
                   text-sm text-[var(--color-text)]
-                  focus:outline-none focus:border-indigo-500 transition-colors"
+                  focus:outline-none focus:bg-white focus:border-brand/40 focus:ring-4 focus:ring-brand/15 transition-colors"
                 placeholder="如：北京"
               />
             </div>
@@ -236,9 +236,9 @@ function ApplicationFormModal({
                 value={form.salary_range ?? ""}
                 onChange={(e) => setForm({ ...form, salary_range: e.target.value })}
                 maxLength={50}
-                className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)]
+                className="w-full px-3 py-2 rounded-xl bg-[#F2F2F7] border border-transparent
                   text-sm text-[var(--color-text)]
-                  focus:outline-none focus:border-indigo-500 transition-colors"
+                  focus:outline-none focus:bg-white focus:border-brand/40 focus:ring-4 focus:ring-brand/15 transition-colors"
                 placeholder="如：25-40k"
               />
             </div>
@@ -252,9 +252,9 @@ function ApplicationFormModal({
               <select
                 value={form.status}
                 onChange={(e) => setForm({ ...form, status: e.target.value })}
-                className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)]
+                className="w-full px-3 py-2 rounded-xl bg-[#F2F2F7] border border-transparent
                   text-sm text-[var(--color-text)]
-                  focus:outline-none focus:border-indigo-500 transition-colors cursor-pointer"
+                  focus:outline-none focus:bg-white focus:border-brand/40 focus:ring-4 focus:ring-brand/15 transition-colors cursor-pointer"
               >
                 {KANBAN_COLUMNS.map((col) => (
                   <option key={col.status} value={col.status}>
@@ -282,9 +282,9 @@ function ApplicationFormModal({
                       : null,
                   })
                 }
-                className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)]
+                className="w-full px-3 py-2 rounded-xl bg-[#F2F2F7] border border-transparent
                   text-sm text-[var(--color-text)]
-                  focus:outline-none focus:border-indigo-500 transition-colors"
+                  focus:outline-none focus:bg-white focus:border-brand/40 focus:ring-4 focus:ring-brand/15 transition-colors"
               />
             </div>
           </div>
@@ -297,9 +297,9 @@ function ApplicationFormModal({
               <button
                 onClick={handleDelete}
                 disabled={deleting}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg
-                  text-red-300 bg-red-500/10 border border-red-500/20
-                  hover:bg-red-500/20 hover:border-red-500/40
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full
+                  text-red-600 bg-red-500/10 border border-red-500/20
+                  hover:bg-red-500/20 hover:border-red-500/30
                   disabled:opacity-50 disabled:cursor-not-allowed
                   transition-all cursor-pointer"
               >
@@ -311,8 +311,8 @@ function ApplicationFormModal({
           <div className="flex items-center gap-2">
             <button
               onClick={onClose}
-              className="px-3.5 py-1.5 text-sm font-medium rounded-lg
-                text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-white/8
+              className="px-3.5 py-1.5 text-sm font-medium rounded-full
+                bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:bg-[#E5E5EA]
                 transition-all cursor-pointer"
             >
               取消
@@ -320,10 +320,10 @@ function ApplicationFormModal({
             <button
               onClick={handleSubmit}
               disabled={saving}
-              className="px-3.5 py-1.5 text-sm font-medium rounded-lg
-                bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/40
+              className="px-3.5 py-1.5 text-sm font-medium rounded-full
+                bg-brand text-white hover:bg-[#0077ed] hover:scale-[1.02] active:scale-[0.98]
                 disabled:opacity-50 disabled:cursor-not-allowed
-                transition-all cursor-pointer flex items-center gap-1.5"
+                transition-all duration-300 cursor-pointer flex items-center gap-1.5"
             >
               {saving ? "保存中..." : initial ? "保存" : "添加"}
             </button>
@@ -359,14 +359,14 @@ function StatsCharts({ stats }: { stats: KanbanStats | null }) {
   const tooltipStyle = {
     background: "var(--color-bg)",
     border: "1px solid var(--color-border)",
-    borderRadius: 4,
+    borderRadius: 12,
     fontSize: 12,
   };
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-8">
       {/* 按状态分布 - 柱状图 */}
-      <div className="border border-[var(--color-border)] rounded-lg p-4">
+      <div className="glass-card p-4">
         <h3 className="text-xs font-mono-label tracking-widest uppercase text-[var(--color-text-muted)] mb-3">
           申请状态分布
         </h3>
@@ -396,7 +396,7 @@ function StatsCharts({ stats }: { stats: KanbanStats | null }) {
       </div>
 
       {/* Top 5 公司 - 饼图 */}
-      <div className="border border-[var(--color-border)] rounded-lg p-4">
+      <div className="glass-card p-4">
         <h3 className="text-xs font-mono-label tracking-widest uppercase text-[var(--color-text-muted)] mb-3">
           投递公司 Top 5
         </h3>
@@ -430,7 +430,7 @@ function StatsCharts({ stats }: { stats: KanbanStats | null }) {
       </div>
 
       {/* 近 30 天趋势 - 折线图 */}
-      <div className="border border-[var(--color-border)] rounded-lg p-4">
+      <div className="glass-card p-4">
         <h3 className="text-xs font-mono-label tracking-widest uppercase text-[var(--color-text-muted)] mb-3">
           近 30 天投递趋势
         </h3>
@@ -478,11 +478,10 @@ function KanbanCard({
   return (
     <button
       onClick={onClick}
-      className="w-full text-left p-3 rounded-lg
-        bg-[var(--color-bg-elevated,var(--color-surface))]
-        border border-[var(--color-border)]
-        hover:border-[var(--color-text-muted)]
-        transition-all cursor-pointer group"
+      className="w-full text-left p-3 rounded-2xl
+        glass-card
+        hover:-translate-y-1 hover:shadow-xl hover:shadow-black/5
+        transition-all duration-300 cursor-pointer group"
     >
       <div className="flex items-start justify-between gap-2 mb-1.5">
         <p className="text-sm font-medium text-[var(--color-text)] truncate">
@@ -588,7 +587,7 @@ export default function WorkbenchPage() {
             <Link
               to="/"
               className="inline-flex items-center gap-1 text-xs text-[var(--color-text-muted)]
-                hover:text-indigo-400 transition-colors"
+                hover:text-brand transition-colors"
               aria-label="返回首页"
             >
               <ArrowLeft size={12} weight="regular" aria-hidden="true" />
@@ -605,11 +604,11 @@ export default function WorkbenchPage() {
           </div>
           <button
             onClick={openCreate}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium
-              text-white bg-linear-to-br from-indigo-500 to-purple-600
-              hover:brightness-110 hover:shadow-lg hover:shadow-indigo-500/20
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-medium
+              bg-brand text-white
+              hover:bg-[#0077ed] hover:shadow-lg hover:shadow-brand/25 hover:scale-[1.02]
               active:scale-[0.98] motion-reduce:active:scale-100
-              transition-all cursor-pointer"
+              transition-all duration-300 cursor-pointer"
             aria-label="添加申请"
           >
             <Plus size={16} weight="bold" aria-hidden="true" />
@@ -626,8 +625,8 @@ export default function WorkbenchPage() {
           ) : apps.length === 0 ? (
             /* 空状态 */
             <div className="py-16 md:py-32 flex flex-col items-center text-center">
-              <div className="w-16 h-16 border-2 border-[var(--color-text)] flex items-center justify-center mb-6">
-                <ChartBar size={28} weight="regular" className="text-[var(--color-text)]" aria-hidden="true" />
+              <div className="w-16 h-16 rounded-3xl bg-[var(--color-bg-secondary)] border border-[var(--color-border)] flex items-center justify-center mb-6">
+                <ChartBar size={28} weight="regular" className="text-brand" aria-hidden="true" />
               </div>
               <p className="font-display text-2xl md:text-3xl font-bold tracking-tight text-[var(--color-text)] mb-3">
                 开始追踪你的求职进度
@@ -659,7 +658,7 @@ export default function WorkbenchPage() {
                         {col.label}
                       </span>
                       <span
-                        className="text-[10px] font-mono-label tabular-nums px-1.5 py-0.5 rounded text-white"
+                        className="text-[10px] font-mono-label tabular-nums px-1.5 py-0.5 rounded text-[var(--color-text)]"
                         style={{ backgroundColor: col.color }}
                       >
                         {col.items.length}
@@ -669,7 +668,7 @@ export default function WorkbenchPage() {
                     {/* 卡片列表 */}
                     <div className="flex-1 space-y-2 min-h-[60px]">
                       {col.items.length === 0 ? (
-                        <div className="text-[10px] text-[var(--color-text-muted)] text-center py-4 border border-dashed border-[var(--color-border)] rounded-lg">
+                        <div className="text-[10px] text-[var(--color-text-muted)] text-center py-4 border border-dashed border-[var(--color-border)] rounded-xl">
                           暂无
                         </div>
                       ) : (

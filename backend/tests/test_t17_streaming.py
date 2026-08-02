@@ -38,6 +38,25 @@ def _make_tool_call(name="search_resume", arguments=None, call_id="tc_1"):
     )
 
 
+def _make_stream_response(content="", tool_calls=None, usage=None):
+    """构造模拟 llm_generate_with_tools_stream 的 async generator。
+
+    中间轮改流式后，react_loop 通过 _stream_middle_round 消费该流。
+    async generator 不可复用，多轮需各自生成独立实例。
+    """
+    async def _gen():
+        if content:
+            yield {"type": "token", "content": content}
+        if usage:
+            yield {
+                "type": "usage",
+                "prompt_tokens": usage.get("prompt_tokens", 0),
+                "completion_tokens": usage.get("completion_tokens", 0),
+            }
+        yield {"type": "done", "content": content, "tool_calls": tool_calls or []}
+    return _gen()
+
+
 def _make_mock_tool_class(result="工具结果"):
     mock_tool = MagicMock()
     mock_tool.execute = AsyncMock(return_value=result)
@@ -69,9 +88,12 @@ class TestSSEEventSerialization:
         """LLM 直接回答 → agent_start + agent_done。"""
         from services.react_agent.streaming import react_loop_stream
 
+        stream_mock = MagicMock(side_effect=[_make_stream_response(content="最终答案")])
+
         with patch("services.react_agent.loop.assemble_system_prompt", new_callable=AsyncMock) as mock_sys, \
              patch("services.react_agent.loop.check_quota", new_callable=AsyncMock) as mock_quota, \
              patch("services.react_agent.loop.llm_generate_with_tools", new_callable=AsyncMock) as mock_llm, \
+             patch("services.react_agent.loop.llm_generate_with_tools_stream", stream_mock), \
              patch("services.react_agent.loop.get_agent_schemas", return_value=[]), \
              patch("services.react_agent.loop.manage_l1_context") as mock_l1, \
              patch("services.react_agent.streaming.save_qa_placeholder", new_callable=AsyncMock) as mock_save, \
@@ -80,7 +102,7 @@ class TestSSEEventSerialization:
             mock_sys.return_value = "system"
             mock_quota.return_value = (True, None)
             mock_l1.side_effect = lambda msgs, **kw: msgs
-            mock_llm.return_value = _make_response(content="最终答案")
+            mock_llm.return_value = _make_response(content="不应到达")
             mock_save.return_value = MagicMock(id=42)
             mock_update.return_value = MagicMock(id=42)
 
@@ -104,9 +126,15 @@ class TestSSEEventSerialization:
 
         mock_tool_class = _make_mock_tool_class(result="检索到 3 条经历")
 
+        stream_mock = MagicMock(side_effect=[
+            _make_stream_response(tool_calls=[_make_tool_call(name="search_resume")]),
+            _make_stream_response(content="根据检索结果回答"),
+        ])
+
         with patch("services.react_agent.loop.assemble_system_prompt", new_callable=AsyncMock) as mock_sys, \
              patch("services.react_agent.loop.check_quota", new_callable=AsyncMock) as mock_quota, \
              patch("services.react_agent.loop.llm_generate_with_tools", new_callable=AsyncMock) as mock_llm, \
+             patch("services.react_agent.loop.llm_generate_with_tools_stream", stream_mock), \
              patch("services.react_agent.loop.get_tool_by_name", return_value=mock_tool_class), \
              patch("services.react_agent.loop.get_agent_schemas", return_value=[]), \
              patch("services.react_agent.loop.manage_l1_context") as mock_l1, \
@@ -116,10 +144,7 @@ class TestSSEEventSerialization:
             mock_sys.return_value = "system"
             mock_quota.return_value = (True, None)
             mock_l1.side_effect = lambda msgs, **kw: msgs
-            mock_llm.side_effect = [
-                _make_response(tool_calls=[_make_tool_call(name="search_resume")]),
-                _make_response(content="根据检索结果回答"),
-            ]
+            mock_llm.return_value = _make_response(content="不应到达")
             mock_save.return_value = MagicMock(id=42)
 
             events = []
@@ -153,9 +178,12 @@ class TestPlaceholderRecord:
         """agent_start 事件前创建占位记录。"""
         from services.react_agent.streaming import react_loop_stream
 
+        stream_mock = MagicMock(side_effect=[_make_stream_response(content="答案")])
+
         with patch("services.react_agent.loop.assemble_system_prompt", new_callable=AsyncMock) as mock_sys, \
              patch("services.react_agent.loop.check_quota", new_callable=AsyncMock) as mock_quota, \
              patch("services.react_agent.loop.llm_generate_with_tools", new_callable=AsyncMock) as mock_llm, \
+             patch("services.react_agent.loop.llm_generate_with_tools_stream", stream_mock), \
              patch("services.react_agent.loop.get_agent_schemas", return_value=[]), \
              patch("services.react_agent.loop.manage_l1_context") as mock_l1, \
              patch("services.react_agent.streaming.save_qa_placeholder", new_callable=AsyncMock) as mock_save, \
@@ -164,7 +192,7 @@ class TestPlaceholderRecord:
             mock_sys.return_value = "system"
             mock_quota.return_value = (True, None)
             mock_l1.side_effect = lambda msgs, **kw: msgs
-            mock_llm.return_value = _make_response(content="答案")
+            mock_llm.return_value = _make_response(content="不应到达")
             mock_save.return_value = MagicMock(id=99)
             mock_update.return_value = MagicMock(id=99)
 
@@ -187,9 +215,12 @@ class TestPlaceholderRecord:
         """agent_done 事件包含 qa_id。"""
         from services.react_agent.streaming import react_loop_stream
 
+        stream_mock = MagicMock(side_effect=[_make_stream_response(content="答案")])
+
         with patch("services.react_agent.loop.assemble_system_prompt", new_callable=AsyncMock) as mock_sys, \
              patch("services.react_agent.loop.check_quota", new_callable=AsyncMock) as mock_quota, \
              patch("services.react_agent.loop.llm_generate_with_tools", new_callable=AsyncMock) as mock_llm, \
+             patch("services.react_agent.loop.llm_generate_with_tools_stream", stream_mock), \
              patch("services.react_agent.loop.get_agent_schemas", return_value=[]), \
              patch("services.react_agent.loop.manage_l1_context") as mock_l1, \
              patch("services.react_agent.streaming.save_qa_placeholder", new_callable=AsyncMock) as mock_save, \
@@ -198,7 +229,7 @@ class TestPlaceholderRecord:
             mock_sys.return_value = "system"
             mock_quota.return_value = (True, None)
             mock_l1.side_effect = lambda msgs, **kw: msgs
-            mock_llm.return_value = _make_response(content="答案")
+            mock_llm.return_value = _make_response(content="不应到达")
             mock_save.return_value = MagicMock(id=77)
 
             events = []
@@ -260,9 +291,15 @@ class TestStreamingToolError:
         """工具不存在 → tool_error 事件。"""
         from services.react_agent.streaming import react_loop_stream
 
+        stream_mock = MagicMock(side_effect=[
+            _make_stream_response(tool_calls=[_make_tool_call(name="bad_tool")]),
+            _make_stream_response(content="最终答案"),
+        ])
+
         with patch("services.react_agent.loop.assemble_system_prompt", new_callable=AsyncMock) as mock_sys, \
              patch("services.react_agent.loop.check_quota", new_callable=AsyncMock) as mock_quota, \
              patch("services.react_agent.loop.llm_generate_with_tools", new_callable=AsyncMock) as mock_llm, \
+             patch("services.react_agent.loop.llm_generate_with_tools_stream", stream_mock), \
              patch("services.react_agent.loop.get_tool_by_name", return_value=None), \
              patch("services.react_agent.loop.get_agent_schemas", return_value=[]), \
              patch("services.react_agent.loop.manage_l1_context") as mock_l1, \
@@ -272,10 +309,7 @@ class TestStreamingToolError:
             mock_sys.return_value = "system"
             mock_quota.return_value = (True, None)
             mock_l1.side_effect = lambda msgs, **kw: msgs
-            mock_llm.side_effect = [
-                _make_response(tool_calls=[_make_tool_call(name="bad_tool")]),
-                _make_response(content="最终答案"),
-            ]
+            mock_llm.return_value = _make_response(content="不应到达")
             mock_save.return_value = MagicMock(id=42)
 
             events = []
@@ -306,9 +340,15 @@ class TestProcessTraceDualPayload:
 
         mock_tool_class = _make_mock_tool_class(result="结果")
 
+        stream_mock = MagicMock(side_effect=[
+            _make_stream_response(tool_calls=[_make_tool_call(name="search_resume")]),
+            _make_stream_response(content="最终答案"),
+        ])
+
         with patch("services.react_agent.loop.assemble_system_prompt", new_callable=AsyncMock) as mock_sys, \
              patch("services.react_agent.loop.check_quota", new_callable=AsyncMock) as mock_quota, \
              patch("services.react_agent.loop.llm_generate_with_tools", new_callable=AsyncMock) as mock_llm, \
+             patch("services.react_agent.loop.llm_generate_with_tools_stream", stream_mock), \
              patch("services.react_agent.loop.get_tool_by_name", return_value=mock_tool_class), \
              patch("services.react_agent.loop.get_agent_schemas", return_value=[]), \
              patch("services.react_agent.loop.manage_l1_context") as mock_l1, \
@@ -318,10 +358,7 @@ class TestProcessTraceDualPayload:
             mock_sys.return_value = "system"
             mock_quota.return_value = (True, None)
             mock_l1.side_effect = lambda msgs, **kw: msgs
-            mock_llm.side_effect = [
-                _make_response(tool_calls=[_make_tool_call(name="search_resume")]),
-                _make_response(content="最终答案"),
-            ]
+            mock_llm.return_value = _make_response(content="不应到达")
             mock_save.return_value = MagicMock(id=42)
             mock_update.return_value = MagicMock(id=42)
 

@@ -170,7 +170,7 @@ export function askQuestionStream(
 
 /** Agent 推理过程的一步（用于面板展示，由实时 SSE 事件累积构建） */
 export interface AgentStep {
-  type: "tool_call" | "tool_result" | "tool_error" | "agent_thought";
+  type: "tool_call" | "tool_result" | "tool_error" | "agent_thought" | "tool_stream";
   name: string;
   /** 工具参数（tool_call）、结果摘要（tool_result）、错误文本（tool_error）或推理内容（agent_thought） */
   detail?: string;
@@ -210,6 +210,7 @@ export interface AgentSSEEvent {
     | "tool_call"
     | "tool_result"
     | "tool_error"
+    | "tool_stream"
     | "agent_done"
     | "quota_exceeded"
     | "error";
@@ -221,6 +222,10 @@ export interface AgentSSEEvent {
   // ── agent_thought ──
   /** LLM 推理过程内容（Spec A#7: reasoning_content） */
   content?: string;
+
+  // ── tool_stream ──
+  /** 工具内部 LLM 流式 token（编辑器生成/检查/修改等，边出边看） */
+  kind?: "token" | "reasoning";
 
   // ── usage ──
   prompt_tokens?: number;

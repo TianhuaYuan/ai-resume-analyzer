@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import os
 import uuid
@@ -11,7 +12,7 @@ from core import cache as embedding_cache
 from core.config import settings
 from core.database import AsyncSessionLocal
 from models.resume import Resume
-from services.rag.pipeline import clear_resume_vectors, process_resume
+from services.rag.pipeline import clear_resume_vectors
 from services.resume_analysis_cache import get_analysis_cache
 from utils.file_parser import parse_resume
 
@@ -165,18 +166,27 @@ async def retry_resume_processing(
 
 
 async def process_resume_background(resume_id: int, file_path: str, user_id: int = 0):
-    """后台任务：解析文件 → 分块 → 向量化 → 更新状态 → 发布分析任务。
+    """后台任务：解析文件 → 写 parsed_text + content_hash → 更新状态 → 发布分析任务。
 
     用独立的 DB session，因为原请求 session 已关闭。
+
+    T4 (D3 懒索引)：上传只解析、只写内容，不再分块 + embedding。
+    向量索引延迟到首次 RAG 消费时由 ensure_indexed（T6）触发。
+    content_hash 用于脏标记：content_hash != indexed_hash（None）→ 未索引，懒触发。
     """
     async with AsyncSessionLocal() as db:
         try:
             parsed_text = parse_resume(file_path)
-            chunk_count = await process_resume(resume_id, parsed_text)
+            content_hash = hashlib.sha256(parsed_text.encode("utf-8")).hexdigest()
             await db.execute(
                 update(Resume)
                 .where(Resume.id == resume_id)
-                .values(parsed_text=parsed_text, chunk_count=chunk_count, status="ready")
+                .values(
+                    parsed_text=parsed_text,
+                    content_hash=content_hash,
+                    chunk_count=0,
+                    status="ready",
+                )
             )
             await db.commit()
 
@@ -261,7 +271,7 @@ async def delete_resume(db: AsyncSession, resume_id: int, user_id: int) -> None:
     file_path = resume.file_path
 
     # 1. 清 ChromaDB 向量 + BM25 内存索引（内部已吞 Chroma 异常，仅 warning + 重连）
-    await clear_resume_vectors(resume_id)
+    await clear_resume_vectors(user_id, resume_id)
     # 2. 清 Embedding 内存缓存
     cleared = await embedding_cache.clear_resume(resume_id)
     logger.info("Cleared %d embedding cache entries for resume %d", cleared, resume_id)

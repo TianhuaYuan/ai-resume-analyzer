@@ -86,22 +86,29 @@ class TemplateRegistry:
 
     _templates: dict[str, str] = {}
     _loaded: bool = False
+    # 模板目录文件签名（(文件名, mtime_ns) 元组），变化时自动重扫——
+    # 支持运行时新增/修改模板文件，无需重启后端进程
+    _signature: tuple = ()
 
     @classmethod
     def _ensure_loaded(cls) -> None:
-        """懒加载：首次调用时从文件系统读取模板。"""
-        if cls._loaded:
-            return
+        """懒加载 + 文件变化检测：模板目录文件有增删改时重新扫描。"""
         if not TEMPLATES_DIR.exists():
             logger.warning("Templates directory not found: %s", TEMPLATES_DIR)
-            cls._loaded = True
+            cls._templates = {}
+            return
+
+        signature = tuple(
+            sorted((f.name, f.stat().st_mtime_ns) for f in TEMPLATES_DIR.glob("*.html"))
+        )
+        if signature == cls._signature and cls._loaded:
             return
 
         for html_file in TEMPLATES_DIR.glob("*.html"):
             name = html_file.stem
             cls._templates[name] = html_file.read_text(encoding="utf-8")
             logger.info("Loaded template: %s", name)
-
+        cls._signature = signature
         cls._loaded = True
 
     @classmethod
@@ -128,6 +135,7 @@ class TemplateRegistry:
         """测试用：重置注册表状态。"""
         cls._templates.clear()
         cls._loaded = False
+        cls._signature = ()
 
 
 # ═══════════════════════════════════════════════════════════
@@ -354,7 +362,7 @@ def _render_project_experience(content: dict) -> str:
 
 
 def _render_skills(content: dict) -> str:
-    """渲染专业技能模块。"""
+    """渲染专业技能模块（渲染升级：技能标签化）。"""
     categories = content.get("categories", [])
     if not categories:
         return ""
@@ -363,8 +371,12 @@ def _render_skills(content: dict) -> str:
         name = _esc(cat.get("name", ""))
         items = cat.get("items", [])
         if items:
-            items_html = ", ".join(_esc(i) for i in items)
-            rows.append(f'<div class="skill-cat"><span class="skill-name">{name}</span>: {items_html}</div>')
+            items_html = "".join(
+                f'<span class="skill-item">{_esc(i)}</span>' for i in items
+            )
+            rows.append(
+                f'<div class="skill-cat"><span class="skill-name">{name}</span> {items_html}</div>'
+            )
     return "\n".join(rows) if rows else ""
 
 
@@ -663,21 +675,39 @@ def render_resume(
     # 1. 获取模板
     template_html = TemplateRegistry.get(style.template_id)
 
-    # 2. 渲染模块
+    # 2. 渲染模块（支持双栏/头带模板：{{sidebar}}/{{basic_header}} 占位符分流）
+    has_sidebar = "{{sidebar}}" in template_html
+    has_basic_header = "{{basic_header}}" in template_html
+    # 侧栏模块：基本信息/技能/语言/兴趣/社交链接（双栏布局左侧）
+    sidebar_types = {"basic_info", "skills", "language", "social_links", "interests"}
     modules_html = []
+    sidebar_html = []
+    basic_header_html = []
     for mod in sorted(modules, key=lambda m: (getattr(m, "sort_order", 0), getattr(m, "id", 0))):
         title = _MODULE_TITLES.get(mod.module_type, mod.module_type)
         content_html = render_module(mod.module_type, mod.content if isinstance(mod.content, dict) else {})
         if content_html.strip():
-            modules_html.append(
+            # 头带模板：basic_info 提取为独立头部（深色带），不进 modules
+            if has_basic_header and mod.module_type == "basic_info":
+                basic_header_html.append(content_html)
+                continue
+            section = (
                 f'<section class="module module-{mod.module_type}">\n'
                 f'<h2 class="module-title">{title}</h2>\n'
                 f'<div class="module-content">{content_html}</div>\n'
                 f"</section>"
             )
+            if has_sidebar and mod.module_type in sidebar_types:
+                sidebar_html.append(section)
+            else:
+                modules_html.append(section)
 
     # 3. 替换模板占位符
     html = template_html.replace("{{modules}}", "\n".join(modules_html))
+    if has_sidebar:
+        html = html.replace("{{sidebar}}", "\n".join(sidebar_html))
+    if has_basic_header:
+        html = html.replace("{{basic_header}}", "\n".join(basic_header_html))
     html = html.replace("{{filename}}", _esc(filename or "简历"))
 
     # 4. 预解析 CSS 变量

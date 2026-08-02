@@ -16,14 +16,15 @@ from services.rag.chunking import chunk_by_sections
 from services.rag.clients import (
     _collection_name,
     get_chat_client,
-    get_chroma_client,
     get_judge_client,
+    knowledge_collection_name,
     reconnect_chroma,
-    with_chroma,
 )
+from services.rag.metadata import META_ASSET_ID, build_chunk_metadata
+from services.vector_store import get_vector_store
 from services.rag.retrieval import (
     _bm25_indexes,
-    _bm25_lock,
+    clear_bm25,
     get_embeddings,
     hybrid_search,
     reject_if_low_score,
@@ -390,52 +391,43 @@ def build_prompt(context_chunks: list[str], question: str) -> dict:
     return {"system": system, "user": user}
 
 
-async def process_resume(resume_id: int, text: str) -> int:
-    """清理旧向量 → 结构分块 → 向量化 → 存入 Chroma → 清空 BM25 缓存"""
-    client = get_chroma_client()
-    name = _collection_name(resume_id)
+async def process_resume(resume_id: int, text: str, user_id: int | None = None) -> int:
+    """清理旧向量 → 结构分块 → 向量化 → 存入 Chroma → 清空 BM25 缓存
 
-    def _sync_chroma_ops():
-        try:
-            client.delete_collection(name)
-        except Exception:
-            pass  # collection 不存在，忽略
-        coll = client.get_or_create_collection(name=name, metadata={"hnsw:space": "cosine"})
-        coll.add(
-            ids=[str(c["chunk_index"]) for c in chunks],
-            documents=texts,
-            embeddings=embeddings,
-            metadatas=[
-                {
-                    "resume_id": resume_id,
-                    "chunk_index": c["chunk_index"],
-                    "section": c["section"],
-                    "start_char": c["start_char"],
-                    "end_char": c["end_char"],
-                }
-                for c in chunks
-            ],
-        )
-
+    user_id 可选：提供时写入标准 metadata（T2 预埋），为 T7 每用户集合做准备。
+    """
     chunks = chunk_by_sections(text)
     if not chunks:
         return 0
 
+    name = _collection_name(resume_id)
     texts = [c["text"] for c in chunks]
     embeddings = await get_embeddings(texts, resume_id)
 
-    # Bug 3 修复：Chroma 操作通过全局 with_chroma 锁串行化
-    await with_chroma(_sync_chroma_ops)
+    # 通过向量存储端口写入：drop + rebuild。
+    # Chroma 内部操作经全局锁串行化（Bug 3），此处语义与旧实现一致。
+    store = get_vector_store()
+    await store.delete_collection(name)
+    await store.upsert(
+        name,
+        ids=[str(c["chunk_index"]) for c in chunks],
+        documents=texts,
+        embeddings=embeddings,
+        metadatas=[
+            build_chunk_metadata(asset_id=resume_id, chunk=c, user_id=user_id)
+            for c in chunks
+        ],
+    )
 
     _bm25_indexes.pop(resume_id, None)
     return len(chunks)
 
 
-async def _retrieve(resume_id: int, question: str, timer: StepTimer) -> tuple[str, list[dict]]:
+async def _retrieve(user_id: int, resume_id: int, question: str, timer: StepTimer) -> tuple[str, list[dict]]:
     """检索链路：改写 → 混合检索(20) → Rerank(5) → 拒答判断。
     返回 (rewritten_question, reranked_chunks)。检索失败时 reranked_chunks 为空。"""
     rewritten = await timer.run("rewrite", rewrite_query(question))
-    chunks = await timer.run("hybrid", hybrid_search(resume_id, rewritten, top_k=20))
+    chunks = await timer.run("hybrid", hybrid_search(user_id, resume_id, rewritten, top_k=20))
     if not chunks:
         return rewritten, []
     reranked = await timer.run("rerank", rerank(rewritten, chunks, top_k=5))
@@ -453,7 +445,7 @@ async def ask_question_stream(resume_id: int, question: str, user_id: int | None
     timer = StepTimer()
 
     yield {"type": "status", "message": "检索中..."}
-    rewritten, reranked = await _retrieve(resume_id, question, timer)
+    rewritten, reranked = await _retrieve(user_id, resume_id, question, timer)
 
     if not reranked:
         timer.log()
@@ -499,14 +491,20 @@ async def ask_question_stream(resume_id: int, question: str, user_id: int | None
     }
 
 
-async def clear_resume_vectors(resume_id: int) -> None:
-    """删 Chroma collection + 清 BM25 内存缓存"""
+async def clear_resume_vectors(user_id: int, resume_id: int) -> None:
+    """删该简历的向量分块 + 清 BM25 内存缓存（T7 每用户集合内按 asset_id 删除）。
+
+    不整集合删除：同用户的 resume/jd 等资产共用一个 knowledge_{user_id} 集合，
+    只删本资产的分块，避免误删其他资产。
+    """
     try:
-        # Bug 3 修复：Chroma 删除操作也走全局锁
-        await with_chroma(get_chroma_client().delete_collection, _collection_name(resume_id))
+        # 走向量存储端口；真实连接错误向上传播触发重连
+        await get_vector_store().delete(
+            knowledge_collection_name(user_id),
+            where={META_ASSET_ID: resume_id},
+        )
     except Exception:
-        logger.warning("Failed to delete Chroma collection for resume %d, reconnecting", resume_id)
+        logger.warning("Failed to delete Chroma vectors for resume %d, reconnecting", resume_id)
         reconnect_chroma()  # N2：ChromaDB 重连
-    # M5 修复：pop _bm25_indexes 必须在 _bm25_lock 临界区内，避免与 _keyword_search 竞争
-    async with _bm25_lock:
-        _bm25_indexes.pop(resume_id, None)
+    # 重建/删除后清 BM25 缓存（clear_bm25 内部持 _bm25_lock 临界区，避免与 _keyword_search 竞争）
+    await clear_bm25(user_id, resume_id)

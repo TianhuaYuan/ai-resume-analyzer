@@ -18,6 +18,7 @@ ENV/
 
 uploads/
 chroma_data/
+backend/data/*.json
 *.db
 *.sqlite3
 

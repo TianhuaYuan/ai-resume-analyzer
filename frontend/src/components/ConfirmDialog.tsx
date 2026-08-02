@@ -66,8 +66,8 @@ export default function ConfirmDialog({
   };
 
   const confirmColor = danger
-    ? "bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/40"
-    : "bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/40";
+    ? "bg-red-500/20 hover:bg-red-500/30 text-red-500 border border-red-500/40"
+    : "bg-brand/10 hover:bg-brand/15 text-brand border border-brand/30";
 
   if (!open) return null;
 
@@ -77,7 +77,7 @@ export default function ConfirmDialog({
       onCancel={handleCancel}
       onClose={handleClose}
       className="fixed inset-0 z-[60] m-0 w-full h-full p-0
-        bg-black/60 backdrop-blur-sm motion-reduce:backdrop-blur-none"
+        bg-black/30 backdrop-blur-sm motion-reduce:backdrop-blur-none"
       role="dialog"
       aria-modal="true"
       aria-label={title}
@@ -106,7 +106,7 @@ export default function ConfirmDialog({
             aria-label="关闭"
             disabled={loading}
             className="p-1.5 rounded-lg text-[var(--color-text-secondary)]
-              hover:text-[var(--color-text)] hover:bg-white/8
+              hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]
               active:scale-[0.95] motion-reduce:active:scale-100
               transition-all cursor-pointer shrink-0
               disabled:opacity-50 disabled:cursor-not-allowed"
@@ -120,7 +120,7 @@ export default function ConfirmDialog({
             onClick={() => !loading && onCancel()}
             disabled={loading}
             className="px-3.5 py-1.5 text-sm font-medium rounded-lg
-              text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-white/8
+              text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]
               active:scale-[0.98] motion-reduce:active:scale-100
               transition-all cursor-pointer
               disabled:opacity-50 disabled:cursor-not-allowed"

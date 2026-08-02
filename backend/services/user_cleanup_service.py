@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.config import settings
 from models.resume import Resume
 from models.user import User
+from services.vector_store import get_vector_store
 
 logger = logging.getLogger(__name__)
 
@@ -36,19 +37,12 @@ async def delete_user_account(db: AsyncSession, user: User) -> None:
     file_paths = [r.file_path for r in resumes if r.file_path]
     resume_ids = [r.id for r in resumes]
 
-    # 2. 删除 ChromaDB 集合
+    # 2. 删除 ChromaDB 集合（走向量存储端口；集合不存在由 adapter 忽略）
     for rid in resume_ids:
         try:
-            from services.rag.clients import get_chroma_client
-
-            chroma = get_chroma_client()
             collection_name = f"resume_{rid}"
-            try:
-                chroma.delete_collection(collection_name)
-                logger.info("Deleted ChromaDB collection: %s", collection_name)
-            except Exception:
-                # 集合可能不存在，忽略
-                pass
+            await get_vector_store().delete_collection(collection_name)
+            logger.info("Deleted ChromaDB collection: %s", collection_name)
         except Exception:
             logger.warning("ChromaDB cleanup skipped for resume_%s", rid, exc_info=True)
 

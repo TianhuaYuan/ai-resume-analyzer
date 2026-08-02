@@ -109,7 +109,7 @@ export default function ResumeViewer({
             onClick={onClose}
             aria-label="关闭"
             className="ml-3 p-1.5 rounded-lg text-[var(--color-text-secondary)]
-              hover:text-[var(--color-text)] hover:bg-white/8
+              hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]
               active:scale-[0.95] motion-reduce:active:scale-100
               transition-all cursor-pointer shrink-0"
           >
@@ -163,8 +163,8 @@ export default function ResumeViewer({
                     aria-label="刷新"
                     className="inline-flex items-center gap-1.5 px-3 py-1.5
                       text-xs font-medium rounded-lg
-                      bg-indigo-500/15 hover:bg-indigo-500/25
-                      border border-indigo-500/30 text-indigo-300
+                      bg-brand/15 hover:bg-brand/25
+                      border border-brand/30 text-brand
                       active:scale-[0.98] motion-reduce:active:scale-100
                       transition-all cursor-pointer"
                   >

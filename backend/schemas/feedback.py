@@ -46,7 +46,36 @@ class UserFeedbackItem(BaseModel):
 
 
 class UserFeedbackListResponse(BaseModel):
-    """意见箱列表响应。"""
+    """意见箱列表响应（管理员用）。"""
 
     items: list[UserFeedbackItem]
     total: int
+
+
+class PublicFeedbackItem(BaseModel):
+    """公开反馈列表项（不含 user_id）。"""
+
+    id: int
+    content: str
+    type: str
+    status: str
+    created_at: datetime
+    user_display: str
+    likes_count: int
+    is_liked: bool
+
+    model_config = {"from_attributes": True}
+
+
+class PublicFeedbackListResponse(BaseModel):
+    """公开反馈列表响应。"""
+
+    items: list[PublicFeedbackItem]
+    total: int
+
+
+class LikeResponse(BaseModel):
+    """点赞响应。"""
+
+    likes_count: int
+    is_liked: bool

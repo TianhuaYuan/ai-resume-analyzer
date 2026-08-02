@@ -74,11 +74,11 @@ function StatsSection() {
   }
 
   const cards = [
-    { label: "用户总数", value: stats.total_users, icon: Users, color: "text-indigo-400" },
-    { label: "简历总数", value: stats.total_resumes, icon: Database, color: "text-emerald-400" },
-    { label: "问答记录", value: stats.total_qa_history, icon: ChatCircleDots, color: "text-sky-400" },
-    { label: "用户反馈", value: stats.total_feedback, icon: ChatTeardropText, color: "text-amber-400" },
-    { label: "求职申请", value: stats.total_job_applications, icon: Briefcase, color: "text-purple-400" },
+    { label: "用户总数", value: stats.total_users, icon: Users, color: "text-brand" },
+    { label: "简历总数", value: stats.total_resumes, icon: Database, color: "text-emerald-500" },
+    { label: "问答记录", value: stats.total_qa_history, icon: ChatCircleDots, color: "text-sky-500" },
+    { label: "用户反馈", value: stats.total_feedback, icon: ChatTeardropText, color: "text-amber-500" },
+    { label: "求职申请", value: stats.total_job_applications, icon: Briefcase, color: "text-purple-500" },
   ];
 
   return (
@@ -88,7 +88,7 @@ function StatsSection() {
         return (
           <div
             key={c.label}
-            className="p-4 rounded-xl bg-[var(--color-bg-secondary)] border border-[var(--color-border)]"
+            className="glass-card p-4 hover:-translate-y-1 hover:shadow-xl hover:shadow-black/5 transition-all duration-300"
           >
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs text-[var(--color-text-muted)]">{c.label}</span>
@@ -155,10 +155,10 @@ function AuditSection() {
               setOffset(0);
             }}
             placeholder="按 action 过滤，如 login"
-            className="w-52 pl-8 pr-3 py-1.5 rounded-lg text-xs text-[var(--color-text)]
-              bg-[var(--color-bg-secondary)] border border-[var(--color-border)]
+            className="w-52 pl-8 pr-3 py-1.5 rounded-xl text-xs text-[var(--color-text)]
+              bg-[#F2F2F7] border border-transparent
               placeholder:text-[var(--color-text-muted)]
-              focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+              focus:outline-none focus:bg-white focus:border-brand/40 focus:ring-4 focus:ring-brand/15"
           />
         </div>
         <span className="text-xs text-[var(--color-text-muted)]">
@@ -169,7 +169,7 @@ function AuditSection() {
       {error ? (
         <ErrorBox message={error} />
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-[var(--color-border)]">
+        <div className="overflow-x-auto rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)]">
           <table className="w-full text-xs">
             <thead className="bg-[var(--color-bg-secondary)] text-[var(--color-text-muted)]">
               <tr>
@@ -201,7 +201,7 @@ function AuditSection() {
                   >
                     <td className="px-3 py-2">
                       <span className="inline-flex items-center px-1.5 py-0.5 rounded
-                        bg-indigo-500/10 text-indigo-300 text-[11px] font-medium">
+                        bg-brand/10 text-brand text-[11px] font-medium">
                         {it.action}
                       </span>
                     </td>
@@ -247,9 +247,9 @@ function FeedbackSection() {
   }, [offset]);
 
   const typeColor: Record<string, string> = {
-    bug: "bg-red-500/10 text-red-300",
-    feature: "bg-emerald-500/10 text-emerald-300",
-    other: "bg-sky-500/10 text-sky-300",
+    bug: "bg-red-500/10 text-red-600",
+    feature: "bg-emerald-500/10 text-emerald-600",
+    other: "bg-sky-500/10 text-sky-600",
   };
 
   return (
@@ -263,7 +263,7 @@ function FeedbackSection() {
       {error ? (
         <ErrorBox message={error} />
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-[var(--color-border)]">
+        <div className="overflow-x-auto rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)]">
           <table className="w-full text-xs">
             <thead className="bg-[var(--color-bg-secondary)] text-[var(--color-text-muted)]">
               <tr>
@@ -299,7 +299,7 @@ function FeedbackSection() {
                     <td className="px-3 py-2">
                       <span
                         className={`inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium ${
-                          typeColor[it.type] ?? "bg-white/5 text-[var(--color-text-muted)]"
+                          typeColor[it.type] ?? "bg-[var(--color-bg-secondary)] text-[var(--color-text-muted)]"
                         }`}
                       >
                         {it.type}
@@ -344,10 +344,10 @@ function TemplatesSection() {
       {templates.map((t) => (
         <div
           key={t.id}
-          className="p-4 rounded-xl bg-[var(--color-bg-secondary)] border border-[var(--color-border)]"
+          className="glass-card p-4 hover:-translate-y-1 hover:shadow-xl hover:shadow-black/5 transition-all duration-300"
         >
           <div className="flex items-center gap-2 mb-2">
-            <FileText size={18} weight="duotone" className="text-indigo-400" aria-hidden="true" />
+            <FileText size={18} weight="duotone" className="text-brand" aria-hidden="true" />
             <span className="text-sm font-semibold text-[var(--color-text)]">{t.name}</span>
             <span className="text-[10px] text-[var(--color-text-muted)] font-mono">{t.id}</span>
           </div>
@@ -356,7 +356,7 @@ function TemplatesSection() {
             href={`/api/v1/resumes/0/preview?template=${t.id}`}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+            className="inline-flex items-center gap-1 text-xs text-brand hover:text-brand-hover transition-colors"
           >
             预览
           </a>
@@ -374,7 +374,7 @@ function GrafanaSection() {
       <p className="text-xs text-[var(--color-text-muted)]">
         若已部署 Grafana 并在反向代理中将 <code className="font-mono">/grafana</code> 指向它，则下方将显示监控面板；未配置时为空白。
       </p>
-      <div className="rounded-xl border border-[var(--color-border)] overflow-hidden bg-[var(--color-bg-secondary)]">
+      <div className="rounded-2xl border border-[var(--color-border)] overflow-hidden bg-[var(--color-bg-secondary)]">
         <iframe
           src="/grafana"
           className="w-full h-[560px] border-0"
@@ -390,7 +390,7 @@ function GrafanaSection() {
 function Loading() {
   return (
     <div className="flex items-center justify-center py-12">
-      <span className="inline-block w-5 h-5 rounded-full border-2 border-indigo-400 border-t-transparent animate-spin" aria-hidden="true" />
+      <span className="inline-block w-5 h-5 rounded-full border-2 border-brand border-t-transparent animate-spin" aria-hidden="true" />
       <span className="ml-2 text-xs text-[var(--color-text-muted)]">加载中...</span>
     </div>
   );
@@ -398,7 +398,7 @@ function Loading() {
 
 function ErrorBox({ message }: { message: string }) {
   return (
-    <div className="flex items-start gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+    <div className="flex items-start gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-600 text-sm">
       <Warning size={16} weight="bold" className="mt-0.5 shrink-0" aria-hidden="true" />
       <span>{message}</span>
     </div>
@@ -423,9 +423,9 @@ function Pagination({
       <button
         disabled={!hasPrev}
         onClick={() => onChange(Math.max(0, offset - limit))}
-        className="px-2.5 py-1 rounded-lg border border-[var(--color-border)]
-          text-[var(--color-text-secondary)] hover:text-[var(--color-text)]
-          disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+        className="px-2.5 py-1 rounded-full bg-[var(--color-bg-secondary)]
+          text-[var(--color-text-secondary)] hover:bg-[#E5E5EA]
+          disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer"
       >
         上一页
       </button>
@@ -435,9 +435,9 @@ function Pagination({
       <button
         disabled={!hasNext}
         onClick={() => onChange(offset + limit)}
-        className="px-2.5 py-1 rounded-lg border border-[var(--color-border)]
-          text-[var(--color-text-secondary)] hover:text-[var(--color-text)]
-          disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+        className="px-2.5 py-1 rounded-full bg-[var(--color-bg-secondary)]
+          text-[var(--color-text-secondary)] hover:bg-[#E5E5EA]
+          disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer"
       >
         下一页
       </button>
@@ -465,7 +465,7 @@ export default function AdminPage() {
     return (
       <div className="max-w-2xl mx-auto px-6 py-16 text-center">
         <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl
-          bg-red-500/10 border border-red-500/15 text-red-400 mb-4">
+          bg-red-500/10 border border-red-500/15 text-red-500 mb-4">
           <Warning size={26} weight="duotone" aria-hidden="true" />
         </div>
         <h2 className="text-base font-semibold text-[var(--color-text)] mb-1.5">无访问权限</h2>
@@ -474,9 +474,9 @@ export default function AdminPage() {
         </p>
         <Link
           to="/"
-          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-medium
-            border border-[var(--color-border)] text-[var(--color-text-secondary)]
-            hover:text-[var(--color-text)] transition-colors cursor-pointer"
+          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-medium
+            bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)]
+            hover:bg-[#E5E5EA] transition-all cursor-pointer"
         >
           <ArrowLeft size={14} weight="regular" aria-hidden="true" />
           返回首页
@@ -489,12 +489,12 @@ export default function AdminPage() {
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6">
       {/* 标题 */}
       <div className="flex items-center gap-2 mb-5">
-        <ChartBar size={22} weight="duotone" className="text-indigo-400" aria-hidden="true" />
+        <ChartBar size={22} weight="duotone" className="text-brand" aria-hidden="true" />
         <h1 className="text-lg font-semibold text-[var(--color-text)]">管理员后台</h1>
         <Link
           to="/"
           className="ml-auto inline-flex items-center gap-1 text-xs text-[var(--color-text-muted)]
-            hover:text-indigo-400 transition-colors"
+            hover:text-brand transition-colors"
         >
           <ArrowLeft size={12} weight="regular" aria-hidden="true" />
           返回首页
@@ -513,7 +513,7 @@ export default function AdminPage() {
               className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium
                 border-b-2 transition-colors cursor-pointer whitespace-nowrap
                 ${isActive
-                  ? "border-indigo-400 text-indigo-300"
+                  ? "border-brand text-brand"
                   : "border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
                 }`}
               aria-selected={isActive}

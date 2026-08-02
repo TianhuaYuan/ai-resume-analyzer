@@ -17,8 +17,17 @@ from services.analyze_service import analyze_resume
 from services.match_jd_service import match_jd
 from services.react_agent.memory import get_l3_profile
 from services.react_agent.tools.base import Tool
-from services.rag.pipeline import LLMToolResponse, llm_generate, llm_generate_with_tools
-from services.rag.retrieval import hybrid_search, rerank
+from services.rag.asset_source import ASSET_TYPE_RESUME
+from services.rag.clients import knowledge_collection_name
+from services.rag.ensure_indexed import ensure_indexed
+from services.rag.pipeline import (
+    LLMToolResponse,
+    ToolCall,
+    llm_generate,
+    llm_generate_with_tools,
+    llm_generate_with_tools_stream,
+)
+from services.rag.retrieval import hybrid_search, hybrid_search_corpus, rerank
 from services.resume_builder import get_resume_with_modules
 from services.resume_service import compare_resumes
 
@@ -70,6 +79,7 @@ class GenerateModuleArgs(BaseModel):
     resume_id: int = Field(..., description="简历 ID")
     module_type: str = Field(..., description="模块类型（如 basic_info/education/work_experience）")
     prompt: str = Field("", description="用户补充说明")
+    few_shot: str | None = Field(None, description="参考范文文本（few-shot，仅作结构与表述参照）")
 
 
 class CheckModuleArgs(BaseModel):
@@ -87,6 +97,7 @@ class RewriteResumeArgs(BaseModel):
     resume_id: int = Field(..., description="简历 ID")
     mode: str = Field("generate", description="模式：generate（空简历生成）或 optimize（现有内容优化）")
     target_position: str | None = Field(None, description="目标岗位")
+    few_shot: str | None = Field(None, description="参考范文文本（few-shot，仅作结构与措辞参照）")
 
 
 class AskInfoArgs(BaseModel):
@@ -134,7 +145,16 @@ class SearchResumeTool(Tool):
         if resume.status != "ready":
             return f"⚠️ 简历当前状态为 {resume.status}，暂不可检索。"
 
-        chunks = await hybrid_search(resume_id, query, top_k=20)
+        # T6 懒索引：首次检索 / 内容变更后触发重建
+        await ensure_indexed(
+            self.db,
+            user_id=self.user_id,
+            asset_id=resume_id,
+            asset_type=ASSET_TYPE_RESUME,
+            collection=knowledge_collection_name(self.user_id),
+        )
+
+        chunks = await hybrid_search(self.user_id, resume_id, query, top_k=20)
         if not chunks:
             return "未找到相关内容。"
 
@@ -159,6 +179,179 @@ class SearchResumeTool(Tool):
             score = chunk.get("rerank_score", chunk.get("score", 0))
             lines.append(f"{i}. [{section}] (评分: {score:.2f})\n{text}\n")
 
+        return "\n".join(lines)
+
+
+class GetResumeContentArgs(BaseModel):
+    resume_id: int = Field(..., description="简历 ID")
+
+
+class GetResumeContentTool(Tool):
+    """T12：整文直读实时源（D3 工作区解耦）。
+
+    事实性/定向问题优先用本工具（读 live parsed_text/模块），比检索更准、永远新鲜。
+    """
+    name = "get_resume_content"
+    description = "读取简历当前完整内容（实时源，含草稿编辑态）。事实性/定向问题优先用本工具，检索只在模糊/跨模块问题时用。"
+    args_model = GetResumeContentArgs
+    category = "qa"
+
+    async def _execute(self, **kwargs) -> str:
+        resume_id = kwargs["resume_id"]
+        resume = await self._get_resume(resume_id)
+        if resume is None:
+            return "⚠️ 简历不存在或无权访问。"
+
+        text = (resume.parsed_text or "").strip()
+        if text:
+            return f"简历《{resume.filename}》内容（约 {len(text)} 字）：\n{text[:8000]}"
+
+        # 草稿/未合并：读模块内容兜底（实时工作区）
+        from services.resume_builder import get_resume_with_modules
+
+        _, modules = await get_resume_with_modules(self.db, self.user_id, resume_id)
+        if modules:
+            lines = [f"【{m.module_type}】{m.content}" for m in modules if m.content]
+            body = "\n".join(lines)
+            if body:
+                return f"简历《{resume.filename}》内容（模块视图，未合并渲染）：\n{body[:8000]}"
+        return "⚠️ 简历内容为空。"
+
+
+class SearchAssetsArgs(BaseModel):
+    query: str = Field(..., description="检索查询词")
+    asset_type: str = Field("resume", description="资产类型（resume/jd/interview/note）")
+    asset_ids: list[int] = Field(..., description="要检索的资产 ID 列表")
+
+
+class SearchAssetsTool(Tool):
+    """T12：知识资产库检索（T7 每用户集合 + scope 过滤）。"""
+    name = "search_assets"
+    description = "在知识资产库（可跨多份简历/JD/面试记录）中检索与查询语义相关的段落，返回 top5 结构化结果（含来源资产与版本）。"
+    args_model = SearchAssetsArgs
+    category = "qa"
+
+    async def _execute(self, **kwargs) -> str:
+        query = kwargs["query"]
+        asset_type = kwargs["asset_type"]
+        asset_ids = kwargs["asset_ids"]
+        if not asset_ids:
+            return "⚠️ 请指定要检索的资产 ID 列表。"
+
+        scope = {asset_type: asset_ids}
+        chunks = await hybrid_search_corpus(self.user_id, scope, query, top_k=20)
+        if not chunks:
+            return "未找到相关内容。"
+
+        reranked = await rerank(query, chunks, top_k=5)
+        if not reranked:
+            return "未找到相关内容。"
+
+        self.sources = [
+            {
+                "asset_id": c.get("asset_id"),
+                "asset_type": asset_type,
+                "version": c.get("version"),
+                "section": c.get("section", "未知"),
+                "text": c.get("text", ""),
+                "score": c.get("rerank_score", c.get("score", 0)),
+            }
+            for c in reranked
+        ]
+
+        lines = [f"找到 {len(reranked)} 条相关结果：\n"]
+        for i, c in enumerate(reranked, 1):
+            asset = c.get("asset_id", "?")
+            ver = c.get("version", "?")
+            score = c.get("rerank_score", c.get("score", 0))
+            lines.append(f"{i}. [资产{asset}:v{ver}] ({c.get('section', '未知')}) (评分: {score:.2f})\n{c.get('text', '')}\n")
+        return "\n".join(lines)
+
+
+class AnswerFromIndexArgs(BaseModel):
+    question: str = Field(..., description="问题")
+    resume_id: int = Field(..., description="当前简历 ID")
+
+
+class AnswerFromIndexTool(Tool):
+    """T12：agentic RAG 深度检索回答（T11 run_answer_from_index 入口）。"""
+    name = "answer_from_index"
+    description = "对知识资产库进行深度检索回答（agentic RAG：改写→检索→重排→生成→反思）。适合复杂/跨模块/需要依据的问题。"
+    args_model = AnswerFromIndexArgs
+    category = "qa"
+
+    async def _execute(self, **kwargs) -> str:
+        question = kwargs["question"]
+        resume_id = kwargs["resume_id"]
+
+        from services.agentic_rag.runner import run_answer_from_index
+
+        result = await run_answer_from_index(
+            user_id=self.user_id,
+            scope={ASSET_TYPE_RESUME: [resume_id]},
+            question=question,
+        )
+        answer = result["answer"]
+        if not answer:
+            return "未能生成答案，请重试。"
+        self.sources = result["sources"]
+        return answer
+
+
+class SaveMemoryArgs(BaseModel):
+    snippet: str = Field(..., description="要记住的原子事实（一条独立、可检索的记忆）")
+    memory_type: str = Field("episodic", description="类型：episodic（原始情节）/ semantic（提炼后的语义事实）")
+    importance: float = Field(0.5, description="重要度 0-1")
+
+
+class SaveMemoryTool(Tool):
+    """T15：把用户事实/偏好/决策沉淀为长期记忆（L4）。"""
+    name = "save_memory"
+    description = "把一条用户事实/偏好/决策沉淀为长期记忆（L4 语义记忆），跨会话可召回。用户在对话中透露的重要偏好/目标/决定时使用。"
+    args_model = SaveMemoryArgs
+    category = "qa"
+
+    async def _execute(self, **kwargs) -> str:
+        snippet = kwargs["snippet"]
+        memory_type = kwargs["memory_type"]
+        importance = kwargs["importance"]
+
+        from services.memory.memory_store import save_memory
+
+        mid = await save_memory(
+            user_id=self.user_id,
+            snippet=snippet,
+            memory_type=memory_type,
+            importance=importance,
+        )
+        return f"✅ 已记住：{snippet[:80]}{'…' if len(snippet) > 80 else ''}（记忆 {mid[:8]}）"
+
+
+class RecallMemoryArgs(BaseModel):
+    query: str = Field(..., description="要召回的语义查询")
+    top_k: int = Field(3, ge=1, le=10, description="返回条数")
+
+
+class RecallMemoryTool(Tool):
+    """T15：语义召回用户长期记忆（L4），用于跨会话一致性与偏好参考。"""
+    name = "recall_memory"
+    description = "按语义召回用户的长期记忆片段（L4），用于跨会话一致性、参考用户偏好/目标/历史决策。"
+    args_model = RecallMemoryArgs
+    category = "qa"
+
+    async def _execute(self, **kwargs) -> str:
+        query = kwargs["query"]
+        top_k = kwargs["top_k"]
+
+        from services.memory.memory_store import recall_memory
+
+        items = await recall_memory(user_id=self.user_id, query=query, top_k=top_k)
+        if not items:
+            return "没有相关记忆。"
+
+        lines = [f"找到 {len(items)} 条相关记忆：\n"]
+        for i, item in enumerate(items, 1):
+            lines.append(f"{i}. [{item['score']:.2f}] {item['text']}\n")
         return "\n".join(lines)
 
 
@@ -309,7 +502,7 @@ class RewriteStarTool(Tool):
         )
         return await _submit_modules_via_llm(
             self.user_id, resume_id, system, user_msg,
-            fail_prefix="STAR 改写失败",
+            fail_prefix="STAR 改写失败", emit=self.emit,
         )
 
 
@@ -353,7 +546,7 @@ class TranslateTool(Tool):
         )
         return await _submit_modules_via_llm(
             self.user_id, resume_id, system, user_msg,
-            max_tokens=8000, fail_prefix="翻译失败",
+            max_tokens=8000, fail_prefix="翻译失败", emit=self.emit,
         )
 
 
@@ -382,6 +575,65 @@ class InterviewCoachTool(Tool):
         return await llm_generate(system=system, user=user, user_id=self.user_id)
 
 
+class RecommendJobsArgs(BaseModel):
+    resume_id: int = Field(..., description="简历 ID（自动归属校验）")
+    top_k: int = Field(5, ge=1, le=10, description="返回岗位数")
+    job_type: str | None = Field(None, description="限定校招/社招/实习：campus/social/intern")
+
+
+class RecommendJobsTool(Tool):
+    """岗位匹配推荐：向量预筛（market_public 公共集合）+ LLM 精排评分。"""
+
+    name = "recommend_jobs"
+    description = "根据简历内容推荐匹配的校招/社招/实习岗位（向量预筛 + LLM 精排），返回匹配分、匹配点与差距"
+    args_model = RecommendJobsArgs
+    category = "qa"
+
+    async def _execute(self, **kwargs) -> str:
+        resume_id = kwargs["resume_id"]
+        top_k = kwargs.get("top_k", 5)
+        job_type = kwargs.get("job_type")
+
+        from services.market_match_service import recommend_jobs
+
+        try:
+            items = await recommend_jobs(
+                self.db, user_id=self.user_id, resume_id=resume_id,
+                top_k=top_k, job_type=job_type,
+            )
+        except HTTPException as e:
+            return f"⚠️ {e.detail}"
+        except Exception as e:
+            return f"⚠️ 岗位推荐失败: {e}"
+
+        if not items:
+            return "没有找到匹配的岗位，试试放宽筛选条件。"
+
+        self.sources = [
+            {
+                "asset_id": it["id"],
+                "title": it["title"],
+                "company": it["company"],
+                "score": it["score"],
+                "job_type": it["job_type"],
+            }
+            for it in items
+        ]
+
+        _JT = {"campus": "校招", "social": "社招", "intern": "实习"}
+        lines = [f"为你推荐 {len(items)} 个匹配岗位：\n"]
+        for i, it in enumerate(items, 1):
+            jt = _JT.get(it["job_type"], it["job_type"] or "")
+            lines.append(
+                f"{i}. {it['company'] or ''} {it['title']}（{jt}）匹配分 {it['score']}/100"
+            )
+            if it.get("matched"):
+                lines.append(f"   匹配点: {'、'.join(it['matched'][:3])}")
+            if it.get("gaps"):
+                lines.append(f"   差距: {'、'.join(it['gaps'][:3])}")
+        return "\n".join(lines)
+
+
 # ═══════════════════════════════════════════════════════════
 # Builder 工具实现 (5) — T28
 # 设计：短事务独立 commit + 编辑锁 TTL 2min 心跳
@@ -403,6 +655,71 @@ from services.edit_lock import acquire_edit_lock, release_edit_lock
 # 注意：本代码库中 CHAT_MODEL（MiMo）从未被传过 tools，function calling 支持未验证；
 # DeepSeek 是唯一被实战验证能出 tool_calls 的模型。如需切回 CHAT_MODEL 设 None 即可。
 _BUILDER_GEN_MODEL = "judge"
+
+
+async def _stream_tool_llm(
+    *,
+    messages: list[dict],
+    tools: list[dict] | None,
+    tool_name: str,
+    emit,
+    temperature: float = 0.1,
+    max_tokens: int | None = None,
+    model: str | None = None,
+    user_id: int | None = None,
+) -> LLMToolResponse:
+    """工具内部 LLM 流式生成（编辑器工具内部死等 → 边出边看）。
+
+    - ``emit is None`` → 非流式 ``llm_generate_with_tools``（行为不变，兼容无事件上下文/测试）
+    - ``emit`` 存在 → ``llm_generate_with_tools_stream``，token/reasoning 实时推
+      ``{"type": "tool_stream", "tool_name", "kind", "content"}`` 事件，
+      从 ``done`` 事件聚合 tool_calls，返回 LLMToolResponse（调用方沿用 ``_extract_tool_args``）
+    """
+    if emit is None:
+        return await llm_generate_with_tools(
+            messages=messages,
+            tools=tools,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            model=model,
+            user_id=user_id,
+        )
+
+    content_parts: list[str] = []
+    tool_calls: list[ToolCall] = []
+    async for ev in llm_generate_with_tools_stream(
+        messages=messages,
+        tools=tools,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        model=model,
+        user_id=user_id,
+    ):
+        et = ev.get("type")
+        if et == "reasoning":
+            await emit(
+                {
+                    "type": "tool_stream",
+                    "tool_name": tool_name,
+                    "kind": "reasoning",
+                    "content": ev.get("content", ""),
+                }
+            )
+        elif et == "token":
+            content_parts.append(ev.get("content", ""))
+            await emit(
+                {
+                    "type": "tool_stream",
+                    "tool_name": tool_name,
+                    "kind": "token",
+                    "content": ev.get("content", ""),
+                }
+            )
+        elif et == "done":
+            tool_calls = ev.get("tool_calls", []) or []
+        # usage 事件忽略（工具内部 token 不计入主 usage 记账）
+
+    return LLMToolResponse(content="".join(content_parts), tool_calls=tool_calls)
 
 
 def _make_function_schema(name: str, description: str, parameters: dict) -> dict:
@@ -503,11 +820,14 @@ async def _submit_modules_via_llm(
     tool_desc: str = "提交整份重写后的简历模块数组。modules 每项为 {module_type, content, sort_order}。",
     max_tokens: int = 4000,
     fail_prefix: str = "AI 重写失败",
+    emit=None,
 ) -> str:
     """让 LLM 通过 function calling 提交完整 modules 数组 → 逐模块校验 → 短事务全量替换。
 
     改写/翻译/重写类工具共用。整份重写保证：_replace_all_modules_short_txn 删旧插新原子全量替换，
     且不新建 Resume（多轮对话累积到同一份草稿）。
+
+    emit：工具内部 LLM 流式 token 回调（无则退化为非流式）。
     """
     tool_schema = _make_function_schema(
         name="submit_rewritten_resume",
@@ -515,12 +835,14 @@ async def _submit_modules_via_llm(
         parameters=_RewriteResumeOutput.model_json_schema(),
     )
     try:
-        response = await llm_generate_with_tools(
+        response = await _stream_tool_llm(
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_msg},
             ],
             tools=[tool_schema],
+            tool_name="submit_modules",
+            emit=emit,
             temperature=0.1, max_tokens=max_tokens,
             model=_BUILDER_GEN_MODEL,
             user_id=user_id,
@@ -719,6 +1041,7 @@ class GenerateModuleTool(Tool):
         resume_id = kwargs.get("resume_id")
         module_type = kwargs.get("module_type")
         prompt = kwargs.get("prompt", "")
+        few_shot = kwargs.get("few_shot") or ""
 
         # 获取简历 + 现有模块上下文
         try:
@@ -755,6 +1078,12 @@ class GenerateModuleTool(Tool):
             "你是专业简历撰写助手。请根据用户信息生成指定模块的内容。\n"
             "你必须通过调用 submit_module_content 工具提交结果：将完整 content 作为该工具的参数。"
         )
+        if few_shot:
+            system += (
+                "\n\n参考范文示例（仅作结构与表述参照，内容必须基于用户真实信息，"
+                "不得照抄范文中的他人经历/姓名/学校/公司）：\n"
+                f"{few_shot[:3000]}"
+            )
         user_msg = (
             f"模块类型: {module_type}\n"
             f"用户补充说明: {prompt or '无'}\n"
@@ -763,12 +1092,14 @@ class GenerateModuleTool(Tool):
         )
 
         try:
-            response = await llm_generate_with_tools(
+            response = await _stream_tool_llm(
                 messages=[
                     {"role": "system", "content": system},
                     {"role": "user", "content": user_msg},
                 ],
                 tools=[tool_schema],
+                tool_name="generate_module",
+                emit=self.emit,
                 temperature=0.1, max_tokens=2000,
                 model=_BUILDER_GEN_MODEL,
                 user_id=self.user_id,
@@ -828,11 +1159,18 @@ class CheckModuleTool(Tool):
             f"请检查以上模块内容。"
         )
 
-        return await llm_generate(
-            system=system, user=user_msg,
+        check_resp = await _stream_tool_llm(
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_msg},
+            ],
+            tools=None,
+            tool_name="check_module",
+            emit=self.emit,
             temperature=0.2, max_tokens=1500,
             user_id=self.user_id,
         )
+        return check_resp.content
 
 
 class ModifyModuleTool(Tool):
@@ -883,12 +1221,14 @@ class ModifyModuleTool(Tool):
         )
 
         try:
-            response = await llm_generate_with_tools(
+            response = await _stream_tool_llm(
                 messages=[
                     {"role": "system", "content": system},
                     {"role": "user", "content": user_msg},
                 ],
                 tools=[tool_schema],
+                tool_name="modify_module",
+                emit=self.emit,
                 temperature=0.1, max_tokens=2000,
                 model=_BUILDER_GEN_MODEL,
                 user_id=self.user_id,
@@ -915,6 +1255,7 @@ class RewriteResumeTool(Tool):
         resume_id = kwargs.get("resume_id")
         mode = kwargs.get("mode", "generate")
         target_position = kwargs.get("target_position")
+        few_shot = kwargs.get("few_shot") or ""
 
         resume, modules = await get_resume_with_modules(self.db, self.user_id, resume_id)
         if resume is None:
@@ -948,6 +1289,12 @@ class RewriteResumeTool(Tool):
                 f"{position_hint}\n"
                 "保持原有模块结构，通过 submit_rewritten_resume 工具提交优化后的完整 modules 数组。"
             )
+        if few_shot:
+            system_prompt += (
+                "\n\n参考范文（仅作结构与措辞参照，内容必须基于用户真实信息，"
+                "不得照抄范文中的他人经历/姓名/学校/公司）：\n"
+                f"{few_shot[:4000]}"
+            )
 
         user_msg = (
             f"模式: {mode}\n"
@@ -959,7 +1306,7 @@ class RewriteResumeTool(Tool):
         # 复用公共写模块辅助：function calling 提交完整 modules → 校验 → 全量替换
         return await _submit_modules_via_llm(
             self.user_id, resume_id, system_prompt, user_msg,
-            fail_prefix="AI 重写失败",
+            fail_prefix="AI 重写失败", emit=self.emit,
         )
 
 
@@ -1014,11 +1361,18 @@ class AskInfoTool(Tool):
             f"请回答用户问题并建议需要补充的信息。"
         )
 
-        return await llm_generate(
-            system=system, user=user_msg,
+        ask_resp = await _stream_tool_llm(
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_msg},
+            ],
+            tools=None,
+            tool_name="ask_info",
+            emit=self.emit,
             temperature=0.3, max_tokens=1000,
             user_id=self.user_id,
         )
+        return ask_resp.content
 
 
 # ═══════════════════════════════════════════════════════════
@@ -1106,12 +1460,18 @@ class ReplyDraftTool(Tool):
 TOOL_REGISTRY: dict[str, list[type[Tool]]] = {
     "qa": [
         SearchResumeTool,
+        SearchAssetsTool,
+        GetResumeContentTool,
+        AnswerFromIndexTool,
+        SaveMemoryTool,
+        RecallMemoryTool,
         JDMatchTool,
         DiagnoseResumeTool,
         CompareResumesTool,
         RewriteStarTool,
         TranslateTool,
         InterviewCoachTool,
+        RecommendJobsTool,
     ],
     "builder": [
         GenerateModuleTool,

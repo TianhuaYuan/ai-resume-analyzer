@@ -66,18 +66,18 @@ export function SignInCard2({
   };
 
   return (
-    <div className="min-h-screen w-full bg-black relative overflow-hidden flex items-center justify-center">
-      {/* 背景渐变 */}
-      <div className="absolute inset-0 bg-gradient-to-b from-purple-500/30 via-purple-700/40 to-black" />
+    <div className="min-h-screen w-full bg-[var(--color-bg)] relative overflow-hidden flex items-center justify-center">
+      {/* 背景渐变：淡品牌色径向氛围 */}
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_60%_50%_at_50%_-10%,rgba(0,113,227,0.10),transparent_70%)]" />
 
       {/* 顶部径向光晕 */}
       <motion.div
-        className="absolute top-0 left-1/2 -translate-x-1/2 w-[100vh] h-[60vh] rounded-b-full bg-purple-400/20 blur-[80px]"
+        className="absolute top-0 left-1/2 -translate-x-1/2 w-[100vh] h-[60vh] rounded-b-full bg-brand/15 blur-[80px]"
         animate={{ opacity: [0.15, 0.3, 0.15], scale: [0.98, 1.02, 0.98] }}
         transition={{ duration: 8, repeat: Infinity, repeatType: "mirror" }}
       />
       <motion.div
-        className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[90vh] h-[90vh] rounded-t-full bg-purple-400/20 blur-[60px]"
+        className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[90vh] h-[90vh] rounded-t-full bg-brand/15 blur-[60px]"
         animate={{ opacity: [0.3, 0.5, 0.3], scale: [1, 1.1, 1] }}
         transition={{ duration: 6, repeat: Infinity, repeatType: "mirror", delay: 1 }}
       />
@@ -96,9 +96,9 @@ export function SignInCard2({
           onMouseLeave={handleMouseLeave}
         >
           {/* 玻璃卡片 */}
-          <div className="relative bg-black/40 backdrop-blur-xl rounded-2xl p-6 border border-white/[0.05] shadow-2xl overflow-hidden">
+          <div className="relative glass-card p-6 shadow-[0_20px_60px_rgba(0,0,0,0.08)] overflow-hidden">
             {/* 卡片边框流光 */}
-            <div className="absolute -inset-[0.5px] rounded-2xl bg-gradient-to-r from-white/5 via-white/10 to-white/5 pointer-events-none" />
+            <div className="absolute -inset-[0.5px] rounded-[24px] bg-gradient-to-r from-transparent via-brand/10 to-transparent pointer-events-none" />
 
             {/* Logo 和标题 */}
             <div className="text-center space-y-1 mb-5 relative">
@@ -119,7 +119,7 @@ export function SignInCard2({
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.2 }}
-                className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-b from-white to-white/80"
+                className="text-[22px] font-bold display-tight text-[var(--color-text)]"
               >
                 欢迎回来
               </motion.h1>
@@ -128,9 +128,9 @@ export function SignInCard2({
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ delay: 0.3 }}
-                className="text-white/60 text-xs"
+                className="text-[var(--color-text-muted)] text-xs"
               >
-                登录以继续使用 AI Resume Analyzer
+                登录以继续使用 轻舟简历
               </motion.p>
             </div>
 
@@ -144,11 +144,11 @@ export function SignInCard2({
                     focusedInput === "email" && "scale-[1.02]"
                   )}
                 >
-                  <div className="relative flex items-center overflow-hidden rounded-lg">
+                  <div className="relative flex items-center overflow-hidden rounded-xl">
                     <EnvelopeSimple
                       className={cn(
                         "absolute left-3 w-4 h-4 transition-colors duration-300",
-                        focusedInput === "email" ? "text-white" : "text-white/40"
+                        focusedInput === "email" ? "text-brand" : "text-[var(--color-text-muted)]"
                       )}
                     />
                     <Input
@@ -158,7 +158,7 @@ export function SignInCard2({
                       onChange={(e) => onEmailChange(e.target.value)}
                       onFocus={() => setFocusedInput("email")}
                       onBlur={() => setFocusedInput(null)}
-                      className="w-full bg-white/5 border-white/10 focus:border-white/20 text-white placeholder:text-white/30 h-10 transition-all duration-300 pl-10 pr-3 focus:bg-white/10 rounded-lg"
+                      className="w-full bg-[#F2F2F7] border-transparent focus:border-brand/40 text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] h-10 transition-all duration-300 pl-10 pr-3 focus:bg-white rounded-xl focus:ring-4 focus:ring-brand/15"
                     />
                   </div>
                 </div>
@@ -170,11 +170,11 @@ export function SignInCard2({
                     focusedInput === "password" && "scale-[1.02]"
                   )}
                 >
-                  <div className="relative flex items-center overflow-hidden rounded-lg">
+                  <div className="relative flex items-center overflow-hidden rounded-xl">
                     <LockSimple
                       className={cn(
                         "absolute left-3 w-4 h-4 transition-colors duration-300",
-                        focusedInput === "password" ? "text-white" : "text-white/40"
+                        focusedInput === "password" ? "text-brand" : "text-[var(--color-text-muted)]"
                       )}
                     />
                     <Input
@@ -184,7 +184,7 @@ export function SignInCard2({
                       onChange={(e) => onPasswordChange(e.target.value)}
                       onFocus={() => setFocusedInput("password")}
                       onBlur={() => setFocusedInput(null)}
-                      className="w-full bg-white/5 border-white/10 focus:border-white/20 text-white placeholder:text-white/30 h-10 transition-all duration-300 pl-10 pr-10 focus:bg-white/10 rounded-lg"
+                      className="w-full bg-[#F2F2F7] border-transparent focus:border-brand/40 text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] h-10 transition-all duration-300 pl-10 pr-10 focus:bg-white rounded-xl focus:ring-4 focus:ring-brand/15"
                     />
                     <button
                       type="button"
@@ -194,9 +194,9 @@ export function SignInCard2({
                       className="absolute right-3 cursor-pointer"
                     >
                       {showPassword ? (
-                        <Eye className="w-4 h-4 text-white/40 hover:text-white transition-colors duration-300" />
+                        <Eye className="w-4 h-4 text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors duration-300" />
                       ) : (
-                        <EyeClosed className="w-4 h-4 text-white/40 hover:text-white transition-colors duration-300" />
+                        <EyeClosed className="w-4 h-4 text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors duration-300" />
                       )}
                     </button>
                   </div>
@@ -211,11 +211,11 @@ export function SignInCard2({
                     type="checkbox"
                     checked={rememberMe}
                     onChange={(e) => setRememberMe(e.target.checked)}
-                    className="appearance-none h-4 w-4 rounded border border-white/20 bg-white/5 checked:bg-white checked:border-white focus:outline-none transition-all duration-200"
+                    className="appearance-none h-4 w-4 rounded border border-[var(--color-border)] bg-[var(--color-bg-secondary)] checked:bg-brand checked:border-brand focus:outline-none focus:ring-2 focus:ring-brand/25 transition-all duration-200"
                   />
                   <label
                     htmlFor="remember-me"
-                    className="text-xs text-white/60 hover:text-white/80 transition-colors duration-200 cursor-pointer"
+                    className="text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text)] transition-colors duration-200 cursor-pointer"
                   >
                     记住我
                   </label>
@@ -224,7 +224,7 @@ export function SignInCard2({
                 <button
                   type="button"
                   onClick={onForgotPassword}
-                  className="text-xs text-white/60 hover:text-white transition-colors duration-200 cursor-pointer"
+                  className="text-xs text-brand hover:text-[#0077ed] transition-colors duration-200 cursor-pointer"
                 >
                   忘记密码？
                 </button>
@@ -239,7 +239,7 @@ export function SignInCard2({
                 data-testid="submit-btn"
                 className="w-full relative mt-5"
               >
-                <div className="relative overflow-hidden bg-white text-black font-medium h-10 rounded-lg transition-all duration-300 flex items-center justify-center">
+                <div className="relative overflow-hidden bg-brand text-white font-medium h-10 rounded-full transition-all duration-300 flex items-center justify-center shadow-[0_8px_24px_rgba(0,113,227,0.25)] hover:bg-[#0077ed] hover:shadow-[0_12px_32px_rgba(0,113,227,0.35)]">
                   <AnimatePresence mode="wait">
                     {isLoading ? (
                       <motion.div
@@ -249,7 +249,7 @@ export function SignInCard2({
                         exit={{ opacity: 0 }}
                         className="flex items-center justify-center"
                       >
-                        <div className="w-4 h-4 border-2 border-black/70 border-t-transparent rounded-full animate-spin" />
+                        <div className="w-4 h-4 border-2 border-white/70 border-t-transparent rounded-full animate-spin" />
                       </motion.div>
                     ) : (
                       <motion.span
@@ -269,7 +269,7 @@ export function SignInCard2({
 
               {/* 注册链接 */}
               <motion.p
-                className="text-center text-xs text-white/60 mt-4"
+                className="text-center text-xs text-[var(--color-text-muted)] mt-4"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ delay: 0.5 }}
@@ -278,7 +278,7 @@ export function SignInCard2({
                 <button
                   type="button"
                   onClick={onSignUp}
-                  className="text-white hover:text-white/70 transition-colors duration-300 font-medium cursor-pointer"
+                  className="text-brand hover:text-[#0077ed] transition-colors duration-300 font-medium cursor-pointer"
                 >
                   注册
                 </button>

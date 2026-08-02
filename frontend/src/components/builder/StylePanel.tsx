@@ -36,10 +36,10 @@ interface StylePanelProps {
 
 /** 通用下拉框样式 */
 const SELECT_CLASS =
-  "w-full px-3 py-2 rounded-lg text-sm text-[var(--color-text)] " +
-  "bg-white/5 border border-[var(--color-border)] " +
-  "focus:outline-none focus:ring-2 focus:ring-indigo-500/40 " +
-  "focus:border-indigo-500/50 transition-all duration-150 " +
+  "w-full px-3 py-2 rounded-xl text-sm text-[var(--color-text)] " +
+  "bg-[#F2F2F7] border border-transparent " +
+  "focus:outline-none focus:bg-white focus:ring-4 focus:ring-brand/15 " +
+  "focus:border-brand/40 transition-all duration-200 " +
   "cursor-pointer appearance-none";
 
 const LABEL_CLASS =
@@ -74,7 +74,7 @@ export function StylePanel({ style, onChange, show, onToggle }: StylePanelProps)
       <div className="shrink-0 flex items-center justify-between px-4 py-3
         border-b border-[var(--color-border)]">
         <div className="flex items-center gap-2">
-          <PaintBrush size={14} weight="duotone" className="text-indigo-400" aria-hidden="true" />
+          <PaintBrush size={14} weight="duotone" className="text-brand" aria-hidden="true" />
           <h3 className="text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">
             样式配置
           </h3>
@@ -82,7 +82,7 @@ export function StylePanel({ style, onChange, show, onToggle }: StylePanelProps)
         <button
           onClick={onToggle}
           className="p-1 rounded-md text-[var(--color-text-muted)]
-            hover:text-[var(--color-text)] hover:bg-white/8
+            hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]
             transition-all cursor-pointer"
           aria-label="关闭样式面板"
         >
@@ -103,11 +103,11 @@ export function StylePanel({ style, onChange, show, onToggle }: StylePanelProps)
                 <button
                   key={tpl.id}
                   onClick={() => updateStyle("template_id", tpl.id)}
-                  className={`flex flex-col items-center p-2 rounded-lg border transition-all cursor-pointer
-                    ${isActive
-                      ? "bg-indigo-500/10 border-indigo-500/40 ring-1 ring-indigo-500/30"
-                      : "border-[var(--color-border)] hover:border-indigo-500/20 hover:bg-white/5"
-                    }`}
+                  className={`flex flex-col items-center p-2 rounded-xl border transition-all cursor-pointer
+            ${isActive
+              ? "bg-brand/10 border-brand/40 ring-1 ring-brand/30"
+              : "border-[var(--color-border)] hover:border-brand/20 hover:bg-[var(--color-bg-secondary)]"
+            }`}
                   aria-pressed={isActive}
                   title={tpl.description}
                 >
@@ -119,7 +119,7 @@ export function StylePanel({ style, onChange, show, onToggle }: StylePanelProps)
                     </div>
                   )}
                   <span className={`mt-1.5 text-xs font-medium ${
-                    isActive ? "text-indigo-300" : "text-[var(--color-text)]"
+                    isActive ? "text-brand" : "text-[var(--color-text)]"
                   }`}>
                     {tpl.name}
                   </span>
@@ -235,17 +235,17 @@ export function StylePanel({ style, onChange, show, onToggle }: StylePanelProps)
                 if (e.key === "Enter") handleCustomColor();
               }}
               placeholder="#000000"
-              className="flex-1 px-3 py-1.5 rounded-lg text-xs font-mono
-                text-[var(--color-text)] bg-white/5 border border-[var(--color-border)]
-                focus:outline-none focus:ring-2 focus:ring-indigo-500/40
-                focus:border-indigo-500/50 transition-all duration-150"
+              className="flex-1 px-3 py-1.5 rounded-xl text-xs font-mono
+                text-[var(--color-text)] bg-[#F2F2F7] border border-transparent
+                focus:outline-none focus:bg-white focus:ring-4 focus:ring-brand/15
+                focus:border-brand/40 transition-all duration-200"
             />
             <button
               onClick={handleCustomColor}
               disabled={!/^#[0-9a-fA-F]{6}$/.test(customColor.trim())}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium
-                bg-indigo-500/15 text-indigo-300 border border-indigo-500/30
-                hover:bg-indigo-500/25
+              className="px-3 py-1.5 rounded-full text-xs font-medium
+                bg-brand/15 text-brand border border-brand/30
+                hover:bg-brand/25
                 disabled:opacity-40 disabled:cursor-not-allowed
                 transition-all cursor-pointer"
             >
@@ -287,7 +287,7 @@ export function StylePanel({ style, onChange, show, onToggle }: StylePanelProps)
               step={1}
               value={parseInt(style.margin) || 16}
               onChange={(e) => updateStyle("margin", `${e.target.value}mm`)}
-              className="w-full accent-indigo-500 cursor-pointer"
+              className="w-full accent-brand cursor-pointer"
               aria-label="页边距"
             />
           </div>
@@ -325,7 +325,7 @@ export function StylePanel({ style, onChange, show, onToggle }: StylePanelProps)
               step={2}
               value={parseInt(style.section_spacing) || 16}
               onChange={(e) => updateStyle("section_spacing", `${e.target.value}px`)}
-              className="w-full accent-indigo-500 cursor-pointer"
+              className="w-full accent-brand cursor-pointer"
               aria-label="段落间距"
             />
           </div>
@@ -338,10 +338,10 @@ export function StylePanel({ style, onChange, show, onToggle }: StylePanelProps)
             value={style.custom_css}
             onChange={(e) => updateStyle("custom_css", e.target.value)}
             placeholder={"/* 输入自定义 CSS */\n.module-title { font-weight: 700; }"}
-            className="w-full min-h-[100px] px-3 py-2 rounded-lg text-xs font-mono
-              text-[var(--color-text)] bg-white/5 border border-[var(--color-border)]
-              focus:outline-none focus:ring-2 focus:ring-indigo-500/40
-              focus:border-indigo-500/50 transition-all duration-150
+            className="w-full min-h-[100px] px-3 py-2 rounded-xl text-xs font-mono
+              text-[var(--color-text)] bg-[#F2F2F7] border border-transparent
+              focus:outline-none focus:bg-white focus:ring-4 focus:ring-brand/15
+              focus:border-brand/40 transition-all duration-200
               resize-y placeholder:text-[var(--color-text-muted)]/60"
             rows={5}
             spellCheck={false}

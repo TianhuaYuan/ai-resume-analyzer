@@ -23,6 +23,9 @@ import {
   ArrowsClockwise,
   ArrowCounterClockwise,
   ArrowClockwise,
+  GitBranch,
+  ClipboardText,
+  Funnel,
 } from "@phosphor-icons/react";
 import {
   getBuilderResume,
@@ -32,6 +35,9 @@ import {
   renewEditLock,
   releaseEditLock,
 } from "../api/builder";
+import VersionHistoryDialog from "../components/VersionHistoryDialog";
+import PasteResumeDialog from "../components/builder/PasteResumeDialog";
+import AtsOptimizeDialog from "../components/builder/AtsOptimizeDialog";
 import type {
   BuilderResume,
   ResumeModule,
@@ -120,6 +126,19 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
   // 保存状态
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  // T17: 最近一次成功的保存模式（draft → 草稿即时保存；complete → 已保存并完成）
+  const [lastSaveMode, setLastSaveMode] = useState<"draft" | "complete" | null>(null);
+
+  // T17: 索引新鲜度（从 GET /resumes/{id} 的 is_indexed / is_stale 读取）
+  const [indexInfo, setIndexInfo] = useState<{ is_indexed: boolean; is_stale: boolean } | null>(null);
+
+  // T18: 版本历史弹窗
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
+
+  // 粘贴简历文本弹窗
+  const [showPasteDialog, setShowPasteDialog] = useState(false);
+  // ATS 优化弹窗
+  const [showAtsDialog, setShowAtsDialog] = useState(false);
 
   // AI 触发
   const [aiQuestion, setAiQuestion] = useState("");
@@ -173,6 +192,11 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
       setFilename(data.filename);
       setVersion(data.version);
       setStyle(data.style ?? DEFAULT_STYLE);
+      // T17 渲染优化：索引新鲜度并入 builder 响应，无需再单独拉 getResume
+      setIndexInfo({
+        is_indexed: data.is_indexed ?? false,
+        is_stale: data.is_stale ?? false,
+      });
       setExpandedType("basic_info");
       setSaveStatus("idle");
       firstEditRef.current = true; // 重置首次编辑标记
@@ -192,12 +216,18 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
   // 添加 500ms 延迟：agent_done 事件可能在后端数据库提交完成前触发，
   // 直接拉取会拿到旧数据导致表单不更新
   const refreshModules = useCallback(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    // 移除 500ms 硬编码防抖延迟：onAgentDone 每轮只触发一次，前置 sleep 是纯浪费，
+    // 会让每次 agent 回复（含问候）凭空 +500ms 才更新模块。
     try {
       const data = await getBuilderResume(resumeId);
       setResume(data);
       resetHistory(data.modules ?? []);
       setVersion(data.version);
+      // 索引新鲜度同步（builder 响应已并入）
+      setIndexInfo({
+        is_indexed: data.is_indexed ?? false,
+        is_stale: data.is_stale ?? false,
+      });
     } catch {
       // 刷新失败不打断编辑，用户可稍后手动保存/重试
     }
@@ -215,6 +245,8 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
   useEffect(() => {
     loadResume();
   }, [loadResume]);
+
+  // ── T17: 索引新鲜度（懒索引脏标记 is_indexed / is_stale） ──
 
   // ── 编辑锁生命周期 ──────────────────────────────────────────
 
@@ -284,6 +316,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
       });
       setVersion(result.version);
       setSaveStatus("saved");
+      setLastSaveMode("draft"); // T17: 草稿即时保存（不等待向量）
       notifyListRefresh();
     } catch {
       setSaveStatus("error");
@@ -428,6 +461,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
       });
       setVersion(result.version);
       setSaveStatus("saved");
+      setLastSaveMode("draft"); // T17: 草稿即时保存（不等待向量）
       notifyListRefresh();
     } catch {
       setSaveStatus("error");
@@ -451,7 +485,13 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
       setVersion(result.version);
       setResume(result);
       setSaveStatus("saved");
+      setLastSaveMode("complete"); // T17: 保存并完成（触发索引预热）→ 提示可开始问答/检索
       notifyListRefresh();
+      // T17: complete 会触发索引预热，刷新索引新鲜度标识（builder 响应已并入）
+      setIndexInfo({
+        is_indexed: result.is_indexed ?? false,
+        is_stale: result.is_stale ?? false,
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : "保存失败");
       setSaveStatus("error");
@@ -467,6 +507,38 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
   const handleCloseStylePanel = useCallback(() => setShowStylePanel(false), []);
   const handleCloseAIChat = useCallback(() => setShowAIChat(false), []);
 
+  // ── 粘贴简历文本回调 ──
+  const handlePasteParsed = useCallback(
+    (parsedModules: ResumeModuleInput[]) => {
+      // 把解析的模块转为 ResumeModule 格式并替换当前内容
+      const newModules: ResumeModule[] = parsedModules.map((m, i) => ({
+        id: -Date.now() - i,
+        resume_id: resumeId,
+        module_type: m.module_type,
+        content: m.content,
+        sort_order: m.sort_order,
+        created_at: new Date().toISOString(),
+      }));
+      setModules(newModules);
+      // 自动展开第一个模块
+      if (newModules.length > 0) {
+        setExpandedType(newModules[0].module_type);
+      }
+    },
+    [resumeId, setModules],
+  );
+
+  // ── ATS 优化回调 ──
+  const handleAtsOptimize = useCallback(
+    (company: string, position: string) => {
+      setShowAIChat(true);
+      const question = `请根据 ${company} 公司的「${position}」岗位要求，对我的简历进行 ATS（Applicant Tracking System）机筛优化。请从以下方面优化：\n1. 关键词匹配：补充 JD 中的核心关键词（技术栈、职责描述等）\n2. 格式规范：确保内容简洁、无特殊字符、使用标准行业术语\n3. 内容优先级：将最匹配 JD 的经历放在前面\n4. 量化成果：补充具体数据和成果描述\n5. 排版建议：确保 ATS 友好的文本格式`;
+      setAiQuestion(question);
+      setAiTrigger((t) => t + 1);
+    },
+    [],
+  );
+
   // ── 渲染：加载中 ────────────────────────────────────────────
 
   if (loading) {
@@ -474,7 +546,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
       <div className="flex-1 flex flex-col items-center justify-center bg-[var(--color-bg)]">
         <span
           className="inline-block w-8 h-8 rounded-full border-2
-            border-indigo-400 border-t-transparent animate-spin"
+            border-brand border-t-transparent animate-spin"
           aria-hidden="true"
         />
         <p className="text-sm text-[var(--color-text-muted)] mt-3">加载编辑器...</p>
@@ -500,8 +572,8 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
         <button
           onClick={loadResume}
           className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm
-            font-medium bg-indigo-500/15 text-indigo-300 border border-indigo-500/30
-            hover:bg-indigo-500/25 active:scale-[0.98] motion-reduce:active:scale-100
+            font-medium bg-brand/15 text-brand border border-brand/30
+            hover:bg-brand/25 active:scale-[0.98] motion-reduce:active:scale-100
             transition-all cursor-pointer"
         >
           <ArrowsClockwise size={14} weight="bold" aria-hidden="true" />
@@ -519,7 +591,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
     <div className="flex-1 flex flex-col overflow-hidden bg-[var(--color-bg)]">
       {/* ── 顶部工具栏 ── */}
       <div className="shrink-0 flex items-center justify-between gap-3 px-4 py-2.5
-        border-b border-[var(--color-border)] bg-[var(--color-bg)]">
+        border-b border-[var(--color-border)] bg-white/80 backdrop-blur-xl">
         {/* 左侧：文件名 + 保存状态 */}
         <div className="flex items-center gap-3 min-w-0">
           <input
@@ -528,10 +600,10 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
             onChange={(e) => setFilename(e.target.value)}
             placeholder="未命名简历"
             className="px-2 py-1 rounded-lg text-sm font-medium text-[var(--color-text)]
-              bg-white/5 border border-transparent
+              bg-[#F2F2F7] border border-transparent
               hover:border-[var(--color-border)]
-              focus:outline-none focus:ring-2 focus:ring-indigo-500/40
-              focus:border-indigo-500/50 focus:bg-white/8
+              focus:outline-none focus:bg-white focus:border-brand/40
+              focus:ring-4 focus:ring-brand/15
               transition-all duration-150 min-w-[120px] max-w-[240px]"
             aria-label="文件名"
           />
@@ -541,22 +613,59 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
             <span className="flex items-center gap-1 text-[11px] text-[var(--color-text-muted)]">
               <span
                 className="inline-block w-3 h-3 rounded-full border-2
-                  border-indigo-400 border-t-transparent animate-spin"
+                  border-brand border-t-transparent animate-spin"
                 aria-hidden="true"
               />
               保存中...
             </span>
           )}
           {saveStatus === "saved" && (
-            <span className="flex items-center gap-1 text-[11px] text-emerald-400">
+            <span
+              className="flex items-center gap-1 text-[11px] text-emerald-400"
+              title={lastSaveMode === "complete" ? "已保存并完成，可开始问答/检索" : "草稿已保存"}
+            >
               <Check size={11} weight="bold" aria-hidden="true" />
-              已保存
+              {lastSaveMode === "complete"
+                ? "已保存并完成，可开始问答/检索"
+                : "已保存"}
             </span>
           )}
           {saveStatus === "error" && (
             <span className="flex items-center gap-1 text-[11px] text-red-400">
               <Warning size={11} weight="bold" aria-hidden="true" />
               保存失败
+            </span>
+          )}
+
+          {/* T17: 索引新鲜度标识（懒索引脏标记 is_indexed / is_stale） */}
+          {resume.status !== "draft" && indexInfo && !indexInfo.is_indexed && (
+            <span
+              className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full
+                text-[10px] font-medium bg-sky-500/15 text-sky-600
+                border border-sky-500/30 shrink-0"
+              title="尚未建立检索索引，首次问答时会自动建立"
+            >
+              未建索引
+            </span>
+          )}
+          {resume.status !== "draft" && indexInfo && indexInfo.is_indexed && indexInfo.is_stale && (
+            <span
+              className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full
+                text-[10px] font-medium bg-amber-500/15 text-amber-600
+                border border-amber-500/30 shrink-0"
+              title="内容已更新，检索将自动重建"
+            >
+              索引待重建
+            </span>
+          )}
+          {resume.status !== "draft" && indexInfo && indexInfo.is_indexed && !indexInfo.is_stale && (
+            <span
+              className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full
+                text-[10px] font-medium bg-emerald-500/15 text-emerald-600
+                border border-emerald-500/30 shrink-0"
+              title="检索索引已就绪"
+            >
+              索引已就绪
             </span>
           )}
         </div>
@@ -569,7 +678,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
             disabled={!canUndo}
             className="inline-flex items-center justify-center w-7 h-7 rounded-lg
               text-[var(--color-text-muted)] border border-[var(--color-border)]
-              hover:text-indigo-400 hover:border-indigo-500/30 hover:bg-indigo-500/8
+              hover:text-brand hover:border-brand/30 hover:bg-[var(--color-bg-secondary)]
               disabled:opacity-30 disabled:cursor-not-allowed
               active:scale-[0.95] motion-reduce:active:scale-100
               transition-all cursor-pointer"
@@ -583,7 +692,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
             disabled={!canRedo}
             className="inline-flex items-center justify-center w-7 h-7 rounded-lg
               text-[var(--color-text-muted)] border border-[var(--color-border)]
-              hover:text-indigo-400 hover:border-indigo-500/30 hover:bg-indigo-500/8
+              hover:text-brand hover:border-brand/30 hover:bg-[var(--color-bg-secondary)]
               disabled:opacity-30 disabled:cursor-not-allowed
               active:scale-[0.95] motion-reduce:active:scale-100
               transition-all cursor-pointer"
@@ -596,14 +705,46 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
           {/* 分隔线 */}
           <div className="w-px h-5 bg-[var(--color-border)] mx-0.5" />
 
+          {/* 粘贴简历文本 */}
+          <button
+            onClick={() => setShowPasteDialog(true)}
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg
+              text-xs font-medium text-[var(--color-text-secondary)]
+              bg-[var(--color-bg-secondary)] hover:bg-[#E5E5EA]
+              active:scale-[0.98] motion-reduce:active:scale-100
+              transition-all cursor-pointer"
+            aria-label="粘贴简历文本"
+            title="粘贴简历文本"
+          >
+            <ClipboardText size={13} weight="regular" aria-hidden="true" />
+            粘贴导入
+          </button>
+
+          {/* 过机筛优化 */}
+          <button
+            onClick={() => setShowAtsDialog(true)}
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg
+              text-xs font-medium text-[var(--color-text-secondary)]
+              bg-[var(--color-bg-secondary)] hover:bg-[#E5E5EA]
+              active:scale-[0.98] motion-reduce:active:scale-100
+              transition-all cursor-pointer"
+            aria-label="过机筛优化"
+            title="过机筛优化 AI"
+          >
+            <Funnel size={13} weight="regular" aria-hidden="true" />
+            过机筛优化
+          </button>
+
+          {/* 分隔线 */}
+          <div className="w-px h-5 bg-[var(--color-border)] mx-0.5" />
+
           {/* 保存草稿 */}
           <button
             onClick={handleSaveDraft}
             disabled={saving}
             className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg
-              text-xs font-medium border border-[var(--color-border)]
-              text-[var(--color-text-secondary)]
-              hover:text-indigo-400 hover:border-indigo-500/30 hover:bg-indigo-500/8
+              text-xs font-medium text-[var(--color-text-secondary)]
+              bg-[var(--color-bg-secondary)] hover:bg-[#E5E5EA]
               disabled:opacity-40 disabled:cursor-not-allowed
               active:scale-[0.98] motion-reduce:active:scale-100
               transition-all cursor-pointer"
@@ -617,13 +758,12 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
           <button
             onClick={handleSaveComplete}
             disabled={saving}
-            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg
-              text-xs font-semibold text-white
-              bg-linear-to-br from-indigo-500 to-purple-600
-              hover:brightness-110
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full
+              text-xs font-semibold text-white bg-brand
+              hover:bg-[#0077ed] hover:scale-[1.02]
               disabled:opacity-40 disabled:cursor-not-allowed
               active:scale-[0.98] motion-reduce:active:scale-100
-              transition-all cursor-pointer"
+              transition-all duration-300 cursor-pointer"
             aria-label="保存并完成"
           >
             {saving ? (
@@ -647,8 +787,8 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
             className={`inline-flex items-center gap-1 px-2 py-1.5 rounded-lg
               text-[11px] font-medium border transition-all cursor-pointer
               ${showStylePanel
-                ? "bg-indigo-500/15 text-indigo-300 border-indigo-500/30"
-                : "border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-indigo-400 hover:border-indigo-500/30 hover:bg-indigo-500/8"
+                ? "bg-brand/10 text-brand border-brand/30"
+                : "border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-brand hover:border-brand/30 hover:bg-[var(--color-bg-secondary)]"
               }`}
             aria-label="样式配置"
             aria-pressed={showStylePanel}
@@ -663,14 +803,28 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
             className={`inline-flex items-center gap-1 px-2 py-1.5 rounded-lg
               text-[11px] font-medium border transition-all cursor-pointer
               ${showAIChat
-                ? "bg-indigo-500/15 text-indigo-300 border-indigo-500/30"
-                : "border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-indigo-400 hover:border-indigo-500/30 hover:bg-indigo-500/8"
+                ? "bg-brand/10 text-brand border-brand/30"
+                : "border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-brand hover:border-brand/30 hover:bg-[var(--color-bg-secondary)]"
               }`}
             aria-label="AI 助手"
             aria-pressed={showAIChat}
           >
             <ChatCircleDots size={12} weight={showAIChat ? "fill" : "regular"} aria-hidden="true" />
             AI
+          </button>
+
+          {/* T18: 版本历史 */}
+          <button
+            onClick={() => setShowVersionHistory(true)}
+            className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg
+              text-[11px] font-medium border transition-all cursor-pointer
+              border-[var(--color-border)] text-[var(--color-text-muted)]
+              hover:text-brand hover:border-brand/30 hover:bg-[var(--color-bg-secondary)]"
+            aria-label="版本历史"
+            title="查看检索索引版本历史"
+          >
+            <GitBranch size={12} weight="regular" aria-hidden="true" />
+            版本
           </button>
         </div>
       </div>
@@ -734,6 +888,28 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
           externalQuestion={aiQuestion}
           externalTrigger={aiTrigger}
           onAgentDone={refreshModules}
+        />
+
+        {/* T18: 版本历史弹窗 */}
+        <VersionHistoryDialog
+          resumeId={resumeId}
+          resumeFilename={filename}
+          open={showVersionHistory}
+          onClose={() => setShowVersionHistory(false)}
+        />
+
+        {/* 粘贴简历文本弹窗 */}
+        <PasteResumeDialog
+          open={showPasteDialog}
+          onClose={() => setShowPasteDialog(false)}
+          onParsed={handlePasteParsed}
+        />
+
+        {/* 过机筛优化弹窗 */}
+        <AtsOptimizeDialog
+          open={showAtsDialog}
+          onClose={() => setShowAtsDialog(false)}
+          onOptimize={handleAtsOptimize}
         />
       </div>
     </div>

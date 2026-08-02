@@ -14,6 +14,7 @@ L3 画像构建钩子（T15）：
 """
 
 import logging
+import time
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -205,7 +206,11 @@ async def get_l2_history(
     """
     result = await db.execute(
         select(QAHistory)
-        .where(QAHistory.user_id == user_id, QAHistory.resume_id == resume_id)
+        .where(
+            QAHistory.user_id == user_id,
+            QAHistory.resume_id == resume_id,
+            QAHistory.status == "complete",  # 只取已完成问答，过滤中断空记录
+        )
         .order_by(QAHistory.created_at.desc())
         .limit(limit)
     )
@@ -302,6 +307,7 @@ async def assemble_system_prompt(
     resume_id: int,
     *,
     builder: bool = False,
+    query: str | None = None,
 ) -> str:
     """装配 system prompt：基础指令 + 当前简历上下文 + L3 画像 + L2 历史。
 
@@ -312,6 +318,7 @@ async def assemble_system_prompt(
     分段标记用 # 标题，便于 LLM 理解结构。
     """
     sections: list[str] = [_BUILDER_INSTRUCTIONS if builder else _BASE_INSTRUCTIONS]
+    _t0 = time.perf_counter()
 
     # #4: 注入当前简历上下文（ID/文件名/状态），防止 LLM 猜错 resume_id 导致"无权访问"
     from models.resume import Resume
@@ -320,6 +327,8 @@ async def assemble_system_prompt(
         select(Resume).where(Resume.id == resume_id, Resume.user_id == user_id)
     )
     current_resume = resume_result.scalar_one_or_none()
+    _resume_ms = round((time.perf_counter() - _t0) * 1000)
+    _t1 = time.perf_counter()
     if current_resume is not None:
         resume_ctx = [
             "\n# 当前简历",
@@ -339,6 +348,8 @@ async def assemble_system_prompt(
 
     # L3 画像
     l3_profile = await get_l3_profile(resume_id)
+    _l3_ms = round((time.perf_counter() - _t1) * 1000)
+    _t2 = time.perf_counter()
     if l3_profile:
         profile_parts = ["\n# 简历画像（L3 语义记忆）"]
         if "summary" in l3_profile:
@@ -350,6 +361,7 @@ async def assemble_system_prompt(
 
     # L2 历史
     l2_history = await get_l2_history(db, user_id, resume_id)
+    _l2_ms = round((time.perf_counter() - _t2) * 1000)
     if l2_history:
         history_parts = ["\n# 历史问答（L2 情景记忆）"]
         for i, qa in enumerate(l2_history, 1):
@@ -357,6 +369,40 @@ async def assemble_system_prompt(
             history_parts.append(f"   A: {qa['answer'][:200]}")
         sections.append("\n".join(history_parts))
 
+    # L4 长期语义记忆（T15）：按当前问题语义召回，注入 system prompt（跨会话一致性）。
+    # 性能护栏（T17 修复）：仅 QA 模式召回，编辑器 builder 流程不用「回忆偏好」；
+    # 且查询 embedding 未缓存时跳过——避免每个交互一次 embedding API 往返（这是 agent 交互的隐性开销）。
+    if query and not builder:
+        try:
+            from core import cache as embedding_cache
+            from services.memory.memory_store import recall_memory
+
+            if await embedding_cache.get_embedding(query) is None:
+                logger.debug("L4 召回跳过：查询 embedding 未缓存（避免 API 往返）")
+            else:
+                memories = await recall_memory(user_id=user_id, query=query, top_k=3)
+                if memories:
+                    mem_parts = ["\n# 长期记忆（L4 语义记忆，来自历史会话）"]
+                    for mem in memories:
+                        mem_parts.append(f"- [{mem['score']:.2f}] {mem['text']}")
+                    sections.append("\n".join(mem_parts))
+        except Exception as e:
+            logger.warning("L4 记忆召回失败（不影响主流程）: %s", e)
+
+    # T12: 工具路由引导（事实性整文直读，模糊/跨模块才检索）
+    sections.append(
+        "\n# 工具使用指南\n"
+        "- 事实性/定向问题（毕业院校、技能清单、某段经历细节）→ 优先 get_resume_content 读实时简历内容\n"
+        "- 模糊/语义/跨模块问题 → 用 search_resume（单简历）或 search_assets（跨资产）检索\n"
+        "- 需要深度推理且有依据的问题 → 用 answer_from_index（改写→检索→反思的深度回答）\n"
+        "- JD 匹配 / 简历诊断 / STAR 改写 / 翻译 / 面试教练 → 用对应专用工具"
+    )
+
+    _total_ms = round((time.perf_counter() - _t0) * 1000)
+    logger.info(
+        "prompt_assembly_trace resume_query_ms=%d l3_ms=%d l2_ms=%d total_ms=%d",
+        _resume_ms, _l3_ms, _l2_ms, _total_ms,
+    )
     return "\n".join(sections)
 
 

@@ -212,17 +212,13 @@ function InlineAIPanelImpl({
 
   if (mode === null) return null;
 
-  // ── 主题色：optimize = indigo，check/rewrite = purple ──────
+  // ── 主题色：统一 Apple 品牌蓝 ──────────────────────────────
   const isOptimize = mode === "optimize";
-  const accentText = isOptimize ? "text-indigo-400" : "text-purple-400";
-  const accentBorder = isOptimize ? "border-indigo-400" : "border-purple-400";
-  const accentBg = isOptimize ? "bg-indigo-500/10" : "bg-purple-500/10";
-  const accentRing = isOptimize
-    ? "focus:ring-indigo-500/40 focus:border-indigo-500/50"
-    : "focus:ring-purple-500/40 focus:border-purple-500/50";
-  const accentBtn = isOptimize
-    ? "bg-indigo-500 hover:bg-indigo-600"
-    : "bg-purple-500 hover:bg-purple-600";
+  const accentText = "text-brand";
+  const accentBorder = "border-brand";
+  const accentBg = "bg-brand/10";
+  const accentRing = "focus:ring-brand/40 focus:border-brand/50";
+  const accentBtn = "bg-brand hover:bg-[#0077ed] rounded-full";
 
   // 标题图标：optimize=Sparkle / check=Eyeglasses / rewrite=PencilSimple
   const HeaderIcon = isOptimize
@@ -244,8 +240,7 @@ function InlineAIPanelImpl({
 
   return (
     <div
-      className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)]
-        shadow-lg overflow-hidden animate-fade-in-up motion-reduce:animate-none"
+      className="glass-card shadow-lg overflow-hidden animate-fade-in-up motion-reduce:animate-none"
       role="region"
       aria-label={TITLE[mode]}
     >
@@ -260,7 +255,7 @@ function InlineAIPanelImpl({
         <button
           onClick={handleClose}
           className="p-1 rounded-md text-[var(--color-text-muted)]
-            hover:text-[var(--color-text)] hover:bg-white/8 transition-all cursor-pointer"
+            hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)] transition-all cursor-pointer"
           aria-label="关闭 AI 面板"
         >
           <X size={14} weight="bold" aria-hidden="true" />
@@ -291,7 +286,7 @@ function InlineAIPanelImpl({
                 <p className="text-[10px] font-medium text-[var(--color-text-muted)] uppercase tracking-wider">
                   优化结果
                 </p>
-                <div className="p-3 rounded-lg bg-white/5 border border-[var(--color-border)]
+                <div className="p-3 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)]
                   text-sm text-[var(--color-text)] leading-relaxed whitespace-pre-wrap break-words">
                   {optimizedText}
                 </div>
@@ -335,7 +330,7 @@ function InlineAIPanelImpl({
                       return (
                         <li
                           key={idx}
-                          className={`pl-3 pr-2 py-2 rounded-r-md border-l-2 ${s.border} bg-white/5`}
+                          className={`pl-3 pr-2 py-2 rounded-r-md border-l-2 ${s.border} bg-[var(--color-bg-secondary)]`}
                         >
                           <div className="flex items-center gap-2 mb-1">
                             <span
@@ -372,9 +367,9 @@ function InlineAIPanelImpl({
                 rows={2}
                 disabled={loading}
                 className={`flex-1 px-3 py-2 rounded-lg text-xs text-[var(--color-text)]
-                  bg-white/5 border border-[var(--color-border)]
+                  bg-[#F2F2F7] border border-transparent
                   placeholder:text-[var(--color-text-muted)]
-                  focus:outline-none focus:ring-2 ${accentRing}
+                  focus:outline-none focus:bg-white focus:ring-2 ${accentRing}
                   resize-none disabled:opacity-50 transition-all duration-150`}
                 aria-label="改写指令"
               />
@@ -428,7 +423,7 @@ function InlineAIPanelImpl({
                 <p className="text-[10px] font-medium text-[var(--color-text-muted)] uppercase tracking-wider">
                   改写结果
                 </p>
-                <div className="p-3 rounded-lg bg-white/5 border border-[var(--color-border)]
+                <div className="p-3 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)]
                   text-sm text-[var(--color-text)] leading-relaxed whitespace-pre-wrap break-words">
                   {rewrittenText}
                 </div>
@@ -448,7 +443,7 @@ function InlineAIPanelImpl({
               <button
                 onClick={handleClose}
                 className="px-3 py-1.5 rounded-lg text-xs font-medium border border-[var(--color-border)]
-                  text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-white/8
+                  text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]
                   transition-all cursor-pointer"
                 aria-label="取消"
               >
@@ -472,7 +467,7 @@ function InlineAIPanelImpl({
               <button
                 onClick={handleClose}
                 className="px-3 py-1.5 rounded-lg text-xs font-medium border border-[var(--color-border)]
-                  text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-white/8
+                  text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]
                   transition-all cursor-pointer"
                 aria-label="忽略检查结果"
               >

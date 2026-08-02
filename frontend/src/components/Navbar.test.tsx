@@ -4,35 +4,31 @@ import { MemoryRouter } from "react-router-dom";
 import Navbar from "./Navbar";
 
 const mockLogout = vi.fn();
-const mockToggleTheme = vi.fn();
 
 vi.mock("../context/AuthContext", () => ({
   useAuth: () => ({ user: { id: 1, username: "testuser", email: "test@example.com" }, logout: mockLogout }),
 }));
 
-vi.mock("../context/ThemeContext", () => ({
-  useTheme: () => ({ theme: "dark", toggleTheme: mockToggleTheme }),
-}));
-
 describe("Navbar 设计", () => {
-  it("导航栏不使用 backdrop-blur 或半透明背景", () => {
+  it("导航栏使用毛玻璃半透明背景", () => {
     render(
       <MemoryRouter>
         <Navbar />
       </MemoryRouter>
     );
     const nav = screen.getByRole("navigation");
-    expect(nav.className).not.toMatch(/backdrop-blur|bg-\[.*\]\/\d+/);
+    expect(nav.className).toMatch(/backdrop-blur/);
+    expect(nav.className).toMatch(/bg-white\/70/);
   });
 
-  it("导航栏使用纯色背景", () => {
+  it("导航栏带底部 hairline 边框", () => {
     render(
       <MemoryRouter>
         <Navbar />
       </MemoryRouter>
     );
     const nav = screen.getByRole("navigation");
-    expect(nav.className).toMatch(/bg-\[var\(--color-bg\)\]/);
+    expect(nav.className).toMatch(/border-b/);
   });
 });
 

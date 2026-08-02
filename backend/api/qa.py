@@ -28,6 +28,9 @@ from schemas.qa import (
 )
 from services import qa_service, resume_service
 from services.feedback_service import submit_qa_feedback
+from services.rag.asset_source import ASSET_TYPE_RESUME
+from services.rag.clients import knowledge_collection_name
+from services.rag.ensure_indexed import ensure_indexed
 from services.rag.pipeline import ask_question_stream as _ask_question_stream
 from services.react_agent.streaming import react_loop_stream
 from services.token_quota import check_quota, record_usage, get_quota_status
@@ -56,61 +59,21 @@ def _guard_question(question: str) -> None:
             detail="问题含疑似提示注入内容，已拒绝处理",
         )
 
-_AGENTIC_GRAPH = None
-
-
-def _get_agentic_graph():
-    """懒加载并缓存编译好的 Agentic RAG 图（避免模块导入期重依赖）。"""
-    global _AGENTIC_GRAPH
-    if _AGENTIC_GRAPH is None:
-        from services.agentic_rag.graph import create_agentic_rag_graph
-
-        _AGENTIC_GRAPH = create_agentic_rag_graph()
-    return _AGENTIC_GRAPH
-
-
-async def _run_agentic_rag(resume_id: int, question: str) -> tuple[str, list[dict], list[dict]]:
+async def _run_agentic_rag(user_id: int, resume_id: int, question: str) -> tuple[str, list[dict], list[dict]]:
     """跑 Agentic RAG 图，返回 (answer, sources, tool_errors)。
 
-    - answer: 最终答案文本
-    - sources: 生成节点抽出的来源列表 [{text, section, chunk_index, rerank_score}, ...]
+    收敛到 run_answer_from_index（T11 统一入口，单简历 = scope 只含该简历）。
+    - sources: 生成节点抽出的 per-asset 来源列表
     - tool_errors: 检索/重排子步骤中累加的失败记录；非空即「部分降级」
     """
-    import uuid
+    from services.agentic_rag.runner import run_answer_from_index
 
-    graph = _get_agentic_graph()
-    initial_state = {
-        "question": question,
-        "resume_id": resume_id,
-        "rewritten_query": "",
-        "route_decision": "search",
-        "chunks": [],
-        "search_round": 0,
-        "answer": "",
-        "sources": [],
-        "eval_score": 0.0,
-        "eval_feedback": "",
-        "should_retry": False,
-        "completeness_score": 0.0,
-        "accuracy_score": 0.0,
-        "source_credibility_score": 0.0,
-        "reflection_result": "",
-        "missing_info": [],
-        "supplement_queries": [],
-        "reflection_round": 0,
-        "final_answer": "",
-        "final_sources": [],
-        "trace": {},
-        "tool_errors": [],
-    }
-    result = await graph.ainvoke(
-        initial_state,
-        config={"configurable": {"thread_id": str(uuid.uuid4())}},
+    result = await run_answer_from_index(
+        user_id=user_id,
+        scope={ASSET_TYPE_RESUME: [resume_id]},
+        question=question,
     )
-    answer = result.get("final_answer") or result.get("answer", "")
-    sources = result.get("sources", []) or []
-    tool_errors = result.get("tool_errors", []) or []
-    return answer, sources, tool_errors
+    return result["answer"], result["sources"], result["tool_errors"]
 
 
 @router.post("/ask", response_model=AnswerResponse)
@@ -126,6 +89,14 @@ async def ask_question(
     #用户问题进模型前先过注入安检
     _guard_question(data.question)
     await resume_service.get_resume(db, data.resume_id, current_user.id)
+    # T6 懒索引：首次问答触发重建（脏标记 content_hash != indexed_hash）
+    await ensure_indexed(
+        db,
+        user_id=current_user.id,
+        asset_id=data.resume_id,
+        asset_type=ASSET_TYPE_RESUME,
+        collection=knowledge_collection_name(current_user.id),
+    )
     answer, sources, tool_errors = await _run_agentic_rag(data.resume_id, data.question)
     # 按配置对 LLM 输出做 PII 脱敏（默认关，避免误伤简历正常内容）
     if settings.REDACT_PII_OUTPUT:
@@ -174,6 +145,14 @@ async def ask_question_stream(
     """
     _guard_question(data.question)
     await resume_service.get_resume(db, data.resume_id, current_user.id)
+    # T6 懒索引：首次问答触发重建（脏标记 content_hash != indexed_hash）
+    await ensure_indexed(
+        db,
+        user_id=current_user.id,
+        asset_id=data.resume_id,
+        asset_type=ASSET_TYPE_RESUME,
+        collection=knowledge_collection_name(current_user.id),
+    )
 
     # Token 限额预检查
     allowed, quota_error = await check_quota(current_user.id)
@@ -187,7 +166,7 @@ async def ask_question_stream(
         )
 
     if mode == "agentic":
-        answer, sources, tool_errors = await _run_agentic_rag(data.resume_id, data.question)
+        answer, sources, tool_errors = await _run_agentic_rag(current_user.id, data.resume_id, data.question)
         if settings.REDACT_PII_OUTPUT:
             answer = redact_pii(answer)
         degraded = bool(tool_errors)

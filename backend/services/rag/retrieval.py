@@ -32,12 +32,14 @@ async def _get_http_client() -> httpx.AsyncClient:
     return _http_client
 from core.retry import with_retry
 from services.rag.chunking import tokenize
-from services.rag.clients import (
-    _collection_name,
-    get_chroma_client,
-    get_embedding_client,
-    with_chroma,
+from services.rag.clients import get_embedding_client, knowledge_collection_name
+from services.rag.metadata import (
+    ASSET_TYPE_RESUME,
+    META_ASSET_ID,
+    META_ASSET_TYPE,
+    META_IS_LATEST,
 )
+from services.vector_store import get_vector_store
 
 logger = logging.getLogger(__name__)
 
@@ -79,35 +81,24 @@ async def get_embeddings(texts: list[str], resume_id: int | None = None) -> list
 
 
 async def _load_bm25_index(
-    resume_id: int,
-    collection_name: str | None = None,
-    bm25_key: Any | None = None,
+    collection: str,
+    where: dict[str, Any],
+    store_key: str,
 ) -> bool:
-    """从 Chroma 读取文档构建 BM25 索引，返回是否加载成功。
+    """从向量库按 where 过滤读取文档构建 BM25 索引，返回是否加载成功。
 
-    collection_name / bm25_key 为可选项，用于参数化实验的命名空间隔离（Model C）：
-    - collection_name：要读取的 Chroma 集合（默认 resume_{resume_id}）。
-    - bm25_key：写入 _bm25_indexes 的键（默认 resume_id）。生产路径保持 resume_id。
+    T7：BM25 只构建 scope 命中的资产 + is_latest 快照，避免旧版本/他人内容污染。
     """
-    name = collection_name or _collection_name(resume_id)
-    store_key = bm25_key if bm25_key is not None else resume_id
-
-    def _sync_get():
-        try:
-            collection = get_chroma_client().get_collection(name)
-        except Exception:
-            return None
-        return collection.get(include=["documents", "metadatas"])
-
-    data = await with_chroma(_sync_get)
-    if data is None:
-        logger.warning("Chroma collection %s not found, skip BM25 build", name)
+    items = await get_vector_store().get(collection, where=where)
+    if items is None:
+        logger.warning("Chroma collection %s not found, skip BM25 build", collection)
         return False
     chunks = []
-    for doc, meta in zip(data["documents"], data["metadatas"]):
+    for item in items:
+        meta = item["metadata"]
         chunks.append(
             {
-                "text": doc,
+                "text": item["text"],
                 "chunk_index": meta["chunk_index"],
                 "section": meta["section"],
             }
@@ -125,28 +116,22 @@ async def _load_bm25_index(
 
 
 async def _keyword_search(
-    resume_id: int,
+    collection: str,
+    where: dict[str, Any],
+    store_key: str,
     question: str,
     top_k: int,
-    bm25_key: Any | None = None,
-    collection_name: str | None = None,
 ) -> list[dict]:
-    """BM25 关键词检索：懒加载索引 → 分词算分 → 返回 top_k，过滤零分结果。
-
-    bm25_key / collection_name 为可选项，用于参数化实验隔离（默认按 resume_id）。
-    """
-    store_key = bm25_key if bm25_key is not None else resume_id
+    """BM25 关键词检索：懒加载索引 → 分词算分 → 返回 top_k，过滤零分结果。"""
     async with _bm25_lock:
         if store_key not in _bm25_indexes:
-            if not await _load_bm25_index(
-                resume_id, collection_name=collection_name, bm25_key=bm25_key
-            ):
+            if not await _load_bm25_index(collection, where, store_key):
                 return []
         # LRU：访问时 move_to_end，标记为最近使用
         if store_key in _bm25_indexes:
             _bm25_indexes.move_to_end(store_key)
         # H2 修复：将 _bm25_indexes.get() 的读取纳入锁临界区，
-        # 避免与 clear_resume_vectors 的 pop 产生数据竞争
+        # 避免与 clear_bm25 的 pop 产生数据竞争
         index_data = _bm25_indexes.get(store_key)
     if index_data is None:
         return []
@@ -167,56 +152,131 @@ async def _keyword_search(
 
 
 async def _vector_search(
-    resume_id: int,
+    collection: str,
+    where: dict[str, Any],
     question: str,
     top_k: int,
-    collection_name: str | None = None,
 ) -> list[dict]:
-    """稠密向量检索：问题转向量 → Chroma 余弦相似度查询，collection 不存在时返回空。
-    collection_name 为可选项，用于参数化实验隔离（默认 resume_{resume_id}）。
-    """
+    """稠密向量检索：问题转向量 → 按 where 过滤查询，集合不存在时返回空。"""
     embedding = (await get_embeddings([question]))[0]
-    name = collection_name or _collection_name(resume_id)
-
-    def _sync_query():
-        try:
-            collection = get_chroma_client().get_collection(name)
-        except Exception:
-            return None
-        return collection.query(
-            query_embeddings=[embedding],
-            n_results=top_k,
-            include=["documents", "metadatas", "distances"],
-        )
-
-    results = await with_chroma(_sync_query)
-    if results is None:
-        logger.warning("Chroma collection %s not found, returning empty", name)
+    items = await get_vector_store().query(collection, embedding, top_k, where=where)
+    if not items:
+        logger.warning("Chroma collection %s not found or empty, returning empty", collection)
         return []
 
     chunks = []
-    for i in range(len(results["ids"][0])):
-        meta = results["metadatas"][0][i]
+    for item in items:
+        meta = item["metadata"]
         chunks.append(
             {
-                "text": results["documents"][0][i],
-                "score": 1.0
-                - results["distances"][0][i],  # cosine distance 0..2 → similarity -1..1
+                "text": item["text"],
+                "score": item["score"],
                 "chunk_index": meta["chunk_index"],
                 "section": meta["section"],
                 "source": "dense",
+                "asset_id": meta.get("asset_id"),
+                "version": meta.get("version"),
             }
         )
     return chunks
 
 
-async def hybrid_search(resume_id: int, question: str, top_k: int = 5) -> list[dict]:
-    """稠密向量 + BM25 关键词 → RRF 融合 → 返回 top_k"""
+def build_scope_where(scope: dict[str, list[int]]) -> dict[str, Any]:
+    """把检索 scope（asset_type → asset_ids）转成向量库 where 过滤。
+
+    默认只命中最新版本快照（is_latest=True，D2）；旧版本检索由 T18 版本浏览显式传 version。
+    """
+    all_ids = sorted({aid for aids in scope.values() for aid in aids})
+    where: dict[str, Any] = {META_IS_LATEST: True}
+    if len(all_ids) == 1:
+        where[META_ASSET_ID] = all_ids[0]
+    else:
+        where[META_ASSET_ID] = {"$in": all_ids}
+    return where
+
+
+def build_asset_where(
+    asset_type: str,
+    asset_ids: list[int] | None = None,
+) -> dict[str, Any]:
+    """按资产类型（+ 可选 id 列表）构造向量库 where 过滤。
+
+    用于公共市场集合（market_public）检索：按 asset_type 限定（job/sample/guide），
+    默认只命中最新版本快照（is_latest=True）。与 build_scope_where 的区别是
+    不绑定 user 语义，直接按 asset_type 过滤，适合跨资产全量预筛（如岗位推荐）。
+    """
+    where: dict[str, Any] = {META_ASSET_TYPE: asset_type, META_IS_LATEST: True}
+    if asset_ids:
+        ids = sorted(asset_ids)
+        if len(ids) == 1:
+            where[META_ASSET_ID] = ids[0]
+        else:
+            where[META_ASSET_ID] = {"$in": ids}
+    return where
+
+
+def _scope_bm25_key(user_id: int, scope: dict[str, list[int]]) -> str:
+    """BM25 缓存键：按 (user_id, 命中的资产 id 集合) 区分。"""
+    ids = sorted({aid for aids in scope.values() for aid in aids})
+    return f"{user_id}:[{','.join(map(str, ids))}]"
+
+
+async def clear_bm25(user_id: int, asset_id: int) -> None:
+    """清除指定资产的 BM25 缓存（重建/删除后调用，避免旧版本内容污染）。"""
+    async with _bm25_lock:
+        _bm25_indexes.pop(f"{user_id}:[{asset_id}]", None)
+
+
+async def clear_market_bm25(collection: str, asset_id: int) -> None:
+    """清除公共集合指定资产的 BM25 缓存（市场数据重索引后调用）。
+
+    store_key 带 ``market:{collection}:`` 前缀，与个人集合 key 隔离。
+    """
+    async with _bm25_lock:
+        _bm25_indexes.pop(f"market:{collection}:[{asset_id}]", None)
+
+
+async def hybrid_search_corpus(
+    user_id: int,
+    scope: dict[str, list[int]],
+    question: str,
+    top_k: int = 5,
+    *,
+    collection: str | None = None,
+) -> list[dict]:
+    """知识资产库检索（T7, D1/D4）：稠密 + BM25 → RRF 融合 → 返回 top_k。
+
+    - collection 默认每用户一个（knowledge_{user_id}）；市场数据显式传
+      ``market_collection_name()``（公共集合，所有用户共享）
+    - scope 过滤（asset_type → asset_ids）+ is_latest 默认过滤
+    - RRF 融合留在应用层，可移植（D9）
+    - 公共集合的 BM25 缓存键加 ``market:{collection}:`` 前缀，与个人集合隔离
+    """
+    if collection is None:
+        collection = knowledge_collection_name(user_id)
+    where = build_scope_where(scope)
+    if collection == knowledge_collection_name(user_id):
+        store_key = _scope_bm25_key(user_id, scope)
+    else:
+        ids = sorted({aid for aids in scope.values() for aid in aids})
+        store_key = f"market:{collection}:[{','.join(map(str, ids))}]"
     dense, sparse = await asyncio.gather(
-        _vector_search(resume_id, question, top_k=20),
-        _keyword_search(resume_id, question, top_k=20),
+        _vector_search(collection, where, question, top_k=20),
+        _keyword_search(collection, where, store_key, question, top_k=20),
     )
     return _merge_results(dense, sparse, top_k)
+
+
+async def hybrid_search(
+    user_id: int,
+    resume_id: int,
+    question: str,
+    top_k: int = 5,
+) -> list[dict]:
+    """单简历检索（hybrid_search_corpus 的特例，兼容既有调用形态）。"""
+    return await hybrid_search_corpus(
+        user_id, {ASSET_TYPE_RESUME: [resume_id]}, question, top_k
+    )
 
 
 def _merge_results(dense: list[dict], sparse: list[dict], top_k: int, k: int = 60) -> list[dict]:

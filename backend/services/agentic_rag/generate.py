@@ -6,7 +6,7 @@ import re
 from core.config import settings
 from core.retry import with_retry
 from services.agentic_rag.state import AgenticRAGState
-from services.rag.pipeline import llm_generate, build_prompt
+from services.rag.pipeline import llm_generate
 from services.rag.retrieval import reject_if_low_score
 
 logger = logging.getLogger(__name__)
@@ -26,12 +26,16 @@ def _compute_composite(completeness: float, accuracy: float, source_credibility:
 
 
 def _extract_sources(chunks: list[dict]) -> list[dict]:
+    """抽取来源（T10 多源归因：携带 asset_id/asset_type/version 供溯源）。"""
     return [
         {
             "chunk_index": c.get("chunk_index", i),
             "text": c.get("text", ""),
             "section": c.get("section", "未知"),
             "rerank_score": c.get("rerank_score", 0.0),
+            "asset_id": c.get("asset_id"),
+            "asset_type": c.get("asset_type"),
+            "version": c.get("version"),
         }
         for i, c in enumerate(chunks)
     ]
@@ -49,32 +53,42 @@ def _format_failed_tools(tool_errors: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def _build_generate_prompt(chunks_texts: list[str], query: str, tool_errors: list[dict]) -> dict:
-    """组装生成用 prompt。
+def _build_generate_prompt(chunks: list[dict], query: str, tool_errors: list[dict]) -> dict:
+    """组装生成用 prompt（T10 多源归因）。
 
-    阶段4 错误透传：当 tool_errors 非空（部分检索/重排失败）时，在 system 与 user 中
-    注入降级说明——告知 LLM 仅基于已有内容作答、明确标注信息可能不完整、严禁编造来源。
-    正常路径（无失败）完全复用 rag_service.build_prompt，行为不变。
+    来源带 [asset_id:v版本] 标注，要求答案对关键事实溯源；支持多份知识资产。
+    阶段4 错误透传：tool_errors 非空时注入降级说明，告知 LLM 仅基于已有内容作答。
     """
-    if not tool_errors:
-        return build_prompt(chunks_texts, query)
-
-    base = build_prompt(chunks_texts, query)
-    failed_list = _format_failed_tools(tool_errors)
+    source_lines = []
+    for i, c in enumerate(chunks):
+        asset = c.get("asset_id")
+        ver = c.get("version")
+        label = f"[{asset}:v{ver}]" if asset is not None else f"[段落 {i + 1}]"
+        source_lines.append(f"{label} {c.get('text', '')}")
+    context = "\n\n".join(source_lines)
 
     system = (
-        base["system"]
-        + "\n\n【检索降级提示】本次回答所依赖的以下检索工具调用失败，相关来源可能缺失：\n"
-        + failed_list
-        + "\n请严格遵循：仅基于下方已提供的简历内容回答；"
-        "若问题恰好涉及缺失的检索结果，请明确说明『部分检索工具失败，相关信息可能不完整』；"
-        "绝对不要编造或猜测未在简历中出现的来源与事实。"
+        "你是一个求职知识助手。请基于给定的知识资产（可能来自多份简历/JD/面试记录）回答问题。"
+        "每个来源都带 [asset_id:v版本] 标注。"
+        "回答涉及具体事实时标注其来源资产；若资料中没有直接信息可进行合理推断，"
+        "但需明确区分哪些是资料原文、哪些是推断。切忌编造事实。"
     )
-    user = (
-        base["user"]
-        + "\n\n（提示：本次检索存在部分失败，已在上方的系统说明中列出，请据此作答并说明信息局限。）"
-    )
-    return {"system": system, "user": user}
+    user = f"知识资产内容：\n{context}\n\n问题：{query}\n\n请给出简洁准确的回答。"
+    prompt = {"system": system, "user": user}
+
+    if tool_errors:
+        failed_list = _format_failed_tools(tool_errors)
+        prompt["system"] += (
+            "\n\n【检索降级提示】本次回答所依赖的以下检索工具调用失败，相关来源可能缺失：\n"
+            + failed_list
+            + "\n请严格遵循：仅基于下方已提供的知识资产回答；"
+            "若问题恰好涉及缺失的检索结果，请明确说明『部分检索工具失败，相关信息可能不完整』；"
+            "绝对不要编造或猜测未出现的来源与事实。"
+        )
+        prompt["user"] += (
+            "\n\n（提示：本次检索存在部分失败，已在上方的系统说明中列出，请据此作答并说明信息局限。）"
+        )
+    return prompt
 
 
 async def generate_node(state: AgenticRAGState) -> dict:
@@ -100,7 +114,7 @@ async def generate_node(state: AgenticRAGState) -> dict:
             "trace": trace,
         }
 
-    prompt = _build_generate_prompt([c["text"] for c in chunks], query, tool_errors)
+    prompt = _build_generate_prompt(chunks, query, tool_errors)
 
     answer = await with_retry(
         llm_generate,
@@ -153,12 +167,12 @@ _EVAL_SYSTEM = (
     "- 3-4: 大量错误\n"
     "- 1-2: 严重不准确\n"
     "- 0: 完全错误\n\n"
-    "**来源可信度（source_credibility）**：引用的来源是否可靠\n"
-    "- 9-10: 来源直接相关且可信\n"
-    "- 7-8: 来源基本相关\n"
-    "- 5-6: 来源部分相关\n"
-    "- 3-4: 来源不太相关\n"
-    "- 1-2: 来源不相关\n"
+    "**来源可信度（source_credibility）**：引用的来源是否可靠、归因是否正确（T10）\n"
+    "- 9-10: 来源直接相关、可信，且归因到正确的资产/版本\n"
+    "- 7-8: 来源基本相关，归因基本正确\n"
+    "- 5-6: 来源部分相关，或归因模糊（未指明具体资产）\n"
+    "- 3-4: 来源不太相关，或归因错误\n"
+    "- 1-2: 来源不相关，归因混乱\n"
     "- 0: 没有引用来源\n\n"
     "请严格按以下 JSON 格式返回（不要包含其他文字）：\n"
     '{"completeness": <0-10>, "accuracy": <0-10>, "source_credibility": <0-10>, "feedback": "<具体评价>"}'

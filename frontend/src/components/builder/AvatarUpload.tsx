@@ -133,7 +133,7 @@ function AvatarUploadInner({
   return (
     <div className="flex flex-col items-center gap-2">
       <div
-        className="relative w-20 h-20 rounded-full overflow-hidden shrink-0 group cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50"
+        className="relative w-20 h-20 rounded-full overflow-hidden shrink-0 group cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
         onClick={triggerFileInput}
         onKeyDown={handleKeyDown}
         role="button"
@@ -196,7 +196,7 @@ function AvatarUploadInner({
           </>
         ) : (
           // 无头像：虚线占位符
-          <div className="w-full h-full flex flex-col items-center justify-center border-2 border-dashed border-[var(--color-border)] bg-[var(--color-bg)] group-hover:border-indigo-500/50 transition-colors">
+          <div className="w-full h-full flex flex-col items-center justify-center border-2 border-dashed border-[var(--color-border)] bg-[var(--color-bg)] group-hover:border-brand/50 transition-colors">
             <User
               size={24}
               weight="duotone"

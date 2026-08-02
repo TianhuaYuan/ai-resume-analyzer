@@ -86,9 +86,8 @@ export default function SessionExpiredDialog({
         <div className="flex items-center justify-center gap-2 px-6 py-4 border-t border-[var(--color-border)]">
           <button
             onClick={onGoLogin}
-            className="px-4 py-2 text-sm font-medium rounded-lg
-              bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300
-              border border-indigo-500/40
+            className="px-4 py-2 text-sm font-medium rounded-full
+              bg-brand hover:bg-[#0077ed] text-white
               active:scale-[0.98] motion-reduce:active:scale-100
               transition-all cursor-pointer
               flex items-center gap-1.5"

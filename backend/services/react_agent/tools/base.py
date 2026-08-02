@@ -41,9 +41,17 @@ class Tool(ABC):
     args_model: type[BaseModel]
     category: str = ""
 
-    def __init__(self, db: AsyncSession | None = None, user_id: int | None = None) -> None:
+    def __init__(
+        self,
+        db: AsyncSession | None = None,
+        user_id: int | None = None,
+        emit=None,
+    ) -> None:
         self.db = db
         self.user_id = user_id
+        # 可选事件回调：工具内部 LLM 流式 token 经此推给前端（tool_stream 事件）。
+        # 由 react_agent.loop 在实例化工具时注入；缺省为 None（工具退化为非流式内部 LLM）。
+        self.emit = emit
         self.sources: list[dict] = []  # 侧信道：工具执行后可填充结构化来源（Spec A#10）
 
     @abstractmethod

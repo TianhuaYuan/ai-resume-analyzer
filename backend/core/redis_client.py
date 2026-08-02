@@ -13,6 +13,9 @@ logger = logging.getLogger(__name__)
 
 _redis = None
 _in_memory = None
+# Redis 降级冷却期：连接失败后 _REDIS_RETRY_AFTER 秒内直接走内存降级，不重试
+_redis_down_until = 0.0
+_REDIS_RETRY_AFTER = 30.0
 
 
 class InMemoryRedis:
@@ -130,12 +133,22 @@ class InMemoryRedis:
 
 
 async def get_redis():
-    """获取 Redis 客户端。不可用时返回 InMemoryRedis 实例。"""
-    # 开发/测试环境：仍然尝试连接 Redis
-    if settings.ENVIRONMENT in ("development", "testing"):
-        pass  # 走下面的连接逻辑
+    """获取 Redis 客户端。不可用时返回 InMemoryRedis 实例。
 
-    global _redis, _in_memory
+    性能护栏（T17）：Redis 不可用时进入「降级冷却期」——冷却期内直接返回
+    InMemoryRedis，不再每次调用都重试连接。否则每次 Redis 访问都白付
+    socket_connect_timeout 的连接超时（本机 Redis 未启动时 = 每次 2s+ 延迟，
+    会让每个 agent 交互凭空多出数秒）。
+    """
+    global _redis, _in_memory, _redis_down_until
+
+    now = time.time()
+
+    # 冷却期内：Redis 刚失败过，直接内存降级，不再重试
+    if _redis is None and now < _redis_down_until:
+        if _in_memory is None:
+            _in_memory = InMemoryRedis()
+        return _in_memory
 
     # 已有真实 Redis 连接且可用
     if _redis is not None:
@@ -144,7 +157,8 @@ async def get_redis():
             return _redis
         except Exception:
             _redis = None
-            logger.warning("Redis 连接断开，降级为 InMemoryRedis")
+            _redis_down_until = now + _REDIS_RETRY_AFTER
+            logger.warning("Redis 连接断开，进入降级冷却期")
 
     # 尝试连接真实 Redis
     try:
@@ -153,20 +167,20 @@ async def get_redis():
         _redis = aioredis.from_url(
             settings.REDIS_URL,
             decode_responses=True,
-            socket_connect_timeout=2,
-            socket_timeout=2,
+            socket_connect_timeout=0.5,
+            socket_timeout=0.5,
         )
         await _redis.ping()
         logger.info("Redis connected at %s", settings.REDIS_URL)
         return _redis
     except Exception:
         _redis = None
-        logger.info("Redis unavailable, using in-memory fallback")
+        _redis_down_until = now + _REDIS_RETRY_AFTER
+        logger.info("Redis unavailable, in-memory fallback (cooldown %ds)", _REDIS_RETRY_AFTER)
 
     # 降级为 InMemoryRedis
     if _in_memory is None:
         _in_memory = InMemoryRedis()
-        logger.info("InMemoryRedis fallback initialized")
     return _in_memory
 
 

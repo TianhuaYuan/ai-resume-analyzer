@@ -491,6 +491,9 @@ class BuilderResumeResponse(BaseModel):
     style: dict | None
     version: int
     created_at: datetime
+    # T17 渲染优化：索引新鲜度并入 builder 响应，避免前端再拉一次 getResume
+    is_indexed: bool = False
+    is_stale: bool = False
     modules: list[ResumeModuleResponse] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)

@@ -99,14 +99,18 @@ async def route_node(state: AgenticRAGState) -> dict:
     query = state.get("rewritten_query", state["question"])
     timer_start = time.monotonic()
 
+    # T10 路由语义：direct_answer（问候，零 LLM 开销，经典 /ask 路径保留）
+    #   | fast（短/定向问题：单路快路径）| deep（复杂/跨文档：多路检索 + reflexion）。
+    # 问候分支由 ReAct agent 侧 GenerateGreetingTool 兜底，但经典 /ask 仍需要。
     if _is_trivial_greeting(query):
         decision = "direct_answer"
-        elapsed = time.monotonic() - timer_start
-        logger.info("route_node: greeting → direct_answer (%.2fs)", elapsed)
+    elif len(query.strip()) <= 20:
+        decision = "fast"
     else:
-        decision = await _classify_route(query, model=settings.JUDGE_MODEL if settings.JUDGE_ENABLED else None)
-        elapsed = time.monotonic() - timer_start
-        logger.info("route_node: '%s' → %s (%.2fs)", query, decision, elapsed)
+        decision = "deep"
+
+    elapsed = time.monotonic() - timer_start
+    logger.info("route_node: '%s' → %s (%.2fs)", query, decision, elapsed)
 
     trace = dict(state.get("trace", {}))
     trace["route"] = {"elapsed_ms": int(elapsed * 1000), "decision": decision}

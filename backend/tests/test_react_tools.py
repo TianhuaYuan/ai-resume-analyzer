@@ -36,9 +36,9 @@ class TestToolRegistry:
         """TOOL_REGISTRY 包含 qa/builder/workbench 三个类别。"""
         assert set(TOOL_REGISTRY.keys()) == {"qa", "builder", "workbench"}
 
-    def test_qa_has_seven_tools(self):
-        """qa 类别有 7 个工具。"""
-        assert len(TOOL_REGISTRY["qa"]) == 7
+    def test_qa_has_thirteen_tools(self):
+        """qa 类别有 13 个工具（含 recommend_jobs）。"""
+        assert len(TOOL_REGISTRY["qa"]) == 13
 
     def test_builder_has_five_tools(self):
         """builder 类别有 5 个工具。"""
@@ -48,15 +48,15 @@ class TestToolRegistry:
         """workbench 类别有 2 个工具。"""
         assert len(TOOL_REGISTRY["workbench"]) == 2
 
-    def test_total_fourteen_tools(self):
-        """总计 14 个工具。"""
+    def test_total_twenty_tools(self):
+        """总计 20 个工具。"""
         total = sum(len(tools) for tools in TOOL_REGISTRY.values())
-        assert total == 14
+        assert total == 20
 
     def test_agent_tools_are_qa_plus_workbench(self):
-        """get_tools_for_agent = qa(7) + workbench(2) = 9。"""
+        """get_tools_for_agent = qa(13) + workbench(2) = 15。"""
         tools = get_tools_for_agent()
-        assert len(tools) == 9
+        assert len(tools) == 15
 
     def test_builder_tools_are_builder_only(self):
         """get_tools_for_builder = builder(5)。"""
@@ -64,7 +64,7 @@ class TestToolRegistry:
         assert len(tools) == 5
 
     def test_all_tool_names_unique(self):
-        """所有 14 个工具名不重复。"""
+        """所有 20 个工具名不重复。"""
         names = []
         for tools in TOOL_REGISTRY.values():
             for tool_class in tools:
@@ -81,9 +81,9 @@ class TestSchemaGeneration:
     """OpenAI function calling schema 生成。"""
 
     def test_agent_schemas_count(self):
-        """get_agent_schemas() 返回 9 个 schema。"""
+        """get_agent_schemas() 返回 15 个 schema。"""
         schemas = get_agent_schemas()
-        assert len(schemas) == 9
+        assert len(schemas) == 15
 
     def test_builder_schemas_count(self):
         """get_builder_schemas() 返回 5 个 schema。"""

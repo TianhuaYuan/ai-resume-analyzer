@@ -5,6 +5,11 @@
 以兼容仍然 `from services.agentic_rag.mcp_graph import ...` 的测试与代码。
 
 ⚠️ 移除本 shim 前：把 importer 的 `mcp_graph` 改为 `graph` 即可。
+
+T14 退役：MCP 模式 agentic 图已退役。`create_mcp_agentic_rag_graph` 在 graph.py
+中被改为抛 NotImplementedError；生产代码改用 mcp_server/tools/answer.py 的
+`answer_from_index` 原子工具（检索+反思+生成一次完成）。本 shim 仅保留给旧测试
+导入用，不删文件。
 """
 
 from services.agentic_rag.graph import (

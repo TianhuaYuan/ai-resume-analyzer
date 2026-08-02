@@ -243,16 +243,19 @@ async def react_loop_stream(
             await task
             return
 
-        # ── 配额通过 → 创建占位记录 ────────────────────────────
-        placeholder = await save_qa_placeholder(db, user_id, resume_id, question, conversation_id)
-        qa_id = placeholder.id
-
-        # 通知前端 Agent 开始工作（Spec: agent_start 含 resume_id + tools 列表）
+        # ── 通知前端 Agent 开始（先发首事件，不被占位记录 DB 写阻塞）──
         yield {
             "type": "agent_start",
             "resume_id": resume_id,
             "tools": _get_tool_list(tool_mode),
         }
+        logger.info(
+            "agent_sse first_event_ms=%d", int((time.monotonic() - start_time) * 1000)
+        )
+
+        # ── 创建占位记录（agent_start 已发出，前端已响应）────────
+        placeholder = await save_qa_placeholder(db, user_id, resume_id, question, conversation_id)
+        qa_id = placeholder.id
 
         # 转发第一个事件（agent_done 由末尾统一处理）
         if first_event.get("type") != "agent_done":
@@ -294,6 +297,7 @@ async def react_loop_stream(
         # ── 产出最终 agent_done 事件（Spec 字段对齐） ────────
         # SSE done.process_trace = 紧凑摘要（轮数/工具序列/耗时），非全量事件列表
         duration_ms = int((time.monotonic() - start_time) * 1000)
+        logger.info("agent_sse done_ms=%d", duration_ms)
         compact_trace = _build_compact_trace(loop_result.process_trace, duration_ms)
         yield {
             "type": "agent_done",
@@ -306,7 +310,8 @@ async def react_loop_stream(
         }
 
     except asyncio.CancelledError:
-        # 客户端断连 — 取消后台 task，占位记录保留（status=streaming）
+        # 客户端断连 — 取消后台 task，占位记录标记为 failed（生成中断），
+        # 不再保留 status=streaming 的空记录（否则返回后历史会加载出"空记录"污染聊天）。
         logger.info(
             "Client disconnected from agent stream: user=%d, resume=%d",
             user_id,
@@ -318,6 +323,14 @@ async def react_loop_stream(
                 await task
             except (asyncio.CancelledError, Exception):
                 pass
+        # 标记占位记录为"生成中断"（存在则更新；不阻塞断连流程）
+        if "qa_id" in locals() and qa_id:
+            try:
+                from services.qa_service import mark_qa_interrupted
+
+                await mark_qa_interrupted(db, qa_id)
+            except Exception:
+                logger.warning("标记中断 QA 记录失败: qa_id=%s", qa_id)
         raise
 
 

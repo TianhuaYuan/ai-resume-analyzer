@@ -57,7 +57,7 @@ function MarkdownRendererImpl({ children, className }: MarkdownRendererProps) {
           strong: ({ node, ...props }) => (
             <strong
               className="markdown-strong markdown-strong-inline
-                font-semibold text-indigo-300"
+                font-semibold text-[var(--color-text)]"
               {...props}
             />
           ),
@@ -69,7 +69,7 @@ function MarkdownRendererImpl({ children, className }: MarkdownRendererProps) {
           ),
           a: ({ node, ...props }) => (
             <a
-              className="markdown-a text-indigo-400 hover:text-indigo-300 underline-offset-2 hover:underline"
+              className="markdown-a text-brand hover:text-[#0077ed] underline-offset-2 hover:underline"
               target="_blank"
               rel="noopener noreferrer"
               {...props}
@@ -77,7 +77,7 @@ function MarkdownRendererImpl({ children, className }: MarkdownRendererProps) {
           ),
           blockquote: ({ node, ...props }) => (
             <blockquote
-              className="markdown-blockquote border-l-2 border-indigo-500/40 pl-3 my-2 italic text-[var(--color-text-muted)]"
+              className="markdown-blockquote border-l-2 border-brand/40 pl-3 my-2 italic text-[var(--color-text-muted)]"
               {...props}
             />
           ),
@@ -114,7 +114,7 @@ function MarkdownRendererImpl({ children, className }: MarkdownRendererProps) {
             </div>
           ),
           thead: ({ node, ...props }) => (
-            <thead className="markdown-thead bg-white/5" {...props} />
+            <thead className="markdown-thead bg-[var(--color-bg-secondary)]" {...props} />
           ),
           th: ({ node, ...props }) => (
             <th

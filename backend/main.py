@@ -41,6 +41,15 @@ async def lifespan(app: FastAPI):
     # 3.6 N6：启动期 fail-fast 配置校验（生产/预发缺关键变量直接启动失败）
     validate_required_settings()
 
+    # T17 性能护栏：启动时预热 Redis 探测——Redis 不可用则在此触发降级冷却期，
+    # 避免首个用户交互白付连接超时延迟。
+    try:
+        from core.redis_client import get_redis
+
+        await get_redis()
+    except Exception:
+        pass  # 降级已由 get_redis 内部处理，不影响启动
+
     initialize_app_info(
         version="0.2.0",
         environment=settings.ENVIRONMENT,

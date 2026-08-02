@@ -30,6 +30,7 @@ mcp = FastMCP(
 
 def _register_handlers() -> None:
     from mcp_server.tools import search, analyze, rewrite, rerank, generate  # noqa: F401
+    from mcp_server.tools import answer, get_asset  # noqa: F401  # T13 新增原子工具
     from mcp_server.resources import resumes, history  # noqa: F401
 
     logger.info("MCP tools and resources registered")

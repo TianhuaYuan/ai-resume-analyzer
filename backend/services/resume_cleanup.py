@@ -39,6 +39,7 @@ async def delete_resume_full(db: AsyncSession, resume: Resume) -> None:
     外部资源清理失败不抛异常，仅记录 warning，避免阻塞主流程。
     """
     resume_id = resume.id
+    user_id = resume.user_id
     file_path = resume.file_path
 
     # 1. DB 事务先行
@@ -48,7 +49,7 @@ async def delete_resume_full(db: AsyncSession, resume: Resume) -> None:
 
     # 2. 清 ChromaDB 向量（尽力，不阻塞）
     try:
-        await clear_resume_vectors(resume_id)
+        await clear_resume_vectors(user_id, resume_id)
         logger.info("Cleared Chroma vectors for resume %d", resume_id)
     except Exception as e:
         logger.warning("Failed to clear Chroma vectors for resume %d: %s", resume_id, e)

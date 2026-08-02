@@ -3,16 +3,22 @@ import time
 
 from core.config import settings
 from services.agentic_rag.state import AgenticRAGState
-from services.rag.retrieval import hybrid_search, rerank
+from services.rag.metadata import ASSET_TYPE_RESUME
+from services.rag.retrieval import hybrid_search_corpus, rerank
 
 logger = logging.getLogger(__name__)
 
 
 def _deduplicate_chunks(chunks: list[dict]) -> list[dict]:
+    """跨文档去重（T10）：同 (asset_id, chunk_index, 文本前缀) 视为同一来源。"""
     seen = set()
     unique = []
     for chunk in chunks:
-        key = (chunk.get("chunk_index", -1), chunk.get("text", "")[:100])
+        key = (
+            chunk.get("asset_id", -1),
+            chunk.get("chunk_index", -1),
+            chunk.get("text", "")[:100],
+        )
         if key not in seen:
             seen.add(key)
             unique.append(chunk)
@@ -21,7 +27,8 @@ def _deduplicate_chunks(chunks: list[dict]) -> list[dict]:
 
 async def search_node(state: AgenticRAGState) -> dict:
     query = state.get("rewritten_query") or state["question"]
-    resume_id = state["resume_id"]
+    # T10：按 scope（asset_type → asset_ids）检索知识资产库，默认只命中 is_latest
+    scope = state.get("scope") or {ASSET_TYPE_RESUME: [state["resume_id"]]}
     round_num = state.get("search_round", 0)
     supplement_queries = state.get("supplement_queries", [])
 
@@ -37,14 +44,16 @@ async def search_node(state: AgenticRAGState) -> dict:
     all_chunks = []
     for q in queries_to_search:
         try:
-            chunks = await hybrid_search(resume_id, q, top_k=settings.DEFAULT_HYBRID_TOP_K)
+            chunks = await hybrid_search_corpus(
+                state["user_id"], scope, q, top_k=settings.DEFAULT_HYBRID_TOP_K
+            )
         except Exception as exc:
             # 某个检索子步骤（稠密向量 / 稀疏 BM25 融合）失败：
             # 记录而非抛出，保证其余查询仍能返回结果，实现「部分降级」而非全盘失败。
-            logger.warning("search_node: hybrid_search failed for query=%r: %s", q, exc)
+            logger.warning("search_node: hybrid_search_corpus failed for query=%r: %s", q, exc)
             tool_errors.append(
                 {
-                    "tool": "hybrid_search",
+                    "tool": "hybrid_search_corpus",
                     "query": q,
                     "error": str(exc)[:300],
                 }
@@ -57,8 +66,8 @@ async def search_node(state: AgenticRAGState) -> dict:
     elapsed = time.monotonic() - timer_start
 
     logger.info(
-        "search_node: resume=%d round=%d queries=%d → %d unique chunks (%.2fs)",
-        resume_id,
+        "search_node: scope=%s round=%d queries=%d → %d unique chunks (%.2fs)",
+        scope,
         round_num,
         len(queries_to_search),
         len(unique_chunks),
@@ -69,6 +78,7 @@ async def search_node(state: AgenticRAGState) -> dict:
     trace["search"] = {
         "elapsed_ms": int(elapsed * 1000),
         "query": query,
+        "scope": scope,
         "supplement_queries": supplement_queries,
         "chunk_count": len(unique_chunks),
         "round": round_num,

@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 # 锁 key 前缀
 LOCK_PREFIX = "analysis_lock:"
+INDEX_LOCK_PREFIX = "index_lock:"
 
 # 默认锁超时（秒）
 DEFAULT_LOCK_TTL = 120
@@ -104,3 +105,71 @@ async def release_lock(user_id: int, resume_id: int, lock_id: str) -> bool:
     except Exception as e:
         logger.exception("分布式锁释放异常 user_id=%s: %s", user_id, e)
         return False
+
+
+# ─────────────────────────────────────────────────────────────
+# T6：索引分布式锁（按 user_id + asset_type + asset_id 粒度）
+# 防止同一资产多个请求同时触发懒重建。
+# ─────────────────────────────────────────────────────────────
+
+async def _acquire_lock_key(lock_key: str, ttl_seconds: int) -> Optional[str]:
+    """通用 SET NX 分布式锁获取。Redis 不可用时降级为返回假锁 ID。"""
+    try:
+        redis = await get_redis()
+        if redis is None:
+            logger.warning("Redis 不可用，跳过分布式锁获取（key=%s）", lock_key)
+            return str(uuid.uuid4())  # 降级：直接返回假锁 ID
+        lock_id = str(uuid.uuid4())
+        acquired = await redis.set(lock_key, lock_id, nx=True, ex=ttl_seconds)
+        if acquired:
+            logger.debug("分布式锁获取成功 key=%s", lock_key)
+            return lock_id
+        logger.debug("分布式锁获取失败 key=%s（已有持有者）", lock_key)
+        return None
+    except Exception as e:
+        logger.exception("分布式锁获取异常 key=%s: %s", lock_key, e)
+        return None
+
+
+async def _release_lock_key(lock_key: str, lock_id: str) -> bool:
+    """通用分布式锁释放（Lua 比对 lock_id 防误删）。"""
+    try:
+        redis = await get_redis()
+        if redis is None:
+            return True  # 降级：Redis 不可用时直接放行
+        lua_script = """
+        if redis.call("GET", KEYS[1]) == ARGV[1] then
+            return redis.call("DEL", KEYS[1])
+        else
+            return 0
+        end
+        """
+        result = await redis.eval(lua_script, 1, lock_key, lock_id)
+        return result == 1
+    except Exception as e:
+        logger.exception("分布式锁释放异常 key=%s: %s", lock_key, e)
+        return False
+
+
+async def acquire_index_lock(
+    user_id: int,
+    asset_type: str,
+    asset_id: int,
+    ttl_seconds: int = DEFAULT_LOCK_TTL,
+) -> Optional[str]:
+    """按 (user_id, asset_type, asset_id) 获取索引分布式锁（T6）。"""
+    return await _acquire_lock_key(
+        f"{INDEX_LOCK_PREFIX}{user_id}:{asset_type}:{asset_id}", ttl_seconds
+    )
+
+
+async def release_index_lock(
+    user_id: int,
+    asset_type: str,
+    asset_id: int,
+    lock_id: str,
+) -> bool:
+    """释放索引分布式锁。"""
+    return await _release_lock_key(
+        f"{INDEX_LOCK_PREFIX}{user_id}:{asset_type}:{asset_id}", lock_id
+    )

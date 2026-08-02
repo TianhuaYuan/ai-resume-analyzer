@@ -1,4 +1,4 @@
-"""MCP 工具调用封装：mcp_search / mcp_rerank / mcp_generate。"""
+"""MCP 工具调用封装：mcp_search / mcp_rerank / mcp_generate / mcp_answer（T14）。"""
 
 import json
 import logging
@@ -10,24 +10,71 @@ logger = logging.getLogger(__name__)
 
 async def mcp_search(
     query: str,
-    resume_id: int,
+    resume_id: int | None = None,
     top_k: int = 20,
+    scope: dict[str, list[int]] | None = None,
+    filters: dict | None = None,
 ) -> list[dict]:
+    """调 MCP search_index（T13 泛化）。
+
+    向后兼容：仅传 resume_id 时自动包成 scope={resume: [resume_id]}；
+    scope 显式传入时优先使用 scope。
+    """
+    client = await get_mcp_client()
+    await client.connect()
+
+    if scope is None:
+        if resume_id is None:
+            logger.error("mcp_search: must provide scope or resume_id")
+            return []
+        scope = {"resume": [resume_id]}
+
+    arguments: dict = {
+        "query": query,
+        "scope": json.dumps(scope, ensure_ascii=False),
+        "top_k": top_k,
+    }
+    if filters:
+        arguments["filters"] = json.dumps(filters, ensure_ascii=False)
+
+    try:
+        result = await client.call_tool("search_index", arguments)
+    except MCPClientError as e:
+        logger.error("MCP search_index failed: %s", e)
+        return []
+
+    return _parse_tool_result(result)
+
+
+async def mcp_answer(
+    query: str,
+    scope: dict[str, list[int]],
+    top_k: int = 5,
+) -> dict:
+    """调 MCP answer_from_index（T14 原子工具：检索+反思+生成一次完成）。
+
+    降级策略沿用：失败返回拒答话术 + 空 sources。
+    """
     client = await get_mcp_client()
     await client.connect()
 
     try:
         result = await client.call_tool(
-            "search_knowledge_base",
+            "answer_from_index",
             {
                 "query": query,
-                "resume_id": str(resume_id),
+                "scope": json.dumps(scope, ensure_ascii=False),
                 "top_k": top_k,
             },
         )
     except MCPClientError as e:
-        logger.error("MCP search_knowledge_base failed: %s", e)
-        return []
+        logger.error("MCP answer_from_index failed: %s", e)
+        return {
+            "answer": "服务暂时不可用，请稍后重试。",
+            "sources": [],
+            "eval_score": 0.0,
+            "reflection_round": 0,
+        }
 
     return _parse_tool_result(result)
 

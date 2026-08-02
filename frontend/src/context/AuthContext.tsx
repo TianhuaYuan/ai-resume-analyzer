@@ -53,6 +53,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [sessionDialog, setSessionDialog] = useState<SessionDialogType>(null);
 
   // ── 启动时从 /me 获取完整用户信息 ──────────────────────
+  // 性能优化：token 有效时先用 JWT 里的信息立即渲染（消除白屏等待），
+  // /me 在后台刷新为完整信息（is_admin 等字段 /me 后修正）。
   useEffect(() => {
     const token = localStorage.getItem("access_token");
     if (!token) {
@@ -65,7 +67,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
       return;
     }
-    // token 有效 → 调 /me 获取最新用户信息（兼容旧 token 无 username 的情况）
+    // 先用 JWT 预填充，立即放行渲染
+    setUser({
+      id: Number(payload.sub) || 0,
+      username: payload.username ?? "",
+      email: payload.email ?? "",
+      is_admin: false, // 以 /me 返回为准，稍后修正
+    });
+    setLoading(false);
+    // 后台刷新完整用户信息（含 is_admin / 最新用户名邮箱）
     getCurrentUser()
       .then((data) => {
         setUser({
@@ -76,11 +86,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
       })
       .catch(() => {
-        // /me 失败（token 被撤销等）→ 清 token
+        // /me 失败（token 被撤销等）→ 清 token 并登出
         clearTokens();
-      })
-      .finally(() => {
-        setLoading(false);
+        setUser(null);
       });
   }, []);
 

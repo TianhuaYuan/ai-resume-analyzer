@@ -1,241 +1,208 @@
 @import "tailwindcss";
 
-/* ── 等宽数字字体面：只对数字/百分号/斜杠生效，其他字符回退到正文字体 ──
-   Georgia 不支持 tabular-nums OpenType 特性，数字比例宽度导致大小不一。
-   用 unicode-range 将数字字符路由到等宽字体，不改变整体衬线风格。 */
-@font-face {
-  font-family: "MonoDigits";
-  src: local("Cascadia Code"), local("Consolas"), local("SF Mono"), local("Menlo"), local("DejaVu Sans Mono");
-  unicode-range: U+0030-0039, /* 0-9 */
-                 U+0025,       /* % */
-                 U+002F,       /* / */
-                 U+002E,       /* . */
-                 U+002D,       /* - */
-                 U+FF10-FF19;  /* 全角数字 ０-９ */
-}
+/* ═══════════════════════════════════════════════════════════
+   Apple 风格主题 — Light-first
+   - 画布 #F5F5F7，毛玻璃白卡，品牌蓝 #0071e3
+   - 系统无衬线字体栈（SF Pro / PingFang SC）
+   - Squircle 大圆角（24px），1px hairline 边框
+   ═══════════════════════════════════════════════════════════ */
 
 @theme {
-  /* ── Minimalist Monochrome: Pure Black & White ── */
-  --color-light-bg: #ffffff;
-  --color-light-surface: #f5f5f5;
-  --color-light-card: #ffffff;
-  --color-light-border: #e5e5e5;
-  --color-light-text: #000000;
-  --color-light-text-secondary: #525252;
-  --color-light-text-muted: #737373;
-  --color-dark-bg: #000000;
-  --color-dark-surface: #0a0a0a;
-  --color-dark-card: #171717;
-  --color-dark-border: #262626;
-  --color-dark-text: #ffffff;
-  --color-dark-text-secondary: #a3a3a3;
-  --color-dark-text-muted: #737373;
+  /* ── Apple 浅色 ── */
+  --color-light-bg: #f5f5f7;
+  --color-light-surface: #f2f2f7;
+  --color-light-card: rgba(255, 255, 255, 0.8);
+  --color-light-border: rgba(0, 0, 0, 0.1);
+  --color-light-text: #1d1d1f;
+  --color-light-text-secondary: #515154;
+  --color-light-text-muted: #86868b;
 
-  /* Monochrome accent: black IS the accent */
-  --color-mono-accent: #000000;
+  /* ── 品牌蓝 ── */
+  --color-brand: #0071e3;
+  --color-brand-hover: #0077ed;
+  --color-brand-active: #006edb;
+  --color-brand-soft: rgba(0, 113, 227, 0.1);
+
+  /* Monochrome accent（兼容旧 mono-* 类，Apple 蓝为主） */
+  --color-mono-accent: #0071e3;
   --color-mono-accent-fg: #ffffff;
 
-  /* Typography: Serif system stack — MonoDigits 优先，仅数字字符走等宽 */
-  --font-display: "MonoDigits", Georgia, "Noto Serif SC", "宋体", serif;
-  --font-body: "MonoDigits", Georgia, "Noto Serif SC", "宋体", serif;
-  --font-mono: "Cascadia Code", "Source Code Pro", "Microsoft YaHei Mono", monospace;
+  /* Typography: Apple system stack */
+  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
+    "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
+  --font-body: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+    "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
+  --font-mono: "SF Mono", "Cascadia Code", "Source Code Pro", monospace;
 
-  /* Border radii: ALL ZERO */
-  --radius-sm: 0px;
-  --radius-md: 0px;
-  --radius-lg: 0px;
-  --radius-xl: 0px;
-  --radius-2xl: 0px;
+  /* Border radii: squircle（连续曲率大圆角） */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-2xl: 24px;
 
-  /* Border weights */
-  --border-hairline: 1px solid #e5e5e5;
-  --border-thin: 1px solid #000000;
-  --border-medium: 2px solid #000000;
-  --border-thick: 4px solid #000000;
-  --border-ultra: 8px solid #000000;
+  /* Border weights: hairlines */
+  --border-hairline: 1px solid rgba(0, 0, 0, 0.1);
+  --border-thin: 1px solid rgba(0, 0, 0, 0.16);
+  --border-medium: 2px solid rgba(0, 0, 0, 0.1);
+  --border-thick: 4px solid rgba(0, 0, 0, 0.1);
+  --border-ultra: 8px solid rgba(0, 0, 0, 0.1);
 }
 
-[data-theme="dark"] {
-  --color-bg: var(--color-dark-bg);
-  --color-bg-secondary: var(--color-dark-surface);
-  --color-bg-tertiary: var(--color-dark-card);
-  --color-surface: var(--color-dark-surface);
-  --color-card: var(--color-dark-card);
-  --color-border: var(--color-dark-border);
-  --color-text: var(--color-dark-text);
-  --color-text-secondary: var(--color-dark-text-secondary);
-  --color-text-muted: var(--color-dark-text-muted);
-  --color-primary: #2a2a2a;
-  --color-mono-accent: #ffffff;
-  --color-mono-accent-fg: #000000;
-  --border-hairline: 1px solid #262626;
-  --border-thin: 1px solid #ffffff;
-  --border-medium: 2px solid #ffffff;
-  --border-thick: 4px solid #ffffff;
-  --border-ultra: 8px solid #ffffff;
-}
-
-[data-theme="light"] {
+/* 浅色为默认主题（无 data-theme 属性时） */
+:root {
   --color-bg: var(--color-light-bg);
   --color-bg-secondary: var(--color-light-surface);
-  --color-bg-tertiary: var(--color-light-border);
+  --color-bg-tertiary: var(--color-light-surface);
   --color-surface: var(--color-light-surface);
   --color-card: var(--color-light-card);
   --color-border: var(--color-light-border);
   --color-text: var(--color-light-text);
   --color-text-secondary: var(--color-light-text-secondary);
   --color-text-muted: var(--color-light-text-muted);
-  --color-primary: #000000;
-  --color-mono-accent: #000000;
+  --color-primary: #0071e3;
+  --color-mono-accent: #0071e3;
   --color-mono-accent-fg: #ffffff;
 }
 
-/* ── Subtle texture: horizontal lines (prevents flat design) ── */
-body::before {
+/* ── Apple 深色主题 ── */
+[data-theme="dark"] {
+  --color-bg: #000000;
+  --color-bg-secondary: #1c1c1e;
+  --color-bg-tertiary: #1c1c1e;
+  --color-surface: #1c1c1e;
+  --color-card: rgba(28, 28, 30, 0.85);
+  --color-border: rgba(255, 255, 255, 0.1);
+  --color-text: #f5f5f7;
+  --color-text-secondary: #a1a1a6;
+  --color-text-muted: #636366;
+  --color-primary: #0a84ff;
+  --color-mono-accent: #0a84ff;
+  --color-mono-accent-fg: #ffffff;
+}
+
+/* ── Aurora 氛围背景：固定光球 + 弥散模糊 + 缓慢浮动 ── */
+body::before,
+body::after {
   content: "";
   position: fixed;
-  inset: 0;
-  background-image: repeating-linear-gradient(
-    0deg,
-    transparent,
-    transparent 1px,
-    var(--color-text) 1px,
-    var(--color-text) 2px
-  );
-  background-size: 100% 4px;
-  opacity: 0.012;
+  z-index: -1;
+  border-radius: 50%;
   pointer-events: none;
-  z-index: 9999;
 }
 
-/* ── Animations: Instant (0-100ms), Binary state changes ── */
-@keyframes fade-in-up {
-  from { opacity: 0; transform: translateY(12px); }
-  to { opacity: 1; transform: translateY(0); }
+/* 光球 1：左上 淡蓝 */
+body::before {
+  width: 55vw;
+  height: 55vw;
+  top: -18vw;
+  left: -12vw;
+  background: radial-gradient(circle, rgba(162, 210, 255, 0.5), transparent 70%);
+  filter: blur(80px);
+  animation: aurora-float-1 22s ease-in-out infinite;
 }
 
-@keyframes fade-out-up {
-  from { opacity: 1; transform: translateY(0); }
-  to { opacity: 0; transform: translateY(-8px); }
+/* 光球 2：右下 淡紫 */
+body::after {
+  width: 50vw;
+  height: 50vw;
+  bottom: -16vw;
+  right: -10vw;
+  background: radial-gradient(circle, rgba(200, 180, 255, 0.38), transparent 70%);
+  filter: blur(90px);
+  animation: aurora-float-2 26s ease-in-out infinite;
 }
 
-@keyframes fade-in-down {
-  from { opacity: 0; transform: translateY(-8px); }
-  to { opacity: 1; transform: translateY(0); }
+/* 光球 3：中部偏右 淡青（#root 伪元素承载） */
+#root::before {
+  content: "";
+  position: fixed;
+  z-index: -1;
+  width: 40vw;
+  height: 40vw;
+  top: 30%;
+  right: -18vw;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(circle, rgba(150, 220, 255, 0.32), transparent 70%);
+  filter: blur(90px);
+  animation: aurora-float-3 30s ease-in-out infinite;
 }
 
-@keyframes shake {
-  0%, 100% { transform: translateX(0); }
-  20% { transform: translateX(-6px); }
-  40% { transform: translateX(6px); }
-  60% { transform: translateX(-4px); }
-  80% { transform: translateX(4px); }
+@keyframes aurora-float-1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(6vw, 4vh) scale(1.08); }
+}
+@keyframes aurora-float-2 {
+  0%, 100% { transform: translate(0, 0) scale(1.05); }
+  50% { transform: translate(-5vw, -5vh) scale(0.96); }
+}
+@keyframes aurora-float-3 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(-4vw, 3vh) scale(1.1); }
 }
 
-@keyframes spin-slow {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+/* ── 物理动效：Apple 弹簧曲线 ── */
+:root {
+  --ease-spring: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-out: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
-@keyframes logo-enter {
-  from { opacity: 0; transform: scale(0.8); }
-  to { opacity: 1; transform: scale(1); }
-}
-
-.animate-fade-in-up { animation: fade-in-up 100ms ease-out forwards; }
-.animate-fade-out-up { animation: fade-out-up 100ms ease-out forwards; }
-.animate-fade-in-down { animation: fade-in-down 100ms ease-out forwards; }
-.animate-shake { animation: shake 300ms ease-in-out; }
-.animate-spin-slow { animation: spin-slow 1s linear infinite; }
-.animate-logo-enter { animation: fade-in-up 100ms ease-out forwards; }
-
-@keyframes progress-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-.animate-progress-pulse { animation: progress-pulse 2s ease-in-out infinite; }
-
-/* Toast progress bar */
-@keyframes toast-progress {
-  from { width: 100%; }
-  to { width: 0%; }
-}
-.animate-toast-progress { animation: toast-progress linear forwards; }
-
-@keyframes slide-in-top {
-  from { opacity: 0; transform: translateY(-16px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-.animate-slide-in-top { animation: slide-in-top 100ms ease-out forwards; }
-
-@keyframes skeleton-shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
-}
-.animate-skeleton {
-  background: linear-gradient(90deg, rgba(0,0,0,0.02) 25%, rgba(0,0,0,0.06) 50%, rgba(0,0,0,0.02) 75%);
-  background-size: 200% 100%;
-  animation: skeleton-shimmer 1.5s ease-in-out infinite;
-}
-
-@keyframes cursor-blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
-}
-.animate-cursor-blink { animation: cursor-blink 1s step-end infinite; }
-
-/* ── Global body: Serif typography, sharp corners ── */
+/* ── 全局 body ── */
 body {
   font-family: var(--font-body);
+  background-color: var(--color-bg);
+  color: var(--color-text);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  letter-spacing: -0.01em;
 }
 
-/* ── Monochrome utility classes ── */
+/* ── 工具类 ── */
 .font-display { font-family: var(--font-display); }
 .font-mono-label { font-family: var(--font-mono); }
 
-/* Inversion hover: card flips to black bg, white text */
-.mono-hover-inversion {
-  transition: background-color 100ms, color 100ms;
+/* 标题字间距微缩 */
+.display-tight { letter-spacing: -0.02em; }
+
+/* 毛玻璃卡片 */
+.glass-card {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 24px;
 }
-.mono-hover-inversion:hover {
-  background-color: var(--color-mono-accent);
-  color: var(--color-mono-accent-fg);
+[data-theme="dark"] .glass-card {
+  background: rgba(28, 28, 30, 0.85);
+  border-color: rgba(255, 255, 255, 0.1);
 }
 
-/* Border hover: card border thickens on hover, no bg change */
-.mono-hover-border {
-  transition: border-width 100ms, padding 100ms;
-  border-width: 1px;
-}
-.mono-hover-border:hover {
-  border-width: 2px;
-}
-
-/* Primary button: black bg, white text, sharp corners, uppercase */
+/* Primary 按钮：品牌蓝实心 + 胶囊 */
 .mono-btn-primary {
-  background-color: var(--color-mono-accent);
-  color: var(--color-mono-accent-fg);
+  background-color: var(--color-primary);
+  color: #fff;
   border: none;
-  border-radius: 0;
-  padding: 1rem 2rem;
-  font-family: var(--font-mono-label);
+  border-radius: 980px;
+  padding: 0.75rem 1.5rem;
+  font-family: var(--font-body);
   font-size: 0.875rem;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
+  font-weight: 600;
   cursor: pointer;
-  transition: background-color 0ms, color 0ms;
+  transition: transform 300ms var(--ease-spring), background-color 300ms var(--ease-spring),
+    box-shadow 300ms var(--ease-spring), filter 300ms var(--ease-spring);
 }
 .mono-btn-primary:hover {
-  background-color: var(--color-mono-accent-fg);
-  color: var(--color-mono-accent);
-  outline: 2px solid var(--color-mono-accent);
-  outline-offset: -2px;
+  background-color: #0077ed;
+  transform: scale(1.02);
+  box-shadow: 0 8px 24px rgba(0, 113, 227, 0.35);
+}
+.mono-btn-primary:active {
+  background-color: #006edb;
+  transform: scale(0.98);
 }
 .mono-btn-primary:focus-visible {
-  outline: 3px solid var(--color-mono-accent);
+  outline: 3px solid rgba(0, 113, 227, 0.4);
   outline-offset: 3px;
 }
 .mono-btn-primary:disabled {
@@ -243,65 +210,149 @@ body {
   cursor: not-allowed;
 }
 
-/* Secondary button: transparent bg, black border, sharp corners */
+/* Secondary 按钮：浅灰实心（禁止透明底） */
 .mono-btn-secondary {
-  background-color: transparent;
+  background-color: rgba(0, 0, 0, 0.05);
   color: var(--color-text);
-  border: 2px solid var(--color-text);
-  border-radius: 0;
+  border: none;
+  border-radius: 980px;
   padding: 0.75rem 1.5rem;
-  font-family: var(--font-mono-label);
+  font-family: var(--font-body);
   font-size: 0.875rem;
   font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
   cursor: pointer;
-  transition: background-color 0ms, color 0ms;
+  transition: transform 300ms var(--ease-spring), background-color 300ms var(--ease-spring);
 }
 .mono-btn-secondary:hover {
-  background-color: var(--color-text);
-  color: var(--color-bg);
+  background-color: rgba(0, 0, 0, 0.08);
+  transform: scale(1.02);
+}
+.mono-btn-secondary:active {
+  transform: scale(0.98);
 }
 
-/* Thick horizontal rule */
-.mono-rule {
-  border: none;
-  border-top: 4px solid var(--color-text);
-  margin: 0;
-}
-
-/* Thin horizontal rule */
-.mono-rule-thin {
-  border: none;
-  border-top: 1px solid var(--color-border);
-  margin: 0;
-}
-
-/* Card: sharp corners, thin black border, no shadow */
-.mono-card {
-  background-color: var(--color-card);
-  border: 1px solid var(--color-text);
-  border-radius: 0;
-  padding: 1.5rem;
-}
-
-/* Input: bottom border only, sharp corners, no radius */
+/* Input：无边框 + 浅灰底 + focus 白底光晕 */
 .mono-input {
-  background-color: transparent;
-  border: none;
-  border-bottom: 2px solid var(--color-text);
-  border-radius: 0;
-  padding: 0.75rem 0;
+  background-color: #f2f2f7;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  padding: 0.625rem 0.875rem;
   font-family: var(--font-body);
+  font-size: 0.875rem;
   color: var(--color-text);
   outline: none;
+  transition: background-color 200ms var(--ease-out), box-shadow 200ms var(--ease-out),
+    border-color 200ms var(--ease-out);
 }
-.mono-input::placeholder {
-  color: var(--color-text-muted);
-  font-style: italic;
-}
+.mono-input::placeholder { color: var(--color-text-muted); }
 .mono-input:focus {
-  border-bottom-width: 4px;
+  background-color: #fff;
+  border-color: rgba(0, 113, 227, 0.4);
+  box-shadow: 0 0 0 4px rgba(0, 113, 227, 0.15);
+}
+[data-theme="dark"] .mono-input {
+  background-color: #1c1c1e;
+  color: var(--color-text);
+}
+[data-theme="dark"] .mono-input::placeholder {
+  color: var(--color-text-muted);
+}
+[data-theme="dark"] .mono-input:focus {
+  background-color: #2c2c2e;
+}
+
+/* 卡片：毛玻璃 + 大圆角 */
+.mono-card {
+  background: var(--color-card);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--color-border);
+  border-radius: 24px;
+  padding: 1.5rem;
+  transition: transform 400ms var(--ease-spring), box-shadow 400ms var(--ease-spring);
+}
+.mono-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.08);
+}
+
+/* 分割线 */
+.mono-rule { border: none; border-top: 1px solid var(--color-border); margin: 0; }
+.mono-rule-thin { border: none; border-top: 1px solid var(--color-border); margin: 0; }
+
+/* ── Animations（Apple 时长 400-600ms + 弹簧曲线） ── */
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fade-out-up {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-12px); }
+}
+@keyframes fade-in-down {
+  from { opacity: 0; transform: translateY(-12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes logo-enter {
+  from { opacity: 0; transform: scale(0.8); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes progress-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+@keyframes toast-progress {
+  from { width: 100%; }
+  to { width: 0%; }
+}
+@keyframes slide-in-top {
+  from { opacity: 0; transform: translateY(-16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes skeleton-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.animate-fade-in-up { animation: fade-in-up 600ms cubic-bezier(0.32, 0.72, 0, 1) forwards; }
+.animate-fade-out-up { animation: fade-out-up 400ms cubic-bezier(0.32, 0.72, 0, 1) forwards; }
+.animate-fade-in-down { animation: fade-in-down 400ms cubic-bezier(0.32, 0.72, 0, 1) forwards; }
+.animate-fade-in { animation: fade-in 500ms ease-out forwards; }
+.animate-shake { animation: shake 300ms ease-in-out; }
+.animate-spin-slow { animation: spin-slow 1s linear infinite; }
+.animate-logo-enter { animation: logo-enter 600ms var(--ease-spring); }
+.animate-progress-pulse { animation: progress-pulse 2s ease-in-out infinite; }
+.animate-toast-progress { animation: toast-progress linear forwards; }
+.animate-slide-in-top { animation: slide-in-top 400ms var(--ease-spring) forwards; }
+.animate-skeleton {
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.04) 25%, rgba(0, 0, 0, 0.08) 50%, rgba(0, 0, 0, 0.04) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+}
+.animate-cursor-blink { animation: cursor-blink 1s step-end infinite; }
+
+/* ── 交互过渡默认曲线 ── */
+button, a, input, select, textarea {
+  transition-timing-function: var(--ease-spring);
 }
 
 /* ── Markdown 列表标记保障 ──
@@ -327,7 +378,7 @@ body {
   font-variant-numeric: tabular-nums;
   font-size: 0.85em;
 }
-/* Markdown 区域内所有数字统一等宽对齐（覆盖 LLM 输出中的分数、百分比等） */
+/* Markdown 区域内所有数字统一等宽对齐 */
 .markdown-p,
 .markdown-td,
 .markdown-th,

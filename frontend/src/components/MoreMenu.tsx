@@ -168,7 +168,7 @@ export default function MoreMenu({
         onClick={handleTriggerClick}
         onKeyDown={handleTriggerKeyDown}
         className={`inline-flex items-center justify-center p-1.5 rounded-lg
-          text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-white/8
+          text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]
           active:scale-[0.95] motion-reduce:active:scale-100
           transition-all cursor-pointer ${triggerClassName}`}
       >
@@ -201,7 +201,7 @@ export default function MoreMenu({
                     ? "text-[var(--color-text-muted)] cursor-not-allowed"
                     : item.danger
                     ? "text-red-400 hover:bg-red-500/10"
-                    : "text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-white/8"
+                    : "text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]"
                 }`}
             >
               {item.icon}

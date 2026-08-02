@@ -382,12 +382,12 @@ function ModuleCardImpl({
     <div
       className={`group rounded-xl border transition-all duration-200
         ${expanded
-          ? "bg-indigo-500/5 border-indigo-500/30 shadow-lg shadow-indigo-500/5"
-          : "bg-white/3 border-[var(--color-border)] hover:border-[var(--color-border)] hover:bg-white/5"
+          ? "bg-brand/5 border-brand/30 shadow-lg shadow-brand/5"
+          : "bg-[var(--color-bg-secondary)] border-[var(--color-border)] hover:border-[var(--color-border)] hover:bg-[var(--color-bg-secondary)]"
         }
         ${isEmpty ? "opacity-60" : "opacity-100"}
         ${isDragging ? "opacity-50 scale-[0.98]" : ""}
-        ${isDropTarget ? "ring-1 ring-indigo-500/20" : ""}`}
+        ${isDropTarget ? "ring-1 ring-brand/20" : ""}`}
       onDragOver={(e) => onDragOver(e, index)}
       onDrop={(e) => onDrop(e, index)}
     >
@@ -428,7 +428,7 @@ function ModuleCardImpl({
         <span
           className={`flex-1 text-sm truncate ${
             expanded
-              ? "text-indigo-300 font-medium"
+              ? "text-brand font-medium"
               : "text-[var(--color-text-secondary)]"
           }`}
         >
@@ -457,7 +457,7 @@ function ModuleCardImpl({
             onAIGenerate(moduleType, "generate");
           }}
           className="shrink-0 p-1 rounded text-[var(--color-text-muted)]
-            hover:text-indigo-400 hover:bg-indigo-500/10
+            hover:text-brand hover:bg-brand/10
             opacity-0 group-hover:opacity-100
             active:scale-90 motion-reduce:active:scale-100
             transition-all cursor-pointer"
@@ -541,8 +541,8 @@ function ModuleCardImpl({
                 className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium
                   transition-all cursor-pointer
                   ${aiMode === "optimize"
-                    ? "bg-indigo-500/15 text-indigo-300 border border-indigo-500/30"
-                    : "text-[var(--color-text-muted)] hover:text-indigo-400 hover:bg-indigo-500/10 border border-transparent"
+                    ? "bg-brand/10 text-brand border border-brand/30"
+                    : "text-[var(--color-text-muted)] hover:text-brand hover:bg-brand/10 border border-transparent"
                   }`}
                 disabled={!moduleText}
                 aria-label="一键优化"
@@ -557,8 +557,8 @@ function ModuleCardImpl({
                 className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium
                   transition-all cursor-pointer
                   ${aiMode === "check"
-                    ? "bg-purple-500/15 text-purple-300 border border-purple-500/30"
-                    : "text-[var(--color-text-muted)] hover:text-purple-400 hover:bg-purple-500/10 border border-transparent"
+                    ? "bg-brand/10 text-brand border border-brand/30"
+                    : "text-[var(--color-text-muted)] hover:text-brand hover:bg-brand/10 border border-transparent"
                   }`}
                 disabled={!moduleText}
                 aria-label="智能检查"
@@ -573,8 +573,8 @@ function ModuleCardImpl({
                 className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium
                   transition-all cursor-pointer
                   ${aiMode === "rewrite"
-                    ? "bg-purple-500/15 text-purple-300 border border-purple-500/30"
-                    : "text-[var(--color-text-muted)] hover:text-purple-400 hover:bg-purple-500/10 border border-transparent"
+                    ? "bg-brand/10 text-brand border border-brand/30"
+                    : "text-[var(--color-text-muted)] hover:text-brand hover:bg-brand/10 border border-transparent"
                   }`}
                 disabled={!moduleText}
                 aria-label="智能改写"

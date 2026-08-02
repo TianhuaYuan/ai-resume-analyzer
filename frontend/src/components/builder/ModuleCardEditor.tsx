@@ -281,8 +281,8 @@ function ModuleCardEditorImpl({
                 {/* 拖拽放置指示线 */}
                 {isDropTarget && (
                   <div
-                    className="absolute -top-1 left-2 right-2 h-0.5 bg-indigo-500 rounded-full
-                      shadow-[0_0_8px_rgba(99,102,241,0.6)] z-10 pointer-events-none"
+                    className="absolute -top-1 left-2 right-2 h-0.5 bg-brand rounded-full
+                      shadow-[0_0_8px_rgba(0,113,227,0.6)] z-10 pointer-events-none"
                     aria-hidden="true"
                   />
                 )}
@@ -347,10 +347,10 @@ function ModuleCardEditorImpl({
                 placeholder="搜索模块..."
                 className="w-full pl-7 pr-2 py-1.5 rounded-md text-xs
                   text-[var(--color-text)]
-                  bg-white/5 border border-[var(--color-border)]
+                  bg-[#F2F2F7] border border-transparent
                   placeholder:text-[var(--color-text-muted)]
-                  focus:outline-none focus:ring-1 focus:ring-indigo-500/40
-                  focus:border-indigo-500/50 transition-all duration-150"
+                  focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand/40
+                  focus:border-brand/40 transition-all duration-150"
                 aria-label="搜索模块"
               />
             </div>
@@ -366,7 +366,7 @@ function ModuleCardEditorImpl({
                       key={type}
                       onClick={() => handleAdd(type)}
                       className="flex items-center gap-1.5 px-2 py-1.5 rounded-md text-xs
-                        text-[var(--color-text-secondary)] hover:text-indigo-400 hover:bg-indigo-500/10
+                        text-[var(--color-text-secondary)] hover:text-brand hover:bg-brand/10
                         transition-colors cursor-pointer text-left"
                       aria-label={`添加${MODULE_LABELS[type]}`}
                     >
@@ -385,7 +385,7 @@ function ModuleCardEditorImpl({
             className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg
               text-xs font-medium text-[var(--color-text-secondary)]
               border border-dashed border-[var(--color-border)]
-              hover:text-indigo-400 hover:border-indigo-500/40 hover:bg-indigo-500/8
+              hover:text-brand hover:border-brand/40 hover:bg-brand/10
               disabled:opacity-40 disabled:cursor-not-allowed
               transition-all cursor-pointer"
             aria-label="添加模块"

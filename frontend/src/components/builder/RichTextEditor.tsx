@@ -245,7 +245,7 @@ export function RichTextEditor({
       <div className="flex flex-col">
         {/* 工具栏（仅预览切换） */}
         <div className="flex items-center justify-between px-2 py-1.5 rounded-t-lg
-          bg-white/5 border border-[var(--color-border)] border-b-0">
+          bg-[var(--color-bg-secondary)] border border-[var(--color-border)] border-b-0">
           <span className="text-[10px] text-[var(--color-text-muted)] uppercase tracking-wider">
             预览
           </span>
@@ -253,7 +253,7 @@ export function RichTextEditor({
             onClick={() => setPreviewMode(false)}
             className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px]
               text-[var(--color-text-muted)]
-              hover:text-indigo-400 hover:bg-indigo-500/10
+              hover:text-brand hover:bg-brand/10
               transition-all cursor-pointer"
             aria-label="切换到编辑模式"
           >
@@ -264,7 +264,7 @@ export function RichTextEditor({
         {/* Markdown 渲染区 */}
         <div
           className="px-3 py-2 rounded-b-lg overflow-y-auto
-            bg-white/5 border border-[var(--color-border)]
+            bg-[var(--color-bg-secondary)] border border-[var(--color-border)]
             text-sm text-[var(--color-text)]"
           style={{ minHeight }}
         >
@@ -283,13 +283,13 @@ export function RichTextEditor({
     <div className="flex flex-col">
       {/* 工具栏 */}
       <div className="flex items-center gap-0.5 px-1.5 py-1 rounded-t-lg
-        bg-white/5 border border-[var(--color-border)] border-b-0">
+        bg-[var(--color-bg-secondary)] border border-[var(--color-border)] border-b-0">
         {TOOLBAR_BUTTONS.map((btn) => (
           <button
             key={btn.label}
             onClick={() => handleToolbarAction(btn.action)}
             className="p-1 rounded text-[var(--color-text-muted)]
-              hover:text-indigo-400 hover:bg-indigo-500/10
+              hover:text-brand hover:bg-brand/10
               active:scale-90 motion-reduce:active:scale-100
               transition-all cursor-pointer"
             aria-label={btn.label}
@@ -307,7 +307,7 @@ export function RichTextEditor({
           <button
             onClick={() => setPreviewMode(true)}
             className="p-1 rounded text-[var(--color-text-muted)]
-              hover:text-indigo-400 hover:bg-indigo-500/10
+              hover:text-brand hover:bg-brand/10
               active:scale-90 motion-reduce:active:scale-100
               transition-all cursor-pointer"
             aria-label="预览"
@@ -328,10 +328,10 @@ export function RichTextEditor({
         rows={rows}
         className="w-full px-3 py-2 rounded-b-lg resize-none
           text-sm text-[var(--color-text)]
-          bg-white/5 border border-[var(--color-border)]
+          bg-[#F2F2F7] border border-transparent
           placeholder:text-[var(--color-text-muted)]
-          focus:outline-none focus:ring-2 focus:ring-indigo-500/40
-          focus:border-indigo-500/50
+          focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand/40
+          focus:border-brand/40
           transition-all duration-150
           font-mono leading-relaxed"
         style={{ minHeight }}

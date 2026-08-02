@@ -8,6 +8,13 @@ export interface ResumeItem {
   status: string;
   status_message: string;
   created_at: string;
+  // T17: 索引新鲜度（懒索引脏标记）
+  //   content_hash: 当前内容哈希；indexed_hash: 上次成功索引时的哈希
+  //   is_indexed = indexed_hash 非空；is_stale = content_hash != indexed_hash
+  content_hash?: string | null;
+  indexed_hash?: string | null;
+  is_indexed?: boolean;
+  is_stale?: boolean;
 }
 
 export interface UploadAsyncResult {
@@ -118,6 +125,27 @@ export interface ChunksResult {
 
 export async function getChunks(id: number): Promise<ChunksResult> {
   return api.get(`/api/v1/resumes/${id}/chunks`) as Promise<ChunksResult>;
+}
+
+// ── T18: 版本浏览 ─────────────────────────────────────────────
+
+export interface ResumeVersionInfo {
+  version: number;
+  is_latest: boolean;
+  chunk_count: number;
+  sections: string[];
+}
+
+export interface ResumeVersionsResult {
+  versions: ResumeVersionInfo[];
+  current_version: number;
+}
+
+/** 查简历的索引版本历史（版本号 / 是否最新 / chunk 数 / 节段列表） */
+export async function getResumeVersions(
+  id: number,
+): Promise<ResumeVersionsResult> {
+  return api.get(`/api/v1/resumes/${id}/versions`) as Promise<ResumeVersionsResult>;
 }
 
 export interface MatchJDResult {

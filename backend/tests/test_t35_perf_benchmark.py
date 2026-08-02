@@ -37,6 +37,20 @@ def _make_llm_response(content: str = "测试答案", tool_calls=None) -> LLMToo
     )
 
 
+def _make_stream_response(content: str = "测试答案", tool_calls=None):
+    """构造模拟 llm_generate_with_tools_stream 的 async generator。
+
+    中间轮改流式后，react_loop 通过 _stream_middle_round 消费该流，
+    content 需通过 token 事件累积，done 只携带聚合后的 tool_calls。
+    async generator 不可复用，多轮/并发需每次生成独立实例。
+    """
+    async def _gen():
+        if content:
+            yield {"type": "token", "content": content}
+        yield {"type": "done", "content": content, "tool_calls": tool_calls or []}
+    return _gen()
+
+
 async def _create_resume(db_session, user_id: int, status: str = "ready") -> Resume:
     """在测试 DB 中创建一份简历并返回。"""
     resume = Resume(
@@ -172,6 +186,9 @@ class TestL1LoopBenchmark:
         # 重置 Semaphore（避免绑定到前一个测试的 event loop）
         loop_module._agent_semaphore = None
 
+        # 1 轮收敛：中间轮流式直接返回答案，不调任何工具（最终轮不触发）
+        stream_mock = MagicMock(side_effect=[_make_stream_response(content="测试答案")])
+
         with patch(
             "services.react_agent.loop.assemble_system_prompt",
             new_callable=AsyncMock,
@@ -182,6 +199,9 @@ class TestL1LoopBenchmark:
             "services.react_agent.loop.llm_generate_with_tools",
             new_callable=AsyncMock,
         ) as mock_llm, patch(
+            "services.react_agent.loop.llm_generate_with_tools_stream",
+            stream_mock,
+        ), patch(
             "services.react_agent.loop.get_agent_schemas",
             return_value=[],
         ), patch(
@@ -191,8 +211,7 @@ class TestL1LoopBenchmark:
             mock_sys.return_value = "system prompt"
             mock_quota.return_value = (True, None)
             mock_l1.side_effect = lambda msgs, **kw: msgs
-            # 1 轮收敛：LLM 直接返回答案，不调任何工具
-            mock_llm.return_value = _make_llm_response(content="测试答案")
+            mock_llm.return_value = _make_llm_response(content="不应到达")
 
             start = time.perf_counter()
             result = await react_loop(
@@ -204,7 +223,8 @@ class TestL1LoopBenchmark:
             elapsed_ms = (time.perf_counter() - start) * 1000
 
         assert result.answer == "测试答案"
-        assert mock_llm.call_count == 1, "1 轮收敛应只调 1 次 LLM"
+        assert mock_llm.call_count == 0, "1 轮收敛应走中间轮流式，最终轮不调用"
+        assert stream_mock.call_count == 1
         # mock LLM 即时返回，3s 阈值有充足余量
         assert elapsed_ms < 3000, (
             f"循环延迟 {elapsed_ms:.1f}ms 超过 3s 阈值"
@@ -304,6 +324,11 @@ class TestL2ConcurrentStress:
             return 0
         fast_redis.exists = _mock_exists
 
+        # 并发下每次调用返回独立 generator（async generator 不可复用）
+        stream_mock = MagicMock(
+            side_effect=lambda *a, **k: _make_stream_response(content="并发测试答案")
+        )
+
         with patch(
             "core.redis_client._redis", fast_redis,
         ), patch(
@@ -318,6 +343,9 @@ class TestL2ConcurrentStress:
             "services.react_agent.loop.llm_generate_with_tools",
             new_callable=AsyncMock,
         ) as mock_llm, patch(
+            "services.react_agent.loop.llm_generate_with_tools_stream",
+            stream_mock,
+        ), patch(
             "services.react_agent.loop.get_agent_schemas",
             return_value=[],
         ), patch(
@@ -340,7 +368,7 @@ class TestL2ConcurrentStress:
             mock_sys.return_value = "system prompt"
             mock_quota.return_value = (True, None)
             mock_l1.side_effect = lambda msgs, **kw: msgs
-            mock_llm.return_value = _make_llm_response(content="并发测试答案")
+            mock_llm.return_value = _make_llm_response(content="不应到达")
 
             CONCURRENCY = 50
 

@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class ResumeResponse(BaseModel):
@@ -11,6 +11,17 @@ class ResumeResponse(BaseModel):
     status: str
     status_message: str
     created_at: datetime
+    # T17：索引新鲜度（脏标记 content_hash != indexed_hash → 需要懒重建）
+    content_hash: str | None = None
+    indexed_hash: str | None = None
+    is_indexed: bool = False
+    is_stale: bool = False
+
+    @model_validator(mode="after")
+    def _compute_index_state(self):
+        self.is_indexed = self.indexed_hash is not None
+        self.is_stale = bool(self.content_hash) and self.content_hash != self.indexed_hash
+        return self
 
     model_config = {"from_attributes": True}
 

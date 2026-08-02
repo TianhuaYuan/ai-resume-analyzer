@@ -228,12 +228,12 @@ function ModuleListImpl({
                 className={`group flex items-center gap-1 px-2 py-2 mx-1 rounded-lg cursor-pointer
                   transition-all duration-150 border
                   ${isSelected
-                    ? "bg-indigo-500/10 border-indigo-500/30"
-                    : "border-transparent hover:bg-white/5"
+                    ? "bg-brand/10 border-brand/30"
+                    : "border-transparent hover:bg-[var(--color-bg-secondary)]"
                   }
                   ${isEmpty ? "opacity-50" : "opacity-100"}
                   ${isDragging ? "opacity-40" : ""}
-                  ${isDropTarget ? "border-t-2 border-indigo-500/50" : ""}`}
+                  ${isDropTarget ? "border-t-2 border-brand/50" : ""}`}
                 role="button"
                 tabIndex={0}
                 aria-label={`${MODULE_LABELS[type]}${isEmpty ? "（空）" : ""}`}
@@ -262,7 +262,7 @@ function ModuleListImpl({
                 <span
                   className={`flex-1 text-xs truncate ${
                     isSelected
-                      ? "text-indigo-300 font-medium"
+                      ? "text-brand font-medium"
                       : "text-[var(--color-text-secondary)]"
                   }`}
                 >
@@ -284,7 +284,7 @@ function ModuleListImpl({
                     onAIGenerate(type);
                   }}
                   className="shrink-0 p-1 rounded text-[var(--color-text-muted)]
-                    hover:text-indigo-400 hover:bg-indigo-500/10
+                    hover:text-brand hover:bg-brand/10
                     opacity-0 group-hover:opacity-100
                     active:scale-90 motion-reduce:active:scale-100
                     transition-all cursor-pointer"
@@ -333,7 +333,7 @@ function ModuleListImpl({
                     setShowAddMenu(false);
                   }}
                   className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-xs
-                    text-[var(--color-text-secondary)] hover:text-indigo-400 hover:bg-indigo-500/10
+                    text-[var(--color-text-secondary)] hover:text-brand hover:bg-brand/10
                     transition-colors cursor-pointer text-left"
                   aria-label={`添加${MODULE_LABELS[type]}`}
                 >
@@ -350,7 +350,7 @@ function ModuleListImpl({
             className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg
               text-xs font-medium text-[var(--color-text-secondary)]
               border border-dashed border-[var(--color-border)]
-              hover:text-indigo-400 hover:border-indigo-500/40 hover:bg-indigo-500/8
+              hover:text-brand hover:border-brand/40 hover:bg-[var(--color-bg-secondary)]
               disabled:opacity-40 disabled:cursor-not-allowed
               transition-all cursor-pointer"
             aria-label="添加模块"

@@ -3,7 +3,6 @@ import { Link, useNavigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { CaretDown, Key, EnvelopeSimple, User, Briefcase, Shield } from "@phosphor-icons/react";
 import { useAuth } from "../context/AuthContext";
-import { useTheme } from "../context/ThemeContext";
 import ChangePasswordDialog from "./ChangePasswordDialog";
 import ChangeEmailDialog from "./ChangeEmailDialog";
 import ChangeUsernameDialog from "./ChangeUsernameDialog";
@@ -42,11 +41,11 @@ function QuotaBadge() {
   return (
     <span
       className={`inline-flex items-center gap-1 px-2 py-1 text-[10px] font-mono-label rounded
-        ${isLow ? "text-red-400 bg-red-500/10" : isMedium ? "text-yellow-400 bg-yellow-500/10" : "text-indigo-400 bg-indigo-500/10"}`}
+        ${isLow ? "text-red-500 bg-red-500/10" : isMedium ? "text-yellow-600 bg-yellow-500/10" : "text-brand bg-brand/10"}`}
       title={`今日额度: ${quota.used}/${quota.limit}`}
     >
       <span className={`w-1.5 h-1.5 rounded-full ${
-        isLow ? "bg-red-400" : isMedium ? "bg-yellow-400" : "bg-indigo-400"
+        isLow ? "bg-red-500" : isMedium ? "bg-yellow-500" : "bg-brand"
       }`} />
       <span className="tabular-nums">{quota.remaining}</span>
     </span>
@@ -55,7 +54,6 @@ function QuotaBadge() {
 
 export default function Navbar() {
   const { user, logout, updateUser } = useAuth();
-  const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -107,7 +105,7 @@ export default function Navbar() {
   return (
     <>
       <nav className="flex items-center justify-between px-6 py-3
-        border-b border-[var(--color-border)] bg-[var(--color-bg)] sticky top-0 z-40">
+        border-b border-[var(--color-border)] bg-white/70 backdrop-blur-xl sticky top-0 z-40">
         <div className="flex items-center gap-6">
           <Link to="/" className="flex items-center gap-2.5 no-underline">
             <svg viewBox="0 0 64 64" className="w-7 h-7">
@@ -116,15 +114,15 @@ export default function Navbar() {
               <polygon points="32,30 54,18 54,42 32,54" fill="#8B5CF6"/>
             </svg>
             <span className="text-sm font-semibold text-[var(--color-text)]">
-              AI Resume Analyzer
+              轻舟简历
             </span>
           </Link>
           <Link
             to="/workbench"
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors no-underline
               ${location.pathname === "/workbench"
-                ? "text-indigo-300 bg-indigo-500/10"
-                : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] hover:bg-white/5"
+                ? "text-brand bg-brand/10"
+                : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)]"
               }`}
             aria-label="求职看板"
           >
@@ -137,8 +135,8 @@ export default function Navbar() {
               to="/admin"
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors no-underline
                 ${location.pathname.startsWith("/admin")
-                  ? "text-indigo-300 bg-indigo-500/10"
-                  : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] hover:bg-white/5"
+                  ? "text-brand bg-brand/10"
+                  : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)]"
                 }`}
               aria-label="管理员后台"
             >
@@ -189,13 +187,6 @@ export default function Navbar() {
             </AnimatePresence>
           </div>
 
-          <button
-            onClick={toggleTheme}
-            title={theme === "dark" ? "切换到亮色模式" : "切换到暗色模式"}
-            className="text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] transition-colors cursor-pointer"
-          >
-            {theme === "dark" ? "☀️" : "🌙"}
-          </button>
           <button
             onClick={handleLogout}
             className="text-[var(--color-text-muted)] hover:text-red-400 transition-colors cursor-pointer"

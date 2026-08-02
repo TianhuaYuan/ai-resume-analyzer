@@ -23,6 +23,10 @@ import models.qa_feedback  # noqa: F401
 import models.user_feedback  # noqa: F401
 import models.analytics_event  # noqa: F401
 import models.qa_conversation  # noqa: F401
+import models.knowledge_asset  # noqa: F401
+import models.campus_track  # noqa: F401
+import models.feedback_like  # noqa: F401
+import models.market_asset  # noqa: F401
 
 config = context.config
 

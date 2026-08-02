@@ -14,6 +14,8 @@
 - T15: ready 转换时触发 L3 画像构建（双路径共享点：上传 / builder）
 """
 
+import hashlib
+import json
 import logging
 
 from core import cache as embedding_cache
@@ -33,7 +35,11 @@ from schemas.resume_module import (
     ResumeStyle,
     validate_module_content,
 )
-from services.rag.pipeline import process_resume
+from services.rag.asset_source import ASSET_TYPE_RESUME
+from services.rag.clients import knowledge_collection_name
+from services.rag.ensure_indexed import ensure_indexed
+from services.rag.metadata import META_ASSET_ID, META_IS_LATEST
+from services.vector_store import get_vector_store
 
 logger = logging.getLogger(__name__)
 
@@ -253,6 +259,24 @@ async def create_builder_resume(
 # ═══════════════════════════════════════════════════════════
 
 
+def _modules_content_hash(modules: list[ResumeModule]) -> str:
+    """基于模块结构化数据的规范化哈希（D3：内容变化才算，与模板样式无关）。
+
+    草稿保存时零渲染成本即可判定内容是否变化：
+    content_hash != indexed_hash → 索引过期（脏标记），懒索引触发重建。
+    用 sort_keys 稳定序列化，保证同一内容哈希稳定。
+    """
+    canonical = json.dumps(
+        [
+            {"module_type": m.module_type, "content": m.content}
+            for m in sorted(modules, key=lambda m: m.sort_order or 0)
+        ],
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 async def update_resume_draft(
     db: AsyncSession,
     user_id: int,
@@ -311,6 +335,11 @@ async def update_resume_draft(
             )
             db.add(module)
             new_modules.append(module)
+
+    # T6 (D3 草稿工作区隔离)：草稿保存只更新 content_hash 置脏，不触发索引。
+    # 仅模块变化时重算（body.modules is None → 内容未变，保持原哈希）。
+    if body.modules is not None:
+        resume.content_hash = _modules_content_hash(new_modules)
 
     # version 不变（last-write-wins）
     await db.commit()
@@ -483,13 +512,13 @@ async def complete_resume(
     3. 状态校验（仅 draft/ready 可完成，processing/failed → 409）
     4. 如果请求体包含 modules，校验 + 全量替换
     5. 部分更新 filename / style
-    6. 合并所有模块 → parsed_text
+    6. 合并所有模块 → parsed_text + content_hash（D3 脏标记）
     7. 清 embedding 缓存（旧缓存对应旧文本）
-    8. drop + rebuild Chroma（process_resume 内部 delete_collection + 重建）
-    9. 更新 resume: parsed_text, chunk_count, status=ready, version+=1
+    8. 版本化重建（ensure_indexed → index_asset，D2 版本快照 + 旧版本保留）
+    9. 更新 resume: chunk_count, status=ready, version+=1
     10. commit
 
-    幂等性：process_resume 内部先 delete_collection 再重建，重复调用不残留旧块。
+    幂等性：index_asset 旧版本 chunks 置 is_latest=False 保留，新版本可查，重复调用不残留脏块。
 
     Returns:
         (resume, modules)
@@ -547,15 +576,25 @@ async def complete_resume(
             db.add(module)
             current_modules.append(module)
 
-    # 5. 合并模块 → parsed_text
+    # 5. 合并模块 → parsed_text + content_hash（D3 脏标记；content_hash 基于模块 JSON）
     parsed_text = _merge_modules_to_text(current_modules)
+    resume.parsed_text = parsed_text
+    resume.content_hash = _modules_content_hash(current_modules)
 
     # 6. 清 embedding 缓存（旧缓存对应旧文本）
     await embedding_cache.clear_resume(resume_id)
 
-    # 7. drop + rebuild Chroma（process_resume 内部先 delete 再 create）
+    # 7. 版本化重建（ensure_indexed：懒索引/预热统一入口，D2/D3）
     try:
-        chunk_count = await process_resume(resume_id, parsed_text)
+        indexed = await ensure_indexed(
+            db,
+            user_id=user_id,
+            asset_id=resume_id,
+            asset_type=ASSET_TYPE_RESUME,
+            collection=knowledge_collection_name(user_id),
+        )
+        if not indexed:
+            raise RuntimeError("ensure_indexed failed")
     except Exception as e:
         logger.exception("Failed to rebuild vectors for resume %d", resume_id)
         raise HTTPException(
@@ -563,9 +602,12 @@ async def complete_resume(
             detail="向量化重建失败，请稍后重试",
         ) from e
 
-    # 8. 更新 resume
-    resume.parsed_text = parsed_text
-    resume.chunk_count = chunk_count
+    # 8. 更新 resume（chunk_count 从向量库最新版本取，信息性字段）
+    latest = await get_vector_store().get(
+        knowledge_collection_name(user_id),
+        where={META_ASSET_ID: resume_id, META_IS_LATEST: True},
+    )
+    resume.chunk_count = len(latest) if latest else 0
     resume.status = "ready"
     resume.version += 1
 

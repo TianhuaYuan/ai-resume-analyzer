@@ -60,6 +60,9 @@ from services.edit_lock import (
     renew_edit_lock,
 )
 from services.rag import chunks_service
+from services.rag.clients import knowledge_collection_name
+from services.rag.metadata import META_ASSET_ID, META_IS_LATEST, META_VERSION
+from services.vector_store import get_vector_store
 from services.resume_analysis_cache import VALID_ANALYSIS_TYPES, get_analysis_cache
 from services.resume_analyze_producer import publish_analyze_task
 from services.resume_builder import (
@@ -197,6 +200,8 @@ def _to_builder_response(resume: Resume, modules: list) -> BuilderResumeResponse
         style=resume.style,
         version=resume.version,
         created_at=resume.created_at,
+        is_indexed=resume.indexed_hash is not None,
+        is_stale=bool(resume.content_hash) and resume.content_hash != resume.indexed_hash,
         modules=[
             ResumeModuleResponse(
                 id=m.id,
@@ -572,12 +577,85 @@ async def get_resume_chunks(
         )
 
     # 读 ChromaDB（collection 不存在 → 409）
-    chunks_data = await chunks_service.get_chunks_by_resume(resume_id)
+    chunks_data = await chunks_service.get_chunks_by_resume(current_user.id, resume_id)
 
     return ChunksResponse(
         resume_id=resume_id,
         total=len(chunks_data),
         chunks=[ChunkItem(**c) for c in chunks_data],
+    )
+
+
+class ResumeVersionInfo(BaseModel):
+    """单个索引版本的概要信息（T18 版本浏览）。"""
+
+    version: int
+    is_latest: bool
+    chunk_count: int
+    sections: list[str]
+
+
+class ResumeVersionsResponse(BaseModel):
+    """简历索引版本列表（T18 版本浏览）。
+
+    versions 按版本号降序（最新在前），current_version 取简历的 index_version。
+    """
+
+    versions: list[ResumeVersionInfo]
+    current_version: int
+
+
+@router.get("/{resume_id}/versions", response_model=ResumeVersionsResponse)
+async def get_resume_versions(
+    resume_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """查简历的索引版本历史（T18 版本浏览）。
+
+    读取每用户知识集合（knowledge_{user_id}）中该简历（asset_id）的所有版本
+    chunks（含已退役旧版本，is_latest=False），按 metadata 的 version 分组返回：
+    版本号 / 是否最新 / chunk 数 / 节段列表。
+
+    归属校验复用 _verify_resume_ownership（不存在或非本人 → 404）。
+    从未索引（collection 不存在或无 chunks）→ versions 为空列表，
+    current_version 取 resume.index_version（默认 0）。
+
+    错误码：
+    - 401 未登录
+    - 404 简历不存在或非本人
+    """
+    # 归属校验（不存在或非本人 → 404），同时拿到 index_version 作 current_version
+    resume = await _verify_resume_ownership(db, resume_id, current_user.id)
+
+    collection = knowledge_collection_name(current_user.id)
+    items = await get_vector_store().get(
+        collection,
+        where={META_ASSET_ID: resume_id},
+    )
+
+    grouped: dict[int, dict] = {}
+    for item in items or []:
+        meta = item.get("metadata") or {}
+        try:
+            version = int(meta.get(META_VERSION, 0))
+        except (TypeError, ValueError):
+            version = 0
+        group = grouped.setdefault(
+            version,
+            {"version": version, "is_latest": False, "chunk_count": 0, "sections": []},
+        )
+        group["chunk_count"] += 1
+        section = str(meta.get("section", "")).strip()
+        if section and section not in group["sections"]:
+            group["sections"].append(section)
+        if meta.get(META_IS_LATEST):
+            group["is_latest"] = True
+
+    versions = [grouped[k] for k in sorted(grouped, reverse=True)]
+    return ResumeVersionsResponse(
+        versions=versions,
+        current_version=resume.index_version or 0,
     )
 
 
