@@ -17,10 +17,14 @@ import {
   Buildings,
   UserCircle,
   Spinner,
+  Sparkle,
+  LockSimple,
 } from "@phosphor-icons/react";
 import LandingNav from "../components/LandingNav";
 import { listSamples, getSample } from "../api/market";
 import type { ResumeSample, ResumeSampleDetail } from "../api/market";
+import { useAuth } from "../context/AuthContext";
+import { createBuilderResume, askBuilderStream } from "../api/builder";
 import type { ResumeModuleInput } from "../api/builder";
 
 // ── 工具函数：从 modules 提取特定类型的模块 ──
@@ -254,9 +258,12 @@ function ResumeContent({ modules }: { modules: ResumeModuleInput[] | undefined }
 export default function ExampleDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [detail, setDetail] = useState<ResumeSampleDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState<"quick" | "ai" | null>(null);
+  const [actionError, setActionError] = useState("");
 
   // 上/下一个导航数据
   const [prevSample, setPrevSample] = useState<ResumeSample | null>(null);
@@ -322,6 +329,50 @@ export default function ExampleDetailPage() {
   const modules = detail?.payload?.modules;
   const position = detail?.position ?? "";
   const category = detail?.category ?? "";
+  const canQuickApply = !!modules && modules.length > 0;
+
+  // ── 用此范文创建简历 ──
+
+  const handleQuickApply = async () => {
+    if (!detail || !modules?.length) return;
+    setActionError("");
+    setBusy("quick");
+    try {
+      const resume = await createBuilderResume({
+        filename: detail.title,
+        modules,
+        style: detail.payload?.style ?? null,
+      });
+      navigate(`/resumes/${resume.id}/edit`);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "创建失败，请重试");
+      setBusy(null);
+    }
+  };
+
+  const handleAiRewrite = async () => {
+    if (!detail) return;
+    setActionError("");
+    setBusy("ai");
+    try {
+      const resume = await createBuilderResume({ filename: detail.title });
+      askBuilderStream(
+        resume.id,
+        `请参照范文《${detail.title}》的结构与风格，结合我的信息重写整份简历`,
+        (evt) => {
+          if (evt.type === "agent_done") navigate(`/resumes/${resume.id}/edit`);
+        },
+        (err) => {
+          setBusy(null);
+          setActionError(err.message || "AI 改写失败，请重试");
+        },
+        () => setBusy((prev) => (prev === "ai" ? null : prev)),
+      );
+    } catch (err) {
+      setBusy(null);
+      setActionError(err instanceof Error ? err.message : "创建失败，请重试");
+    }
+  };
 
   // 核心亮点：从 modules 的 module_type 推导
   const highlights = (() => {
@@ -419,9 +470,21 @@ export default function ExampleDetailPage() {
 
         {/* 主体：左栏简历 + 右栏信息 */}
         <div className="flex flex-col lg:flex-row gap-10 mb-16">
-          {/* 左栏：完整简历内容 */}
-          <div className="flex-1 flex justify-center">
+          {/* 左栏：完整简历内容 + 原文 */}
+          <div className="flex-1 flex flex-col items-center gap-6">
             <ResumeContent modules={modules} />
+            {detail.content && (
+              <div className="w-full max-w-[420px] mx-auto">
+                <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
+                  <h3 className="text-sm font-bold text-gray-800 pb-2 mb-3 border-b border-gray-100">
+                    范文原文
+                  </h3>
+                  <p className="text-[11px] text-gray-600 whitespace-pre-wrap leading-relaxed">
+                    {detail.content}
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* 右栏：范文信息 */}
@@ -511,16 +574,53 @@ export default function ExampleDetailPage() {
               {targetAudience}
             </p>
 
-            {/* CTA 按钮 */}
-            <button
-              onClick={() => navigate("/examples")}
-              className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-brand text-white font-semibold text-sm
-                hover:bg-[#0077ed] hover:scale-[1.02] active:scale-[0.98]
-                transition-all duration-300 cursor-pointer"
-            >
-              <FilePlus size={16} weight="bold" />
-              使用范文创建简历
-            </button>
+            {/* CTA：用此范文创建简历 */}
+            {user ? (
+              <div className="space-y-2">
+                {canQuickApply && (
+                  <button onClick={handleQuickApply} disabled={busy !== null}
+                    className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-brand text-white font-semibold text-sm
+                      hover:bg-[#0077ed] hover:scale-[1.02] active:scale-[0.98]
+                      transition-all duration-300 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed">
+                    {busy === "quick" ? (
+                      <Spinner size={15} className="animate-spin" />
+                    ) : (
+                      <FilePlus size={16} weight="bold" />
+                    )}
+                    {busy === "quick" ? "正在创建..." : "快速套用范文结构"}
+                  </button>
+                )}
+                <button onClick={handleAiRewrite} disabled={busy !== null}
+                  className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-brand/10 text-brand border border-brand/30 font-semibold text-sm
+                    hover:bg-brand/15 hover:scale-[1.02] active:scale-[0.98]
+                    transition-all duration-300 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed">
+                  {busy === "ai" ? (
+                    <Spinner size={15} className="animate-spin" />
+                  ) : (
+                    <Sparkle size={16} weight="fill" />
+                  )}
+                  {busy === "ai" ? "AI 正在结合你的信息改写..." : "AI 结合我的信息改写"}
+                </button>
+                {!canQuickApply && (
+                  <p className="text-xs text-[var(--color-text-muted)]">
+                    该范文暂未生成结构数据，仅支持 AI 改写路径
+                  </p>
+                )}
+                {actionError && (
+                  <p className="text-xs text-red-500">{actionError}</p>
+                )}
+              </div>
+            ) : (
+              <button
+                onClick={() => window.dispatchEvent(new CustomEvent("open-login-modal"))}
+                className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-brand text-white font-semibold text-sm
+                  hover:bg-[#0077ed] hover:scale-[1.02] active:scale-[0.98]
+                  transition-all duration-300 cursor-pointer"
+              >
+                <LockSimple size={16} weight="bold" />
+                登录后使用此范文创建简历
+              </button>
+            )}
           </div>
         </div>
 

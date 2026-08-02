@@ -38,6 +38,8 @@ async def _load_asset(
     if asset_type == ASSET_TYPE_RESUME:
         row = await db.get(Resume, asset_id)
         return row, (row.parsed_text if row else "")
+    # 注意：知识资产启用时其创建路径须写 content_hash（sha256(content)）以启用脏标记；
+    # 当前 knowledge_assets 表无业务写入路径，content_hash 恒为 None → 每次检索都会重建。
     row = await db.get(KnowledgeAsset, asset_id)
     return row, (row.content if row else "")
 
@@ -115,9 +117,11 @@ async def ensure_indexed(
             content_hash=row.content_hash,
         )
 
-        # ── 5. 成功才更新 indexed_hash / index_version（失败保留旧索引可重试）──
+        # ── 5. 成功才更新 indexed_hash / index_version / chunk_count（失败保留旧索引可重试）──
         row.indexed_hash = row.content_hash
         row.index_version = new_version
+        if hasattr(row, "chunk_count"):
+            row.chunk_count = chunk_count  # 懒重建后同步 chunk 数（信息性字段）
         await db.commit()
         # 重建后清 BM25 缓存（旧版本内容已退役，避免污染）
         await clear_bm25(user_id, asset_id)

@@ -69,7 +69,6 @@ async def test_background_failure_writes_generic_message_not_exception_detail():
 
     # 用测试 DB 的 session 替换 resume_service 内的 AsyncSessionLocal
     with patch("services.resume_service.parse_resume") as mock_parse, \
-         patch("services.resume_service.process_resume", new_callable=AsyncMock), \
          patch("services.resume_service.AsyncSessionLocal", AsyncSessionTest):
         mock_parse.side_effect = RuntimeError(sensitive_msg)
 
@@ -89,7 +88,6 @@ async def test_background_failure_rolls_back_before_writing_failed_status():
     resume_id = await _insert_processing_resume()
 
     with patch("services.resume_service.parse_resume") as mock_parse, \
-         patch("services.resume_service.process_resume", new_callable=AsyncMock), \
          patch("services.resume_service.AsyncSessionLocal") as mock_session_factory:
 
         # 构造 mock session：execute/commit/rollback 都可控
@@ -120,7 +118,6 @@ async def test_background_failure_second_commit_error_is_logged_not_silently_swa
     resume_id = await _insert_processing_resume()
 
     with patch("services.resume_service.parse_resume") as mock_parse, \
-         patch("services.resume_service.process_resume", new_callable=AsyncMock), \
          patch("services.resume_service.AsyncSessionLocal") as mock_session_factory, \
          patch("services.resume_service.logger") as mock_logger:
 
@@ -148,7 +145,6 @@ async def test_background_failure_uses_logger_exception_for_traceback():
     resume_id = await _insert_processing_resume()
 
     with patch("services.resume_service.parse_resume") as mock_parse, \
-         patch("services.resume_service.process_resume", new_callable=AsyncMock), \
          patch("services.resume_service.AsyncSessionLocal", AsyncSessionTest), \
          patch("services.resume_service.logger") as mock_logger:
 

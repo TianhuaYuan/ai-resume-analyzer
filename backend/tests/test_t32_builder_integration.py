@@ -150,7 +150,7 @@ def _default_style() -> dict:
 def _complete_mocks():
     """返回 complete 流程需要的 mock context manager 元组。"""
     return (
-        patch("services.resume_builder.process_resume", new_callable=AsyncMock),
+        patch("services.resume_builder.ensure_indexed", new_callable=AsyncMock),
         patch("services.resume_builder.embedding_cache.clear_resume", new_callable=AsyncMock),
         patch("services.react_agent.memory.build_l3_profile_background", new_callable=AsyncMock),
     )
@@ -368,7 +368,7 @@ class TestBuilderWorkflowIntegration:
         assert draft_resp.json()["version"] == 1  # draft 不 bump version
 
         # 3. 完成保存（需 mock 向量化 + L3）
-        with patch("services.resume_builder.process_resume", new_callable=AsyncMock) as mock_pr, \
+        with patch("services.resume_builder.ensure_indexed", new_callable=AsyncMock) as mock_pr, \
              patch("services.resume_builder.embedding_cache.clear_resume", new_callable=AsyncMock), \
              patch("services.react_agent.memory.build_l3_profile_background", new_callable=AsyncMock):
             mock_pr.return_value = 5
@@ -453,7 +453,7 @@ class TestBuilderWorkflowIntegration:
         await db_session.commit()
         await db_session.refresh(resume)
 
-        with patch("services.resume_builder.process_resume", new_callable=AsyncMock), \
+        with patch("services.resume_builder.ensure_indexed", new_callable=AsyncMock), \
              patch("services.resume_builder.embedding_cache.clear_resume", new_callable=AsyncMock):
             resp = await client.put(
                 f"/api/v1/resumes/{resume.id}?mode=complete",
@@ -659,7 +659,7 @@ class TestPreviewExportIntegration:
         self, client: AsyncClient, auth_headers: dict, db_session: AsyncSession,
         registered_user: dict,
     ):
-        """零模块简历 → GET /preview → 422。"""
+        """零模块简历 → GET /preview → 200 空模板（preview 对零模块不拦截）。"""
         # POST /builder 会预置默认模块，无法创建零模块简历；DB 直插
         resume = Resume(
             user_id=registered_user["id"],
@@ -678,7 +678,8 @@ class TestPreviewExportIntegration:
         resp = await client.get(
             f"/api/v1/resumes/{resume_id}/preview", headers=auth_headers,
         )
-        assert resp.status_code == 422
+        assert resp.status_code == 200
+        assert "text/html" in resp.headers.get("content-type", "")
 
     async def test_preview_with_modules(
         self, client: AsyncClient, auth_headers: dict,
@@ -725,7 +726,7 @@ class TestPreviewExportIntegration:
         self, client: AsyncClient, auth_headers: dict, db_session: AsyncSession,
         registered_user: dict,
     ):
-        """零模块简历 → GET /export?format=markdown → 422。"""
+        """source=upload 零模块简历 → GET /export → 422（守卫仅拦截 upload；builder 放行）。"""
         # POST /builder 会预置默认模块，无法创建零模块简历；DB 直插
         resume = Resume(
             user_id=registered_user["id"],
@@ -734,7 +735,7 @@ class TestPreviewExportIntegration:
             parsed_text="",
             chunk_count=0,
             status="draft",
-            source="builder",
+            source="upload",
         )
         db_session.add(resume)
         await db_session.commit()

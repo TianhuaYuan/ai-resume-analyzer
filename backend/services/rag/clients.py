@@ -98,11 +98,6 @@ def reconnect_chroma():
     return _chroma_client
 
 
-def _collection_name(resume_id: int) -> str:
-    """（旧）每简历集合名，T7 前兼容保留；新写入/读取走 knowledge_collection_name。"""
-    return f"resume_{resume_id}"
-
-
 def knowledge_collection_name(user_id: int) -> str:
     """每用户知识资产集合名（T7, D1）。
 

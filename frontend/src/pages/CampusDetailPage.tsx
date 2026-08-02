@@ -2,7 +2,8 @@
  * CampusDetailPage — 校招信息详情页。
  *
  * 路由：/campus/:id
- * 数据来源：GET /api/v1/campus/list（无独立详情接口，从列表中查找）
+ * 数据来源：GET /api/v1/market/jobs/{id}（getJob，含全文 content + payload）
+ * prev/next/recommended：GET /api/v1/market/jobs?job_type=campus&page=1&limit=100
  * 左栏：招聘公告（白底卡片，不跟随主题）
  * 右栏：公司信息侧边栏（Logo、标签、摘要、标签云、核心亮点、适合人群、CTA）
  * 底部：上/下一个校招导航 + 推荐校招网格
@@ -23,7 +24,7 @@ import {
   Users,
 } from "@phosphor-icons/react";
 import LandingNav from "../components/LandingNav";
-import { listCampusRecords, type CampusRecord } from "../api/campus";
+import { getJob, listJobs, type MarketJob, type MarketJobDetail } from "../api/market";
 
 // ── 工具函数 ──
 
@@ -38,16 +39,13 @@ function formatDate(dateStr: string | null | undefined): string {
   });
 }
 
-function parseList(str: string | null | undefined): string[] {
-  if (!str) return [];
-  return str
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
-function isUrl(str: string): boolean {
-  return /^https?:\/\//.test(str);
+/** 由 job_type / source 推导批次标签（校招=campus、内推=referral） */
+function deriveTag(job: MarketJob): string {
+  if (job.job_type === "campus") return "校招";
+  if (job.source === "referral") return "内推";
+  if (job.job_type === "intern") return "实习";
+  if (job.job_type) return String(job.job_type);
+  return "校招";
 }
 
 // ── 行业 → 适合人群映射 ──
@@ -102,7 +100,7 @@ const HIGHLIGHT_ICONS: Record<
   React.ComponentType<{ size?: number; className?: string }>
 > = {
   招聘城市: MapPin,
-  岗位数量: Briefcase,
+  招聘岗位: Briefcase,
   招聘批次: Clock,
   所属行业: Factory,
 };
@@ -113,43 +111,31 @@ export default function CampusDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
-  const [record, setRecord] = useState<CampusRecord | null>(null);
-  const [allItems, setAllItems] = useState<CampusRecord[]>([]);
-  const [recommended, setRecommended] = useState<CampusRecord[]>([]);
+  const [record, setRecord] = useState<MarketJobDetail | null>(null);
+  const [allItems, setAllItems] = useState<MarketJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  // 获取当前记录 + 列表（用于上/下一个导航）
+  // 获取当前岗位详情
   useEffect(() => {
     if (!id) return;
     setLoading(true);
     setError("");
     setRecord(null);
-    listCampusRecords({ q: "", page: 1, limit: 100 })
-      .then((data) => {
-        const found = data.items.find((item) => item.id === id);
-        if (found) {
-          setRecord(found);
-          setAllItems(data.items);
-        } else {
-          setError("记录不存在");
-        }
-      })
+    getJob(id)
+      .then((job) => setRecord(job))
       .catch((err) =>
         setError(err instanceof Error ? err.message : "加载失败，请稍后再试"),
       )
       .finally(() => setLoading(false));
   }, [id]);
 
-  // 获取推荐校招
+  // 获取列表（用于上/下一个导航 + 推荐）
   useEffect(() => {
-    listCampusRecords({ page: 1, limit: 5 })
-      .then((data) => {
-        setRecommended(
-          data.items.filter((item) => item.id !== id).slice(0, 4),
-        );
-      })
-      .catch(() => {});
+    if (!id) return;
+    listJobs({ job_type: "campus", page: 1, limit: 100 })
+      .then((data) => setAllItems(data.items))
+      .catch(() => setAllItems([]));
   }, [id]);
 
   // ── Loading ──
@@ -188,37 +174,41 @@ export default function CampusDetailPage() {
   }
 
   // ── 派生数据 ──
-  const positionsList = parseList(record.positions);
-  const workLocations = parseList(record.workLocation);
-  const publishDate = record.recordTime || record.createTime;
+  const numId = Number(id);
+  const publishDate = record.created_at;
+  const infoTypeLabel = deriveTag(record);
 
-  const currentIndex = allItems.findIndex((item) => item.id === id);
+  const currentIndex = allItems.findIndex((item) => item.id === numId);
   const prevRecord = currentIndex > 0 ? allItems[currentIndex - 1] : null;
   const nextRecord =
     currentIndex < allItems.length - 1 ? allItems[currentIndex + 1] : null;
+  const recommended = allItems.filter((item) => item.id !== numId).slice(0, 4);
 
   // 核心亮点
   const highlights = [
     {
       label: "招聘城市",
-      value: workLocations.join("、") || record.workLocation || "-",
+      value: record.city || "-",
     },
-    { label: "岗位数量", value: `${positionsList.length} 个岗位` },
-    { label: "招聘批次", value: record.infoType || "-" },
+    { label: "招聘岗位", value: record.position || "-" },
+    { label: "招聘批次", value: infoTypeLabel },
     { label: "所属行业", value: record.industry || "-" },
   ];
 
-  // 标签云（industry + 工作地点拆分）
-  const tagCloudItems = [record.industry, ...workLocations].filter(Boolean);
+  // 标签云（industry + 城市）
+  const tagCloudItems = [record.industry, record.city].filter(Boolean);
 
-  // 公司摘要（industry + positions 概要）
+  // 公司摘要（industry + position + city 概要）
   const summaryText =
-    `${record.industry}行业，共${positionsList.length}个岗位` +
-    (workLocations.length > 0 ? `，覆盖${workLocations.join("、")}等地` : "");
+    [
+      record.industry ? `${record.industry}行业` : "",
+      record.position ? `岗位：${record.position}` : "",
+      record.city ? `地点：${record.city}` : "",
+    ].filter(Boolean).join("，") || "暂无更多信息";
 
   // 适合关注的人群（基于 industry 推导）
   const suitableFor = INDUSTRY_SUITABLE[record.industry] || [
-    `${record.industry}相关专业应届生`,
+    `${record.industry || "相关"}行业应届生`,
     "对相关行业有热情的候选人",
     "具备专业技能的优秀毕业生",
   ];
@@ -269,58 +259,52 @@ export default function CampusDetailPage() {
                     <CalendarBlank size={13} className="text-gray-400" />
                     {formatDate(publishDate)}
                   </span>
+                  <span className="inline-flex items-center gap-1">
+                    <Clock size={13} className="text-gray-400" />
+                    {infoTypeLabel}
+                  </span>
                 </div>
               </div>
 
-              {/* 企业简介（用 remarks 字段） */}
+              {/* 职位详情（用 content 全文） */}
               <div className="mb-6">
                 <h2 className="text-sm font-bold text-gray-800 mb-3 pb-2 border-b border-gray-100">
-                  企业简介
+                  职位详情
                 </h2>
-                <p className="text-sm text-gray-600 leading-relaxed">
-                  {record.remarks || "暂无详细介绍"}
-                </p>
+                <div className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap break-words">
+                  {record.content || "暂无详细介绍"}
+                </div>
               </div>
 
-              {/* 招聘岗位（解析 positions 为列表） */}
-              {positionsList.length > 0 && (
-                <div className="mb-6">
-                  <h2 className="text-sm font-bold text-gray-800 mb-3 pb-2 border-b border-gray-100">
-                    招聘岗位
-                  </h2>
+              {/* 招聘岗位 */}
+              <div className="mb-6">
+                <h2 className="text-sm font-bold text-gray-800 mb-3 pb-2 border-b border-gray-100">
+                  招聘岗位
+                </h2>
+                {record.position ? (
                   <div className="flex flex-wrap gap-2">
-                    {positionsList.map((pos) => (
-                      <span
-                        key={pos}
-                        className="px-3 py-1.5 rounded-lg bg-gray-50 border border-gray-100 text-sm text-gray-700"
-                      >
-                        {pos}
-                      </span>
-                    ))}
+                    <span className="px-3 py-1.5 rounded-lg bg-gray-50 border border-gray-100 text-sm text-gray-700">
+                      {record.position}
+                    </span>
                   </div>
-                </div>
-              )}
+                ) : (
+                  <span className="text-sm text-gray-400">-</span>
+                )}
+              </div>
 
               {/* 工作地点 */}
               <div className="mb-6">
                 <h2 className="text-sm font-bold text-gray-800 mb-3 pb-2 border-b border-gray-100">
                   工作地点
                 </h2>
-                <div className="flex flex-wrap gap-2">
-                  {workLocations.length > 0 ? (
-                    workLocations.map((loc) => (
-                      <span
-                        key={loc}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-gray-50 border border-gray-100 text-sm text-gray-700"
-                      >
-                        <MapPin size={12} className="text-gray-400" />
-                        {loc}
-                      </span>
-                    ))
-                  ) : (
-                    <span className="text-sm text-gray-400">-</span>
-                  )}
-                </div>
+                {record.city ? (
+                  <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-gray-50 border border-gray-100 text-sm text-gray-700">
+                    <MapPin size={12} className="text-gray-400" />
+                    {record.city}
+                  </span>
+                ) : (
+                  <span className="text-sm text-gray-400">-</span>
+                )}
               </div>
 
               {/* 行业 */}
@@ -333,26 +317,20 @@ export default function CampusDetailPage() {
                 </span>
               </div>
 
-              {/* 投递方式（链接可点击） */}
+              {/* 投递方式（链接可点击 + 内推码） */}
               <div className="mb-2">
                 <h2 className="text-sm font-bold text-gray-800 mb-3 pb-2 border-b border-gray-100">
                   投递方式
                 </h2>
-                {record.referralMethod ? (
-                  isUrl(record.referralMethod) ? (
-                    <a
-                      href={record.referralMethod}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-sm text-brand hover:underline break-all"
-                    >
-                      {record.referralMethod}
-                    </a>
-                  ) : (
-                    <span className="text-sm text-gray-700">
-                      {record.referralMethod}
-                    </span>
-                  )
+                {record.payload?.apply_url ? (
+                  <a
+                    href={record.payload.apply_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-brand hover:underline break-all"
+                  >
+                    {record.payload.apply_url}
+                  </a>
                 ) : (
                   <span className="text-sm text-gray-400">暂无投递方式</span>
                 )}
@@ -375,18 +353,16 @@ export default function CampusDetailPage() {
                   {record.company}
                 </h2>
                 <span className="text-xs text-[var(--color-text-muted)]">
-                  校园招聘
+                  {infoTypeLabel}
                 </span>
               </div>
             </div>
 
             {/* 标签（infoType + 日期） */}
             <div className="flex flex-wrap gap-2 mb-5">
-              {record.infoType && (
-                <span className="px-2.5 py-1 rounded-full text-[11px] font-medium bg-brand/10 text-brand border border-brand/20">
-                  {record.infoType}
-                </span>
-              )}
+              <span className="px-2.5 py-1 rounded-full text-[11px] font-medium bg-brand/10 text-brand border border-brand/20">
+                {infoTypeLabel}
+              </span>
               {publishDate && (
                 <span className="px-2.5 py-1 rounded-full text-[11px] font-medium bg-brand/10 text-brand border border-brand/20">
                   {formatDate(publishDate)}
@@ -394,17 +370,17 @@ export default function CampusDetailPage() {
               )}
             </div>
 
-            {/* 公司摘要（industry + positions 概要） */}
+            {/* 公司摘要 */}
             <p className="text-sm text-[var(--color-text-secondary)] leading-relaxed mb-5">
               {summaryText}
             </p>
 
-            {/* 标签云（industry + 工作地点拆分） */}
+            {/* 标签云（industry + 城市） */}
             {tagCloudItems.length > 0 && (
               <div className="flex flex-wrap gap-2 mb-5">
                 {tagCloudItems.map((tag) => (
                   <span
-                    key={tag}
+                    key={String(tag)}
                     className="px-2.5 py-1 rounded-full bg-gray-100 text-gray-600 text-[11px]"
                   >
                     {tag}
@@ -570,21 +546,16 @@ export default function CampusDetailPage() {
                       {item.title || `${item.company}校园招聘`}
                     </p>
                     <div className="flex flex-wrap gap-1.5">
-                      {item.infoType && (
+                      {item.job_type && (
                         <span className="px-2 py-0.5 rounded bg-brand/10 text-brand text-[10px]">
-                          {item.infoType}
+                          {deriveTag(item)}
                         </span>
                       )}
-                      {parseList(item.positions)
-                        .slice(0, 2)
-                        .map((pos) => (
-                          <span
-                            key={pos}
-                            className="px-2 py-0.5 rounded bg-gray-100 text-gray-600 text-[10px]"
-                          >
-                            {pos}
-                          </span>
-                        ))}
+                      {item.position && (
+                        <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-600 text-[10px]">
+                          {item.position}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>

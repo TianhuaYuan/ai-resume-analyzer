@@ -68,22 +68,16 @@ async def test_background_success_marks_resume_ready():
     resume_id = await _insert_processing_resume()
 
     fake_parsed_text = "张三\nPython 工程师\n3年经验"
-    fake_chunk_count = 5
 
     # 用测试 DB session 替换生产 AsyncSessionLocal
     with patch("services.resume_service.parse_resume", return_value=fake_parsed_text), \
-         patch(
-             "services.resume_service.process_resume",
-             new_callable=AsyncMock,
-             return_value=fake_chunk_count,
-         ), \
          patch("services.resume_service.AsyncSessionLocal", AsyncSessionTest):
         await process_resume_background(resume_id, "/tmp/test.pdf")
 
     resume = await _fetch_resume(resume_id)
     assert resume.status == "ready"
     assert resume.parsed_text == fake_parsed_text
-    assert resume.chunk_count == fake_chunk_count
+    assert resume.chunk_count == 0  # 懒索引：上传后未建索引
     # 成功时 status_message 应为空或 None
     assert not resume.status_message
 
@@ -94,11 +88,6 @@ async def test_background_success_does_not_set_failed_status():
     resume_id = await _insert_processing_resume()
 
     with patch("services.resume_service.parse_resume", return_value="内容"), \
-         patch(
-             "services.resume_service.process_resume",
-             new_callable=AsyncMock,
-             return_value=3,
-         ), \
          patch("services.resume_service.AsyncSessionLocal", AsyncSessionTest):
         await process_resume_background(resume_id, "/tmp/test.pdf")
 
@@ -108,43 +97,29 @@ async def test_background_success_does_not_set_failed_status():
 
 @pytest.mark.asyncio
 async def test_background_success_calls_parse_and_process_in_order():
-    """成功路径：parse_resume 先于 process_resume 调用。"""
+    """成功路径：parse_resume 被调用（后台已不建索引，懒索引推迟到首次消费，见 T4/D3）。"""
     resume_id = await _insert_processing_resume()
 
     call_order: list[str] = []
 
     def fake_parse(path: str) -> str:
         call_order.append("parse")
+        assert path == "/tmp/test.pdf"
         return "内容"
 
-    async def fake_process(rid: int, text: str) -> int:
-        call_order.append("process")
-        assert rid == resume_id
-        assert text == "内容"
-        return 2
-
     with patch("services.resume_service.parse_resume", side_effect=fake_parse), \
-         patch("services.resume_service.process_resume", side_effect=fake_process), \
          patch("services.resume_service.AsyncSessionLocal", AsyncSessionTest):
         await process_resume_background(resume_id, "/tmp/test.pdf")
 
-    assert call_order == ["parse", "process"]
+    assert call_order == ["parse"]
 
 
 @pytest.mark.asyncio
 async def test_background_success_with_zero_chunks():
-    """边界：分块数为 0（解析成功但内容空）也应标记为 ready。
-
-    避免：解析成功但 chunk_count=0 时被误判为失败。
-    """
+    """边界：解析成功但内容为空也应标记为 ready（懒索引下 chunk_count 恒为 0，不误判失败）。"""
     resume_id = await _insert_processing_resume()
 
     with patch("services.resume_service.parse_resume", return_value="空内容"), \
-         patch(
-             "services.resume_service.process_resume",
-             new_callable=AsyncMock,
-             return_value=0,
-         ), \
          patch("services.resume_service.AsyncSessionLocal", AsyncSessionTest):
         await process_resume_background(resume_id, "/tmp/test.pdf")
 

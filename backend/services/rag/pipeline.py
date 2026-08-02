@@ -12,20 +12,16 @@ from core.config import settings
 from core.retry import with_retry
 from core.trace import StepTimer
 from services.rag.usage import record_llm_usage
-from services.rag.chunking import chunk_by_sections
 from services.rag.clients import (
-    _collection_name,
     get_chat_client,
     get_judge_client,
     knowledge_collection_name,
     reconnect_chroma,
 )
-from services.rag.metadata import META_ASSET_ID, build_chunk_metadata
+from services.rag.metadata import META_ASSET_ID
 from services.vector_store import get_vector_store
 from services.rag.retrieval import (
-    _bm25_indexes,
     clear_bm25,
-    get_embeddings,
     hybrid_search,
     reject_if_low_score,
     rerank,
@@ -389,38 +385,6 @@ def build_prompt(context_chunks: list[str], question: str) -> dict:
     )
     user = f"简历内容：\n{context}\n\n问题：{question}\n\n请给出简洁准确的回答。"
     return {"system": system, "user": user}
-
-
-async def process_resume(resume_id: int, text: str, user_id: int | None = None) -> int:
-    """清理旧向量 → 结构分块 → 向量化 → 存入 Chroma → 清空 BM25 缓存
-
-    user_id 可选：提供时写入标准 metadata（T2 预埋），为 T7 每用户集合做准备。
-    """
-    chunks = chunk_by_sections(text)
-    if not chunks:
-        return 0
-
-    name = _collection_name(resume_id)
-    texts = [c["text"] for c in chunks]
-    embeddings = await get_embeddings(texts, resume_id)
-
-    # 通过向量存储端口写入：drop + rebuild。
-    # Chroma 内部操作经全局锁串行化（Bug 3），此处语义与旧实现一致。
-    store = get_vector_store()
-    await store.delete_collection(name)
-    await store.upsert(
-        name,
-        ids=[str(c["chunk_index"]) for c in chunks],
-        documents=texts,
-        embeddings=embeddings,
-        metadatas=[
-            build_chunk_metadata(asset_id=resume_id, chunk=c, user_id=user_id)
-            for c in chunks
-        ],
-    )
-
-    _bm25_indexes.pop(resume_id, None)
-    return len(chunks)
 
 
 async def _retrieve(user_id: int, resume_id: int, question: str, timer: StepTimer) -> tuple[str, list[dict]]:

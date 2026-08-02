@@ -32,6 +32,7 @@ from models.market_asset import MarketAsset
 from services.rag.clients import market_collection_name
 from services.rag.indexer import index_asset
 from services.rag.retrieval import clear_market_bm25
+from services.sample_module_service import build_sample_payload
 
 logger = logging.getLogger(__name__)
 
@@ -249,9 +250,18 @@ def _normalize_all_jobs(r: dict) -> NormalizedAsset:
     title = r.get("position") or r.get("title") or "未命名岗位"
     # all_jobs 无 id，用 url（或合成 hash）作外部键
     external = r.get("url") or _compute_hash(f"{r.get('platform')}|{r.get('company')}|{title}")
+    # platform 是来源平台/公司名（腾讯/华为/牛客-实习/智联招聘 等）。
+    # company 为空且 platform 不像聚合平台时，回退为 company（修复历史错位：公司名被存进 industry）。
+    company = (r.get("company") or "").strip()
+    platform = (r.get("platform") or "").strip()
+    if not company and platform and not any(
+        k in platform for k in ("牛客", "智联", "招聘", "实习", "校招", "猎聘", "BOSS")
+    ):
+        company = platform
+    # all_jobs 无真实行业字段，industry 不再取 platform（避免错位）。
     content = _build_job_content(
         title=title,
-        company=r.get("company") or "",
+        company=company,
         city=r.get("city") or "",
         salary=r.get("salary") or "",
         degree=r.get("education") or "",
@@ -264,10 +274,10 @@ def _normalize_all_jobs(r: dict) -> NormalizedAsset:
         title=title,
         content=content,
         job_type=_resolve_job_type(r, SOURCE_ALLJOBS),
-        company=r.get("company") or "",
+        company=company,
         position=title,
         city=r.get("city") or "",
-        industry=r.get("platform") or "",
+        industry="",
         salary=r.get("salary") or "",
         degree=r.get("education") or "",
         deadline=_resolve_deadline(r),
@@ -339,6 +349,12 @@ def _normalize_fanwen(r: dict) -> NormalizedAsset:
         if v:
             sections.append(f"## {label}\n{v}")
     content = "\n\n".join(sections)
+    # 同步时一次性生成结构化 style+modules（与 get_sample 惰性生成结果一致），
+    # 供范文页"快速套用结构"使用；build_sample_payload 内部降级，不会抛异常。
+    payload = build_sample_payload(
+        content,
+        {"target_position": r.get("targetJob"), "category": r.get("category")},
+    )
     return NormalizedAsset(
         source=SOURCE_SAMPLE,
         external_id=str(r.get("id") or ""),
@@ -346,7 +362,7 @@ def _normalize_fanwen(r: dict) -> NormalizedAsset:
         title=title,
         content=content,
         position=r.get("targetJob") or "",
-        payload={"target_position": r.get("targetJob"), "category": r.get("category")},
+        payload=payload,
     )
 
 

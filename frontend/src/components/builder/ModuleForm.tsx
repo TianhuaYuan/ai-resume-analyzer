@@ -484,7 +484,7 @@ export function SkillsForm({ content, onChange }: SkillsFormProps) {
             <label className={LABEL_CLASS}>技能项（逗号分隔）</label>
             <input
               type="text"
-              value={cat.items.join(", ")}
+              value={(Array.isArray(cat.items) ? (cat.items as string[]).join(", ") : "")}
               onChange={(e) => handleItemsChange(index, e.target.value)}
               placeholder="Python, Go, JavaScript"
               className={INPUT_CLASS}

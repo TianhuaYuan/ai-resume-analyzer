@@ -168,8 +168,8 @@ function getModuleText(moduleType: ModuleType, content: ModuleContent): string {
   if (moduleType === "skills") {
     const cats = content.categories;
     if (!Array.isArray(cats)) return "";
-    return (cats as Array<{ name: string; items: string[] }>)
-      .map((c) => `${c.name}: ${c.items.join(", ")}`)
+    return (cats as Array<{ name?: string; items?: string[] }>)
+      .map((c) => `${c.name ?? ""}: ${Array.isArray(c.items) ? (c.items as string[]).join(", ") : ""}`)
       .join("\n");
   }
 

@@ -15,7 +15,6 @@
 """
 
 import hashlib
-import json
 import logging
 
 from core import cache as embedding_cache
@@ -38,8 +37,6 @@ from schemas.resume_module import (
 from services.rag.asset_source import ASSET_TYPE_RESUME
 from services.rag.clients import knowledge_collection_name
 from services.rag.ensure_indexed import ensure_indexed
-from services.rag.metadata import META_ASSET_ID, META_IS_LATEST
-from services.vector_store import get_vector_store
 
 logger = logging.getLogger(__name__)
 
@@ -259,22 +256,59 @@ async def create_builder_resume(
 # ═══════════════════════════════════════════════════════════
 
 
-def _modules_content_hash(modules: list[ResumeModule]) -> str:
-    """基于模块结构化数据的规范化哈希（D3：内容变化才算，与模板样式无关）。
+async def materialize_modules_from_text(
+    db: AsyncSession,
+    user_id: int,
+    resume_id: int,
+) -> tuple[list[ResumeModule], bool]:
+    """懒物化：上传简历（source=upload）首次进 Builder 编辑器时，从 parsed_text 反解析生成模块。
 
-    草稿保存时零渲染成本即可判定内容是否变化：
-    content_hash != indexed_hash → 索引过期（脏标记），懒索引触发重建。
-    用 sort_keys 稳定序列化，保证同一内容哈希稳定。
+    打通"上传（内容在 parsed_text）"→"Builder（内容在 ResumeModule）"两条内容源，
+    让所有简历统一以模块为内容载体。
+
+    规则：
+    - 仅 source=upload 且无 ResumeModule 且 parsed_text 非空才物化
+    - 物化成功后 resume.source → "builder"（标记已物化，避免重复 LLM 调用）
+    - 物化不修改 parsed_text / content_hash（检索仍用原解析文本，直到用户 complete）
+    - 反解析失败 → 返回 (空模块, False)，不抛异常，由调用方降级提示（粘贴导入）
+
+    Returns:
+        (resume, modules, materialized) — materialized=True 表示简历可用模块编辑
+        （已物化过或本次物化成功）；False 表示物化失败（空模块 + 需降级提示）。
     """
-    canonical = json.dumps(
-        [
-            {"module_type": m.module_type, "content": m.content}
-            for m in sorted(modules, key=lambda m: m.sort_order or 0)
-        ],
-        ensure_ascii=False,
-        sort_keys=True,
-    )
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    from services.resume_parser import parse_text_to_modules
+
+    resume, modules = await get_resume_with_modules(db, user_id, resume_id)
+
+    # 已物化（builder 简历或有模块）或无文本 → 直接返回
+    if resume.source != "upload" or modules or not resume.parsed_text:
+        return resume, modules, True
+
+    try:
+        parsed = await parse_text_to_modules(resume.parsed_text, user_id=user_id)
+    except Exception as e:  # noqa: BLE001 LLM/校验失败 → 降级，不抛给用户
+        logger.warning("懒物化失败（可降级粘贴导入）resume=%d: %s", resume_id, e)
+        return resume, modules, False
+
+    new_modules: list[ResumeModule] = []
+    for idx, mod in enumerate(parsed):
+        module = ResumeModule(
+            resume_id=resume_id,
+            module_type=mod.module_type.value,
+            content=mod.content,
+            sort_order=mod.sort_order if mod.sort_order is not None else idx,
+        )
+        db.add(module)
+        new_modules.append(module)
+
+    resume.source = "builder"  # 标记已物化，避免重复 LLM
+    await db.commit()
+    await db.refresh(resume)
+    for m in new_modules:
+        await db.refresh(m)
+
+    logger.info("懒物化完成 resume=%d modules=%d", resume_id, len(new_modules))
+    return resume, new_modules, True
 
 
 async def update_resume_draft(
@@ -336,10 +370,8 @@ async def update_resume_draft(
             db.add(module)
             new_modules.append(module)
 
-    # T6 (D3 草稿工作区隔离)：草稿保存只更新 content_hash 置脏，不触发索引。
-    # 仅模块变化时重算（body.modules is None → 内容未变，保持原哈希）。
-    if body.modules is not None:
-        resume.content_hash = _modules_content_hash(new_modules)
+    # T6 (D3 草稿工作区隔离)：草稿保存不更新 content_hash（parsed_text 未变 → 检索内容未变），
+    # 不置脏也不触发索引；内容变更发生在 complete（重新合并 parsed_text 后统一算 hash）。
 
     # version 不变（last-write-wins）
     await db.commit()
@@ -576,10 +608,14 @@ async def complete_resume(
             db.add(module)
             current_modules.append(module)
 
-    # 5. 合并模块 → parsed_text + content_hash（D3 脏标记；content_hash 基于模块 JSON）
-    parsed_text = _merge_modules_to_text(current_modules)
-    resume.parsed_text = parsed_text
-    resume.content_hash = _modules_content_hash(current_modules)
+    # 5. 合并模块 → parsed_text + content_hash（content_hash 统一 = hash(parsed_text)，与上传语义一致）
+    # 兜底：请求未带 modules 且简历无模块（如上传简历绕过编辑器直调 complete）→ 保留原解析文本
+    if body.modules is None and not current_modules and resume.parsed_text:
+        parsed_text = resume.parsed_text
+    else:
+        parsed_text = _merge_modules_to_text(current_modules)
+        resume.parsed_text = parsed_text
+    resume.content_hash = hashlib.sha256(parsed_text.encode("utf-8")).hexdigest()
 
     # 6. 清 embedding 缓存（旧缓存对应旧文本）
     await embedding_cache.clear_resume(resume_id)
@@ -602,12 +638,7 @@ async def complete_resume(
             detail="向量化重建失败，请稍后重试",
         ) from e
 
-    # 8. 更新 resume（chunk_count 从向量库最新版本取，信息性字段）
-    latest = await get_vector_store().get(
-        knowledge_collection_name(user_id),
-        where={META_ASSET_ID: resume_id, META_IS_LATEST: True},
-    )
-    resume.chunk_count = len(latest) if latest else 0
+    # 8. 更新 resume（chunk_count 已由 ensure_indexed 重建写回；未重建时是上次值，内容未变故正确）
     resume.status = "ready"
     resume.version += 1
 
@@ -619,6 +650,6 @@ async def complete_resume(
 
     logger.info(
         "Completed resume: user=%d, resume=%d, chunks=%d, version=%d",
-        user_id, resume_id, chunk_count, resume.version,
+        user_id, resume_id, resume.chunk_count, resume.version,
     )
     return resume, current_modules

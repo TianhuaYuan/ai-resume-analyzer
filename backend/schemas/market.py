@@ -1,6 +1,6 @@
 """市场数据（公共求职资产）相关 Pydantic schemas。
 
-覆盖：岗位浏览/详情、范文列表/详情、攻略（预留）、Agent 岗位推荐。
+覆盖：岗位浏览/详情、范文列表/详情、攻略、简历模板画廊、Agent 岗位推荐。
 """
 
 from datetime import datetime
@@ -28,8 +28,18 @@ class MarketJobItem(BaseModel):
     deadline: datetime | None
     is_expired: bool
     created_at: datetime
+    payload: dict[str, Any] | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class MarketJobStatsResponse(BaseModel):
+    """岗位统计（校招页统计卡：总数 / 近3日 / 近7日 / Top 行业）。"""
+
+    total: int
+    count_3d: int
+    count_7d: int
+    top_industries: list[dict[str, Any]] = Field(default_factory=list)  # [{name, count}]
 
 
 class MarketJobDetail(MarketJobItem):
@@ -62,8 +72,9 @@ class MarketSampleItem(BaseModel):
 
 
 class MarketSampleDetail(MarketSampleItem):
-    """范文详情（含结构化 payload，供前端快速套用 / AI 改写）。"""
+    """范文详情（含原文 content + 结构化 payload，供展示/快速套用 / AI 改写）。"""
 
+    content: str = ""
     payload: dict[str, Any] | None = None
 
 
@@ -98,6 +109,24 @@ class MarketGuideListResponse(BaseModel):
     page: int
     limit: int
     total_pages: int
+
+
+# ── 简历模板画廊（公开） ─────────────────────────────────────
+
+
+class MarketTemplateInfo(BaseModel):
+    """简历模板摘要（含零数据渲染的预览 HTML）。"""
+
+    id: str
+    name: str
+    description: str = ""
+    tags: list[str] = Field(default_factory=list)
+    layout: str = ""
+    preview_html: str = ""
+
+
+class MarketTemplateListResponse(BaseModel):
+    items: list[MarketTemplateInfo]
 
 
 # ── Agent 岗位推荐 ───────────────────────────────────────────

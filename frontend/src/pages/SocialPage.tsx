@@ -22,6 +22,7 @@ import {
   ArrowSquareOut,
   Spinner,
   Tag,
+  CalendarBlank,
 } from "@phosphor-icons/react";
 import {
   listJobs,
@@ -31,40 +32,6 @@ import {
   type MarketJobDetail,
   type MarketJobFilters,
 } from "../api/market";
-
-// ── 行业标签颜色（对齐 CampusPage） ──
-
-const INDUSTRY_COLORS: Record<string, string> = {
-  科技: "bg-sky-500/10 text-sky-600 border-sky-500/20",
-  游戏: "bg-purple-500/10 text-purple-600 border-purple-500/20",
-  金融: "bg-amber-500/10 text-amber-600 border-amber-500/20",
-  银行: "bg-amber-500/10 text-amber-600 border-amber-500/20",
-  国企: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
-  软件: "bg-brand/10 text-brand border-brand/20",
-  专业服务: "bg-rose-500/10 text-rose-600 border-rose-500/20",
-  互联网: "bg-violet-500/10 text-violet-600 border-violet-500/20",
-  教育: "bg-teal-500/10 text-teal-600 border-teal-500/20",
-  医疗: "bg-red-500/10 text-red-600 border-red-500/20",
-  汽车: "bg-orange-500/10 text-orange-600 border-orange-500/20",
-  人工智能: "bg-sky-500/10 text-sky-600 border-sky-500/20",
-};
-
-function getIndustryColor(industry: string): string {
-  if (INDUSTRY_COLORS[industry]) return INDUSTRY_COLORS[industry];
-  const palette = [
-    "bg-sky-500/10 text-sky-600 border-sky-500/20",
-    "bg-purple-500/10 text-purple-600 border-purple-500/20",
-    "bg-amber-500/10 text-amber-600 border-amber-500/20",
-    "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
-    "bg-brand/10 text-brand border-brand/20",
-    "bg-rose-500/10 text-rose-600 border-rose-500/20",
-  ];
-  let hash = 0;
-  for (let i = 0; i < industry.length; i++) {
-    hash = ((hash << 5) - hash + industry.charCodeAt(i)) | 0;
-  }
-  return palette[Math.abs(hash) % palette.length];
-}
 
 function formatDate(dateStr?: string): string {
   if (!dateStr) return "-";
@@ -96,8 +63,8 @@ function DeadlineBadge({ deadline, isExpired }: { deadline?: string | null; isEx
 
 interface SocialFilterProps {
   open: boolean;
-  filters: { company: string; city: string; industry: string };
-  onApply: (filters: { company: string; city: string; industry: string }) => void;
+  filters: { company: string; city: string };
+  onApply: (filters: { company: string; city: string }) => void;
   onClose: () => void;
 }
 
@@ -127,14 +94,9 @@ function SocialFilterPanel({ open, filters, onApply, onClose }: SocialFilterProp
             <input type="text" value={local.city} onChange={(e) => setLocal((p) => ({ ...p, city: e.target.value }))}
               placeholder="请输入城市，如：北京" className="w-full px-3 py-1.5 rounded-xl bg-[#F2F2F7] border border-transparent text-xs text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:bg-white focus:border-brand/40 focus:ring-4 focus:ring-brand/15" />
           </div>
-          <div>
-            <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1.5">行业</label>
-            <input type="text" value={local.industry} onChange={(e) => setLocal((p) => ({ ...p, industry: e.target.value }))}
-              placeholder="请输入行业，如：互联网" className="w-full px-3 py-1.5 rounded-xl bg-[#F2F2F7] border border-transparent text-xs text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:bg-white focus:border-brand/40 focus:ring-4 focus:ring-brand/15" />
-          </div>
         </div>
         <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-[var(--color-border)]">
-          <button onClick={() => { setLocal({ company: "", city: "", industry: "" }); }}
+          <button onClick={() => { setLocal({ company: "", city: "" }); }}
             className="px-4 py-1.5 rounded-full bg-[var(--color-bg-secondary)] text-xs text-[var(--color-text-secondary)] hover:bg-[#E5E5EA] transition-all cursor-pointer">
             重 置
           </button>
@@ -213,14 +175,14 @@ function JobDetailModal({ job, loading, onClose }: JobDetailModalProps) {
                   <GraduationCap size={11} weight="duotone" /> {job.degree}
                 </span>
               )}
-              {job.industry && (
-                <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-medium border ${getIndustryColor(job.industry)}`}>
-                  {job.industry}
-                </span>
-              )}
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-[var(--color-bg-secondary)] text-[var(--color-text-muted)] border border-[var(--color-border)]">
                 来源：{job.source || "公开渠道"}
               </span>
+              {job.payload?.published_at && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-[var(--color-bg-secondary)] text-[var(--color-text-muted)] border border-[var(--color-border)]">
+                  <CalendarBlank size={10} weight="duotone" /> 发布于 {formatDate(job.payload.published_at)}
+                </span>
+              )}
             </div>
 
             {/* 正文 */}
@@ -264,13 +226,13 @@ export default function SocialPage() {
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
-  const [activeFilters, setActiveFilters] = useState({ company: "", city: "", industry: "" });
+  const [activeFilters, setActiveFilters] = useState({ company: "", city: "" });
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 详情弹窗
   const [detail, setDetail] = useState<MarketJobDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [detailId, setDetailId] = useState<string | null>(null);
+  const [detailId, setDetailId] = useState<number | null>(null);
 
   const handleQueryChange = useCallback((val: string) => {
     setQuery(val);
@@ -285,7 +247,6 @@ export default function SocialPage() {
     if (debouncedQuery) filters.q = debouncedQuery;
     if (activeFilters.company) filters.company = activeFilters.company;
     if (activeFilters.city) filters.city = activeFilters.city;
-    if (activeFilters.industry) filters.industry = activeFilters.industry;
     listJobs(filters)
       .then((data) => { setJobs(data.items); setTotal(data.total); setTotalPages(data.total_pages); })
       .catch(() => { setJobs([]); setTotal(0); setTotalPages(0); })
@@ -303,10 +264,10 @@ export default function SocialPage() {
       .finally(() => setDetailLoading(false));
   }, [detailId]);
 
-  const openDetail = (id: string) => setDetailId(id);
+  const openDetail = (id: number) => setDetailId(id);
   const closeDetail = () => { setDetailId(null); setDetail(null); };
 
-  const hasActiveFilters = activeFilters.company || activeFilters.city || activeFilters.industry;
+  const hasActiveFilters = activeFilters.company || activeFilters.city;
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -388,17 +349,18 @@ export default function SocialPage() {
                       <GraduationCap size={10} weight="duotone" /> {job.degree}
                     </span>
                   )}
-                  {job.industry && (
-                    <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-medium border ${getIndustryColor(job.industry)}`}>
-                      {job.industry}
-                    </span>
-                  )}
                 </div>
 
                 <div className="flex items-center justify-between border-t border-[var(--color-border)] pt-2.5">
-                  <span className="inline-flex items-center gap-1 text-[10px] text-[var(--color-text-muted)]">
+                  <span className="inline-flex items-center gap-1.5 text-[10px] text-[var(--color-text-muted)]">
                     <Tag size={10} weight="duotone" className="shrink-0" />
                     {job.source || "公开渠道"}
+                    {job.payload?.published_at && (
+                      <span className="inline-flex items-center gap-1">
+                        <CalendarBlank size={10} weight="duotone" className="shrink-0" />
+                        {formatDate(job.payload.published_at)}
+                      </span>
+                    )}
                   </span>
                   <span className="inline-flex items-center gap-1 text-xs text-brand group-hover:underline">
                     查看详情 <ArrowSquareOut size={11} weight="bold" />

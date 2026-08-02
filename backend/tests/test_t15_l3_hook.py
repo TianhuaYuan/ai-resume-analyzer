@@ -122,7 +122,6 @@ class TestReadyTransitionHook:
         """process_resume_background 完成 ready 转换后触发 build_l3_profile_background。"""
         with patch("services.resume_service.AsyncSessionLocal") as mock_session_cls, \
              patch("services.resume_service.parse_resume") as mock_parse, \
-             patch("services.resume_service.process_resume", new_callable=AsyncMock) as mock_process, \
              patch("services.resume_analyze_producer.publish_analyze_task", new_callable=AsyncMock) as mock_publish, \
              patch("services.react_agent.memory.build_l3_profile_background", new_callable=AsyncMock) as mock_build_l3:
             mock_db = AsyncMock()
@@ -130,7 +129,6 @@ class TestReadyTransitionHook:
             mock_session_cls.return_value.__aexit__ = AsyncMock(return_value=None)
 
             mock_parse.return_value = "parsed text"
-            mock_process.return_value = 5
 
             from services.resume_service import process_resume_background
             await process_resume_background(resume_id=1, file_path="/test.pdf", user_id=10)
@@ -143,7 +141,6 @@ class TestReadyTransitionHook:
         """L3 画像构建失败不影响简历处理主流程。"""
         with patch("services.resume_service.AsyncSessionLocal") as mock_session_cls, \
              patch("services.resume_service.parse_resume") as mock_parse, \
-             patch("services.resume_service.process_resume", new_callable=AsyncMock) as mock_process, \
              patch("services.resume_analyze_producer.publish_analyze_task", new_callable=AsyncMock) as mock_publish, \
              patch("services.react_agent.memory.build_l3_profile_background", new_callable=AsyncMock) as mock_build_l3:
             mock_db = AsyncMock()
@@ -151,7 +148,6 @@ class TestReadyTransitionHook:
             mock_session_cls.return_value.__aexit__ = AsyncMock(return_value=None)
 
             mock_parse.return_value = "parsed text"
-            mock_process.return_value = 5
             mock_build_l3.side_effect = Exception("L3 构建失败")
 
             from services.resume_service import process_resume_background

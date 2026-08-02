@@ -2,9 +2,9 @@
  * CampusPage — 校招 + 内推信息浏览页。
  *
  * Tab 切换：校招信息 / 内推企业 / 投递进展
+ * 数据源：/api/v1/market/jobs（job_type=campus | social&source=referral）+ /api/v1/market/jobs/stats
  * 高级筛选：发布日期范围、工作地点、行业、岗位
- * 求职进度：颜色区分的下拉选择
- * 备注：点击编辑
+ * 求职进度：颜色区分的下拉选择 + 备注（track 仍走 /api/v1/campus/tracks，key 用 String(job.id)）
  */
 
 import { useEffect, useState, useCallback, useRef } from "react";
@@ -24,61 +24,26 @@ import {
   DownloadSimple,
 } from "@phosphor-icons/react";
 import {
-  getCampusStats,
-  listCampusRecords,
+  listJobs,
+  listJobStats,
+  type MarketJob,
+  type MarketJobStats,
+  type MarketJobFilters,
+} from "../api/market";
+import {
   getCampusTracks,
   upsertCampusTrack,
   TRACK_STATUS_OPTIONS,
   getTrackStatusOption,
-  type CampusRecord,
-  type CampusStats,
   type CampusTrack,
-  type CampusFilters,
 } from "../api/campus";
 
 // ── Tab 定义 ──
-type TabKey = "campus" | "referral" | "progress";
+type TabKey = "campus" | "progress";
 const TABS: Array<{ key: TabKey; label: string }> = [
   { key: "campus", label: "校招信息" },
-  { key: "referral", label: "内推企业" },
   { key: "progress", label: "投递进展" },
 ];
-
-// ── 行业标签颜色 ──
-const INDUSTRY_COLORS: Record<string, string> = {
-  科技: "bg-sky-500/10 text-sky-600 border-sky-500/20",
-  游戏: "bg-purple-500/10 text-purple-600 border-purple-500/20",
-  金融: "bg-amber-500/10 text-amber-600 border-amber-500/20",
-  银行: "bg-amber-500/10 text-amber-600 border-amber-500/20",
-  国企: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
-  软件: "bg-brand/10 text-brand border-brand/20",
-  专业服务: "bg-rose-500/10 text-rose-600 border-rose-500/20",
-  互联网: "bg-violet-500/10 text-violet-600 border-violet-500/20",
-  教育: "bg-teal-500/10 text-teal-600 border-teal-500/20",
-  医疗: "bg-red-500/10 text-red-600 border-red-500/20",
-  汽车: "bg-orange-500/10 text-orange-600 border-orange-500/20",
-  消费电子: "bg-cyan-500/10 text-cyan-600 border-cyan-500/20",
-  社交: "bg-pink-500/10 text-pink-600 border-pink-500/20",
-  内容: "bg-fuchsia-500/10 text-fuchsia-600 border-fuchsia-500/20",
-  人工智能: "bg-sky-500/10 text-sky-600 border-sky-500/20",
-};
-
-function getIndustryColor(industry: string): string {
-  if (INDUSTRY_COLORS[industry]) return INDUSTRY_COLORS[industry];
-  const palette = [
-    "bg-sky-500/10 text-sky-600 border-sky-500/20",
-    "bg-purple-500/10 text-purple-600 border-purple-500/20",
-    "bg-amber-500/10 text-amber-600 border-amber-500/20",
-    "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
-    "bg-brand/10 text-brand border-brand/20",
-    "bg-rose-500/10 text-rose-600 border-rose-500/20",
-  ];
-  let hash = 0;
-  for (let i = 0; i < industry.length; i++) {
-    hash = ((hash << 5) - hash + industry.charCodeAt(i)) | 0;
-  }
-  return palette[Math.abs(hash) % palette.length];
-}
 
 function formatDate(dateStr?: string): string {
   if (!dateStr) return "-";
@@ -95,28 +60,26 @@ function truncate(text: string, maxLen: number): string {
 
 // ── CSV 导出 ──
 
-function exportProgressCSV(records: CampusRecord[], tracks: Record<string, CampusTrack>) {
-  const headers = ["发布时间", "公司", "投递链接", "求职进度", "备注", "工作地点", "行业", "岗位", "内推码"];
+function exportProgressCSV(records: MarketJob[], tracks: Record<string, CampusTrack>) {
+  const headers = ["发布时间", "公司", "投递链接", "求职进度", "备注", "工作地点", "岗位"];
   const statusLabelMap = Object.fromEntries(TRACK_STATUS_OPTIONS.map((o) => [o.value, o.label]));
   const rows = records
-    .filter((r) => tracks[r.id])
+    .filter((r) => tracks[String(r.id)])
     .map((r) => {
-      const t = tracks[r.id];
+      const t = tracks[String(r.id)];
       return [
-        formatDate(r.recordTime || r.createTime),
-        r.company,
-        r.referralMethod ?? "",
+        formatDate(r.payload?.published_at ?? r.created_at),
+        r.company ?? "",
+        r.payload?.apply_url ?? "",
         statusLabelMap[t.status] ?? t.status,
         t.notes ?? "",
-        r.workLocation,
-        r.industry,
-        r.positions,
-        r.referralCode ?? "",
+        r.city ?? "",
+        r.position ?? "",
       ];
     });
 
   const csvContent =
-    "\uFEFF" +
+    "﻿" +
     [headers, ...rows]
       .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
       .join("\n");
@@ -132,10 +95,17 @@ function exportProgressCSV(records: CampusRecord[], tracks: Record<string, Campu
 
 // ── 高级筛选面板 ──
 
+interface AdvancedFilters {
+  city: string;
+  position: string;
+  dateFrom: string;
+  dateTo: string;
+}
+
 interface AdvancedFilterProps {
   open: boolean;
-  filters: { workLocation: string; positions: string; dateFrom: string; dateTo: string };
-  onApply: (filters: { workLocation: string; positions: string; dateFrom: string; dateTo: string }) => void;
+  filters: AdvancedFilters;
+  onApply: (filters: AdvancedFilters) => void;
   onClose: () => void;
 }
 
@@ -167,17 +137,17 @@ function AdvancedFilterPanel({ open, filters, onApply, onClose }: AdvancedFilter
           </div>
           <div>
             <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1.5">工作地点</label>
-            <input type="text" value={local.workLocation} onChange={(e) => setLocal((p) => ({ ...p, workLocation: e.target.value }))}
+            <input type="text" value={local.city} onChange={(e) => setLocal((p) => ({ ...p, city: e.target.value }))}
               placeholder="请输入工作地点" className="w-full px-3 py-1.5 rounded-xl bg-[#F2F2F7] border border-transparent text-xs text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:bg-white focus:border-brand/40 focus:ring-4 focus:ring-brand/15" />
           </div>
           <div>
-            <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1.5">行业</label>
-            <input type="text" value={local.positions} onChange={(e) => setLocal((p) => ({ ...p, positions: e.target.value }))}
+            <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1.5">岗位</label>
+            <input type="text" value={local.position} onChange={(e) => setLocal((p) => ({ ...p, position: e.target.value }))}
               placeholder="请输入岗位" className="w-full px-3 py-1.5 rounded-xl bg-[#F2F2F7] border border-transparent text-xs text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:bg-white focus:border-brand/40 focus:ring-4 focus:ring-brand/15" />
           </div>
         </div>
         <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-[var(--color-border)]">
-          <button onClick={() => { setLocal({ workLocation: "", positions: "", dateFrom: "", dateTo: "" }); }}
+          <button onClick={() => { setLocal({ city: "", position: "", dateFrom: "", dateTo: "" }); }}
             className="px-4 py-1.5 rounded-full bg-[var(--color-bg-secondary)] text-xs text-[var(--color-text-secondary)] hover:bg-[#E5E5EA] transition-all cursor-pointer">
             重 置
           </button>
@@ -195,8 +165,8 @@ function AdvancedFilterPanel({ open, filters, onApply, onClose }: AdvancedFilter
 
 export default function CampusPage() {
   const [tab, setTab] = useState<TabKey>("campus");
-  const [stats, setStats] = useState<CampusStats | null>(null);
-  const [records, setRecords] = useState<CampusRecord[]>([]);
+  const [stats, setStats] = useState<MarketJobStats | null>(null);
+  const [records, setRecords] = useState<MarketJob[]>([]);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
   const [page, setPage] = useState(1);
@@ -206,11 +176,10 @@ export default function CampusPage() {
   const [tracks, setTracks] = useState<Record<string, CampusTrack>>({});
   const [editingNotes, setEditingNotes] = useState<Record<string, string>>({});
   const [filterOpen, setFilterOpen] = useState(false);
-  const [advancedFilters, setAdvancedFilters] = useState({ workLocation: "", positions: "", dateFrom: "", dateTo: "" });
-  const [activeFilters, setActiveFilters] = useState({ workLocation: "", positions: "", dateFrom: "", dateTo: "" });
+  const [advancedFilters, setAdvancedFilters] = useState<AdvancedFilters>({ city: "", position: "", dateFrom: "", dateTo: "" });
+  const [activeFilters, setActiveFilters] = useState<AdvancedFilters>({ city: "", position: "", dateFrom: "", dateTo: "" });
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const infoType = tab === "campus" ? "校招" : tab === "referral" ? "内推" : "";
   const isProgress = tab === "progress";
 
   const handleQueryChange = useCallback((val: string) => {
@@ -237,36 +206,43 @@ export default function CampusPage() {
   }, [editingNotes, tracks]);
 
   // Tab 切换时重置筛选
-  useEffect(() => { setQuery(""); setDebouncedQuery(""); setPage(1); setAdvancedFilters({ workLocation: "", positions: "", dateFrom: "", dateTo: "" }); setActiveFilters({ workLocation: "", positions: "", dateFrom: "", dateTo: "" }); }, [tab]);
+  useEffect(() => {
+    setQuery(""); setDebouncedQuery(""); setPage(1);
+    setAdvancedFilters({ city: "", position: "", dateFrom: "", dateTo: "" });
+    setActiveFilters({ city: "", position: "", dateFrom: "", dateTo: "" });
+  }, [tab]);
 
-  // 加载统计
-  useEffect(() => { getCampusStats(infoType).then(setStats).catch(() => {}); }, [infoType]);
+  // 加载统计（近 3/7 日 + 累计 + 头部行业）
+  useEffect(() => {
+    listJobStats({ job_type: tab === "campus" ? "campus" : undefined })
+      .then(setStats)
+      .catch(() => setStats(null));
+  }, [tab]);
 
   // 加载求职跟踪
   useEffect(() => { getCampusTracks().then(setTracks).catch(() => {}); }, []);
 
-  // 加载列表
+  // 加载岗位列表
   useEffect(() => {
     setLoading(true);
-    const filters: CampusFilters = { page, limit: 20 };
+    const filters: MarketJobFilters = { page, limit: 20 };
     if (debouncedQuery) filters.q = debouncedQuery;
-    if (infoType) filters.infoType = infoType;
-    if (activeFilters.workLocation) filters.workLocation = activeFilters.workLocation;
-    if (activeFilters.positions) filters.positions = activeFilters.positions;
-    if (activeFilters.dateFrom) filters.dateFrom = activeFilters.dateFrom;
-    if (activeFilters.dateTo) filters.dateTo = activeFilters.dateTo;
-    listCampusRecords(filters)
+    if (tab === "campus") filters.job_type = "campus";
+    if (activeFilters.city) filters.city = activeFilters.city;
+    if (activeFilters.position) filters.position = activeFilters.position;
+    if (activeFilters.dateFrom) filters.date_from = activeFilters.dateFrom;
+    if (activeFilters.dateTo) filters.date_to = activeFilters.dateTo;
+    listJobs(filters)
       .then((data) => { setRecords(data.items); setTotal(data.total); setTotalPages(data.total_pages); })
-      .catch(() => { setRecords([]); setTotal(0); })
+      .catch(() => { setRecords([]); setTotal(0); setTotalPages(0); })
       .finally(() => setLoading(false));
-  }, [debouncedQuery, infoType, page, activeFilters]);
+  }, [debouncedQuery, tab, page, activeFilters]);
 
-  const industryOptions = stats?.top_industries?.map((i) => i.name) ?? [];
-  const hasActiveFilters = activeFilters.workLocation || activeFilters.positions || activeFilters.dateFrom || activeFilters.dateTo;
+  const hasActiveFilters = activeFilters.city || activeFilters.position || activeFilters.dateFrom || activeFilters.dateTo;
 
   // 投递进展：只显示有 track 的记录
   const progressRecords = isProgress
-    ? records.filter((r) => tracks[r.id])
+    ? records.filter((r) => tracks[String(r.id)])
     : records;
 
   return (
@@ -333,14 +309,6 @@ export default function CampusPage() {
                 text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:bg-white focus:border-brand/40 focus:ring-4 focus:ring-brand/15 transition-colors" />
           </div>
           {!isProgress && (
-            <select value="" onChange={(e) => { if (e.target.value) handleQueryChange(e.target.value); }}
-              className="px-3 py-2 rounded-xl bg-[#F2F2F7] border border-transparent
-                text-sm text-[var(--color-text-secondary)] focus:outline-none focus:bg-white focus:border-brand/40 focus:ring-4 focus:ring-brand/15 cursor-pointer">
-              <option value="">全部行业</option>
-              {industryOptions.map((ind) => (<option key={ind} value={ind}>{ind}</option>))}
-            </select>
-          )}
-          {!isProgress && (
             <button onClick={() => setFilterOpen(true)}
               className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-medium transition-all cursor-pointer
                 ${hasActiveFilters
@@ -348,7 +316,7 @@ export default function CampusPage() {
                   : "bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:bg-[#E5E5EA]"
                 }`}>
               <Funnel size={13} />
-              日期筛选
+              高级筛选
             </button>
           )}
           {isProgress && progressRecords.length > 0 && (
@@ -377,19 +345,17 @@ export default function CampusPage() {
                   <th className="text-left px-4 py-3 text-xs font-medium text-[var(--color-text-secondary)]">求职进度</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-[var(--color-text-secondary)]">备注</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-[var(--color-text-secondary)]">工作地点</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-[var(--color-text-secondary)]">行业</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-[var(--color-text-secondary)]">岗位</th>
-                  {!isProgress && <th className="text-left px-4 py-3 text-xs font-medium text-[var(--color-text-secondary)]">内推码</th>}
                 </tr>
               </thead>
               <tbody>
                 {(isProgress ? progressRecords : records).map((r) => {
-                  const track = tracks[r.id];
+                  const track = tracks[String(r.id)];
                   const statusOpt = getTrackStatusOption(track?.status ?? "pending");
                   return (
                     <tr key={r.id} className="border-b border-[var(--color-border)] last:border-b-0 hover:bg-[var(--color-bg-secondary)] transition-colors">
                       <td className="px-4 py-3 text-xs text-[var(--color-text-muted)] whitespace-nowrap tabular-nums">
-                        {formatDate(r.recordTime || r.createTime)}
+                        {formatDate(r.payload?.published_at ?? r.created_at)}
                       </td>
                       <td className="px-4 py-3 text-xs font-semibold text-[var(--color-text)] whitespace-nowrap">{r.company}</td>
                       {!isProgress && (
@@ -398,30 +364,30 @@ export default function CampusPage() {
                         </td>
                       )}
                       <td className="px-4 py-3 whitespace-nowrap">
-                        {r.referralMethod ? (
-                          <a href={r.referralMethod} target="_blank" rel="noopener noreferrer"
+                        {r.payload?.apply_url ? (
+                          <a href={r.payload.apply_url} target="_blank" rel="noopener noreferrer"
                             className="inline-flex items-center gap-1 text-xs text-brand hover:text-brand-hover hover:underline transition-colors">
                             <Link size={12} /> 点击投递
                           </a>
                         ) : <span className="text-xs text-[var(--color-text-muted)]">-</span>}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
-                        <select value={track?.status ?? "pending"} onChange={(e) => handleStatusChange(r.id, e.target.value)}
+                        <select value={track?.status ?? "pending"} onChange={(e) => handleStatusChange(String(r.id), e.target.value)}
                           className={`px-2 py-1 rounded border text-xs cursor-pointer focus:outline-none focus:border-brand/40 transition-colors ${statusOpt.color} ${statusOpt.bg}`}>
                           {TRACK_STATUS_OPTIONS.map((opt) => (<option key={opt.value} value={opt.value}>{opt.label}</option>))}
                         </select>
                       </td>
                       <td className="px-4 py-3 max-w-[140px]">
-                        {editingNotes[r.id] !== undefined ? (
-                          <input type="text" value={editingNotes[r.id]}
-                            onChange={(e) => setEditingNotes((prev) => ({ ...prev, [r.id]: e.target.value }))}
-                            onBlur={() => handleNotesBlur(r.id)}
-                            onKeyDown={(e) => { if (e.key === "Enter") handleNotesBlur(r.id); }}
+                        {editingNotes[String(r.id)] !== undefined ? (
+                          <input type="text" value={editingNotes[String(r.id)]}
+                            onChange={(e) => setEditingNotes((prev) => ({ ...prev, [String(r.id)]: e.target.value }))}
+                            onBlur={() => handleNotesBlur(String(r.id))}
+                            onKeyDown={(e) => { if (e.key === "Enter") handleNotesBlur(String(r.id)); }}
                             autoFocus
                             className="w-full px-2 py-1 rounded border border-brand/50 bg-[#F2F2F7] text-xs text-[var(--color-text)] outline-none focus:bg-white focus:ring-4 focus:ring-brand/15"
                             placeholder="点击添加备注" />
                         ) : (
-                          <button onClick={() => setEditingNotes((prev) => ({ ...prev, [r.id]: track?.notes ?? "" }))}
+                          <button onClick={() => setEditingNotes((prev) => ({ ...prev, [String(r.id)]: track?.notes ?? "" }))}
                             className="flex items-center gap-1 text-xs text-[var(--color-text-muted)] hover:text-brand transition-colors cursor-pointer max-w-full"
                             title={track?.notes || "点击添加备注"}>
                             <Note size={11} weight="duotone" className="shrink-0" />
@@ -432,30 +398,20 @@ export default function CampusPage() {
                       <td className="px-4 py-3 text-xs text-[var(--color-text-secondary)] max-w-[160px]">
                         <span className="inline-flex items-center gap-1">
                           <MapPin size={11} weight="duotone" className="text-red-500 shrink-0" />
-                          <span title={r.workLocation}>{truncate(r.workLocation, 18)}</span>
+                          <span title={r.city}>{truncate(r.city ?? "-", 18)}</span>
                         </span>
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        {r.industry ? (
-                          <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-medium border ${getIndustryColor(r.industry)}`}>{r.industry}</span>
-                        ) : <span className="text-xs text-[var(--color-text-muted)]">-</span>}
                       </td>
                       <td className="px-4 py-3 text-xs text-[var(--color-text-secondary)] max-w-[200px]">
                         <span className="inline-flex items-start gap-1">
                           <User size={11} weight="duotone" className="text-emerald-500 shrink-0 mt-0.5" />
-                          <span title={r.positions}>{truncate(r.positions, 25)}</span>
+                          <span title={r.position}>{truncate(r.position ?? "-", 25)}</span>
                         </span>
                       </td>
-                      {!isProgress && (
-                        <td className="px-4 py-3 text-xs text-[var(--color-text-secondary)]">
-                          {r.referralCode ? <span className="font-mono">{truncate(r.referralCode, 10)}</span> : "-"}
-                        </td>
-                      )}
                     </tr>
                   );
                 })}
                 {!loading && (isProgress ? progressRecords : records).length === 0 && (
-                  <tr><td colSpan={isProgress ? 8 : 10} className="px-4 py-16 text-center text-xs text-[var(--color-text-muted)]">
+                  <tr><td colSpan={isProgress ? 7 : 8} className="px-4 py-16 text-center text-xs text-[var(--color-text-muted)]">
                     {isProgress ? "暂无投递记录，设置求职进度后自动显示" : "未找到匹配的校招信息"}
                   </td></tr>
                 )}

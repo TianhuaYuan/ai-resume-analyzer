@@ -5,7 +5,7 @@
 - 乐观锁校验（version 不匹配 → 409）
 - 状态校验（processing/failed → 409）
 - 模块替换 + parsed_text 生成
-- Chroma 重建（mock process_resume）
+- Chroma 重建（mock ensure_indexed）
 - L3 触发（mock build_l3_profile_background）
 - 幂等性（re-complete ready 简历）
 - 归属校验
@@ -242,7 +242,7 @@ class TestCompleteSuccess:
             db_session, registered_user["id"], _default_modules()
         )
 
-        with patch("services.resume_builder.process_resume", new_callable=AsyncMock) as mock_pr, \
+        with patch("services.resume_builder.ensure_indexed", new_callable=AsyncMock) as mock_pr, \
              patch("services.resume_builder.embedding_cache.clear_resume", new_callable=AsyncMock), \
              patch("services.react_agent.memory.build_l3_profile_background", new_callable=AsyncMock):
             mock_pr.return_value = 5
@@ -268,7 +268,7 @@ class TestCompleteSuccess:
             db_session, registered_user["id"], [_basic_info_module()]
         )
 
-        with patch("services.resume_builder.process_resume", new_callable=AsyncMock) as mock_pr, \
+        with patch("services.resume_builder.ensure_indexed", new_callable=AsyncMock) as mock_pr, \
              patch("services.resume_builder.embedding_cache.clear_resume", new_callable=AsyncMock), \
              patch("services.react_agent.memory.build_l3_profile_background", new_callable=AsyncMock):
             mock_pr.return_value = 3
@@ -304,7 +304,7 @@ class TestCompleteSuccess:
         resume.version = 2
         await db_session.commit()
 
-        with patch("services.resume_builder.process_resume", new_callable=AsyncMock) as mock_pr, \
+        with patch("services.resume_builder.ensure_indexed", new_callable=AsyncMock) as mock_pr, \
              patch("services.resume_builder.embedding_cache.clear_resume", new_callable=AsyncMock), \
              patch("services.react_agent.memory.build_l3_profile_background", new_callable=AsyncMock):
             mock_pr.return_value = 4
@@ -328,10 +328,10 @@ class TestCompleteSuccess:
         """无模块 complete → parsed_text 空，chunk_count=0。"""
         resume = await _create_draft_resume(db_session, registered_user["id"])
 
-        with patch("services.resume_builder.process_resume", new_callable=AsyncMock) as mock_pr, \
+        with patch("services.resume_builder.ensure_indexed", new_callable=AsyncMock) as mock_pr, \
              patch("services.resume_builder.embedding_cache.clear_resume", new_callable=AsyncMock), \
              patch("services.react_agent.memory.build_l3_profile_background", new_callable=AsyncMock):
-            mock_pr.return_value = 0
+            mock_pr.return_value = True  # ensure_indexed 返回 bool；0 为 falsy 会被视为失败
 
             resp = await client.put(
                 f"/api/v1/resumes/{resume.id}?mode=complete",
@@ -363,7 +363,7 @@ class TestCompleteSuccess:
             "accent_color": "#1e40af",
         }
 
-        with patch("services.resume_builder.process_resume", new_callable=AsyncMock) as mock_pr, \
+        with patch("services.resume_builder.ensure_indexed", new_callable=AsyncMock) as mock_pr, \
              patch("services.resume_builder.embedding_cache.clear_resume", new_callable=AsyncMock), \
              patch("services.react_agent.memory.build_l3_profile_background", new_callable=AsyncMock):
             mock_pr.return_value = 2
@@ -396,7 +396,7 @@ class TestCompleteErrors:
         """version 不匹配 → 409。"""
         resume = await _create_draft_resume(db_session, registered_user["id"], version=3)
 
-        with patch("services.resume_builder.process_resume", new_callable=AsyncMock), \
+        with patch("services.resume_builder.ensure_indexed", new_callable=AsyncMock), \
              patch("services.resume_builder.embedding_cache.clear_resume", new_callable=AsyncMock):
             resp = await client.put(
                 f"/api/v1/resumes/{resume.id}?mode=complete",
@@ -414,7 +414,7 @@ class TestCompleteErrors:
         """version 缺失 → 422。"""
         resume = await _create_draft_resume(db_session, registered_user["id"])
 
-        with patch("services.resume_builder.process_resume", new_callable=AsyncMock), \
+        with patch("services.resume_builder.ensure_indexed", new_callable=AsyncMock), \
              patch("services.resume_builder.embedding_cache.clear_resume", new_callable=AsyncMock):
             resp = await client.put(
                 f"/api/v1/resumes/{resume.id}?mode=complete",
@@ -434,7 +434,7 @@ class TestCompleteErrors:
             db_session, registered_user["id"], status="processing"
         )
 
-        with patch("services.resume_builder.process_resume", new_callable=AsyncMock), \
+        with patch("services.resume_builder.ensure_indexed", new_callable=AsyncMock), \
              patch("services.resume_builder.embedding_cache.clear_resume", new_callable=AsyncMock):
             resp = await client.put(
                 f"/api/v1/resumes/{resume.id}?mode=complete",
@@ -454,7 +454,7 @@ class TestCompleteErrors:
             db_session, registered_user["id"], status="failed"
         )
 
-        with patch("services.resume_builder.process_resume", new_callable=AsyncMock), \
+        with patch("services.resume_builder.ensure_indexed", new_callable=AsyncMock), \
              patch("services.resume_builder.embedding_cache.clear_resume", new_callable=AsyncMock):
             resp = await client.put(
                 f"/api/v1/resumes/{resume.id}?mode=complete",
@@ -473,7 +473,7 @@ class TestCompleteErrors:
         other = await _create_other_user(db_session)
         resume = await _create_draft_resume(db_session, other.id)
 
-        with patch("services.resume_builder.process_resume", new_callable=AsyncMock), \
+        with patch("services.resume_builder.ensure_indexed", new_callable=AsyncMock), \
              patch("services.resume_builder.embedding_cache.clear_resume", new_callable=AsyncMock):
             resp = await client.put(
                 f"/api/v1/resumes/{resume.id}?mode=complete",
@@ -488,7 +488,7 @@ class TestCompleteErrors:
         self, client: AsyncClient, auth_headers: dict
     ):
         """简历不存在 → 404。"""
-        with patch("services.resume_builder.process_resume", new_callable=AsyncMock), \
+        with patch("services.resume_builder.ensure_indexed", new_callable=AsyncMock), \
              patch("services.resume_builder.embedding_cache.clear_resume", new_callable=AsyncMock):
             resp = await client.put(
                 "/api/v1/resumes/99999?mode=complete",
@@ -502,12 +502,12 @@ class TestCompleteErrors:
     async def test_complete_chroma_failure(
         self, client: AsyncClient, registered_user: dict, auth_headers: dict, db_session: AsyncSession
     ):
-        """process_resume 抛异常 → 500。"""
+        """ensure_indexed 抛异常 → 500。"""
         resume, _ = await _create_draft_with_modules(
             db_session, registered_user["id"], _default_modules()
         )
 
-        with patch("services.resume_builder.process_resume", new_callable=AsyncMock) as mock_pr, \
+        with patch("services.resume_builder.ensure_indexed", new_callable=AsyncMock) as mock_pr, \
              patch("services.resume_builder.embedding_cache.clear_resume", new_callable=AsyncMock):
             mock_pr.side_effect = RuntimeError("Chroma 连接失败")
 
@@ -527,7 +527,7 @@ class TestCompleteErrors:
         """模块 content 校验失败 → 422。"""
         resume = await _create_draft_resume(db_session, registered_user["id"])
 
-        with patch("services.resume_builder.process_resume", new_callable=AsyncMock), \
+        with patch("services.resume_builder.ensure_indexed", new_callable=AsyncMock), \
              patch("services.resume_builder.embedding_cache.clear_resume", new_callable=AsyncMock):
             resp = await client.put(
                 f"/api/v1/resumes/{resume.id}?mode=complete",
@@ -574,12 +574,12 @@ class TestCompleteSideEffects:
     async def test_complete_triggers_chroma_rebuild(
         self, client: AsyncClient, registered_user: dict, auth_headers: dict, db_session: AsyncSession
     ):
-        """complete 调用 process_resume（drop + rebuild Chroma）。"""
+        """complete 调用 ensure_indexed（版本化重建 Chroma）。"""
         resume, _ = await _create_draft_with_modules(
             db_session, registered_user["id"], _default_modules()
         )
 
-        with patch("services.resume_builder.process_resume", new_callable=AsyncMock) as mock_pr, \
+        with patch("services.resume_builder.ensure_indexed", new_callable=AsyncMock) as mock_pr, \
              patch("services.resume_builder.embedding_cache.clear_resume", new_callable=AsyncMock), \
              patch("services.react_agent.memory.build_l3_profile_background", new_callable=AsyncMock):
             mock_pr.return_value = 5
@@ -591,10 +591,9 @@ class TestCompleteSideEffects:
             )
 
         mock_pr.assert_awaited_once()
-        call_args = mock_pr.call_args
-        assert call_args.args[0] == resume.id  # resume_id
-        assert isinstance(call_args.args[1], str)  # parsed_text
-        assert len(call_args.args[1]) > 0  # 非空文本
+        kwargs = mock_pr.call_args.kwargs
+        assert kwargs["asset_id"] == resume.id  # 重建目标简历
+        assert kwargs["asset_type"] == "resume"
 
     @pytest.mark.asyncio
     async def test_complete_clears_embedding_cache(
@@ -605,7 +604,7 @@ class TestCompleteSideEffects:
             db_session, registered_user["id"], [_basic_info_module()]
         )
 
-        with patch("services.resume_builder.process_resume", new_callable=AsyncMock) as mock_pr, \
+        with patch("services.resume_builder.ensure_indexed", new_callable=AsyncMock) as mock_pr, \
              patch("services.resume_builder.embedding_cache.clear_resume", new_callable=AsyncMock) as mock_clear, \
              patch("services.react_agent.memory.build_l3_profile_background", new_callable=AsyncMock):
             mock_pr.return_value = 1
@@ -626,7 +625,7 @@ class TestCompleteSideEffects:
             db_session, registered_user["id"], _default_modules()
         )
 
-        with patch("services.resume_builder.process_resume", new_callable=AsyncMock) as mock_pr, \
+        with patch("services.resume_builder.ensure_indexed", new_callable=AsyncMock) as mock_pr, \
              patch("services.resume_builder.embedding_cache.clear_resume", new_callable=AsyncMock), \
              patch("services.react_agent.memory.build_l3_profile_background", new_callable=AsyncMock) as mock_l3:
             mock_pr.return_value = 5
@@ -651,7 +650,7 @@ class TestCompleteSideEffects:
             db_session, registered_user["id"], _default_modules()
         )
 
-        with patch("services.resume_builder.process_resume", new_callable=AsyncMock) as mock_pr, \
+        with patch("services.resume_builder.ensure_indexed", new_callable=AsyncMock) as mock_pr, \
              patch("services.resume_builder.embedding_cache.clear_resume", new_callable=AsyncMock), \
              patch("services.react_agent.memory.build_l3_profile_background", new_callable=AsyncMock):
             mock_pr.return_value = 3
@@ -662,8 +661,15 @@ class TestCompleteSideEffects:
                 headers=auth_headers,
             )
 
-        # 从 mock_pr 的调用参数获取 parsed_text
-        parsed_text = mock_pr.call_args.args[1]
+        # complete 后从 DB 读取 parsed_text（ensure_indexed 不接收文本参数）
+        from tests.conftest import AsyncSessionTest
+        async with AsyncSessionTest() as fresh_session:
+            db_resume_row = (
+                await fresh_session.execute(
+                    select(Resume).where(Resume.id == resume.id)
+                )
+            ).scalar_one()
+        parsed_text = db_resume_row.parsed_text
         assert "个人简介" in parsed_text
         assert "教育背景" in parsed_text
         assert "专业技能" in parsed_text
@@ -680,7 +686,7 @@ class TestCompleteSideEffects:
             db_session, registered_user["id"], _default_modules()
         )
 
-        with patch("services.resume_builder.process_resume", new_callable=AsyncMock) as mock_pr, \
+        with patch("services.resume_builder.ensure_indexed", new_callable=AsyncMock) as mock_pr, \
              patch("services.resume_builder.embedding_cache.clear_resume", new_callable=AsyncMock), \
              patch("services.react_agent.memory.build_l3_profile_background", new_callable=AsyncMock):
             mock_pr.return_value = 7
@@ -700,7 +706,7 @@ class TestCompleteSideEffects:
             db_resume = result.scalar_one()
             assert db_resume.status == "ready"
             assert db_resume.version == 2
-            assert db_resume.chunk_count == 7
+            assert db_resume.chunk_count == 0  # ensure_indexed mock（未真实索引），懒重建未写回
             assert len(db_resume.parsed_text) > 0
 
 

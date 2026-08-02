@@ -2,7 +2,7 @@
 
 走完整 API 链路（不 mock 服务层），只 mock 外部依赖：
 - parse_resume（文件解析，避免依赖真实 PDF/DOCX 解析）
-- process_resume（RAG 分块+向量化，避免依赖 ChromaDB）
+- 懒索引（ensure_indexed，避免依赖 ChromaDB）
 - _run_agentic_rag（LLM 生成，避免依赖外部 API）
 
 验证：
@@ -31,7 +31,6 @@ async def test_upload_process_ask_full_pipeline(
 ):
     """E2E: 上传 → 后台处理 → 提问 → 验证答案和历史。"""
     fake_parsed_text = "张三\nPython 工程师\n3年经验\n本科毕业"
-    fake_chunk_count = 3
     fake_answer = "张三是 Python 工程师，有 3 年经验"
     fake_sources = [{"text": "Python 工程师", "chunk_index": 0, "section": "exp"}]
 
@@ -39,11 +38,6 @@ async def test_upload_process_ask_full_pipeline(
          patch(
              "services.resume_service.parse_resume",
              return_value=fake_parsed_text,
-         ), \
-         patch(
-             "services.resume_service.process_resume",
-             new_callable=AsyncMock,
-             return_value=fake_chunk_count,
          ), \
          patch(
              "services.resume_service.AsyncSessionLocal",
@@ -71,7 +65,7 @@ async def test_upload_process_ask_full_pipeline(
         assert resume_data["status"] == "ready", \
             f"后台任务应将状态改为 ready，实际: {resume_data['status']}"
         assert resume_data["parsed_text"] == fake_parsed_text
-        assert resume_data["chunk_count"] == fake_chunk_count
+        assert resume_data["chunk_count"] == 0  # 懒索引：上传后未建索引
 
         # 3. 提问
         resp = await client.post(
@@ -108,11 +102,6 @@ async def test_upload_idempotent_key_returns_same_resume(
              "services.resume_service.parse_resume",
              return_value=fake_parsed_text,
          ), \
-         patch(
-             "services.resume_service.process_resume",
-             new_callable=AsyncMock,
-             return_value=2,
-         ), \
          patch("services.resume_service.AsyncSessionLocal", AsyncSessionTest):
         # 第一次上传 → 202
         resp1 = await client.post(
@@ -148,11 +137,6 @@ async def test_upload_then_delete_cleans_file(
          patch(
              "services.resume_service.parse_resume",
              return_value=fake_parsed_text,
-         ), \
-         patch(
-             "services.resume_service.process_resume",
-             new_callable=AsyncMock,
-             return_value=1,
          ), \
          patch("services.resume_service.AsyncSessionLocal", AsyncSessionTest), \
          patch(
@@ -217,11 +201,6 @@ async def test_upload_process_ask_degraded_mode(
          patch(
              "services.resume_service.parse_resume",
              return_value=fake_parsed_text,
-         ), \
-         patch(
-             "services.resume_service.process_resume",
-             new_callable=AsyncMock,
-             return_value=2,
          ), \
          patch("services.resume_service.AsyncSessionLocal", AsyncSessionTest), \
          patch(

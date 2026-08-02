@@ -494,6 +494,8 @@ class BuilderResumeResponse(BaseModel):
     # T17 渲染优化：索引新鲜度并入 builder 响应，避免前端再拉一次 getResume
     is_indexed: bool = False
     is_stale: bool = False
+    # 上传简历懒物化标记：True=模块可用（已物化或本次物化成功）；False=反解析失败，前端可提示粘贴导入
+    modules_materialized: bool = True
     modules: list[ResumeModuleResponse] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)

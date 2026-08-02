@@ -26,11 +26,17 @@ export const JOB_TYPE_LABELS: Record<JobType, string> = {
   intern: "实习",
 };
 
+/** 按 job_type 取中文标签（兼容未知值） */
+export function jobTypeLabel(jobType: JobType | string | null | undefined): string {
+  if (!jobType) return "";
+  return JOB_TYPE_LABELS[jobType as JobType] ?? String(jobType);
+}
+
 /** 岗位列表项 */
 export interface MarketJob {
-  id: string;
+  id: number;
   source: string;
-  job_type: JobType;
+  job_type: JobType | string | null;
   title: string;
   company: string;
   position: string;
@@ -41,16 +47,19 @@ export interface MarketJob {
   deadline: string | null;
   is_expired: boolean;
   created_at: string;
-}
-
-/** 岗位详情（含全文 + 可选的 payload） */
-export interface MarketJobDetail extends MarketJob {
-  content: string;
+  /** 来源渠道附带的投递信息 */
   payload?: {
     /** 外部投递链接（来源公开渠道） */
     apply_url?: string;
+    /** 内推码 */
+    referral_code?: string;
     [key: string]: unknown;
   };
+}
+
+/** 岗位详情（列表字段 + 全文） */
+export interface MarketJobDetail extends MarketJob {
+  content: string;
 }
 
 export interface MarketJobListResponse {
@@ -68,8 +77,40 @@ export interface MarketJobFilters {
   city?: string;
   industry?: string;
   company?: string;
+  position?: string;
+  date_from?: string;
+  date_to?: string;
   page?: number;
   limit?: number;
+}
+
+/** 岗位统计（近 3/7 日新增 + 累计 + 头部行业） */
+export interface MarketJobStats {
+  total: number;
+  count_3d: number;
+  count_7d: number;
+  top_industries: Array<{ name: string; count: number }>;
+}
+
+export interface MarketJobStatsFilters {
+  job_type?: string;
+  source?: string;
+}
+
+/** 简历模板（模板画廊 / 模板详情） */
+export interface MarketTemplate {
+  id: string;
+  name: string;
+  description: string;
+  tags: string[];
+  /** 模板布局配置（后端元数据，结构随模板而异） */
+  layout: unknown;
+  /** 渲染后的预览 HTML（iframe srcDoc 使用） */
+  preview_html: string;
+}
+
+export interface MarketTemplateListResponse {
+  items: MarketTemplate[];
 }
 
 /** 简历范文列表项 */
@@ -95,6 +136,8 @@ export interface ResumeSampleDetail {
   position: string;
   category: string;
   created_at: string;
+  /** 范文原文（content，分节文本） */
+  content: string;
   payload?: SamplePayload;
 }
 
@@ -177,14 +220,36 @@ export async function listJobs(filters: MarketJobFilters = {}): Promise<MarketJo
   if (filters.city) params.set("city", filters.city);
   if (filters.industry) params.set("industry", filters.industry);
   if (filters.company) params.set("company", filters.company);
+  if (filters.position) params.set("position", filters.position);
+  if (filters.date_from) params.set("date_from", filters.date_from);
+  if (filters.date_to) params.set("date_to", filters.date_to);
   params.set("page", String(filters.page ?? 1));
   params.set("limit", String(filters.limit ?? 20));
   return api.get(`/api/v1/market/jobs?${params}`) as Promise<MarketJobListResponse>;
 }
 
 /** 岗位详情 */
-export async function getJob(id: string): Promise<MarketJobDetail> {
-  return api.get(`/api/v1/market/jobs/${encodeURIComponent(id)}`) as Promise<MarketJobDetail>;
+export async function getJob(id: number | string): Promise<MarketJobDetail> {
+  return api.get(`/api/v1/market/jobs/${encodeURIComponent(String(id))}`) as Promise<MarketJobDetail>;
+}
+
+/** 岗位统计（近 3/7 日新增 + 累计 + 头部行业） */
+export async function listJobStats(filters: MarketJobStatsFilters = {}): Promise<MarketJobStats> {
+  const params = new URLSearchParams();
+  if (filters.job_type) params.set("job_type", filters.job_type);
+  if (filters.source) params.set("source", filters.source);
+  const qs = params.toString();
+  return api.get(`/api/v1/market/jobs/stats${qs ? "?" + qs : ""}`) as Promise<MarketJobStats>;
+}
+
+/** 模板画廊列表 */
+export async function listTemplates(): Promise<MarketTemplateListResponse> {
+  return api.get("/api/v1/market/templates") as Promise<MarketTemplateListResponse>;
+}
+
+/** 模板详情 */
+export async function getTemplate(id: string): Promise<MarketTemplate> {
+  return api.get(`/api/v1/market/templates/${encodeURIComponent(id)}`) as Promise<MarketTemplate>;
 }
 
 /** 简历范文列表 */

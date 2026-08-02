@@ -186,10 +186,13 @@ async def upload_resume(
     )
 
 
-def _to_builder_response(resume: Resume, modules: list) -> BuilderResumeResponse:
+def _to_builder_response(
+    resume: Resume, modules: list, modules_materialized: bool = True
+) -> BuilderResumeResponse:
     """将 Resume + ResumeModule 列表转为 BuilderResumeResponse。
 
     模块按 sort_order 排序返回，保证 POST/PUT/GET 响应一致。
+    modules_materialized: 上传简历懒物化是否成功（False=反解析失败，前端提示粘贴导入）。
     """
     sorted_modules = sorted(modules, key=lambda m: (m.sort_order, m.id))
     return BuilderResumeResponse(
@@ -202,6 +205,7 @@ def _to_builder_response(resume: Resume, modules: list) -> BuilderResumeResponse
         created_at=resume.created_at,
         is_indexed=resume.indexed_hash is not None,
         is_stale=bool(resume.content_hash) and resume.content_hash != resume.indexed_hash,
+        modules_materialized=modules_materialized,
         modules=[
             ResumeModuleResponse(
                 id=m.id,
@@ -342,43 +346,15 @@ async def get_builder_resume(
     - 401 未登录
     - 404 简历不存在或非本人
     """
-    resume, modules = await get_resume_with_modules(db, current_user.id, resume_id)
+    from services.resume_builder import materialize_modules_from_text
 
-    # 上传简历首次打开 builder：尝试自动解析模块（容错 — 失败不阻断）
-    if not modules and resume.source == "upload" and resume.parsed_text:
-        logger.info("Auto-parsing modules for uploaded resume: id=%d", resume_id)
-        try:
-            from services.resume_parser import parse_text_to_modules
-
-            parsed = await parse_text_to_modules(
-                resume.parsed_text, user_id=current_user.id
-            )
-            # 批量写入数据库
-            new_modules = []
-            for idx, mod in enumerate(parsed):
-                module = ResumeModule(
-                    resume_id=resume.id,
-                    module_type=mod.module_type.value,
-                    content=mod.content,
-                    sort_order=idx,
-                )
-                db.add(module)
-                new_modules.append(module)
-            await db.commit()
-            for m in new_modules:
-                await db.refresh(m)
-            modules = new_modules
-            logger.info(
-                "Auto-parsed %d modules for resume id=%d", len(modules), resume_id
-            )
-        except Exception:
-            logger.warning(
-                "Auto-parse failed for resume %d, returning empty modules",
-                resume_id,
-                exc_info=True,
-            )
-
-    return _to_builder_response(resume, modules)
+    # 懒物化：上传简历（source=upload）首次打开编辑器时自动从 parsed_text 解析模块，
+    # 物化成功则 source → "builder"（标记已物化）；失败返回空模块 + materialized=False，
+    # 前端可提示"粘贴导入"。物化不修改 parsed_text / content_hash。
+    resume, modules, materialized = await materialize_modules_from_text(
+        db, current_user.id, resume_id
+    )
+    return _to_builder_response(resume, modules, modules_materialized=materialized)
 
 
 @router.delete("/{resume_id}", status_code=204)
