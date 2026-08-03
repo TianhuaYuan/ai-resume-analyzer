@@ -63,8 +63,6 @@ _DOMAIN_TOOLS = {
     "interview_coach": ["面试", "考察", "提问", "准备面试", "面经"],
     "translate": ["翻译", "translate", "英文版", "日文", "英文"],
     "rewrite_star": ["star", "改写", "亮点", "包装"],
-    "generate_greeting": ["打招呼", "求职信", "开场白", "hr"],
-    "reply_draft": ["回复hr", "回复", "拒绝offer", "hr消息"],
     "save_memory": ["记住", "记得", "偏好", "目标", "决定"],
 }
 

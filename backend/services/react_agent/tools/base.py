@@ -53,6 +53,7 @@ class Tool(ABC):
         # 由 react_agent.loop 在实例化工具时注入；缺省为 None（工具退化为非流式内部 LLM）。
         self.emit = emit
         self.sources: list[dict] = []  # 侧信道：工具执行后可填充结构化来源（Spec A#10）
+        self.last_usage: dict = {"prompt_tokens": 0, "completion_tokens": 0}  # 工具内部 LLM 调用的 token 消耗
 
     @abstractmethod
     async def _execute(self, **kwargs) -> str:

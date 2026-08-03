@@ -42,6 +42,231 @@ export type ModuleType =
 /** 模块 content 用宽松 dict（各模块 schema 不同，前端表单按 module_type 分发） */
 export type ModuleContent = Record<string, unknown>;
 
+// ── v2 统一结构类型（模块 Schema 重设计） ────────────────────
+
+/** 所有模块共用的元数据 */
+export interface ModuleMetadata {
+  /** 模块标题（用户可编辑，替代 MODULE_LABELS 硬编码） */
+  title: string;
+  /** 模块级隐藏（不渲染、不导出） */
+  hidden?: boolean;
+}
+
+/** 所有条目的基础字段 */
+export interface BaseItem {
+  /** 唯一标识 */
+  id: string;
+  /** 条目级隐藏 */
+  hidden?: boolean;
+}
+
+// ── 各模块条目类型 ──────────────────────────────────────────
+
+export interface EducationItem extends BaseItem {
+  school: string;
+  degree?: string;
+  major?: string;
+  start_date?: string;
+  end_date?: string;
+  gpa?: number;
+  description?: string;
+}
+
+export interface WorkExperienceItem extends BaseItem {
+  company: string;
+  position: string;
+  start_date?: string;
+  end_date?: string;
+  description?: string;
+  achievements?: string[];
+}
+
+export interface ProjectExperienceItem extends BaseItem {
+  name: string;
+  role?: string;
+  start_date?: string;
+  end_date?: string;
+  url?: string;
+  description?: string;
+  tech_stack?: string[];
+}
+
+export interface SkillItem extends BaseItem {
+  name: string;
+  level?: number;
+  category?: string;
+}
+
+export interface LanguageItem extends BaseItem {
+  name: string;
+  proficiency?: string;
+  score?: string;
+}
+
+export interface HonorItem extends BaseItem {
+  title: string;
+  date?: string;
+  description?: string;
+}
+
+export interface CertificateItem extends BaseItem {
+  name: string;
+  issuer?: string;
+  date?: string;
+  score?: string;
+}
+
+export interface InterestItem extends BaseItem {
+  name: string;
+}
+
+export interface ClubActivityItem extends BaseItem {
+  name: string;
+  role?: string;
+  start_date?: string;
+  end_date?: string;
+  description?: string;
+}
+
+export interface PublicationItem extends BaseItem {
+  title: string;
+  authors?: string[];
+  venue?: string;
+  date?: string;
+  url?: string;
+}
+
+export interface RecommendationItem extends BaseItem {
+  name: string;
+  title?: string;
+  organization?: string;
+  contact?: string;
+  email?: string;
+}
+
+export interface SocialProfileItem extends BaseItem {
+  platform: string;
+  url: string;
+  icon?: string;
+}
+
+export interface CustomSectionItem extends BaseItem {
+  title: string;
+  content: string;
+}
+
+// ── 各模块 content 类型 ────────────────────────────────────
+
+export interface BasicInfoContent {
+  metadata?: ModuleMetadata;
+  name: string;
+  phone?: string;
+  email?: string;
+  gender?: string;
+  age?: number;
+  location?: string;
+  avatar?: string;
+  job_title?: string;
+  summary?: string;
+  status?: string;
+  hometown?: string;
+  homepage_url?: string;
+  github_url?: string;
+  blog_url?: string;
+  custom_fields?: Array<{ key: string; value: string }>;
+}
+
+export interface ListModuleContent<T extends BaseItem = BaseItem> {
+  metadata?: ModuleMetadata;
+  items: T[];
+}
+
+export interface SkillsContent {
+  metadata?: ModuleMetadata;
+  items: SkillItem[];
+  show_levels?: boolean;
+}
+
+export interface SocialLinksContent {
+  metadata?: ModuleMetadata;
+  items: SocialProfileItem[];
+}
+
+export interface OtherContent {
+  metadata?: ModuleMetadata;
+  title?: string;
+  content?: string;
+}
+
+export interface CustomContent {
+  metadata?: ModuleMetadata;
+  title?: string;
+  content?: string;
+  items?: CustomSectionItem[];
+}
+
+/** 模块类型 → content 类型映射（用于类型安全的表单分发） */
+export type ModuleContentMap = {
+  basic_info: BasicInfoContent;
+  education: ListModuleContent<EducationItem>;
+  work_experience: ListModuleContent<WorkExperienceItem>;
+  project_experience: ListModuleContent<ProjectExperienceItem>;
+  skills: SkillsContent;
+  language: ListModuleContent<LanguageItem>;
+  honors: ListModuleContent<HonorItem>;
+  certificates: ListModuleContent<CertificateItem>;
+  interests: ListModuleContent<InterestItem>;
+  club_activities: ListModuleContent<ClubActivityItem>;
+  publications: ListModuleContent<PublicationItem>;
+  recommendation: ListModuleContent<RecommendationItem>;
+  social_links: SocialLinksContent;
+  other: OtherContent;
+  custom: CustomContent;
+};
+
+/** 模块默认中文标题（与后端 DEFAULT_MODULE_LABELS 对齐） */
+export const MODULE_LABELS: Record<ModuleType, string> = {
+  basic_info: "基本信息",
+  education: "教育经历",
+  work_experience: "工作经历",
+  project_experience: "项目经历",
+  skills: "专业技能",
+  language: "语言能力",
+  honors: "荣誉奖项",
+  certificates: "证书",
+  interests: "兴趣爱好",
+  club_activities: "社团活动",
+  publications: "研究成果",
+  recommendation: "推荐人",
+  social_links: "社交链接",
+  other: "其他",
+  custom: "自定义",
+};
+
+/** 从 content 中提取模块标题（优先 metadata.title，兜底 MODULE_LABELS） */
+export function getModuleTitle(content: ModuleContent, moduleType: ModuleType): string {
+  const meta = content.metadata as ModuleMetadata | undefined;
+  if (meta?.title) return meta.title;
+  return MODULE_LABELS[moduleType] ?? moduleType;
+}
+
+/** 从 content 中提取 items 列表（兼容 entries / categories / string[]） */
+export function getModuleItems(content: ModuleContent): BaseItem[] {
+  if (Array.isArray(content.items)) return content.items as BaseItem[];
+  if (Array.isArray(content.entries)) return content.entries as BaseItem[];
+  if (Array.isArray(content.categories)) {
+    // skills 旧格式：展平
+    const items: SkillItem[] = [];
+    for (const cat of content.categories as Array<{ name: string; items: string[] }>) {
+      for (const name of cat.items ?? []) {
+        items.push({ id: `skill_${name}`, name, category: cat.name });
+      }
+    }
+    return items;
+  }
+  return [];
+}
+
 /** 简历模块 */
 export interface ResumeModule {
   id: number;
@@ -71,6 +296,8 @@ export interface ResumeStyle {
   page_size: string;
   section_spacing: string;
   custom_css: string;
+  /** 隐藏的模块类型（显隐控制，渲染时过滤，后端同步支持） */
+  hidden_modules?: string[];
 }
 
 /** Builder 简历响应（含模块列表） */

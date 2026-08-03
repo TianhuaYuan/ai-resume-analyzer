@@ -67,4 +67,3 @@ class SystemStatsResponse(BaseModel):
     total_resumes: int
     total_qa_history: int
     total_feedback: int
-    total_job_applications: int

@@ -107,7 +107,7 @@ async def test_samples_list_and_detail(db_session, client):
     resp = await client.get("/api/v1/market/samples/1")
     detail = resp.json()
     assert detail["payload"]["target_position"] == "嵌入式开发工程师"
-    assert "content" not in detail  # 合规：详情也不含原文
+    assert detail["content"] == "含个人信息的原文"  # 详情带原文（范文原文展示）
 
 
 @pytest.mark.asyncio

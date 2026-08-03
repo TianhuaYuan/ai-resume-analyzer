@@ -58,49 +58,48 @@ _SYSTEM_PROMPT = """你是一个专业的简历解析助手。你的任务是将
              "age": 年龄, "location": "城市", "job_title": "求职意向", "summary": "个人总结"}
 
 2. education（教育背景，列表）:
-   content: {"entries": [{"school": "学校（必填）", "degree": "学历", "major": "专业",
+   content: {"items": [{"school": "学校（必填）", "degree": "学历", "major": "专业",
              "start_date": "2021-09", "end_date": "2025-06", "gpa": 3.8, "description": "说明"}]}
 
 3. work_experience（工作经历，列表）:
-   content: {"entries": [{"company": "公司（必填）", "position": "职位（必填）",
+   content: {"items": [{"company": "公司（必填）", "position": "职位（必填）",
              "start_date": "2023-06", "end_date": "2024-09",
              "description": "工作描述", "achievements": ["成就1", "成就2"]}]}
 
 4. project_experience（项目经历，列表）:
-   content: {"entries": [{"name": "项目名（必填）", "role": "角色",
+   content: {"items": [{"name": "项目名（必填）", "role": "角色",
              "start_date": "2023-01", "end_date": "2023-06",
              "url": "链接", "description": "描述", "tech_stack": ["Python", "FastAPI"]}]}
 
-5. skills（专业技能，分类列表）:
-   content: {"categories": [{"name": "编程语言（必填）", "items": ["Python", "Java"]}]}
+5. skills（专业技能，列表）:
+   content: {"items": [{"name": "技能名（必填）", "level": 3, "category": "分类"}]}
 
 6. language（语言能力，列表）:
-   content: {"entries": [{"name": "英语（必填）", "proficiency": "流利", "score": "CET-6"}]}
+   content: {"items": [{"name": "英语（必填）", "proficiency": "流利", "score": "CET-6"}]}
 
 7. honors（荣誉奖项，列表）:
-   content: {"entries": [{"title": "奖项名（必填）", "date": "2024-05", "description": "说明"}]}
+   content: {"items": [{"title": "奖项名（必填）", "date": "2024-05", "description": "说明"}]}
 
 8. certificates（证书，列表）:
-   content: {"entries": [{"name": "证书名（必填）", "issuer": "颁发机构", "date": "2024-01", "score": "95"}]}
+   content: {"items": [{"name": "证书名（必填）", "issuer": "颁发机构", "date": "2024-01", "score": "95"}]}
 
-9. interests（兴趣爱好，扁平列表）:
-   content: {"items": ["阅读", "编程", "篮球"]}
+9. interests（兴趣爱好，列表）:
+   content: {"items": [{"name": "阅读"}, {"name": "编程"}, {"name": "篮球"}]}
 
 10. club_activities（社团活动，列表）:
-    content: {"entries": [{"name": "社团名（必填）", "role": "角色",
+    content: {"items": [{"name": "社团名（必填）", "role": "角色",
               "start_date": "2022-09", "end_date": "2023-06", "description": "描述"}]}
 
 11. publications（研究成果，列表）:
-    content: {"entries": [{"title": "论文标题（必填）", "authors": ["作者1"],
+    content: {"items": [{"title": "论文标题（必填）", "authors": ["作者1"],
               "venue": "期刊", "date": "2024-03", "url": "链接"}]}
 
 12. recommendation（推荐人，列表）:
-    content: {"entries": [{"name": "推荐人姓名（必填）", "title": "职位",
+    content: {"items": [{"name": "推荐人姓名（必填）", "title": "职位",
               "organization": "组织", "contact": "联系方式", "email": "邮箱"}]}
 
-13. social_links（社交链接，单值）:
-    content: {"github": "URL", "linkedin": "URL", "website": "URL",
-              "twitter": "URL", "wechat": "微信号", "others": [{"name": "名称", "url": "URL"}]}
+13. social_links（社交链接）:
+    content: {"items": [{"platform": "GitHub", "url": "URL"}, {"platform": "LinkedIn", "url": "URL"}]}
 
 14. other（其他，单值）:
     content: {"title": "段落标题", "content": "内容文本（必填）"}

@@ -38,6 +38,7 @@ from schemas.resume import (
     MatchJDRequest,
     MatchJDResponse,
     ResumeListResponse,
+    ResumeModulesData,
     ResumeResponse,
     UploadAsyncResponse,
 )
@@ -251,9 +252,42 @@ async def list_resumes(
     """分页查当前用户的简历列表。
 
     P1-16: limit/offset 加上限校验，防止恶意大请求拉取全量数据。
+    同时 eager load resume_modules（批量查询，非 N+1），附带到每个简历的 modules_data 字段，
+    前端卡片可用 ResumeTemplateView 渲染缩略预览。
     """
     items, total = await resume_service.get_user_resumes(db, current_user.id, limit, offset)
-    return ResumeListResponse(items=items, total=total)
+
+    # 批量加载 modules（1 次查询，避免 N+1）
+    modules_by_resume: dict[int, list[ResumeModule]] = {}
+    if items:
+        resume_ids = [r.id for r in items]
+        modules_result = await db.execute(
+            select(ResumeModule)
+            .where(ResumeModule.resume_id.in_(resume_ids))
+            .order_by(ResumeModule.resume_id, ResumeModule.sort_order, ResumeModule.id)
+        )
+        for m in modules_result.scalars().all():
+            modules_by_resume.setdefault(m.resume_id, []).append(m)
+
+    # 组装响应（附加 modules_data）
+    response_items = []
+    for r in items:
+        r_modules = modules_by_resume.get(r.id, [])
+        style_raw = r.style
+        modules_data = None
+        if r_modules or style_raw:
+            modules_data = ResumeModulesData(
+                modules=[
+                    {"id": m.id, "resume_id": m.resume_id, "module_type": m.module_type, "content": m.content, "sort_order": m.sort_order}
+                    for m in r_modules
+                ],
+                style=style_raw,
+            )
+        resp = ResumeResponse.model_validate(r)
+        resp.modules_data = modules_data
+        response_items.append(resp)
+
+    return ResumeListResponse(items=response_items, total=total)
 
 
 @router.get("/{resume_id}", response_model=ResumeResponse)

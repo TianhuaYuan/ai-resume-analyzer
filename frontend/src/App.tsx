@@ -1,15 +1,15 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useParams } from "react-router-dom";
 import { useEffect, lazy, Suspense, type ReactNode } from "react";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { ThemeProvider } from "./context/ThemeContext";
 import { WebSocketProvider } from "./context/WebSocketContext";
 import AppLayout from "./AppLayout";
 import ErrorBoundary from "./components/ErrorBoundary";
+import { LoginModalHost, openLoginModal } from "./components/LoginModal";
 import { ToastProvider, ToastContainer } from "./components/Toast";
 import { captureCtaSource } from "./api/analytics";
 
 // ── 路由级懒加载（拆分 JS bundle，首屏只加载当前路由代码） ──
-const LoginPage = lazy(() => import("./pages/LoginPage"));
 const ForgotPasswordPage = lazy(() => import("./pages/ForgotPasswordPage"));
 const HomePage = lazy(() => import("./pages/HomePage"));
 const QAPage = lazy(() => import("./pages/QAPage"));
@@ -29,7 +29,6 @@ const GuideDetailPage = lazy(() => import("./pages/GuideDetailPage"));
 const FeedbackPage = lazy(() => import("./pages/FeedbackPage"));
 const ProductUpdatesPage = lazy(() => import("./pages/ProductUpdatesPage"));
 const AdminPage = lazy(() => import("./pages/AdminPage"));
-const WorkbenchPage = lazy(() => import("./pages/WorkbenchPage"));
 
 /** 懒加载路由的 fallback */
 function PageLoader() {
@@ -41,8 +40,30 @@ function PageLoader() {
   );
 }
 
+/** 未登录占位（登录弹窗由 useEffect 触发，登录后自动恢复渲染 children） */
+function LoginRequired() {
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-[var(--color-bg)] text-[var(--color-text-secondary)] text-sm">
+      <span>请先登录后访问</span>
+      <button
+        onClick={() => openLoginModal()}
+        className="px-4 py-2 rounded-full bg-brand text-white text-sm font-semibold
+          hover:bg-[#0077ed] hover:scale-[1.02] active:scale-[0.98]
+          transition-all duration-300 cursor-pointer"
+      >
+        去登录
+      </button>
+    </div>
+  );
+}
+
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
+
+  // 未登录 → 自动弹出登录弹窗（登录成功后 user 更新，自动渲染 children）
+  useEffect(() => {
+    if (!loading && !user) openLoginModal();
+  }, [loading, user]);
 
   if (loading) {
     return (
@@ -52,7 +73,7 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
     );
   }
 
-  if (!user) return <Navigate to="/login" replace />;
+  if (!user) return <LoginRequired />;
   return <>{children}</>;
 }
 
@@ -60,6 +81,11 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 function AdminRoute({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
 
+  // 未登录 → 自动弹出登录弹窗
+  useEffect(() => {
+    if (!loading && !user) openLoginModal();
+  }, [loading, user]);
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[var(--color-bg)] text-[var(--color-text-secondary)] text-sm">
@@ -68,7 +94,7 @@ function AdminRoute({ children }: { children: ReactNode }) {
     );
   }
 
-  if (!user) return <Navigate to="/login" replace />;
+  if (!user) return <LoginRequired />;
   if (!user.is_admin) return <Navigate to="/" replace />;
   return <>{children}</>;
 }
@@ -77,7 +103,7 @@ function AppRoutes() {
   return (
     <Suspense fallback={<PageLoader />}>
     <Routes>
-      <Route path="/login" element={<LoginPage />} />
+      {/* 登录使用全局 LoginModal 弹窗，无独立 /login 页面 */}
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       {/* 首页：登录/未登录两种视图，无侧边栏 */}
       <Route path="/" element={<HomePage />} />
@@ -115,7 +141,7 @@ function AppRoutes() {
         }
       />
       {/* 兼容旧路由 /resumes/:id → 重定向到编辑器 */}
-      <Route path="/resumes/:id" element={<Navigate to="/resumes/:id/edit" replace />} />
+      <Route path="/resumes/:id" element={<ResumeRedirect />} />
       {/* 校招页（公开，未登录可浏览） */}
       <Route
         path="/campus"
@@ -173,15 +199,6 @@ function AppRoutes() {
           </AppLayout>
         }
       />
-      {/* 求职看板页（公开） */}
-      <Route
-        path="/workbench"
-        element={
-          <AppLayout>
-            <WorkbenchPage />
-          </AppLayout>
-        }
-      />
       <Route
         path="/admin"
         element={
@@ -212,7 +229,11 @@ function BuilderPageRouteWrapper() {
   return <BuilderPage resumeId={resumeId} />;
 }
 
-import { useParams } from "react-router-dom";
+/** 兼容旧路由 /resumes/:id → 重定向到编辑器（动态参数） */
+function ResumeRedirect() {
+  const { id } = useParams<{ id: string }>();
+  return <Navigate to={`/resumes/${id}/edit`} replace />;
+}
 
 export default function App() {
   // T37: 应用挂载时捕获 URL 中的 ?source= 参数（CTA 渠道），存入 localStorage
@@ -224,17 +245,16 @@ export default function App() {
     <ErrorBoundary>
       <ThemeProvider>
         <BrowserRouter>
-        <ThemeProvider>
           <AuthProvider>
             <ToastProvider>
               <WebSocketProvider>
                 <AppRoutes />
+                <LoginModalHost />
                 <ToastContainer />
               </WebSocketProvider>
             </ToastProvider>
           </AuthProvider>
-        </ThemeProvider>
-      </BrowserRouter>
+        </BrowserRouter>
       </ThemeProvider>
     </ErrorBoundary>
   );

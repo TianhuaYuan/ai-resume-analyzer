@@ -5,6 +5,9 @@ import { listResumes, uploadResume, deleteResume, generateIdempotencyKey, type R
 import { createBuilderResume } from "../api/builder";
 import { useToast } from "../components/Toast";
 import ConfirmDialog from "../components/ConfirmDialog";
+import { ResumeTemplateView } from "../components/templates";
+import { A4PreviewContainer } from "../components/builder/A4PreviewContainer";
+import type { ModuleType, ResumeModule, ResumeStyle } from "../api/builder";
 
 // 允许 PDF + DOCX，单文件上限 10MB（与 HomePage / Sidebar 校验一致）
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -39,6 +42,23 @@ function formatTimestamp(dateStr?: string): string {
   }).formatToParts(d);
   const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
   return `${get("month")}-${get("day")} ${get("hour")}:${get("minute")}`;
+}
+
+/**
+ * 简历卡片缩略预览 — 统一走 A4PreviewContainer。
+ */
+function ResumeThumbnail({
+  modules,
+  style,
+}: {
+  modules: ResumeModule[];
+  style: ResumeStyle;
+}) {
+  return (
+    <A4PreviewContainer className="absolute inset-0">
+      <ResumeTemplateView modules={modules} style={style} />
+    </A4PreviewContainer>
+  );
 }
 
 /**
@@ -122,7 +142,7 @@ export default function ResumeManagementPage() {
     try {
       const resume = await createBuilderResume({ filename: "未命名简历" });
       toast.success("已创建新简历，开始编辑吧");
-      navigate(`/resumes/${resume.id}/edit`);
+      navigate("/qa", { state: { resumeId: resume.id } });
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "创建简历失败");
     } finally {
@@ -136,7 +156,7 @@ export default function ResumeManagementPage() {
       const resume = await createBuilderResume({ filename: "未命名简历" });
       toast.success("已创建新简历，AI 助手已就绪");
       // ?ai=true → BuilderPage 可据此自动打开 AI 面板
-      navigate(`/resumes/${resume.id}/edit?ai=true`);
+      navigate("/qa", { state: { resumeId: resume.id } });
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "创建简历失败");
     } finally {
@@ -206,7 +226,7 @@ export default function ResumeManagementPage() {
     }
     return (
       <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-500/15 text-emerald-600 border border-emerald-500/30">
-        {r.chunk_count} 分块
+        已就绪
       </span>
     );
   };
@@ -332,7 +352,7 @@ export default function ResumeManagementPage() {
                 <div key={r.id} className="group relative">
                   {/* 卡片（可点击） */}
                   <div
-                    onClick={() => navigate(`/resumes/${r.id}/edit`)}
+                    onClick={() => navigate("/qa", { state: { resumeId: r.id } })}
                     className="cursor-pointer
                       bg-white/80 backdrop-blur-xl border border-[var(--color-border)]
                       rounded-2xl overflow-hidden
@@ -348,16 +368,34 @@ export default function ResumeManagementPage() {
                       }
                     }}
                   >
-                    {/* 缩略图预览区（灰色占位） */}
-                    <div className="aspect-[3/4] bg-[var(--color-bg-tertiary)] flex items-center justify-center relative">
-                      <FileText
-                        size={40}
-                        weight="duotone"
-                        className="text-[var(--color-text-muted)] opacity-50"
-                        aria-hidden="true"
-                      />
+                    {/* 缩略图预览区 */}
+                    <div className="aspect-[3/4] bg-white relative overflow-hidden">
+                      {r.modules_data && r.modules_data.modules.length > 0 ? (
+                        <>
+                          <ResumeThumbnail
+                            modules={r.modules_data.modules as ResumeModule[]}
+                            style={(r.modules_data.style as unknown as ResumeStyle) ?? ({} as ResumeStyle)}
+                          />
+                          {/* 底部渐变遮罩 — 暗示下方还有更多内容 */}
+                          <div
+                            className="absolute bottom-0 left-0 right-0 h-10 pointer-events-none"
+                            style={{
+                              background: `linear-gradient(to bottom, transparent, white)`,
+                            }}
+                          />
+                        </>
+                      ) : (
+                        <div className="flex items-center justify-center w-full h-full">
+                          <FileText
+                            size={40}
+                            weight="duotone"
+                            className="text-[var(--color-text-muted)] opacity-50"
+                            aria-hidden="true"
+                          />
+                        </div>
+                      )}
                       {/* 状态徽章 — 左下角 */}
-                      <div className="absolute bottom-2.5 left-2.5">
+                      <div className="absolute bottom-2.5 left-2.5 z-10">
                         {statusBadge(r)}
                       </div>
                     </div>
@@ -371,7 +409,7 @@ export default function ResumeManagementPage() {
                         {r.filename}
                       </p>
                       <p className="text-xs text-[var(--color-text-muted)] mt-1">
-                        更新于 {formatTimestamp(r.created_at)}
+                        更新于 {formatTimestamp(r.updated_at)}
                       </p>
                     </div>
                   </div>

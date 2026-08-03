@@ -26,7 +26,7 @@ async def main():
         print("已清理 Chroma guide 向量")
 
         # 3. 重新同步有正文的攻略
-        stats = await sync_market(db, source=SOURCE_GUIDE)
+        stats = await sync_market(db, file="guides")
         d = stats.to_dict()
         print(f"=== 攻略重同步完成 ===")
         print(f"total={d['total']} created={d['created']} updated={d['updated']} "

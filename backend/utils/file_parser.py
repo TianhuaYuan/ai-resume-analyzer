@@ -8,6 +8,18 @@ from docx import Document
 
 logger = logging.getLogger(__name__)
 
+# 延迟导入 MinerU 客户端，避免在 import 阶段强依赖网络配置
+_mineru_client = None
+
+
+def _get_mineru_client():
+    global _mineru_client
+    if _mineru_client is None:
+        from services.mineru_parser import get_mineru_client
+
+        _mineru_client = get_mineru_client()
+    return _mineru_client
+
 MIN_SCAN_TEXT_LENGTH = 50
 
 # 常见简历节标题（用于分节标注）
@@ -103,9 +115,25 @@ _PARSERS: dict[str, Callable[[str], str]] = {
 }
 
 
-def parse_resume(path: str) -> str:
-    """根据扩展名自动选 PDF/Word/TXT 解析器，并对 PDF 也做分节标注。"""
+async def parse_resume(path: str) -> str:
+    """根据扩展名自动选解析器。优先 MinerU，失败 fallback 本地解析。"""
     ext = Path(path).suffix.lower()
+
+    # 1. 优先尝试 MinerU 精准解析（PDF/DOCX）
+    if ext in {".pdf", ".docx"}:
+        try:
+            client = _get_mineru_client()
+            mineru_text = await client.parse_file(path)
+            if mineru_text and len(mineru_text) >= MIN_SCAN_TEXT_LENGTH:
+                logger.info("MinerU 解析成功: path=%s, len=%d", path, len(mineru_text))
+                # MinerU 输出已是 markdown，对 PDF 也做分节标注增强
+                if ext == ".pdf":
+                    mineru_text = _annotate_sections(mineru_text)
+                return mineru_text
+        except Exception as e:
+            logger.warning("MinerU 解析失败，fallback 本地解析: %s", e)
+
+    # 2. Fallback 本地解析
     parser = _PARSERS.get(ext)
     if parser is None:
         if ext == ".txt":

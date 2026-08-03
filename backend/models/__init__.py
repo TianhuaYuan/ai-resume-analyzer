@@ -3,7 +3,6 @@ from models.user import User
 from models.resume import Resume
 from models.qa_history import QAHistory
 from models.resume_module import ResumeModule
-from models.job_application import JobApplication
 from models.audit_log import AuditLog
 from models.qa_feedback import QAFeedback
 from models.user_feedback import UserFeedback
@@ -21,7 +20,6 @@ __all__ = [
     "QAHistory",
     "QAConversation",
     "ResumeModule",
-    "JobApplication",
     "AuditLog",
     "QAFeedback",
     "UserFeedback",

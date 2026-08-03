@@ -45,8 +45,8 @@ const TABS: Array<{ key: TabKey; label: string }> = [
   { key: "progress", label: "投递进展" },
 ];
 
-function formatDate(dateStr?: string): string {
-  if (!dateStr) return "-";
+function formatDate(dateStr: unknown): string {
+  if (typeof dateStr !== "string" || !dateStr) return "-";
   const normalized = /[Z+]/.test(dateStr) ? dateStr : dateStr + "Z";
   const d = new Date(normalized);
   if (isNaN(d.getTime())) return dateStr.slice(0, 10);

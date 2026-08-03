@@ -156,7 +156,7 @@ async def analyze_resume(
         try:
             from utils.file_parser import parse_resume
 
-            parsed_text = await with_retry(lambda: parse_resume(resume.file_path), fallback="")
+            parsed_text = await with_retry(parse_resume, resume.file_path, fallback="")
         except Exception as e:
             logger.warning("Failed to parse resume file %s: %s", resume.file_path, e)
             raise HTTPException(

@@ -301,6 +301,37 @@ class TestModuleRenderers:
         assert "补充信息" in html
         assert "自定义内容" in html
 
+    def test_custom_multi_entries(self):
+        """自定义模块多板块（entries）渲染 — 借鉴 Magic Resume custom-N。"""
+        html = render_module(
+            "custom",
+            {
+                "entries": [
+                    {"title": "项目亮点", "content": "独立开发 3 个 Web 应用"},
+                    {"title": "开源贡献", "content": "维护 2 个开源项目"},
+                ]
+            },
+        )
+        assert "项目亮点" in html
+        assert "独立开发 3 个 Web 应用" in html
+        assert "开源贡献" in html
+        assert "维护 2 个开源项目" in html
+
+    def test_custom_multi_entries_skips_empty(self):
+        """多板块模式跳过空内容条目。"""
+        html = render_module(
+            "custom",
+            {
+                "entries": [
+                    {"title": "有内容", "content": "正文"},
+                    {"title": "空板块", "content": ""},
+                ]
+            },
+        )
+        assert "有内容" in html
+        assert "正文" in html
+        assert "空板块" not in html
+
 
 # ═══════════════════════════════════════════════════════════
 # 兜底渲染
@@ -411,6 +442,24 @@ class TestRenderResume:
         """filename 出现在 <title> 中。"""
         html = render_resume_from_dict(_full_modules(), ResumeStyle(), filename="我的简历")
         assert "我的简历" in html
+
+    def test_render_hidden_modules(self):
+        """hidden_modules 中的模块类型不渲染。"""
+        style = ResumeStyle(template_id="default", hidden_modules=["interests", "social_links"])
+        html = render_resume_from_dict(_full_modules(), style)
+        assert "张三" in html
+        assert "兴趣爱好" not in html
+        assert "阅读" not in html
+        assert "社交链接" not in html
+        # social_links 独有字段（project 的 github url 仍在，故用 linkedin 断言）
+        assert "linkedin" not in html
+
+    def test_render_hidden_modules_empty(self):
+        """hidden_modules 为空时全部渲染。"""
+        style = ResumeStyle(template_id="default", hidden_modules=[])
+        html = render_resume_from_dict(_full_modules(), style)
+        assert "兴趣爱好" in html
+        assert "社交链接" in html
         assert "<title>" in html
 
     def test_render_unknown_template_raises(self):

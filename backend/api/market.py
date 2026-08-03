@@ -108,11 +108,19 @@ async def list_jobs(
 
     total = await db.scalar(select(func.count(MarketAsset.id)).where(*conditions))
     total = total or 0
-    # 按发布时间排序：优先 payload.published_at（真实发布时间），缺失回退 created_at（入库时间）
-    published_expr = func.coalesce(
-        func.json_unquote(func.json_extract(MarketAsset.payload, "$.published_at")),
-        func.date_format(MarketAsset.created_at, "%Y-%m-%dT%H:%i:%s"),
-    )
+    # 按发布时间排序：优先 payload.published_at（真实发布时间），缺失回退 created_at（入库时间）。
+    # MySQL 用 json_unquote + date_format；SQLite（测试环境）无 date_format，回退简化排序。
+    dialect_name = getattr(getattr(db.bind, "dialect", None), "name", "mysql")
+    if dialect_name == "sqlite":
+        published_expr = func.coalesce(
+            func.json_extract(MarketAsset.payload, "$.published_at"),
+            MarketAsset.created_at,
+        )
+    else:
+        published_expr = func.coalesce(
+            func.json_unquote(func.json_extract(MarketAsset.payload, "$.published_at")),
+            func.date_format(MarketAsset.created_at, "%Y-%m-%dT%H:%i:%s"),
+        )
     result = await db.execute(
         select(MarketAsset)
         .where(*conditions)
@@ -266,14 +274,17 @@ async def get_sample(asset_id: int, db: AsyncSession = Depends(get_db)):
 
 
 def _guide_item(row: MarketAsset) -> MarketGuideItem:
+    """攻略列表项：有全文时用 payload.summary，否则用 content（即摘要）。"""
     payload = row.payload or {}
+    has_fulltext = bool(payload.get("has_fulltext"))
+    summary = payload.get("summary") if has_fulltext else row.content
     return MarketGuideItem(
         id=row.id,
         title=row.title,
-        summary=row.content if row.asset_type == "guide" and len(row.content) < 500 else (payload.get("summary") or ""),
+        summary=summary or "",
         date=payload.get("date"),
         url=payload.get("url"),
-        has_fulltext=bool(payload.get("has_fulltext")),
+        has_fulltext=has_fulltext,
     )
 
 

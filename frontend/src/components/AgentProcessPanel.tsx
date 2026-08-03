@@ -76,8 +76,17 @@ function mergeThoughtSteps(raw: AgentStep[]): AgentStep[] {
 }
 
 /** 单步渲染（memo：step 引用未变时跳过重渲染） */
-const StepItem = memo(function StepItem({ step, index }: { step: AgentStep; index: number }) {
-  const [expanded, setExpanded] = useState(step.type === "agent_thought");
+const StepItem = memo(function StepItem({
+  step,
+  index,
+  streaming,
+}: {
+  step: AgentStep;
+  index: number;
+  streaming: boolean;
+}) {
+  // 所有步骤默认展开：流式期间实时展示思考内容和工具调用，结束后也保持展开供用户阅读
+  const [expanded, setExpanded] = useState(true);
   const hasDetail = step.detail && step.detail.length > 0;
 
   const config = {
@@ -86,7 +95,9 @@ const StepItem = memo(function StepItem({ step, index }: { step: AgentStep; inde
       color: "text-brand",
       bg: "bg-brand/10",
       border: "border-brand/20",
-      label: `调用 ${getToolLabel(step.name)}`,
+      label: streaming
+        ? `${getToolLabel(step.name)} 调用中...`
+        : `调用 ${getToolLabel(step.name)}`,
     },
     tool_result: {
       icon: CheckCircle,
@@ -119,6 +130,10 @@ const StepItem = memo(function StepItem({ step, index }: { step: AgentStep; inde
   }[step.type];
 
   const Icon = config.icon;
+  // 流式期间：思考内容始终展开不截断；工具调用/结果也展开
+  // 流式结束后：思考保持展开（用户可折叠），工具步骤保持展开（用户可折叠）
+  // 流式结束后点击标题行可整体折叠面板
+  const showToggle = hasDetail && !streaming;
 
   return (
     <div className="flex gap-2.5">
@@ -146,14 +161,20 @@ const StepItem = memo(function StepItem({ step, index }: { step: AgentStep; inde
           }`}
         >
           {config.label}
-          {hasDetail && (
+          {showToggle && (
             <span className="ml-1 text-[var(--color-text-muted)]">
               {expanded ? "▲" : "▼"}
             </span>
           )}
         </button>
         {expanded && hasDetail && (
-          <div className="mt-1 p-2 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[11px] text-[var(--color-text-secondary)] leading-relaxed whitespace-pre-wrap break-words max-h-40 overflow-y-auto">
+          <div
+            className={`mt-1 p-2 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[11px] text-[var(--color-text-secondary)] leading-relaxed whitespace-pre-wrap break-words ${
+              streaming
+                ? "" // 流式期间不限高，内容完全展开实时可见
+                : "max-h-40 overflow-y-auto" // 结束后限制高度，可内部滚动
+            }`}
+          >
             {step.detail}
           </div>
         )}
@@ -170,9 +191,20 @@ export default function AgentProcessPanel({
   const prevStreamingRef = useRef(streaming);
   const startTimeRef = useRef<number>(Date.now());
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const stepsContainerRef = useRef<HTMLDivElement>(null);
 
   // 合并连续的 agent_thought 步骤
   const displaySteps = useMemo(() => mergeThoughtSteps(steps), [steps]);
+
+  // 流式期间：步骤列表自动滚到底部，让用户始终看到最新步骤
+  useEffect(() => {
+    if (!streaming) return;
+    const el = stepsContainerRef.current;
+    if (!el) return;
+    requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight;
+    });
+  }, [displaySteps, streaming]);
 
   // 流式开始时记录起始时间
   useEffect(() => {
@@ -199,6 +231,15 @@ export default function AgentProcessPanel({
       setExpanded(false);
     }
   }, [streaming]);
+
+  // 挂载时若流式已结束（如 agent_done 触发 id 变更导致组件重新挂载），
+  // 直接折叠——避免展开闪烁
+  useEffect(() => {
+    if (!streaming && steps.length > 0) {
+      setExpanded(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (steps.length === 0 && !streaming) return null;
 
@@ -254,11 +295,16 @@ export default function AgentProcessPanel({
         )}
       </div>
 
-      {/* 步骤列表 */}
-      <div className="mt-2 space-y-0">
+      {/* 步骤列表（流式期间可滚动，自动滚到底部展示最新步骤） */}
+      <div
+        ref={stepsContainerRef}
+        className={`mt-2 space-y-0 ${
+          streaming ? "max-h-[60vh] overflow-y-auto" : ""
+        }`}
+      >
         {displaySteps.length > 0 ? (
           displaySteps.map((step, i) => (
-            <StepItem key={`${step.id ?? i}-${i}`} step={step} index={i} />
+            <StepItem key={`${step.id ?? i}-${i}`} step={step} index={i} streaming={streaming} />
           ))
         ) : (
           <div className="flex items-center gap-2 text-xs text-[var(--color-text-muted)]">

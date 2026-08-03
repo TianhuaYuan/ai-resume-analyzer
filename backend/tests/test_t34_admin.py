@@ -246,7 +246,6 @@ class TestAdminStats:
             "total_resumes",
             "total_qa_history",
             "total_feedback",
-            "total_job_applications",
         }
 
 

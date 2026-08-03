@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, fireEvent, screen, waitFor, act } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import QAPage from "../QAPage";
+import { AppChatProvider } from "../../context/AppChatContext";
 
 vi.mock("../../api/qa", () => ({
   askQuestionStream: vi.fn(() => () => {}),
@@ -10,22 +11,47 @@ vi.mock("../../api/qa", () => ({
   deleteQa: vi.fn(async () => undefined),
   submitFeedback: vi.fn(async () => undefined),
   getQuota: vi.fn(async () => ({ enabled: true, used: 1000, limit: 10000, remaining: 9000, reset_at: null })),
+  // QAPage 对话管理依赖（AppChatContext 重构后新增）
+  getConversations: vi.fn(async () => []),
+  createConversation: vi.fn(async () => ({ id: 1, title: "新的对话", updated_at: "" })),
+  deleteConversation: vi.fn(async () => undefined),
+  renameConversation: vi.fn(async () => ({ id: 1, title: "新的对话", updated_at: "" })),
+}));
+
+// QAPage 挂载时 listResumes 自动选第一份简历（优先 ready），id 需为 42（测试断言用）
+const { DEFAULT_RESUME } = vi.hoisted(() => ({
+  DEFAULT_RESUME: {
+    id: 42,
+    filename: "resume-42.pdf",
+    parsed_text: "",
+    chunk_count: 3,
+    status: "ready",
+    status_message: "",
+    created_at: "",
+  },
 }));
 
 vi.mock("../../api/resumes", () => ({
-  listResumes: vi.fn(async () => ({ items: [], total: 0 })),
+  listResumes: vi.fn(async () => ({ items: [DEFAULT_RESUME], total: 1 })),
+}));
+
+vi.mock("../../api/builder", () => ({
+  getBuilderResume: vi.fn(async () => null),
 }));
 
 import { getHistory, clearHistory, deleteQa, askQuestionStream, submitFeedback, getQuota } from "../../api/qa";
 
 function renderPage(route = "/resumes/42") {
   // P2-12：测试路由与生产 App.tsx 保持一致（/resumes/:id）
+  // QAPage 使用 useAppChat（与 Sidebar 共享对话状态），需包 AppChatProvider
   return render(
-    <MemoryRouter initialEntries={[route]}>
-      <Routes>
-        <Route path="/resumes/:id" element={<QAPage />} />
-      </Routes>
-    </MemoryRouter>
+    <AppChatProvider>
+      <MemoryRouter initialEntries={[route]}>
+        <Routes>
+          <Route path="/resumes/:id" element={<QAPage />} />
+        </Routes>
+      </MemoryRouter>
+    </AppChatProvider>
   );
 }
 
@@ -61,7 +87,6 @@ describe("QAPage 基本交互 (Task 4)", () => {
           id: 1,
           question: "什么是RAG",
           answer: "检索增强生成",
-          sources: [],
           created_at: "2026-07-19",
         },
       ],
@@ -88,7 +113,6 @@ describe("QAPage 基本交互 (Task 4)", () => {
           id: 1,
           question: "Q1",
           answer: "A1",
-          sources: [],
           created_at: "2026-07-19",
         },
       ],
@@ -111,7 +135,6 @@ describe("QAPage 基本交互 (Task 4)", () => {
           id: 1,
           question: "Q1",
           answer: "A1",
-          sources: [],
           created_at: "2026-07-19",
         },
       ],
@@ -141,7 +164,6 @@ describe("QAPage 基本交互 (Task 4)", () => {
           id: 1,
           question: "Q1",
           answer: "A1",
-          sources: [],
           created_at: "2026-07-19",
         },
       ],
@@ -166,7 +188,6 @@ describe("QAPage 基本交互 (Task 4)", () => {
           id: 10,
           question: "Q10",
           answer: "A10",
-          sources: [],
           created_at: "2026-07-19",
         },
       ],
@@ -278,63 +299,6 @@ describe("QAPage 搜索防抖 (Task 4)", () => {
     });
 
     expect(screen.getByText("没有匹配的问答")).toBeInTheDocument();
-  });
-});
-
-// ── P2-16：来源段落截断应有展开按钮 ──
-
-describe("SourceCard 展开/收起 (P2-16)", () => {
-  const LONG_TEXT = "这是一段很长的来源文本".repeat(30); // > 220 字符
-
-  it("长来源默认截断并显示展开按钮", async () => {
-    vi.mocked(getHistory).mockResolvedValue({
-      items: [
-        {
-          id: 1,
-          question: "Q",
-          answer: "A",
-          sources: [LONG_TEXT],
-          created_at: "2026-07-19",
-        },
-      ],
-      total: 1,
-    });
-    renderPage();
-    await waitFor(() => {
-      expect(screen.getByText("Q")).toBeInTheDocument();
-    });
-
-    // 展开来源
-    fireEvent.click(screen.getByText(/来源/));
-    // 截断后应有展开按钮
-    expect(screen.getByText("展开")).toBeInTheDocument();
-    // 不应显示完整文本
-    expect(screen.queryByText(LONG_TEXT)).toBeNull();
-  });
-
-  it("点击展开后显示完整文本，按钮变为收起", async () => {
-    vi.mocked(getHistory).mockResolvedValue({
-      items: [
-        {
-          id: 1,
-          question: "Q",
-          answer: "A",
-          sources: [LONG_TEXT],
-          created_at: "2026-07-19",
-        },
-      ],
-      total: 1,
-    });
-    renderPage();
-    await waitFor(() => {
-      expect(screen.getByText("Q")).toBeInTheDocument();
-    });
-
-    fireEvent.click(screen.getByText(/来源/));
-    fireEvent.click(screen.getByText("展开"));
-    // 展开后应显示完整文本
-    expect(screen.getByText(LONG_TEXT)).toBeInTheDocument();
-    expect(screen.getByText("收起")).toBeInTheDocument();
   });
 });
 
@@ -635,7 +599,6 @@ describe("QAPage Markdown 渲染", () => {
           id: 1,
           question: "Q1",
           answer: "**加粗** 和 \n- 列表项",
-          sources: [],
           created_at: "2026-07-19",
         },
       ],

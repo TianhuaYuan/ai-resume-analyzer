@@ -16,6 +16,7 @@
 
 import hashlib
 import logging
+from datetime import datetime, timezone
 
 from core import cache as embedding_cache
 from fastapi import HTTPException, status
@@ -114,19 +115,18 @@ def _sanitize_draft_modules(modules: list[ResumeModuleCreate]) -> None:
             if not (content.get("name") or "").strip():
                 content["name"] = "未命名"
         elif mod.module_type == ModuleType.SKILLS:
-            cats = content.get("categories")
-            if isinstance(cats, list):
-                content["categories"] = [
-                    c for c in cats
-                    if isinstance(c, dict)
-                    and ((c.get("name") or "").strip() or c.get("items"))
+            items = content.get("items")
+            if isinstance(items, list):
+                content["items"] = [
+                    i for i in items
+                    if isinstance(i, dict) and (i.get("name") or "").strip()
                 ]
         elif mod.module_type in _ENTRY_MODULE_TYPES:
-            entries = content.get("entries")
-            if isinstance(entries, list):
-                content["entries"] = [
-                    e for e in entries
-                    if isinstance(e, dict) and not _entry_is_blank(e)
+            items = content.get("items")
+            if isinstance(items, list):
+                content["items"] = [
+                    i for i in items
+                    if isinstance(i, dict) and not _entry_is_blank(i)
                 ]
         elif mod.module_type in (ModuleType.OTHER, ModuleType.CUSTOM):
             if not (content.get("content") or "").strip():
@@ -179,9 +179,9 @@ async def get_resume_with_modules(
 # 注意 basic_info.name 必填（min_length=1），空壳用占位名"未命名"才能通过 content 校验。
 _DEFAULT_MODULES: list[tuple[ModuleType, dict]] = [
     (ModuleType.BASIC_INFO, {"name": "未命名"}),
-    (ModuleType.EDUCATION, {"entries": []}),
-    (ModuleType.WORK_EXPERIENCE, {"entries": []}),
-    (ModuleType.SKILLS, {"categories": []}),
+    (ModuleType.EDUCATION, {"items": []}),
+    (ModuleType.WORK_EXPERIENCE, {"items": []}),
+    (ModuleType.SKILLS, {"items": []}),
 ]
 
 
@@ -290,6 +290,17 @@ async def materialize_modules_from_text(
         logger.warning("懒物化失败（可降级粘贴导入）resume=%d: %s", resume_id, e)
         return resume, modules, False
 
+    # 并发安全：LLM 调用耗时较长，期间可能有其他请求已物化成功。
+    # 提交前重新检查，避免失败的请求覆盖成功的结果。
+    check_result = await db.execute(
+        select(ResumeModule).where(ResumeModule.resume_id == resume_id).limit(1)
+    )
+    if check_result.scalar_one_or_none() is not None:
+        logger.info("懒物化被其他请求抢先完成，跳过 resume=%d", resume_id)
+        await db.rollback()
+        refreshed, refreshed_mods = await get_resume_with_modules(db, user_id, resume_id)
+        return refreshed, refreshed_mods, True
+
     new_modules: list[ResumeModule] = []
     for idx, mod in enumerate(parsed):
         module = ResumeModule(
@@ -374,6 +385,7 @@ async def update_resume_draft(
     # 不置脏也不触发索引；内容变更发生在 complete（重新合并 parsed_text 后统一算 hash）。
 
     # version 不变（last-write-wins）
+    resume.updated_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(resume)
 
@@ -641,6 +653,7 @@ async def complete_resume(
     # 8. 更新 resume（chunk_count 已由 ensure_indexed 重建写回；未重建时是上次值，内容未变故正确）
     resume.status = "ready"
     resume.version += 1
+    resume.updated_at = datetime.now(timezone.utc)
 
     await db.commit()
     await db.refresh(resume)

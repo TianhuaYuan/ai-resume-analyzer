@@ -76,7 +76,9 @@ export function clearSessionAndRedirect() {
   for (const key of APP_STORAGE_KEYS) {
     localStorage.removeItem(key);
   }
-  window.location.href = "/login";
+  // 无独立 /login 页面：回首页，LoginModalHost 读到标志后自动弹登录弹窗
+  sessionStorage.setItem("login-modal", "1");
+  window.location.href = "/";
 }
 
 async function handleResponse(res: Response) {

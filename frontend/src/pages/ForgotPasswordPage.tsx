@@ -1,5 +1,5 @@
 import { useState, type FormEvent, type MouseEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import {
   motion,
   AnimatePresence,
@@ -8,6 +8,7 @@ import {
 } from "framer-motion";
 import { EnvelopeSimple, LockSimple, Hash, ArrowRight } from "@phosphor-icons/react";
 import { forgotPassword, sendCode } from "../api/auth";
+import { openLoginModal } from "../components/LoginModal";
 import { cn } from "@/lib/utils";
 
 function Input({ className, type, ...props }: React.ComponentProps<"input">) {
@@ -118,8 +119,11 @@ export default function ForgotPasswordPage() {
     setLoading(true);
     try {
       await forgotPassword(email.trim(), verificationCode, newPassword);
-      setSuccess("密码已重置，3秒后跳转到登录页");
-      setTimeout(() => navigate("/login", { state: { email: email.trim() } }), 3000);
+      setSuccess("密码已重置，3秒后自动登录");
+      setTimeout(() => {
+        openLoginModal({ email: email.trim() });
+        navigate("/");
+      }, 3000);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "重置失败，请稍后再试");
     } finally {
@@ -388,12 +392,13 @@ export default function ForgotPasswordPage() {
               animate={{ opacity: 1 }}
               transition={{ delay: 0.5 }}
             >
-              <Link
-                to="/login"
-                className="text-brand hover:text-[#0077ed] transition-colors duration-300 font-medium"
+              <button
+                type="button"
+                onClick={() => openLoginModal()}
+                className="text-brand hover:text-[#0077ed] transition-colors duration-300 font-medium cursor-pointer"
               >
                 返回登录
-              </Link>
+              </button>
             </motion.p>
           </form>
         </div>

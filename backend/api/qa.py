@@ -121,7 +121,7 @@ async def ask_question(
         id=record.id,
         question=record.question,
         answer=record.answer,
-        sources=[s["text"] for s in record.sources or []],
+        sources=[s.get("text", "") for s in record.sources or []],
         created_at=record.created_at,
         degraded=degraded,
         token_usage=TokenUsage(total=token_total),
@@ -301,6 +301,18 @@ async def ask_agent(
         ids_str = ", ".join(str(i) for i in data.compare_ids)
         effective_question = f"{data.question}\n\n[可对比简历 ID: {ids_str}]"
 
+    # v2: Builder 上下文注入（module_type/entry_id/action 拼接到问题中）
+    if data.tool_mode == "builder" or data.module_type:
+        builder_ctx_parts = []
+        if data.module_type:
+            builder_ctx_parts.append(f"目标模块: {data.module_type}")
+        if data.entry_id:
+            builder_ctx_parts.append(f"目标条目 ID: {data.entry_id}")
+        if data.action:
+            builder_ctx_parts.append(f"操作类型: {data.action}")
+        if builder_ctx_parts:
+            effective_question = f"{effective_question}\n\n[Builder 上下文: {' | '.join(builder_ctx_parts)}]"
+
     async def agent_stream():
         from core.database import AsyncSessionLocal
 
@@ -311,6 +323,7 @@ async def ask_agent(
                 user_id=current_user.id,
                 resume_id=data.resume_id,
                 question=effective_question,
+                tool_mode=data.tool_mode or "agent",
                 conversation_id=data.conversation_id,
             ):
                 # PII 脱敏（对 agent_done 的 answer）
@@ -360,12 +373,14 @@ async def ask_builder(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Builder Agent SSE 流式问答。
+    """Builder Agent SSE 流式问答（已废弃，请使用 /ask/agent）。
 
-    走 ReAct Agent 循环（builder 工具集：generate_module/check_module/modify_module/rewrite_resume/ask_info），
-    实时推送事件：agent_start → tool_call → tool_result/tool_error → agent_done。
+    .. deprecated:: v2
+        /ask/builder 已合并到 /ask/agent。保留此端点用于旧前端兼容。
+        /ask/agent 现在支持 qa + builder 全部工具，通过 tool_mode="builder"
+        或上下文中的 module_type/entry_id 自动识别 builder 场景。
 
-    复用 RATE_LIMIT_ASK_AGENT 限流（8/min）。
+    走 ReAct Agent 循环，实时推送事件：agent_start → tool_call → tool_result/tool_error → agent_done。
     """
     _guard_question(data.question)
     await resume_service.get_resume(db, data.resume_id, current_user.id)
@@ -456,7 +471,7 @@ async def get_history(
                 id=it.id,
                 question=it.question,
                 answer=it.answer,
-                sources=[s["text"] for s in (it.sources or [])],
+                sources=[s.get("text", "") for s in (it.sources or [])],
                 created_at=it.created_at,
             )
             for it in items

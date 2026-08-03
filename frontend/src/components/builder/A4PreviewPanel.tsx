@@ -1,102 +1,69 @@
 /**
- * Task 1: A4PreviewPanel — A4 格式预览面板。
+ * A4PreviewPanel — A4 预览面板（真实多页容器 + 自动压缩）。
  *
- * 在 PreviewPanel 基础上增加：
- * - A4 页面比例（210mm × 297mm ≈ 1:1.414）
- * - 缩放控制（50% / 75% / 100%，默认 75%）
- * - 页面阴影 + 居中显示
+ * 分页方案：PaginatedResumePreview（隐藏测量层 + 逐 section 装箱 + 每页独立 A4 纸张）。
+ * 旧的「单长 DOM + 红色虚线」已废弃 —— 虚线会横穿文字且与打印 PDF 分页错位。
  *
- * 保留：POST 实时渲染（300ms 防抖）、PDF/MD 导出、折叠/展开。
+ * - 自动压缩：内容超出目标页数时 transform scale 压缩，下限 0.75
+ * - 打印导出：transform → zoom 转换（借鉴 magic-resume，zoom 参与布局所以分页准确）
+ * - PDF/MD 导出保留（后端 WeasyPrint / Markdown）
  */
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useCallback } from "react";
 import {
-  ArrowsClockwise,
   FilePdf,
   FileText,
   ArrowsInSimple,
   ArrowsOutSimple,
   SpinnerGap,
+  Printer,
+  TextAlignJustify,
 } from "@phosphor-icons/react";
-import { fetchPreviewHtml, downloadExport } from "../../api/builder";
-import type { ResumeModuleInput, ResumeStyle } from "../../api/builder";
+import { downloadExport } from "../../api/builder";
+import { PaginatedResumePreview, type PaginatedPreviewState } from "./PaginatedResumePreview";
+import { exportResumeToBrowserPrint } from "../../utils/printResume";
 import { trackEvent } from "../../api/analytics";
+import type { ModuleType, ResumeModule, ResumeStyle } from "../../api/builder";
 
 type ZoomLevel = 50 | 75 | 100;
-
 const ZOOM_OPTIONS: ZoomLevel[] = [50, 75, 100];
 
 interface A4PreviewPanelProps {
-  /** 简历 ID */
   resumeId: number;
-  /** 预览刷新 key（内容变更时递增） */
+  /** 预览刷新 key（兼容旧接口；React 直接渲染后实际不依赖） */
   previewKey: number;
-  /** 是否折叠 */
   collapsed: boolean;
-  /** 切换折叠回调 */
   onToggleCollapse: () => void;
-  /** 当前编辑数据（传入后用 POST 实时渲染，不读数据库） */
-  modulesData?: { modules: ResumeModuleInput[]; style: ResumeStyle };
+  /** 当前编辑数据（modules + style），实时渲染 */
+  modulesData?: { modules: ResumeModuleInputLite[]; style: ResumeStyle };
+  /** 点击预览板块回调（聚焦编辑器对应模块） */
+  onSelectSection?: (moduleType: ModuleType) => void;
 }
+
+type ResumeModuleInputLite = Pick<ResumeModule, "module_type" | "content" | "sort_order">;
 
 export function A4PreviewPanel({
   resumeId,
-  previewKey,
+  previewKey: _previewKey,
   collapsed,
   onToggleCollapse,
   modulesData,
+  onSelectSection,
 }: A4PreviewPanelProps) {
-  const [html, setHtml] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [previewError, setPreviewError] = useState("");
-  const [exporting, setExporting] = useState<"pdf" | "markdown" | null>(null);
-  const [exportError, setExportError] = useState("");
   const [zoom, setZoom] = useState<ZoomLevel>(75);
+  /** 自动压缩目标页数：0 = 关闭 */
+  const [fitPages, setFitPages] = useState(0);
+  const [exporting, setExporting] = useState<"pdf" | "markdown" | "print" | null>(null);
+  const [exportError, setExportError] = useState("");
+  const [pageState, setPageState] = useState<PaginatedPreviewState>({
+    pageCount: 0,
+    isScaled: false,
+    cannotFit: false,
+    scaleFactor: 1,
+  });
 
-  // ref 持有最新 modulesData，使 loadPreview 不依赖 modulesData → useCallback 引用稳定
-  const modulesDataRef = useRef(modulesData);
-  modulesDataRef.current = modulesData;
-  // 是否已有内容（区分首次加载 vs 刷新，避免 loading 遮罩闪烁）
-  const hasContentRef = useRef(false);
-  // 请求取消：新请求发出时作废旧请求，避免竞态
-  const requestIdRef = useRef(0);
-
-  const loadPreview = useCallback(async () => {
-    const currentRequestId = ++requestIdRef.current;
-    // 首次加载显示全屏 loading；后续刷新只显示小 spinner
-    if (!hasContentRef.current) {
-      setLoading(true);
-    } else {
-      setRefreshing(true);
-    }
-    setPreviewError("");
-    try {
-      const content = await fetchPreviewHtml(resumeId, modulesDataRef.current);
-      // 作废的请求回来后丢弃结果
-      if (currentRequestId !== requestIdRef.current) return;
-      setHtml(content);
-      hasContentRef.current = Boolean(content);
-    } catch (e) {
-      if (currentRequestId !== requestIdRef.current) return;
-      setPreviewError(e instanceof Error ? e.message : "预览加载失败");
-      setHtml("");
-    } finally {
-      if (currentRequestId === requestIdRef.current) {
-        setLoading(false);
-        setRefreshing(false);
-      }
-    }
-  }, [resumeId]);
-
-  // previewKey 变化时立即加载（防抖由 BuilderPage 600ms 控制，此处不再重复防抖）
-  useEffect(() => {
-    void loadPreview();
-  }, [previewKey, loadPreview]);
-
-  const handleManualRefresh = useCallback(() => {
-    void loadPreview();
-  }, [loadPreview]);
+  const modules = modulesData?.modules ?? [];
+  const style = modulesData?.style;
 
   const handleExport = useCallback(
     async (format: "pdf" | "markdown") => {
@@ -114,7 +81,19 @@ export function A4PreviewPanel({
     [resumeId],
   );
 
-  // 折叠状态：只显示展开按钮
+  const handlePrint = useCallback(async () => {
+    setExporting("print");
+    setExportError("");
+    try {
+      await exportResumeToBrowserPrint({ title: "简历" });
+      void trackEvent("resume.export", undefined, { format: "print" });
+    } catch (e) {
+      setExportError(e instanceof Error ? e.message : "打印失败");
+    } finally {
+      setExporting(null);
+    }
+  }, []);
+
   if (collapsed) {
     return (
       <div className="flex flex-col items-center justify-center w-12
@@ -122,29 +101,19 @@ export function A4PreviewPanel({
         <button
           onClick={onToggleCollapse}
           className="p-2 rounded-lg text-[var(--color-text-muted)]
-            hover:text-brand hover:bg-brand/10
-            transition-all cursor-pointer"
+            hover:text-brand hover:bg-brand/10 transition-all cursor-pointer"
           aria-label="展开预览"
           title="展开预览"
         >
           <ArrowsOutSimple size={16} weight="bold" aria-hidden="true" />
         </button>
-        <span
-          className="text-[10px] text-[var(--color-text-muted)] writing-mode-vertical
-            [writing-mode:vertical-rl] tracking-wider"
-        >
+        <span className="text-[10px] text-[var(--color-text-muted)] writing-mode-vertical
+          [writing-mode:vertical-rl] tracking-wider">
           预览
         </span>
       </div>
     );
   }
-
-  // A4 比例：宽 210mm，高 297mm → 比例 1:1.4142
-  // 缩放后宽度 = 基准宽度 × zoom%
-  // 基准宽度取 210mm 对应的像素值（约 794px @ 96dpi）
-  const A4_BASE_WIDTH = 794; // 210mm @ 96dpi
-  const scaledWidth = (A4_BASE_WIDTH * zoom) / 100;
-  const scaledHeight = scaledWidth * 1.4142;
 
   return (
     <div className="flex flex-col h-full border-l border-[var(--color-border)] bg-[var(--color-bg)]">
@@ -152,39 +121,41 @@ export function A4PreviewPanel({
       <div className="shrink-0 flex items-center justify-between px-3 py-2.5
         border-b border-[var(--color-border)]">
         <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold text-[var(--color-text-secondary)]">
-            预览
-          </span>
-          {loading && (
-            <SpinnerGap
-              size={12}
-              weight="bold"
-              className="text-brand animate-spin"
-              aria-hidden="true"
-            />
+          <span className="text-xs font-semibold text-[var(--color-text-secondary)]">预览</span>
+          {pageState.pageCount > 0 && (
+            <span className="text-[10px] text-[var(--color-text-muted)] tabular-nums">
+              共 {pageState.pageCount} 页
+            </span>
           )}
-          {refreshing && !loading && (
-            <SpinnerGap
-              size={12}
-              weight="bold"
-              className="text-brand/60 animate-spin"
-              aria-hidden="true"
-            />
+          {/* 自动压缩：关闭 → 1 页 → 2 页 → 关闭 */}
+          <button
+            onClick={() => setFitPages((v) => (v === 0 ? 1 : v === 1 ? 2 : 0))}
+            className={`btn-tool text-[10px] ${fitPages > 0 ? "btn-tool-active" : ""}`}
+            aria-pressed={fitPages > 0}
+            title="内容超出目标页数时自动压缩（点击切换 1 页 / 2 页 / 关闭）"
+          >
+            <TextAlignJustify size={11} weight={fitPages > 0 ? "fill" : "regular"} aria-hidden="true" />
+            {fitPages === 0 ? "自动压缩" : `压到 ${fitPages} 页`}
+          </button>
+          {pageState.isScaled && (
+            <span className="text-[10px] text-brand tabular-nums">
+              {Math.round(pageState.scaleFactor * 100)}%
+            </span>
           )}
         </div>
 
         <div className="flex items-center gap-1">
           {/* 缩放控制 */}
-          <div className="flex items-center gap-0.5 mr-1 px-1 py-0.5 rounded-md
+          <div className="flex items-center gap-0.5 mr-1 px-1 py-0.5 rounded-full
             bg-[var(--color-bg-secondary)] border border-[var(--color-border)]">
             {ZOOM_OPTIONS.map((z) => (
               <button
                 key={z}
                 onClick={() => setZoom(z)}
-                className={`px-1.5 py-0.5 rounded text-[10px] font-medium transition-all cursor-pointer
+                className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium transition-all cursor-pointer
                   ${zoom === z
                     ? "bg-brand/10 text-brand"
-                    : "text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]"
+                    : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
                   }`}
                 aria-label={`缩放 ${z}%`}
                 aria-pressed={zoom === z}
@@ -194,17 +165,31 @@ export function A4PreviewPanel({
             ))}
           </div>
 
+          {/* 打印 */}
+          <button
+            onClick={handlePrint}
+            disabled={exporting !== null}
+            className="btn-tool text-[11px]"
+            aria-label="打印简历"
+            title="浏览器打印"
+          >
+            {exporting === "print" ? (
+              <SpinnerGap size={12} weight="bold" className="animate-spin" aria-hidden="true" />
+            ) : (
+              <Printer size={12} weight="regular" aria-hidden="true" />
+            )}
+            打印
+          </button>
+
           {/* 导出 PDF */}
           <button
             onClick={() => handleExport("pdf")}
             disabled={exporting !== null}
             className="inline-flex items-center gap-1 px-2 py-1 rounded-md
-              text-[11px] text-[var(--color-text-muted)]
-              hover:text-red-400 hover:bg-red-500/8
-              disabled:opacity-40 disabled:cursor-not-allowed
-              transition-all cursor-pointer"
+              text-[11px] text-[var(--color-text-muted)] hover:text-red-400 hover:bg-red-500/8
+              disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer"
             aria-label="导出 PDF"
-            title="导出 PDF"
+            title="导出 PDF（后端 WeasyPrint）"
           >
             {exporting === "pdf" ? (
               <SpinnerGap size={12} weight="bold" className="animate-spin" aria-hidden="true" />
@@ -218,11 +203,7 @@ export function A4PreviewPanel({
           <button
             onClick={() => handleExport("markdown")}
             disabled={exporting !== null}
-            className="inline-flex items-center gap-1 px-2 py-1 rounded-md
-              text-[11px] text-[var(--color-text-muted)]
-              hover:text-brand hover:bg-brand/10
-              disabled:opacity-40 disabled:cursor-not-allowed
-              transition-all cursor-pointer"
+            className="btn-tool text-[11px]"
             aria-label="导出 Markdown"
             title="导出 Markdown"
           >
@@ -234,31 +215,10 @@ export function A4PreviewPanel({
             MD
           </button>
 
-          {/* 手动刷新 */}
-          <button
-            onClick={handleManualRefresh}
-            disabled={loading}
-            className="p-1 rounded-md text-[var(--color-text-muted)]
-              hover:text-brand hover:bg-brand/10
-              disabled:opacity-40 disabled:cursor-not-allowed
-              transition-all cursor-pointer"
-            aria-label="刷新预览"
-            title="刷新预览"
-          >
-            <ArrowsClockwise
-              size={14}
-              weight="regular"
-              className={loading ? "animate-spin" : ""}
-              aria-hidden="true"
-            />
-          </button>
-
-          {/* 收起按钮 */}
+          {/* 收起 */}
           <button
             onClick={onToggleCollapse}
-            className="p-1 rounded-md text-[var(--color-text-muted)]
-              hover:text-brand hover:bg-brand/10
-              transition-all cursor-pointer"
+            className="btn-tool-icon"
             aria-label="收起预览"
             title="收起预览"
           >
@@ -275,61 +235,28 @@ export function A4PreviewPanel({
         </div>
       )}
 
-      {/* A4 预览区 — 可滚动，居中显示 A4 页面 */}
-      <div className="flex-1 overflow-auto bg-[var(--color-bg)] flex justify-center p-4">
-        {loading && (
-          <div className="absolute inset-0 flex items-center justify-center
-            bg-[var(--color-bg)] z-10">
-            <div className="flex flex-col items-center gap-2">
-              <span
-                className="inline-block w-6 h-6 rounded-full border-2
-                  border-brand border-t-transparent animate-spin"
-                aria-hidden="true"
-              />
-              <span className="text-xs text-[var(--color-text-muted)]">
-                加载预览...
-              </span>
-            </div>
-          </div>
-        )}
-        {previewError && !loading && (
-          <div className="flex items-center justify-center w-full h-full">
-            <div className="flex flex-col items-center gap-2 px-6 text-center">
-              <span className="text-xs text-red-400">{previewError}</span>
-              <button
-                onClick={handleManualRefresh}
-                className="px-3 py-1.5 rounded-lg text-xs font-medium
-                  bg-brand/10 text-brand border border-brand/30
-                  hover:bg-brand/20 transition-all cursor-pointer"
-              >
-                重试
-              </button>
-            </div>
-          </div>
-        )}
-        {/* A4 页面容器 */}
-        <div
-          className="bg-white shrink-0 transition-transform duration-200"
-          style={{
-            width: `${scaledWidth}px`,
-            minHeight: `${scaledHeight}px`,
-            boxShadow: "0 4px 24px rgba(0, 0, 0, 0.3), 0 1px 4px rgba(0, 0, 0, 0.2)",
-            borderRadius: "2px",
-          }}
-        >
-          <iframe
-            title="简历预览"
-            className="w-full h-full border-0"
-            sandbox="allow-scripts"
-            srcDoc={html || "<html><body style='background:#fff;margin:0;padding:16mm'></body></html>"}
-            style={{
-              width: `${A4_BASE_WIDTH}px`,
-              height: `${A4_BASE_WIDTH * 1.4142}px`,
-              transform: `scale(${zoom / 100})`,
-              transformOrigin: "top left",
-            }}
-          />
+      {/* 压缩已达下限提示 */}
+      {pageState.cannotFit && (
+        <div className="shrink-0 px-3 py-1.5 bg-amber-500/10 border-b border-amber-500/20
+          text-[11px] text-amber-600">
+          内容过多，已压缩到最小缩放（75%）仍放不下，建议精简内容或调小字号
         </div>
+      )}
+
+      {/* A4 预览区：真实多页容器，#resume-preview 供打印/导出取 DOM */}
+      <div
+        id="resume-preview"
+        className="flex-1 overflow-auto bg-[var(--color-bg)] flex justify-center p-6"
+      >
+        <PaginatedResumePreview
+          modules={modules as ResumeModule[]}
+          style={style ?? ({} as ResumeStyle)}
+          zoom={zoom / 100}
+          fitPages={fitPages}
+          interactive
+          onSelectSection={onSelectSection}
+          onStateChange={setPageState}
+        />
       </div>
     </div>
   );

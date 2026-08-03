@@ -32,7 +32,6 @@ from services.rag.pipeline import (
 from services.react_agent.memory import assemble_system_prompt, manage_l1_context
 from services.react_agent.tools import (
     get_agent_schemas,
-    get_builder_schemas,
     get_tool_by_name,
     get_tools_for_agent,
 )
@@ -125,13 +124,10 @@ async def react_loop(
             await event_callback(event)
 
     async def _emit_llm_events(resp: LLMToolResponse) -> None:
-        """LLM 调用后推 agent_thought + usage 事件（Spec A#7/A#28）。
+        """LLM 调用后推 usage 事件（Spec A#28）。
 
-        仅用于最终轮（非流式）：推理内容整段 emit 一次。
-        中间轮已改为流式调用（_stream_middle_round），推理过程逐段实时 emit。
+        reasoning_content 已在流式调用中逐段 emit 为 agent_thought，此处只推 usage。
         """
-        if resp.reasoning_content:
-            await _emit({"type": "agent_thought", "content": resp.reasoning_content})
         await _emit({
             "type": "usage",
             "usage": dict(resp.usage),
@@ -189,21 +185,18 @@ async def react_loop(
         messages.extend(history)
     messages.append({"role": "user", "content": question})
 
-    # 4. 获取工具 schemas（builder 模式用 builder 工具；agent1 走相关性过滤裁剪）
-    if tool_mode == "builder":
-        tool_schemas = get_builder_schemas()
-    else:
-        from services.react_agent.tool_gate import filter_agent_tools
+    # 4. 获取工具 schemas（v2: 统一使用 unified 工具集 + 相关性过滤）
+    from services.react_agent.tool_gate import filter_agent_tools
 
-        agent_tools = filter_agent_tools(question, get_tools_for_agent())
-        tool_schemas = [tc().to_openai_schema() for tc in agent_tools]
+    agent_tools = filter_agent_tools(question, get_tools_for_agent())
+    tool_schemas = [tc().to_openai_schema() for tc in agent_tools]
 
     # T17 优化① builder 意图直达：跳过 ReAct「决定轮」，直接执行解析出的工具。
     # 编辑器命令明确（生成/检查/修改 X 模块），一次操作从 3 轮 LLM 压到 1 次工具调用。
     if tool_mode == "builder":
         from services.react_agent.builder_intent import resolve_builder_intent
 
-        intent = await resolve_builder_intent(question)
+        intent = await resolve_builder_intent(question, user_id=user_id)
         if intent:
             tool_name, tool_args = intent
             tool_args["resume_id"] = resume_id
@@ -216,7 +209,7 @@ async def react_loop(
                 {"type": "tool_call", "name": tool_name, "arguments": tc.arguments, "id": tc.id}
             )
             tool_semaphore = _get_tool_semaphore()
-            result, is_error, sources = await _execute_tool_call_with_limit(
+            result, is_error, sources, _tool_usage = await _execute_tool_call_with_limit(
                 tc, user_id, tool_semaphore, emit=_emit
             )
             await _emit(
@@ -325,9 +318,9 @@ async def react_loop(
         }
         db_rounds.append(db_round)
 
-        # 处理结果：发 tool_result/tool_error 事件 + 回灌 messages + 收集 sources
+        # 处理结果：发 tool_result/tool_error 事件 + 回灌 messages + 收集 sources + 累计工具 LLM usage
         all_bad = True
-        for tc, (tool_result, is_error, tool_sources) in zip(response.tool_calls, results):
+        for tc, (tool_result, is_error, tool_sources, tool_usage) in zip(response.tool_calls, results):
             if is_error:
                 await _emit({
                     "type": "tool_error",
@@ -343,6 +336,9 @@ async def react_loop(
                     "id": tc.id,
                 })
                 all_bad = False
+
+            # 累计工具内部 LLM 调用的 token 消耗到主 usage（builder 工具内部有独立 LLM 调用）
+            _accumulate_usage(total_usage, tool_usage)
 
             # 收集工具来源（Spec A#10: search_resume 来源聚合）
             all_sources.extend(tool_sources)
@@ -361,6 +357,9 @@ async def react_loop(
                 "is_error": is_error,
             })
 
+        # 工具执行完毕后推送累计 usage（含工具内部 LLM 消耗），让前端实时更新 token 计数
+        await _emit({"type": "usage", "usage": dict(total_usage), "total": dict(total_usage)})
+
         # 坏调用计数与强制收敛
         if all_bad:
             bad_call_count += 1
@@ -373,13 +372,12 @@ async def react_loop(
         else:
             bad_call_count = 0
 
-    # 6. 强制收敛：无工具调用，用 CHAT_MODEL
+    # 6. 强制收敛：无工具调用，用 CHAT_MODEL（流式：推理过程实时推给前端）
     messages = manage_l1_context(messages)
-    response = await llm_generate_with_tools(
+    response = await _stream_final_round(
         messages=messages,
-        tools=None,
         user_id=user_id,
-        model=FINAL_MODEL,
+        emit=_emit,
     )
 
     _accumulate_usage(total_usage, response)
@@ -399,10 +397,11 @@ async def react_loop(
 # ── 辅助函数 ──────────────────────────────────────────────────
 
 
-def _accumulate_usage(total: dict, response: LLMToolResponse) -> None:
-    """累加 LLM usage 到总计。"""
-    total["prompt_tokens"] += response.usage.get("prompt_tokens", 0)
-    total["completion_tokens"] += response.usage.get("completion_tokens", 0)
+def _accumulate_usage(total: dict, response) -> None:
+    """累加 LLM usage 到总计。response 可为 LLMToolResponse 或 dict。"""
+    usage = response.usage if hasattr(response, "usage") else response
+    total["prompt_tokens"] += usage.get("prompt_tokens", 0)
+    total["completion_tokens"] += usage.get("completion_tokens", 0)
 
 
 async def _stream_middle_round(
@@ -463,6 +462,56 @@ async def _stream_middle_round(
     )
 
 
+async def _stream_final_round(
+    messages: list[dict],
+    user_id: int,
+    emit: Callable[[dict], Awaitable[None]],
+) -> LLMToolResponse:
+    """最终轮流式调用：reasoning 逐段实时 emit agent_thought。
+
+    与中间轮的区别：
+    - 不传 tools（最终轮强制无工具回答）
+    - content（答案）也流式接收，聚合后由 agent_done 推送
+    - reasoning_content 逐段 emit 为 agent_thought（实时展示思考过程）
+    """
+    content_parts: list[str] = []
+    reasoning_parts: list[str] = []
+    round_usage: dict = {"prompt_tokens": 0, "completion_tokens": 0}
+    _llm_t0 = time.perf_counter()
+    _first_chunk = True
+
+    async for ev in llm_generate_with_tools_stream(
+        messages=messages,
+        tools=None,
+        user_id=user_id,
+        model=FINAL_MODEL,
+    ):
+        if _first_chunk:
+            _first_chunk = False
+            logger.info(
+                "final_round_first_chunk_ms=%d",
+                round((time.perf_counter() - _llm_t0) * 1000),
+            )
+        et = ev.get("type")
+        if et == "reasoning":
+            reasoning_parts.append(ev["content"])
+            await emit({"type": "agent_thought", "content": ev["content"]})
+        elif et == "token":
+            content_parts.append(ev["content"])
+        elif et == "usage":
+            round_usage = {
+                "prompt_tokens": ev.get("prompt_tokens", 0),
+                "completion_tokens": ev.get("completion_tokens", 0),
+            }
+
+    return LLMToolResponse(
+        content="".join(content_parts),
+        tool_calls=[],
+        reasoning_content="".join(reasoning_parts) or None,
+        usage=round_usage,
+    )
+
+
 def _build_assistant_message(response: LLMToolResponse) -> dict:
     """构造 assistant 消息（含 tool_calls，OpenAI 格式）。"""
     return {
@@ -484,7 +533,7 @@ async def _execute_tool_call(
     db: AsyncSession,
     user_id: int,
     emit=None,
-) -> tuple[str, bool, list[dict]]:
+) -> tuple[str, bool, list[dict], dict]:
     """执行单个 tool_call。
 
     三层防御：
@@ -495,27 +544,27 @@ async def _execute_tool_call(
     emit：事件回调，注入工具以支持工具内部 LLM 流式 token 推送（tool_stream 事件）。
 
     Returns:
-        (result_text, is_error, sources) — sources 为工具结构化来源
+        (result_text, is_error, sources, usage) — sources 为工具结构化来源，usage 为工具内部 LLM token 消耗
     """
     # 1. 解析参数 JSON
     try:
         args = json.loads(tc.arguments) if tc.arguments else {}
     except json.JSONDecodeError:
-        return f"参数 JSON 解析失败: {tc.arguments}", True, []
+        return f"参数 JSON 解析失败: {tc.arguments}", True, [], {"prompt_tokens": 0, "completion_tokens": 0}
 
     # 2. 查找工具
     tool_class = get_tool_by_name(tc.name)
     if tool_class is None:
-        return f"工具 '{tc.name}' 不存在", True, []
+        return f"工具 '{tc.name}' 不存在", True, [], {"prompt_tokens": 0, "completion_tokens": 0}
 
     # 3. 实例化并执行（注入 emit 供工具内部 LLM 流式推送）
     tool = tool_class(db=db, user_id=user_id, emit=emit)
     try:
         result = await tool.execute(**args)
-        return result, False, getattr(tool, "sources", [])
+        return result, False, getattr(tool, "sources", []), getattr(tool, "last_usage", {"prompt_tokens": 0, "completion_tokens": 0})
     except Exception as e:
         logger.warning("工具执行失败: %s, args=%s, error=%s", tc.name, tc.arguments, e)
-        return f"工具执行失败: {e}", True, []
+        return f"工具执行失败: {e}", True, [], {"prompt_tokens": 0, "completion_tokens": 0}
 
 
 async def _execute_tool_call_with_limit(
@@ -523,7 +572,7 @@ async def _execute_tool_call_with_limit(
     user_id: int,
     semaphore: asyncio.Semaphore,
     emit=None,
-) -> tuple[str, bool, list[dict]]:
+) -> tuple[str, bool, list[dict], dict]:
     """带 Semaphore 限流的工具执行（Spec A#32：限单轮工具并发）。
 
     P0-4 修复：并行工具不再共享请求 session —— 每个工具用独立 AsyncSessionLocal，

@@ -8,7 +8,6 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.audit_log import AuditLog
-from models.job_application import JobApplication
 from models.qa_history import QAHistory
 from models.resume import Resume
 from models.user import User
@@ -84,7 +83,6 @@ async def get_system_stats(db: AsyncSession) -> dict[str, int]:
         "total_resumes": await _count(Resume),
         "total_qa_history": await _count(QAHistory),
         "total_feedback": await _count(UserFeedback),
-        "total_job_applications": await _count(JobApplication),
     }
 
 

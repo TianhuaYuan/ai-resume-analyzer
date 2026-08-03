@@ -394,3 +394,64 @@ button, a, input, select, textarea {
 .markdown-a {
   font-variant-numeric: tabular-nums;
 }
+
+/* ── 编辑器统一按钮（对齐 mono-btn 胶囊玻璃风格，更紧凑） ──
+   简历编辑器（BuilderPage 及子组件）工具栏/操作按钮统一使用，视觉对齐全站。 */
+.btn-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.875rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+  color: var(--color-text-secondary);
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid var(--color-border);
+  cursor: pointer;
+  transition: color 0.2s ease, border-color 0.2s ease, background-color 0.2s ease,
+    transform 0.2s ease;
+}
+.btn-tool:hover {
+  color: var(--color-brand);
+  border-color: rgba(0, 113, 227, 0.35);
+  background: rgba(255, 255, 255, 0.95);
+}
+.btn-tool:active {
+  transform: scale(0.97);
+}
+.btn-tool:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.btn-tool-active {
+  color: var(--color-brand);
+  border-color: rgba(0, 113, 227, 0.35);
+  background: rgba(0, 113, 227, 0.08);
+}
+/* 紧凑图标按钮（撤销/重做/收起等纯图标） */
+.btn-tool-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 9999px;
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+  background: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+  transition: color 0.2s ease, border-color 0.2s ease, background-color 0.2s ease,
+    transform 0.2s ease;
+}
+.btn-tool-icon:hover {
+  color: var(--color-brand);
+  border-color: rgba(0, 113, 227, 0.35);
+  background: rgba(255, 255, 255, 0.95);
+}
+.btn-tool-icon:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}

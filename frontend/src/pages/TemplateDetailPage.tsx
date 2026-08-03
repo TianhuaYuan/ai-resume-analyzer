@@ -8,7 +8,7 @@
  * CTA：已登录 → createBuilderResume({ filename, style: { template_id } })；未登录 → 弹登录
  */
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   CaretLeft,
@@ -17,59 +17,12 @@ import {
   Spinner,
 } from "@phosphor-icons/react";
 import LandingNav from "../components/LandingNav";
+import { TemplateCardPreview } from "../components/TemplateGalleryModal";
 import { useAuth } from "../context/AuthContext";
 import { getTemplate, listTemplates } from "../api/market";
 import type { MarketTemplate } from "../api/market";
 import { createBuilderResume } from "../api/builder";
 import type { ResumeStyle } from "../api/builder";
-
-// ── 模板预览（iframe srcDoc + transform scale 缩放适配） ──
-
-const PREVIEW_BASE_WIDTH = 800;
-
-function TemplatePreview({ html }: { html: string }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [scale, setScale] = useState(1);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const update = () => {
-      if (el.clientWidth > 0) setScale(el.clientWidth / PREVIEW_BASE_WIDTH);
-    };
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
-  if (!html) {
-    return <div className="aspect-[3/4] w-full max-w-[400px] mx-auto bg-[var(--color-bg-secondary)]" />;
-  }
-
-  return (
-    <div
-      ref={ref}
-      className="aspect-[3/4] w-full max-w-[400px] mx-auto overflow-hidden relative bg-[var(--color-bg-secondary)]"
-    >
-      <div
-        className="absolute top-0 left-0 origin-top-left"
-        style={{
-          width: PREVIEW_BASE_WIDTH,
-          height: Math.ceil((PREVIEW_BASE_WIDTH * 4) / 3),
-          transform: `scale(${scale})`,
-        }}
-      >
-        <iframe
-          srcDoc={html}
-          scrolling="no"
-          title="模板预览"
-          className="w-full h-full border-0"
-        />
-      </div>
-    </div>
-  );
-}
 
 // ── 主组件 ──
 
@@ -200,9 +153,9 @@ export default function TemplateDetailPage() {
 
         {/* 主体：预览 + 信息 */}
         <div className="flex flex-col lg:flex-row gap-10 mb-16">
-          {/* 左侧：预览 */}
+          {/* 左侧：预览（有前端组件的模板用 React 渲染，其余 iframe 兜底） */}
           <div className="flex-1 flex justify-center">
-            <TemplatePreview html={template.preview_html} />
+            <TemplateCardPreview template={template} className="max-w-[400px] mx-auto" />
           </div>
 
           {/* 右侧：模板信息 */}

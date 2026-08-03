@@ -29,6 +29,7 @@ from schemas.resume_module import (
     WorkExperienceEntry,
     SkillsContent,
     SkillCategory,
+    SkillItem,
     ProjectExperienceContent,
     LanguageContent,
     HonorsContent,
@@ -144,20 +145,27 @@ class TestBasicInfoContent:
 
 
 class TestEducationContent:
-    """教育经历模块 — entries 列表。"""
+    """教育经历模块 — items 列表（v2 统一结构）。"""
 
-    def test_empty_entries_default(self):
+    def test_empty_items_default(self):
         """默认空列表。"""
         obj = EducationContent()
-        assert obj.entries == []
+        assert obj.items == []
 
     def test_valid_entry(self):
-        """有效教育经历。"""
+        """有效教育经历（使用旧 entries 格式自动迁移）。"""
         obj = EducationContent(entries=[
             EducationEntry(school="广东海洋大学", degree="本科", major="软件工程",
                           start_date="2023-09", end_date="2027-06"),
         ])
-        assert obj.entries[0].school == "广东海洋大学"
+        assert obj.items[0].school == "广东海洋大学"
+
+    def test_valid_entry_new_format(self):
+        """有效教育经历（使用新 items 格式）。"""
+        obj = EducationContent(items=[
+            EducationEntry(school="广东海洋大学", degree="本科", major="软件工程"),
+        ])
+        assert obj.items[0].school == "广东海洋大学"
 
     def test_entry_school_required(self):
         """education entry 缺少 school 报错。"""
@@ -175,14 +183,14 @@ class TestEducationContent:
             EducationEntry(school="A 大学"),
             EducationEntry(school="B 大学"),
         ])
-        assert len(obj.entries) == 2
+        assert len(obj.items) == 2
 
 
 class TestWorkExperienceContent:
     """工作经历模块 — company + position 必填。"""
 
     def test_valid_entry(self):
-        """有效工作经历。"""
+        """有效工作经历（使用旧 entries 格式自动迁移）。"""
         obj = WorkExperienceContent(entries=[
             WorkExperienceEntry(
                 company="字节跳动", position="后端开发",
@@ -191,8 +199,8 @@ class TestWorkExperienceContent:
                 achievements=["优化接口性能 50%", "主导微服务拆分"],
             ),
         ])
-        assert obj.entries[0].company == "字节跳动"
-        assert len(obj.entries[0].achievements) == 2
+        assert obj.items[0].company == "字节跳动"
+        assert len(obj.items[0].achievements) == 2
 
     def test_company_required(self):
         """缺少 company 报错。"""
@@ -207,37 +215,39 @@ class TestWorkExperienceContent:
     def test_empty_entries_default(self):
         """默认空列表。"""
         obj = WorkExperienceContent()
-        assert obj.entries == []
+        assert obj.items == []
 
 
 class TestSkillsContent:
-    """专业技能模块 — categories 列表。"""
+    """专业技能模块 — items 列表（v2 统一结构）。"""
 
-    def test_empty_categories_default(self):
+    def test_empty_items_default(self):
         """默认空列表。"""
         obj = SkillsContent()
-        assert obj.categories == []
+        assert obj.items == []
 
     def test_valid_categorized(self):
-        """分类技能。"""
+        """分类技能（使用旧 categories 格式自动迁移）。"""
         obj = SkillsContent(categories=[
             SkillCategory(name="编程语言", items=["Python", "Java", "Go"]),
             SkillCategory(name="框架", items=["FastAPI", "Spring"]),
         ])
-        assert len(obj.categories) == 2
-        assert "Python" in obj.categories[0].items
+        assert len(obj.items) == 5
+        assert obj.items[0].name == "Python"
+        assert obj.items[0].category == "编程语言"
 
     def test_valid_flat(self):
-        """扁平模式（单分类）。"""
-        obj = SkillsContent(categories=[
-            SkillCategory(name="其他", items=["Python", "FastAPI"]),
+        """扁平模式（使用新 items 格式）。"""
+        obj = SkillsContent(items=[
+            {"name": "Python", "category": "其他"},
+            {"name": "FastAPI", "category": "其他"},
         ])
-        assert len(obj.categories) == 1
+        assert len(obj.items) == 2
 
     def test_category_name_required(self):
-        """SkillCategory 缺少 name 报错。"""
+        """SkillItem 缺少 name 报错。"""
         with pytest.raises(ValidationError):
-            SkillCategory(items=["Python"])
+            SkillItem(category="编程语言")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -250,22 +260,22 @@ class TestNonCoreModules:
 
     def test_project_experience(self):
         obj = ProjectExperienceContent(entries=[])
-        assert obj.entries == []
+        assert obj.items == []
 
     def test_language(self):
         from schemas.resume_module import LanguageEntry
         obj = LanguageContent(entries=[LanguageEntry(name="英语", proficiency="CET-6", score="496")])
-        assert obj.entries[0].name == "英语"
+        assert obj.items[0].name == "英语"
 
     def test_honors(self):
         from schemas.resume_module import HonorEntry
         obj = HonorsContent(entries=[HonorEntry(title="国家奖学金", date="2024-12")])
-        assert obj.entries[0].title == "国家奖学金"
+        assert obj.items[0].title == "国家奖学金"
 
     def test_certificates(self):
         from schemas.resume_module import CertificateEntry
         obj = CertificatesContent(entries=[CertificateEntry(name="软考高级", issuer="工信部")])
-        assert obj.entries[0].name == "软考高级"
+        assert obj.items[0].name == "软考高级"
 
     def test_interests(self):
         obj = InterestsContent(items=["阅读", "编程", "羽毛球"])
@@ -276,43 +286,74 @@ class TestNonCoreModules:
         obj = ClubActivitiesContent(entries=[
             ClubActivityEntry(name="计算机协会", role="会长"),
         ])
-        assert obj.entries[0].name == "计算机协会"
+        assert obj.items[0].name == "计算机协会"
 
     def test_publications(self):
         from schemas.resume_module import PublicationEntry
         obj = PublicationsContent(entries=[
             PublicationEntry(title="Deep RAG Survey", authors=["张三"], venue="ICML"),
         ])
-        assert obj.entries[0].title == "Deep RAG Survey"
+        assert obj.items[0].title == "Deep RAG Survey"
 
     def test_recommendation(self):
         from schemas.resume_module import RecommendationEntry
         obj = RecommendationContent(entries=[
             RecommendationEntry(name="李教授", title="教授", organization="广东海洋大学"),
         ])
-        assert obj.entries[0].name == "李教授"
+        assert obj.items[0].name == "李教授"
 
     def test_social_links(self):
+        obj = SocialLinksContent(items=[{"platform": "GitHub", "url": "https://github.com/test"}])
+        assert len(obj.items) == 1
+        assert obj.items[0].platform == "GitHub"
+
+    def test_social_links_legacy(self):
+        """旧格式社交链接自动迁移。"""
         obj = SocialLinksContent(github="https://github.com/test", linkedin=None)
-        assert obj.github == "https://github.com/test"
-        assert obj.linkedin is None
+        assert len(obj.items) == 1
+        assert obj.items[0].platform == "GitHub"
+        assert obj.items[0].url == "https://github.com/test"
 
     def test_other_content_required(self):
-        """other 模块 content 必填。"""
-        with pytest.raises(ValidationError):
-            OtherContent()
-        obj = OtherContent(content="补充信息")
-        assert obj.content == "补充信息"
-        assert obj.title is None
+        """other 模块 content 可为空字符串（v2 改为非必填）。"""
+        obj = OtherContent()
+        assert obj.content == ""
+        obj2 = OtherContent(content="补充信息")
+        assert obj2.content == "补充信息"
+        assert obj2.title is None
 
     def test_custom_content_both_required(self):
-        """custom 模块 title + content 都必填。"""
+        """custom 模块 title + content 都必填（无 items 时）。"""
         with pytest.raises(ValidationError):
             CustomContent(title="自定义")
         with pytest.raises(ValidationError):
             CustomContent(content="内容")
         obj = CustomContent(title="自定义", content="内容")
         assert obj.title == "自定义"
+
+    def test_custom_content_entries_mode(self):
+        """custom 模块多板块（entries → items 自动迁移）模式。"""
+        obj = CustomContent(
+            entries=[
+                {"title": "项目亮点", "content": "独立开发 3 个 Web 应用"},
+                {"title": "开源贡献", "content": "维护 2 个开源项目"},
+            ]
+        )
+        assert len(obj.items) == 2
+        assert obj.items[0].title == "项目亮点"
+        assert obj.items[1].content == "维护 2 个开源项目"
+
+    def test_custom_content_entries_require_title_and_content(self):
+        """entries 每条 title + content 都必填。"""
+        with pytest.raises(ValidationError):
+            CustomContent(entries=[{"title": "只有标题"}])
+        with pytest.raises(ValidationError):
+            CustomContent(entries=[{"content": "只有内容"}])
+
+    def test_custom_content_empty_both_rejected(self):
+        """无 items 且无 title+content 时校验失败。"""
+        with pytest.raises(ValidationError):
+            CustomContent()
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -422,6 +463,17 @@ class TestResumeStyle:
         dumped = style.model_dump()
         restored = ResumeStyle(**dumped)
         assert restored.template_id == "business"
+
+    def test_hidden_modules_default_empty(self):
+        """hidden_modules 默认空列表。"""
+        assert ResumeStyle().hidden_modules == []
+
+    def test_hidden_modules_custom(self):
+        """hidden_modules 自定义值 + 序列化往返。"""
+        style = ResumeStyle(hidden_modules=["interests", "social_links"])
+        assert style.hidden_modules == ["interests", "social_links"]
+        restored = ResumeStyle(**style.model_dump())
+        assert restored.hidden_modules == ["interests", "social_links"]
 
     def test_from_db_dict(self):
         """dict 正常解析。"""
@@ -555,7 +607,7 @@ class TestSerializationRoundtrip:
         ])
         dumped = original.model_dump()
         restored = EducationContent(**dumped)
-        assert restored.entries[0].school == "A"
+        assert restored.items[0].school == "A"
 
     def test_work_experience_roundtrip(self):
         """WorkExperienceContent 往返。"""
@@ -564,16 +616,17 @@ class TestSerializationRoundtrip:
         ])
         dumped = original.model_dump()
         restored = WorkExperienceContent(**dumped)
-        assert restored.entries[0].achievements == ["a", "b"]
+        assert restored.items[0].achievements == ["a", "b"]
 
     def test_skills_roundtrip(self):
-        """SkillsContent 往返。"""
+        """SkillsContent 往返（旧 categories 格式迁移后）。"""
         original = SkillsContent(categories=[
             SkillCategory(name="lang", items=["Python"]),
         ])
         dumped = original.model_dump()
         restored = SkillsContent(**dumped)
-        assert restored.categories[0].items == ["Python"]
+        assert restored.items[0].name == "Python"
+        assert restored.items[0].category == "lang"
 
     def test_json_serialization(self):
         """model_validate_json 正确解析 JSON 字符串。"""
@@ -599,9 +652,9 @@ class TestEdgeCases:
         assert not hasattr(obj, "unexpected_field")
 
     def test_skills_empty_categories(self):
-        """空 categories 列表合法。"""
+        """空 categories 列表迁移为空 items。"""
         obj = SkillsContent(categories=[])
-        assert obj.categories == []
+        assert obj.items == []
 
     def test_interests_empty_items(self):
         """空 items 列表合法。"""

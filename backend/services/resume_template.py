@@ -16,7 +16,7 @@ import re
 from html import escape
 from pathlib import Path
 
-from schemas.resume_module import ResumeStyle
+from schemas.resume_module import ResumeStyle, DEFAULT_MODULE_LABELS, get_content_items, get_content_title
 
 logger = logging.getLogger(__name__)
 
@@ -268,7 +268,7 @@ def _render_basic_info(content: dict) -> str:
 
 def _render_education(content: dict) -> str:
     """渲染教育背景模块。"""
-    entries = content.get("entries", [])
+    entries = get_content_items(content)
     if not entries:
         return ""
     rows = []
@@ -301,7 +301,7 @@ def _render_education(content: dict) -> str:
 
 def _render_work_experience(content: dict) -> str:
     """渲染工作经历模块。"""
-    entries = content.get("entries", [])
+    entries = get_content_items(content)
     if not entries:
         return ""
     rows = []
@@ -331,7 +331,7 @@ def _render_work_experience(content: dict) -> str:
 
 def _render_project_experience(content: dict) -> str:
     """渲染项目经历模块。"""
-    entries = content.get("entries", [])
+    entries = get_content_items(content)
     if not entries:
         return ""
     rows = []
@@ -362,27 +362,56 @@ def _render_project_experience(content: dict) -> str:
 
 
 def _render_skills(content: dict) -> str:
-    """渲染专业技能模块（渲染升级：技能标签化）。"""
-    categories = content.get("categories", [])
-    if not categories:
-        return ""
+    """渲染专业技能模块（v2：扁平 items + 熟练度）。"""
+    items = get_content_items(content)
+    if not items:
+        # 兜底：旧格式 categories
+        categories = content.get("categories", [])
+        if not categories:
+            return ""
+        rows = []
+        for cat in categories:
+            name = _esc(cat.get("name", ""))
+            cat_items = cat.get("items", [])
+            if cat_items:
+                items_html = "".join(
+                    f'<span class="skill-item">{_esc(i)}</span>' for i in cat_items
+                )
+                rows.append(
+                    f'<div class="skill-cat"><span class="skill-name">{name}</span> {items_html}</div>'
+                )
+        return "\n".join(rows) if rows else ""
+
+    # 新格式：按 category 分组显示
+    show_levels = content.get("show_levels", False)
+    by_category: dict[str, list] = {}
+    for item in items:
+        cat = item.get("category", "") or "其他"
+        by_category.setdefault(cat, []).append(item)
+
     rows = []
-    for cat in categories:
-        name = _esc(cat.get("name", ""))
-        items = cat.get("items", [])
-        if items:
-            items_html = "".join(
-                f'<span class="skill-item">{_esc(i)}</span>' for i in items
-            )
-            rows.append(
-                f'<div class="skill-cat"><span class="skill-name">{name}</span> {items_html}</div>'
-            )
+    for cat_name, cat_items in by_category.items():
+        skill_spans = []
+        for item in cat_items:
+            name = _esc(item.get("name", ""))
+            level = item.get("level")
+            if show_levels and level:
+                skill_spans.append(
+                    f'<span class="skill-item">{name} '
+                    f'<span class="skill-level">{"★" * level}{"☆" * (5 - level)}</span></span>'
+                )
+            else:
+                skill_spans.append(f'<span class="skill-item">{name}</span>')
+        rows.append(
+            f'<div class="skill-cat"><span class="skill-name">{_esc(cat_name)}</span> '
+            + "".join(skill_spans) + "</div>"
+        )
     return "\n".join(rows) if rows else ""
 
 
 def _render_language(content: dict) -> str:
     """渲染语言能力模块。"""
-    entries = content.get("entries", [])
+    entries = get_content_items(content)
     if not entries:
         return ""
     rows = []
@@ -401,7 +430,7 @@ def _render_language(content: dict) -> str:
 
 def _render_honors(content: dict) -> str:
     """渲染荣誉奖项模块。"""
-    entries = content.get("entries", [])
+    entries = get_content_items(content)
     if not entries:
         return ""
     rows = []
@@ -421,7 +450,7 @@ def _render_honors(content: dict) -> str:
 
 def _render_certificates(content: dict) -> str:
     """渲染证书模块。"""
-    entries = content.get("entries", [])
+    entries = get_content_items(content)
     if not entries:
         return ""
     rows = []
@@ -443,15 +472,22 @@ def _render_certificates(content: dict) -> str:
 
 def _render_interests(content: dict) -> str:
     """渲染兴趣爱好模块。"""
-    items = content.get("items", [])
-    if not items:
+    raw_items = content.get("items", [])
+    if not raw_items:
         return ""
-    return f'<div class="interests">{", ".join(_esc(i) for i in items)}</div>'
+    # 新格式：items 是 [{id, name}]；旧格式：items 是 string[]
+    if raw_items and isinstance(raw_items[0], dict):
+        names = [i.get("name", "") for i in raw_items if i.get("name")]
+    else:
+        names = [str(i) for i in raw_items if i]
+    if not names:
+        return ""
+    return f'<div class="interests">{", ".join(_esc(n) for n in names)}</div>'
 
 
 def _render_club_activities(content: dict) -> str:
     """渲染社团活动模块。"""
-    entries = content.get("entries", [])
+    entries = get_content_items(content)
     if not entries:
         return ""
     rows = []
@@ -476,7 +512,7 @@ def _render_club_activities(content: dict) -> str:
 
 def _render_publications(content: dict) -> str:
     """渲染研究成果模块。"""
-    entries = content.get("entries", [])
+    entries = get_content_items(content)
     if not entries:
         return ""
     rows = []
@@ -504,7 +540,7 @@ def _render_publications(content: dict) -> str:
 
 def _render_recommendation(content: dict) -> str:
     """渲染推荐人模块。"""
-    entries = content.get("entries", [])
+    entries = get_content_items(content)
     if not entries:
         return ""
     rows = []
@@ -533,7 +569,19 @@ def _render_recommendation(content: dict) -> str:
 
 
 def _render_social_links(content: dict) -> str:
-    """渲染社交链接模块。"""
+    """渲染社交链接模块（v2：items 数组）。"""
+    items = get_content_items(content)
+    if items:
+        # 新格式
+        parts = []
+        for item in items:
+            platform = _esc(item.get("platform", ""))
+            url = _esc(item.get("url", ""))
+            if platform or url:
+                parts.append(f'<span class="social-link"><strong>{platform}</strong>: {url}</span>')
+        return " | ".join(parts) if parts else ""
+
+    # 旧格式兜底
     parts = []
     fields = [
         ("github", "GitHub"),
@@ -572,7 +620,38 @@ def _render_other(content: dict) -> str:
 
 
 def _render_custom(content: dict) -> str:
-    """渲染自定义模块。"""
+    """渲染自定义模块 — 支持 items / entries / 单板块 向后兼容。"""
+    # 新格式 items
+    items = get_content_items(content)
+    if items:
+        parts = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            title = _esc(item.get("title", ""))
+            text = _esc(item.get("content", ""))
+            if not text:
+                continue
+            if title:
+                parts.append(f'<div class="custom-title">{title}</div>')
+            parts.append(f'<div class="custom-content">{text}</div>')
+        return "\n".join(parts)
+    # 旧格式 entries
+    entries = content.get("entries", [])
+    if isinstance(entries, list) and entries:
+        parts = []
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            title = _esc(entry.get("title", ""))
+            text = _esc(entry.get("content", ""))
+            if not text:
+                continue
+            if title:
+                parts.append(f'<div class="custom-title">{title}</div>')
+            parts.append(f'<div class="custom-content">{text}</div>')
+        return "\n".join(parts)
+    # 单板块模式
     title = content.get("title", "")
     text = content.get("content", "")
     if not text:
@@ -680,12 +759,22 @@ def render_resume(
     has_basic_header = "{{basic_header}}" in template_html
     # 侧栏模块：基本信息/技能/语言/兴趣/社交链接（双栏布局左侧）
     sidebar_types = {"basic_info", "skills", "language", "social_links", "interests"}
+    # 隐藏模块（显隐控制，不渲染不导出）
+    hidden_modules = set(style.hidden_modules or [])
     modules_html = []
     sidebar_html = []
     basic_header_html = []
     for mod in sorted(modules, key=lambda m: (getattr(m, "sort_order", 0), getattr(m, "id", 0))):
-        title = _MODULE_TITLES.get(mod.module_type, mod.module_type)
-        content_html = render_module(mod.module_type, mod.content if isinstance(mod.content, dict) else {})
+        if mod.module_type in hidden_modules:
+            continue
+        content = mod.content if isinstance(mod.content, dict) else {}
+        # v2: 检查 metadata.hidden
+        meta = content.get("metadata", {})
+        if isinstance(meta, dict) and meta.get("hidden"):
+            continue
+        # v2: 优先使用 metadata.title，兜底 DEFAULT_MODULE_LABELS
+        title = get_content_title(content, mod.module_type)
+        content_html = render_module(mod.module_type, content)
         if content_html.strip():
             # 头带模板：basic_info 提取为独立头部（深色带），不进 modules
             if has_basic_header and mod.module_type == "basic_info":

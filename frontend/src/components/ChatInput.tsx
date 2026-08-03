@@ -22,6 +22,8 @@ interface ChatInputProps {
   asking: boolean;
   /** 是否正在上传附件 */
   uploading: boolean;
+  /** 是否禁用输入（无简历时） */
+  disabled?: boolean;
   /** 发送文本（父组件处理真实发送） */
   onSend: (text: string) => void;
   /** 取消当前流式回复 */
@@ -44,6 +46,7 @@ const QUICK_TAGS = [
 export default function ChatInput({
   asking,
   uploading,
+  disabled = false,
   onSend,
   onCancel,
   onQuickTag,
@@ -103,8 +106,8 @@ export default function ChatInput({
                   handleSubmit(e);
                 }
               }}
-              placeholder="告诉 AI 助手你的需求..."
-              disabled={asking}
+              placeholder={disabled ? "请先创建或上传简历开始对话..." : "告诉 AI 助手你的需求..."}
+              disabled={asking || disabled}
               rows={1}
               className="w-full bg-transparent border-0 outline-none resize-none
                 text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-muted)]
@@ -127,7 +130,7 @@ export default function ChatInput({
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              disabled={uploading || asking}
+              disabled={uploading || asking || disabled}
               className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center
                 text-[var(--color-text-muted)] hover:text-brand hover:bg-brand/10
                 active:scale-90 motion-reduce:active:scale-100
@@ -150,7 +153,7 @@ export default function ChatInput({
                     key={tag.label}
                     type="button"
                     onClick={() => onQuickTag(tag.question)}
-                    disabled={asking}
+                    disabled={asking || disabled}
                     className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs
                       text-[var(--color-text-secondary)] hover:text-brand hover:bg-brand/10
                       active:scale-[0.97] motion-reduce:active:scale-100

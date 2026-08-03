@@ -13,7 +13,9 @@
 
 import io
 import logging
+import re
 from datetime import datetime
+from pathlib import Path
 
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,6 +32,9 @@ logger = logging.getLogger(__name__)
 _weasyprint = None
 _weasyprint_checked = False
 
+# 匹配 /uploads/... 图片 URL（JPG/PNG/WebP）
+_UPLOAD_URL_RE = re.compile(r'/uploads/[^\s"\'<>]+\.(?:jpg|jpeg|png|webp)', re.IGNORECASE)
+
 
 def _get_weasyprint():
     """懒加载 WeasyPrint，GTK 缺失时返回 None。"""
@@ -45,6 +50,24 @@ def _get_weasyprint():
         logger.warning("WeasyPrint not available: %s", e)
         _weasyprint = None
     return _weasyprint
+
+
+def _resolve_upload_urls(html: str) -> str:
+    """将 HTML 中 /uploads/... 相对 URL 替换为 file:// 绝对路径。
+
+    WeasyPrint 在服务器端渲染，无法通过 HTTP 访问相对路径的图片。
+    将 /uploads/avatars/xxx.jpg → file:///app/uploads/avatars/xxx.jpg
+    """
+    from core.config import settings
+
+    uploads_base = Path(settings.UPLOAD_DIR).resolve()  # e.g. /app/uploads
+
+    def _replace(match: re.Match) -> str:
+        rel_path = match.group(0).lstrip("/")  # uploads/avatars/xxx.jpg
+        abs_path = uploads_base.parent / rel_path  # /app/uploads/avatars/xxx.jpg
+        return f"file://{abs_path}"
+
+    return _UPLOAD_URL_RE.sub(_replace, html)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -103,6 +126,9 @@ async def export_resume_pdf(
     # 渲染 HTML
     html_str = render_resume(modules, style, resume.filename)
 
+    # 将 /uploads/... URL 解析为绝对文件路径（WeasyPrint 无法访问相对 URL）
+    html_str = _resolve_upload_urls(html_str)
+
     # WeasyPrint → PDF
     HTML = _get_weasyprint()
     if HTML is None:
@@ -142,13 +168,14 @@ def _module_to_markdown(mod: ResumeModule) -> str:
 
     lines = [f"## {title}", ""]
 
-    # 列表型模块
-    if "entries" in content and isinstance(content["entries"], list):
-        for entry in content["entries"]:
-            if isinstance(entry, dict):
+    # 列表型模块（v2: 使用 items）
+    items = content.get("items", [])
+    if isinstance(items, list) and items:
+        for item in items:
+            if isinstance(item, dict):
                 parts = []
-                for k, v in entry.items():
-                    if v is None or v == "" or v == []:
+                for k, v in item.items():
+                    if v is None or v == "" or v == [] or k in ("id", "hidden"):
                         continue
                     if isinstance(v, list):
                         v_text = ", ".join(str(i) for i in v)
@@ -160,14 +187,16 @@ def _module_to_markdown(mod: ResumeModule) -> str:
         lines.append("")
         return "\n".join(lines)
 
-    # 技能模块
-    if "categories" in content and isinstance(content["categories"], list):
-        for cat in content["categories"]:
-            if isinstance(cat, dict):
-                name = cat.get("name", "")
-                items = cat.get("items", [])
-                if items:
-                    lines.append(f"- **{name}**: {', '.join(items)}")
+    # 技能模块（v2: 扁平 items 按 category 分组）
+    if isinstance(items, list) and items and isinstance(items[0], dict) and "category" in items[0]:
+        grouped: dict[str, list[str]] = {}
+        for item in items:
+            cat = item.get("category", "其他")
+            name = item.get("name", "")
+            if name:
+                grouped.setdefault(cat, []).append(name)
+        for cat_name, skill_names in grouped.items():
+            lines.append(f"- **{cat_name}**: {', '.join(skill_names)}")
         lines.append("")
         return "\n".join(lines)
 
@@ -182,6 +211,9 @@ def _module_to_markdown(mod: ResumeModule) -> str:
     # 平铺型模块
     for k, v in content.items():
         if v is None or v == "" or v == []:
+            continue
+        # 跳过头像 URL（二进制资源，Markdown 中无意义）
+        if k == "avatar":
             continue
         if isinstance(v, list):
             for item in v:
@@ -216,6 +248,9 @@ async def export_resume_markdown(
     resume, modules = await get_resume_with_modules(db, user_id, resume_id)
     _guard_has_modules(modules, resume)
 
+    # 解析 style（防御历史脏数据：style 可能是双重序列化的 JSON 字符串）
+    style = ResumeStyle.from_db(resume.style)
+
     # 构建 Markdown
     lines = [
         f"# {resume.filename}",
@@ -226,7 +261,10 @@ async def export_resume_markdown(
         "",
     ]
 
+    hidden_modules = set(style.hidden_modules or [])
     for mod in sorted(modules, key=lambda m: (m.sort_order, m.id)):
+        if mod.module_type in hidden_modules:
+            continue
         lines.append(_module_to_markdown(mod))
 
     lines.append("---")

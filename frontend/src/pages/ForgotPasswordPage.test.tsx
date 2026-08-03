@@ -6,10 +6,15 @@ import ForgotPasswordPage from "./ForgotPasswordPage";
 const mockForgotPassword = vi.fn(async () => "密码已重置，请使用新密码登录");
 const mockSendCode = vi.fn(async () => "验证码已发送");
 const mockNavigate = vi.fn();
+const mockOpenLoginModal = vi.fn();
 
 vi.mock("../api/auth", () => ({
   forgotPassword: (...args: unknown[]) => mockForgotPassword(...args),
   sendCode: (...args: unknown[]) => mockSendCode(...args),
+}));
+
+vi.mock("../components/LoginModal", () => ({
+  openLoginModal: (...args: unknown[]) => mockOpenLoginModal(...args),
 }));
 
 vi.mock("react-router-dom", async () => {
@@ -177,7 +182,10 @@ describe("ForgotPasswordPage（新流程：验证码+新密码直接重置）", 
       expect(mockForgotPassword).toHaveBeenCalled();
     });
     await waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith("/login", { state: { email: "user@example.com" } });
+      expect(mockOpenLoginModal).toHaveBeenCalledWith({ email: "user@example.com" });
+    }, { timeout: 5000 });
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith("/");
     }, { timeout: 5000 });
   });
 

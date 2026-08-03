@@ -8,6 +8,7 @@ export interface ResumeItem {
   status: string;
   status_message: string;
   created_at: string;
+  updated_at: string;
   // T17: 索引新鲜度（懒索引脏标记）
   //   content_hash: 当前内容哈希；indexed_hash: 上次成功索引时的哈希
   //   is_indexed = indexed_hash 非空；is_stale = content_hash != indexed_hash
@@ -15,6 +16,11 @@ export interface ResumeItem {
   indexed_hash?: string | null;
   is_indexed?: boolean;
   is_stale?: boolean;
+  // 卡片预览：模块列表 + 样式（不传时前端兜底灰色占位）
+  modules_data?: {
+    modules: Array<{ module_type: string; content: Record<string, unknown>; sort_order: number }>;
+    style: Record<string, unknown> | null;
+  } | null;
 }
 
 export interface UploadAsyncResult {

@@ -84,13 +84,14 @@ _INTENT_SYSTEM = (
 )
 
 
-async def _resolve_by_llm(query: str) -> tuple[str, dict] | None:
+async def _resolve_by_llm(query: str, user_id: int | None = None) -> tuple[str, dict] | None:
     """LLM 兜底：一次无工具小调用，结构化解析意图。"""
     raw = await llm_generate(
         system=_INTENT_SYSTEM,
         user=f"编辑指令：{query}",
         temperature=0.0,
         max_tokens=200,
+        user_id=user_id,
         fallback='{"action": "none"}',
     )
     try:
@@ -114,7 +115,7 @@ async def _resolve_by_llm(query: str) -> tuple[str, dict] | None:
     return tool, args
 
 
-async def resolve_builder_intent(query: str) -> tuple[str, dict] | None:
+async def resolve_builder_intent(query: str, user_id: int | None = None) -> tuple[str, dict] | None:
     """解析 builder 编辑意图。
 
     Returns:
@@ -125,7 +126,7 @@ async def resolve_builder_intent(query: str) -> tuple[str, dict] | None:
     if keyword:
         return keyword
     try:
-        return await _resolve_by_llm(query)
+        return await _resolve_by_llm(query, user_id=user_id)
     except Exception as e:
         logger.warning("builder intent LLM 解析失败: %s", e)
         return None

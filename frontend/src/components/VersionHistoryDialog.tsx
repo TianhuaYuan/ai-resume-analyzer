@@ -253,7 +253,7 @@ export default function VersionHistoryDialog({
                       <span className="flex-1 min-w-0">
                         <span className="flex items-center gap-2">
                           <span className="text-sm font-medium text-[var(--color-text)]">
-                            {v.chunk_count} 个分块
+                            版本 {v.version}
                           </span>
                           {v.is_latest && (
                             <span

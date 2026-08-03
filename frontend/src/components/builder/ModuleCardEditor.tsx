@@ -253,7 +253,7 @@ function ModuleCardEditorImpl({
   }, [sortedModules]);
 
   return (
-    <div className="flex flex-col h-full bg-[var(--color-bg)]">
+    <div className="flex flex-col h-full bg-[var(--color-bg)] border-r border-[var(--color-border)]/50">
       {/* 模块卡片列表 */}
       <div
         ref={containerRef}
@@ -382,12 +382,7 @@ function ModuleCardEditorImpl({
           <button
             onClick={() => setShowAddMenu(true)}
             disabled={availableTypes.length === 0}
-            className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg
-              text-xs font-medium text-[var(--color-text-secondary)]
-              border border-dashed border-[var(--color-border)]
-              hover:text-brand hover:border-brand/40 hover:bg-brand/10
-              disabled:opacity-40 disabled:cursor-not-allowed
-              transition-all cursor-pointer"
+            className="btn-tool w-full justify-center border-dashed text-[var(--color-text-secondary)]"
             aria-label="添加模块"
           >
             <Plus size={13} weight="bold" aria-hidden="true" />

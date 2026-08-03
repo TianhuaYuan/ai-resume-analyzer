@@ -34,6 +34,36 @@ vi.mock("../../components/Toast", () => ({
   useToast: () => ({ success: vi.fn(), error: vi.fn() }),
 }));
 
+// HomePage 渲染 LandingNav，两者都依赖 AuthContext/ThemeContext
+vi.mock("../../context/AuthContext", () => ({
+  useAuth: () => ({
+    user: null,
+    logout: vi.fn(),
+    login: vi.fn(),
+    register: vi.fn(),
+    sendCode: vi.fn(),
+    updateUser: vi.fn(),
+    loading: false,
+    sessionDialog: null,
+    handleSessionGoLogin: vi.fn(),
+  }),
+}));
+
+vi.mock("../../context/ThemeContext", () => ({
+  useTheme: () => ({ theme: "light", toggleTheme: vi.fn() }),
+}));
+
+// LandingNav 挂载时轮询 getQuota，避免真实请求
+vi.mock("../../api/qa", () => ({
+  getQuota: vi.fn(async () => ({
+    enabled: false,
+    used: 0,
+    limit: 0,
+    remaining: 0,
+    reset_at: null,
+  })),
+}));
+
 function makeResume(id: number) {
   return {
     id,

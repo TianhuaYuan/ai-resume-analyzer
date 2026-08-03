@@ -11,7 +11,6 @@ import {
   Users,
   Database,
   ChatCircleDots,
-  Briefcase,
   MagnifyingGlass,
   Warning,
 } from "@phosphor-icons/react";
@@ -78,11 +77,10 @@ function StatsSection() {
     { label: "简历总数", value: stats.total_resumes, icon: Database, color: "text-emerald-500" },
     { label: "问答记录", value: stats.total_qa_history, icon: ChatCircleDots, color: "text-sky-500" },
     { label: "用户反馈", value: stats.total_feedback, icon: ChatTeardropText, color: "text-amber-500" },
-    { label: "求职申请", value: stats.total_job_applications, icon: Briefcase, color: "text-purple-500" },
   ];
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
       {cards.map((c) => {
         const Icon = c.icon;
         return (

@@ -92,6 +92,8 @@ class TestTokenAccumulation:
 
         mock_tool_class = MagicMock()
         mock_tool_class.return_value.execute = AsyncMock(return_value="结果")
+        mock_tool_class.return_value.last_usage = {"prompt_tokens": 0, "completion_tokens": 0}
+        mock_tool_class.return_value.sources = []
 
         # 两轮都走中间轮流式：第一轮调工具（200/80），第二轮直接答（150/60）
         stream_mock = MagicMock(side_effect=[
@@ -892,6 +894,8 @@ class TestAgentThoughtAndUsageEvents:
 
         mock_tool_class = MagicMock()
         mock_tool_class.return_value.execute = AsyncMock(return_value="结果")
+        mock_tool_class.return_value.last_usage = {"prompt_tokens": 0, "completion_tokens": 0}
+        mock_tool_class.return_value.sources = []
 
         events: list[dict] = []
 
@@ -930,14 +934,16 @@ class TestAgentThoughtAndUsageEvents:
             )
 
         usage_events = [e for e in events if e["type"] == "usage"]
-        # 2 轮中间轮 → 2 个 usage 事件
-        assert len(usage_events) == 2
-        # 第一个 usage 事件：本次 200+80，累计 200+80
+        # 2 轮中间轮 + 1 次工具执行后 → 3 个 usage 事件
+        assert len(usage_events) == 3
+        # 第一个 usage 事件（LLM round 1）：本次 200+80，累计 200+80
         assert usage_events[0]["usage"]["prompt_tokens"] == 200
         assert usage_events[0]["total"]["prompt_tokens"] == 200
-        # 第二个 usage 事件：本次 150+60，累计 350+140
-        assert usage_events[1]["usage"]["prompt_tokens"] == 150
-        assert usage_events[1]["total"]["prompt_tokens"] == 350
+        # 第二个 usage 事件（工具执行后）：累计仍为 200+80（工具无内部 LLM）
+        assert usage_events[1]["total"]["prompt_tokens"] == 200
+        # 第三个 usage 事件（LLM round 2）：本次 150+60，累计 350+140
+        assert usage_events[2]["usage"]["prompt_tokens"] == 150
+        assert usage_events[2]["total"]["prompt_tokens"] == 350
 
     @pytest.mark.asyncio
     async def test_usage_event_not_emitted_when_quota_exceeded(self):

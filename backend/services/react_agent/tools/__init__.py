@@ -1,22 +1,25 @@
-"""工具注册表 — 3 类 14 工具骨架。
+"""工具注册表 — unified 18 工具（v2 合并 qa + builder）。
 
 T11 创建骨架 + 注册表；T12/T13/T28 填充 _execute 实现。
+v2 统一 Agent 编辑器：合并 qa(13) + builder(5) → unified(18)。
+
 分类：
-  qa (7):        search_resume / jd_match / diagnose_resume / compare_resumes
-                 rewrite_star / translate / interview_coach
-  builder (5):   generate_module / check_module / modify_module
-                 rewrite_resume / ask_info
-  workbench (2): generate_greeting / reply_draft
-/ask/agent 挂 qa + workbench = 9 个（builder 工具仅 /ask/builder 用）。
+  qa (13):      search_resume / jd_match / diagnose_resume / compare_resumes
+                rewrite_star / translate / interview_coach 等
+  builder (5):  generate_module / check_module / modify_module
+                rewrite_resume / ask_info
+  unified (18): qa + builder 全部工具（/ask/agent 统一使用）
 """
 
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
+import hashlib
+from datetime import datetime, timezone
 
 from services.analyze_service import analyze_resume
 from services.match_jd_service import match_jd
-from services.react_agent.memory import get_l3_profile
 from services.react_agent.tools.base import Tool
+from utils.privacy import sanitize_for_ai
 from services.rag.asset_source import ASSET_TYPE_RESUME
 from services.rag.clients import knowledge_collection_name
 from services.rag.ensure_indexed import ensure_indexed
@@ -103,22 +106,6 @@ class RewriteResumeArgs(BaseModel):
 class AskInfoArgs(BaseModel):
     resume_id: int = Field(..., description="简历 ID")
     question: str = Field(..., description="追问问题")
-
-
-# ═══════════════════════════════════════════════════════════
-# Workbench 工具参数模型 (2)
-# ═══════════════════════════════════════════════════════════
-
-
-class GenerateGreetingArgs(BaseModel):
-    resume_id: int = Field(..., description="简历 ID")
-    target_position: str = Field(..., description="目标岗位")
-
-
-class ReplyDraftArgs(BaseModel):
-    resume_id: int = Field(..., description="简历 ID")
-    hr_message: str = Field(..., description="HR 发来的消息原文")
-    target_position: str = Field(..., description="目标岗位")
 
 
 # ═══════════════════════════════════════════════════════════
@@ -503,6 +490,7 @@ class RewriteStarTool(Tool):
         return await _submit_modules_via_llm(
             self.user_id, resume_id, system, user_msg,
             fail_prefix="STAR 改写失败", emit=self.emit,
+            usage_target=self.last_usage,
         )
 
 
@@ -547,6 +535,7 @@ class TranslateTool(Tool):
         return await _submit_modules_via_llm(
             self.user_id, resume_id, system, user_msg,
             max_tokens=8000, fail_prefix="翻译失败", emit=self.emit,
+            usage_target=self.last_usage,
         )
 
 
@@ -667,6 +656,7 @@ async def _stream_tool_llm(
     max_tokens: int | None = None,
     model: str | None = None,
     user_id: int | None = None,
+    usage_target: dict | None = None,
 ) -> LLMToolResponse:
     """工具内部 LLM 流式生成（编辑器工具内部死等 → 边出边看）。
 
@@ -687,6 +677,7 @@ async def _stream_tool_llm(
 
     content_parts: list[str] = []
     tool_calls: list[ToolCall] = []
+    tool_usage: dict = {"prompt_tokens": 0, "completion_tokens": 0}
     async for ev in llm_generate_with_tools_stream(
         messages=messages,
         tools=tools,
@@ -715,11 +706,20 @@ async def _stream_tool_llm(
                     "content": ev.get("content", ""),
                 }
             )
+        elif et == "usage":
+            tool_usage["prompt_tokens"] = ev.get("prompt_tokens", 0)
+            tool_usage["completion_tokens"] = ev.get("completion_tokens", 0)
+            if usage_target is not None:
+                usage_target["prompt_tokens"] = tool_usage["prompt_tokens"]
+                usage_target["completion_tokens"] = tool_usage["completion_tokens"]
         elif et == "done":
             tool_calls = ev.get("tool_calls", []) or []
-        # usage 事件忽略（工具内部 token 不计入主 usage 记账）
 
-    return LLMToolResponse(content="".join(content_parts), tool_calls=tool_calls)
+    return LLMToolResponse(
+        content="".join(content_parts),
+        tool_calls=tool_calls,
+        usage=tool_usage,
+    )
 
 
 def _make_function_schema(name: str, description: str, parameters: dict) -> dict:
@@ -802,7 +802,7 @@ async def _read_modules_context(db, user_id: int, resume_id: int):
         return None, ""
     if modules:
         parts = [
-            f"- {m.module_type}: {_json.dumps(m.content, ensure_ascii=False)[:300]}"
+            f"- {m.module_type}: {_json.dumps(sanitize_for_ai(m.content) if isinstance(m.content, dict) else m.content, ensure_ascii=False)[:300]}"
             for m in modules
         ]
         return resume, "\n".join(parts)
@@ -821,6 +821,8 @@ async def _submit_modules_via_llm(
     max_tokens: int = 4000,
     fail_prefix: str = "AI 重写失败",
     emit=None,
+    usage_target: dict | None = None,
+    complete: bool = False,
 ) -> str:
     """让 LLM 通过 function calling 提交完整 modules 数组 → 逐模块校验 → 短事务全量替换。
 
@@ -846,6 +848,7 @@ async def _submit_modules_via_llm(
             temperature=0.1, max_tokens=max_tokens,
             model=_BUILDER_GEN_MODEL,
             user_id=user_id,
+            usage_target=usage_target,
         )
         args = _extract_tool_args(response, "submit_rewritten_resume")
     except Exception as e:
@@ -881,7 +884,7 @@ async def _submit_modules_via_llm(
     if not validated_modules:
         return f"⚠️ 重写结果校验失败，无有效模块:\n" + "\n".join(errors)
 
-    result = await _replace_all_modules_short_txn(user_id, resume_id, validated_modules)
+    result = await _replace_all_modules_short_txn(user_id, resume_id, validated_modules, complete=complete)
     if errors:
         result += f"\n⚠️ {len(errors)} 个模块校验失败被跳过。"
     return result
@@ -956,10 +959,16 @@ async def _replace_all_modules_short_txn(
     user_id: int,
     resume_id: int,
     modules_data: list[dict],
+    *,
+    complete: bool = False,
 ) -> str:
-    """短事务全量替换所有模块（rewrite_resume 用）。
+    """全量替换所有模块（rewrite_star / translate / rewrite_resume 共用）。
 
     每个模块 dict: {module_type: str, content: dict, sort_order: int}
+
+    两条路径：
+    - complete=False (草稿): 替换模块 + 更新 parsed_text/content_hash，不触发索引、不 bump version
+    - complete=True  (完成):  同上 + ensure_indexed + 清 embedding 缓存 + bump version + status=ready
     """
     from models.resume import Resume
     from models.resume_module import ResumeModule
@@ -999,9 +1008,54 @@ async def _replace_all_modules_short_txn(
             )
             session.add(module)
 
+        # 合并模块 → parsed_text + content_hash（两条路径都需要）
+        from services.resume_builder import _merge_modules_to_text
+        new_modules = []
+        for idx, mod_data in enumerate(modules_data):
+            m = ResumeModule(
+                resume_id=resume_id,
+                module_type=mod_data["module_type"],
+                content=mod_data["content"],
+                sort_order=mod_data.get("sort_order", idx),
+            )
+            m.id = idx  # _merge_modules_to_text 排序用
+            new_modules.append(m)
+        parsed_text = _merge_modules_to_text(new_modules)
+        resume.parsed_text = parsed_text
+        resume.content_hash = hashlib.sha256(parsed_text.encode("utf-8")).hexdigest()
+        resume.updated_at = datetime.now(timezone.utc)
+
+        if complete:
+            # 完成路径：立即触发索引 + bump version + status=ready
+            from core import cache as embedding_cache
+            from services.rag.clients import knowledge_collection_name
+            from services.rag.ensure_indexed import ensure_indexed
+            from services.rag.asset_source import ASSET_TYPE_RESUME
+
+            await embedding_cache.clear_resume(resume_id)
+            try:
+                indexed = await ensure_indexed(
+                    session,
+                    user_id=user_id,
+                    asset_id=resume_id,
+                    asset_type=ASSET_TYPE_RESUME,
+                    collection=knowledge_collection_name(user_id),
+                )
+                if not indexed:
+                    raise RuntimeError("ensure_indexed failed")
+            except Exception as e:
+                await session.rollback()
+                logger.exception("Failed to rebuild vectors for resume %d", resume_id)
+                return f"⚠️ 向量化重建失败: {e}"
+
+            resume.status = "ready"
+            resume.version += 1
+
         await session.commit()
 
-    return f"✅ 简历已重写，共 {len(modules_data)} 个模块已保存。"
+    if complete:
+        return f"✅ 简历已重写并发布，共 {len(modules_data)} 个模块已保存，版本 {resume.version}。"
+    return f"✅ 简历已重写为草稿，共 {len(modules_data)} 个模块已保存。"
 
 
 async def _get_module_content(
@@ -1061,11 +1115,12 @@ class GenerateModuleTool(Tool):
         if schema_class is None:
             return f"⚠️ 模块类型 {module_type} 无对应 schema。"
 
-        # 收集现有简历上下文（其他模块的内容摘要）
+        # 收集现有简历上下文（其他模块的内容摘要，脱敏后传给 LLM）
         context_parts = []
         for mod in modules:
             if mod.module_type != module_type:
-                context_parts.append(f"- {mod.module_type}: {_json.dumps(mod.content, ensure_ascii=False)[:200]}")
+                sanitized = sanitize_for_ai(mod.content) if isinstance(mod.content, dict) else mod.content
+                context_parts.append(f"- {mod.module_type}: {_json.dumps(sanitized, ensure_ascii=False)[:200]}")
         context_str = "\n".join(context_parts) if context_parts else "（空简历）"
 
         # 内部 function calling：parameters = 该模块 content schema 本身
@@ -1103,6 +1158,7 @@ class GenerateModuleTool(Tool):
                 temperature=0.1, max_tokens=2000,
                 model=_BUILDER_GEN_MODEL,
                 user_id=self.user_id,
+                usage_target=self.last_usage,
             )
             # 工具参数即 content（parameters == content schema）
             content = _extract_tool_args(response, "submit_module_content")
@@ -1136,6 +1192,10 @@ class CheckModuleTool(Tool):
 
         content_str = _json.dumps(module.content, ensure_ascii=False, indent=2)
 
+        # 脱敏后传给 LLM
+        sanitized_content = sanitize_for_ai(module.content) if isinstance(module.content, dict) else module.content
+        sanitized_str = _json.dumps(sanitized_content, ensure_ascii=False, indent=2)
+
         system = (
             "你是 ATS（Applicant Tracking System）简历检查专家。"
             "分析给定模块的内容，检查以下方面：\n"
@@ -1155,7 +1215,7 @@ class CheckModuleTool(Tool):
         )
         user_msg = (
             f"模块类型: {module_type}\n"
-            f"模块内容:\n{content_str}\n\n"
+            f"模块内容:\n{sanitized_str}\n\n"
             f"请检查以上模块内容。"
         )
 
@@ -1169,6 +1229,7 @@ class CheckModuleTool(Tool):
             emit=self.emit,
             temperature=0.2, max_tokens=1500,
             user_id=self.user_id,
+            usage_target=self.last_usage,
         )
         return check_resp.content
 
@@ -1194,6 +1255,10 @@ class ModifyModuleTool(Tool):
 
         content_str = _json.dumps(module.content, ensure_ascii=False, indent=2)
 
+        # 脱敏后传给 LLM
+        sanitized_content = sanitize_for_ai(module.content) if isinstance(module.content, dict) else module.content
+        sanitized_str = _json.dumps(sanitized_content, ensure_ascii=False, indent=2)
+
         from schemas.resume_module import MODULE_CONTENT_SCHEMAS, ModuleType
 
         try:
@@ -1215,7 +1280,7 @@ class ModifyModuleTool(Tool):
         )
         user_msg = (
             f"模块类型: {module_type}\n"
-            f"当前内容:\n{content_str}\n\n"
+            f"当前内容:\n{sanitized_str}\n\n"
             f"修改指令: {instruction}\n\n"
             f"请输出修改后的完整 content 并通过 submit_modified_content 工具提交。"
         )
@@ -1232,6 +1297,7 @@ class ModifyModuleTool(Tool):
                 temperature=0.1, max_tokens=2000,
                 model=_BUILDER_GEN_MODEL,
                 user_id=self.user_id,
+                usage_target=self.last_usage,
             )
             # 工具参数即修改后的 content
             content = _extract_tool_args(response, "submit_modified_content")
@@ -1265,8 +1331,9 @@ class RewriteResumeTool(Tool):
         if modules:
             context_parts = []
             for mod in modules:
+                sanitized = sanitize_for_ai(mod.content) if isinstance(mod.content, dict) else mod.content
                 context_parts.append(
-                    f"- {mod.module_type}: {_json.dumps(mod.content, ensure_ascii=False)[:300]}"
+                    f"- {mod.module_type}: {_json.dumps(sanitized, ensure_ascii=False)[:300]}"
                 )
             existing_context = "\n".join(context_parts)
         else:
@@ -1307,6 +1374,8 @@ class RewriteResumeTool(Tool):
         return await _submit_modules_via_llm(
             self.user_id, resume_id, system_prompt, user_msg,
             fail_prefix="AI 重写失败", emit=self.emit,
+            usage_target=self.last_usage,
+            complete=(mode == "generate"),  # generate 模式自动完成
         )
 
 
@@ -1376,83 +1445,6 @@ class AskInfoTool(Tool):
 
 
 # ═══════════════════════════════════════════════════════════
-# Workbench 工具骨架 (2) — T12 填充 _execute
-# ═══════════════════════════════════════════════════════════
-
-
-class GenerateGreetingTool(Tool):
-    name = "generate_greeting"
-    description = "基于简历优势和目标岗位生成打招呼语（复制粘贴用）"
-    args_model = GenerateGreetingArgs
-    category = "workbench"
-
-    async def _execute(self, **kwargs) -> str:
-        resume_id = kwargs.get("resume_id")
-        target_position = kwargs.get("target_position")
-
-        l3_profile = await get_l3_profile(resume_id)
-
-        if l3_profile:
-            parts = []
-            if "summary" in l3_profile:
-                parts.append(f"个人总结：{l3_profile['summary']}")
-            if "skills" in l3_profile:
-                skills = l3_profile["skills"]
-                skills_text = "、".join(skills) if isinstance(skills, list) else str(skills)
-                parts.append(f"核心技能：{skills_text}")
-            profile_text = "\n".join(parts)
-        else:
-            profile_text = "（暂无简历画像数据，请提供通用打招呼语）"
-
-        system = (
-            f"你是求职助手，帮候选人生成针对 {target_position} 岗位的打招呼语。"
-            "打招呼语要简洁、专业、有亮点，适合在招聘平台直接复制粘贴发送。"
-            "控制在 100 字以内。"
-        )
-        user = f"目标岗位：{target_position}\n\n候选人画像：\n{profile_text}"
-
-        return await llm_generate(system=system, user=user, user_id=self.user_id)
-
-
-class ReplyDraftTool(Tool):
-    name = "reply_draft"
-    description = "结合简历和岗位信息生成 HR 回复话术"
-    args_model = ReplyDraftArgs
-    category = "workbench"
-
-    async def _execute(self, **kwargs) -> str:
-        resume_id = kwargs.get("resume_id")
-        hr_message = kwargs.get("hr_message")
-        target_position = kwargs.get("target_position")
-
-        l3_profile = await get_l3_profile(resume_id)
-
-        if l3_profile:
-            parts = []
-            if "summary" in l3_profile:
-                parts.append(f"个人总结：{l3_profile['summary']}")
-            if "skills" in l3_profile:
-                skills = l3_profile["skills"]
-                skills_text = "、".join(skills) if isinstance(skills, list) else str(skills)
-                parts.append(f"核心技能：{skills_text}")
-            profile_text = "\n".join(parts)
-        else:
-            profile_text = "（暂无简历画像数据）"
-
-        system = (
-            f"你是求职助手，帮候选人回复 HR 的消息。目标岗位：{target_position}。"
-            "回复要专业、得体、简洁，体现候选人与岗位的匹配度。"
-        )
-        user = (
-            f"HR 消息：{hr_message}\n\n"
-            f"目标岗位：{target_position}\n\n"
-            f"候选人画像：\n{profile_text}"
-        )
-
-        return await llm_generate(system=system, user=user, user_id=self.user_id)
-
-
-# ═══════════════════════════════════════════════════════════
 # TOOL_REGISTRY
 # ═══════════════════════════════════════════════════════════
 
@@ -1480,11 +1472,10 @@ TOOL_REGISTRY: dict[str, list[type[Tool]]] = {
         RewriteResumeTool,
         AskInfoTool,
     ],
-    "workbench": [
-        GenerateGreetingTool,
-        ReplyDraftTool,
-    ],
 }
+
+# v2: unified = qa + builder 合并（/ask/agent 统一使用）
+TOOL_REGISTRY["unified"] = TOOL_REGISTRY["qa"] + TOOL_REGISTRY["builder"]
 
 
 # ═══════════════════════════════════════════════════════════
@@ -1493,29 +1484,44 @@ TOOL_REGISTRY: dict[str, list[type[Tool]]] = {
 
 
 def get_tools_for_agent() -> list[type[Tool]]:
-    """/ask/agent 工具集 = qa(7) + workbench(2) = 9 个。"""
-    return TOOL_REGISTRY["qa"] + TOOL_REGISTRY["workbench"]
+    """/ask/agent 工具集 = unified(18)，qa + builder 合并。"""
+    return TOOL_REGISTRY["unified"]
 
 
 def get_tools_for_builder() -> list[type[Tool]]:
-    """/ask/builder 工具集 = builder(5)。"""
+    """/ask/builder 工具集（已废弃，保留向后兼容）。
+
+    .. deprecated:: v2
+        使用 get_tools_for_agent() 获取统一工具集。
+    """
+    import warnings
+    warnings.warn(
+        "get_tools_for_builder() 已废弃，请使用 get_tools_for_agent()",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     return TOOL_REGISTRY["builder"]
 
 
 def get_tool_by_name(name: str) -> type[Tool] | None:
-    """按工具名查找工具类。"""
-    for tools in TOOL_REGISTRY.values():
-        for tool_class in tools:
-            if tool_class.name == name:
-                return tool_class
+    """按工具名查找工具类（在 unified 集中查找）。"""
+    for tool_class in TOOL_REGISTRY["unified"]:
+        if tool_class.name == name:
+            return tool_class
     return None
 
 
 def get_agent_schemas() -> list[dict]:
-    """获取 /ask/agent 的 OpenAI function calling schema 列表。"""
+    """获取 /ask/agent 的 OpenAI function calling schema 列表（unified）。"""
     return [tool_class().to_openai_schema() for tool_class in get_tools_for_agent()]
 
 
 def get_builder_schemas() -> list[dict]:
-    """获取 /ask/builder 的 OpenAI function calling schema 列表。"""
-    return [tool_class().to_openai_schema() for tool_class in get_tools_for_builder()]
+    """获取 builder 工具的 schema 列表（已废弃）。"""
+    import warnings
+    warnings.warn(
+        "get_builder_schemas() 已废弃，请使用 get_agent_schemas()",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return [tool_class().to_openai_schema() for tool_class in TOOL_REGISTRY["builder"]]

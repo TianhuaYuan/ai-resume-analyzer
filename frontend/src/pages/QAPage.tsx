@@ -34,19 +34,39 @@ import {
   type ConversationItem,
 } from "../api/qa";
 import { listResumes, uploadResume, type ResumeItem } from "../api/resumes";
-import { getBuilderResume, type ResumeModule } from "../api/builder";
+import {
+  getBuilderResume,
+  saveDraft,
+  saveComplete,
+  acquireEditLock,
+  renewEditLock,
+  releaseEditLock,
+  createBuilderResume,
+  type ResumeModule,
+  type ResumeStyle,
+  type ModuleType,
+  type ModuleContent,
+  type ResumeModuleInput,
+} from "../api/builder";
+import { A4PreviewPanel } from "../components/builder/A4PreviewPanel";
+import { ModuleCardEditor } from "../components/builder/ModuleCardEditor";
+import type { AIAction } from "../components/builder/ModuleCard";
+import { MODULE_ORDER } from "../components/builder/ModuleList";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { CompareSelectDialog } from "../components/CompareSelectDialog";
 import MarkdownRenderer from "../components/MarkdownRenderer";
 import AgentProcessPanel from "../components/AgentProcessPanel";
 import ResumeEditDiffDialog from "../components/ResumeEditDiffDialog";
 import ChatInput from "../components/ChatInput";
+import VersionHistoryDialog from "../components/VersionHistoryDialog";
+import PasteResumeDialog from "../components/builder/PasteResumeDialog";
+import AtsOptimizeDialog from "../components/builder/AtsOptimizeDialog";
+import { StylePanel } from "../components/builder/StylePanel";
 
 interface ChatMessage {
   id: number | string;
   question: string;
   answer: string;
-  sources: string[];
   streaming: boolean;
   /** Task 5.1: 质量反馈状态 */
   feedback?: "positive" | "negative" | null;
@@ -83,7 +103,7 @@ const GUIDE_CARDS: GuideCard[] = [
     icon: FilePlus,
     label: "创建简历",
     description: "快速开始一份新的简历",
-    navigate: "/resumes",
+    question: "请帮我创建一份简历",
   },
   {
     icon: Briefcase,
@@ -105,55 +125,7 @@ const GUIDE_CARDS: GuideCard[] = [
   },
 ];
 
-// ── 来源引用组件 ────────────────────────────────────────
 
-const SOURCE_TRUNCATE_LIMIT = 220;
-
-function SourceCard({ index, text }: { index: number; text: string }) {
-  const [expanded, setExpanded] = useState(false);
-  const isLong = text.length > SOURCE_TRUNCATE_LIMIT;
-
-  return (
-    <div className="p-3 rounded-xl bg-brand/5 border border-brand/10 text-xs text-[var(--color-text-secondary)] leading-relaxed">
-      <span className="text-brand font-semibold mr-2">[{index}]</span>
-      {isLong && !expanded ? text.slice(0, SOURCE_TRUNCATE_LIMIT) + "..." : text}
-      {isLong && (
-        <button
-          onClick={() => setExpanded((v) => !v)}
-          className="ml-1 text-brand hover:text-brand-hover underline-offset-2 hover:underline cursor-pointer"
-        >
-          {expanded ? "收起" : "展开"}
-        </button>
-      )}
-    </div>
-  );
-}
-
-function SourceToggle({ sources }: { sources: string[] }) {
-  const [expanded, setExpanded] = useState(false);
-
-  if (sources.length === 0) return null;
-
-  return (
-    <div className="mt-2">
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="inline-flex items-center gap-1 text-xs text-[var(--color-text-muted)]
-          hover:text-brand hover:bg-brand/10 px-2 py-1 rounded-md
-          transition-all duration-300 cursor-pointer"
-      >
-        来源 (<span className="tabular-nums">{sources.length}</span>) {expanded ? "▲" : "▼"}
-      </button>
-      {expanded && (
-        <div className="mt-2 space-y-2 animate-fade-in-up">
-          {sources.map((src, j) => (
-            <SourceCard key={j} index={j + 1} text={src} />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 function StreamingCursor() {
   return (
@@ -186,10 +158,12 @@ function EmptyState({
   searching,
   asking,
   onGuideClick,
+  hasResume,
 }: {
   searching: boolean;
   asking: boolean;
   onGuideClick: (card: GuideCard) => void;
+  hasResume: boolean;
 }) {
   if (searching) {
     return (
@@ -216,11 +190,15 @@ function EmptyState({
         {GUIDE_CARDS.map((card) => {
           const Icon = card.icon;
           const isPrimary = !!card.primary;
+          // 无简历时禁用需要简历的卡片，但"创建简历"卡片始终可点击
+          const isCreateCard = card.label === "创建简历";
+          const needsResume = card.question && !card.navigate && !isCreateCard;
+          const disabled = asking || (needsResume && !hasResume);
           return (
             <button
               key={card.label}
               onClick={() => onGuideClick(card)}
-              disabled={asking}
+              disabled={disabled}
               className={`group flex items-center gap-3.5 p-4 rounded-2xl border text-left
                 transition-all duration-300 cursor-pointer
                 hover:-translate-y-1 hover:shadow-xl hover:shadow-black/5
@@ -308,12 +286,25 @@ const MessageBubble = memo(function MessageBubble({ msg, deleting, onDelete, onF
                     className="text-[10px] text-[var(--color-text-muted)] mt-1 block"
                   >
                     {formatTimestamp(msg.created_at)}
-                    {msg.token_usage?.total ? (
-                      <span className="ml-2 font-mono-label tabular-nums">· {msg.token_usage.total} tokens</span>
-                    ) : null}
                   </span>
                 )}
-                <SourceToggle sources={msg.sources} />
+                {/* Token 消耗 */}
+                {msg.token_usage?.total ? (
+                  <span
+                    data-testid="message-token-usage"
+                    className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 text-[10px] font-mono tabular-nums text-[var(--color-text-muted)] bg-[var(--color-bg-secondary)] rounded-md"
+                  >
+                    <svg className="w-2.5 h-2.5 opacity-50" viewBox="0 0 16 16" fill="currentColor">
+                      <path d="M8 1a7 7 0 100 14A7 7 0 008 1zm0 12.5a5.5 5.5 0 110-11 5.5 5.5 0 010 11zM8 4a.75.75 0 01.75.75v2.5h2.5a.75.75 0 010 1.5h-2.5v2.5a.75.75 0 01-1.5 0v-2.5h-2.5a.75.75 0 010-1.5h2.5v-2.5A.75.75 0 018 4z"/>
+                    </svg>
+                    {msg.token_usage.total.toLocaleString()} tokens
+                    {msg.token_usage.prompt != null && msg.token_usage.completion != null && (
+                      <span className="opacity-60">
+                        （↑{msg.token_usage.prompt.toLocaleString()} ↓{msg.token_usage.completion.toLocaleString()}）
+                      </span>
+                    )}
+                  </span>
+                ) : null}
               </div>
               <div className="shrink-0 flex items-center gap-1 mt-2">
                 {/* Task 5.1: 质量反馈按钮 */}
@@ -433,7 +424,36 @@ export default function QAPage() {
   const [compareIds, setCompareIds] = useState<number[]>([]);
   const [jdOpen, setJdOpen] = useState(false);
   const [jdText, setJdText] = useState("");
+
+  // v2: 简历预览面板（点击简历时右侧弹出）
+  const [showPreview, setShowPreview] = useState(false);
+  const [previewModules, setPreviewModules] = useState<ResumeModule[]>([]);
+  const [previewStyle, setPreviewStyle] = useState<ResumeStyle | null>(null);
+  // v2: 左侧面板切换（agent=聊天 / module=模块编辑）
+  const [leftPanel, setLeftPanel] = useState<"agent" | "module">("agent");
+  const [editingModule, setEditingModule] = useState<string | null>(null);
+  const [expandedType, setExpandedType] = useState<ModuleType | null>(null);
+  const [previewKey, setPreviewKey] = useState(0);
+  // v2: BuilderPage 迁移 — 编辑锁 + 保存 + 版本
+  const [version, setVersion] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [lastSaveMode, setLastSaveMode] = useState<"draft" | "complete" | null>(null);
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
+  const [showPasteDialog, setShowPasteDialog] = useState(false);
+  const [showAtsDialog, setShowAtsDialog] = useState(false);
+  const [showStylePanel, setShowStylePanel] = useState(false);
+  const lockTokenRef = useRef<string | null>(null);
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const modulesRef = useRef(previewModules);
+  const styleRef = useRef(previewStyle);
+  useEffect(() => { modulesRef.current = previewModules; }, [previewModules]);
+  useEffect(() => { styleRef.current = previewStyle; }, [previewStyle]);
   const [uploading, setUploading] = useState(false);
+
+  // ── 无简历引导状态 ──
+  const [aiCreateMode, setAiCreateMode] = useState(false);
+  const [pendingAiCreateQuestion, setPendingAiCreateQuestion] = useState<string | null>(null);
 
   // ── AI 修改简历实时 diff 弹窗 ──
   // Agent 开始前快照当前模块（before），tool_result 到达后拉取最新模块（after）
@@ -528,12 +548,18 @@ export default function QAPage() {
     };
   }, [resumeId, activeConversationId, creatingConv]);
 
-  // ── 接收来自 FloatingAIPanel 的导航问题 ──
+  // ── 接收来自简历列表的 resumeId（v2: 点击简历跳转 QA） ──
   useEffect(() => {
-    const state = location.state as { question?: string } | null;
+    const state = location.state as { resumeId?: number; question?: string } | null;
+    if (state?.resumeId && state.resumeId !== resumeId) {
+      setResumeId(state.resumeId);
+      setShowPreview(true); // 立即显示预览
+    }
     if (state?.question && !asking && resumeId > 0) {
       sendQuestionRef.current?.(state.question);
-      // 清除 state 防止重复触发
+    }
+    // 清除 state 防止重复触发
+    if (state?.resumeId || state?.question) {
       window.history.replaceState({}, "");
     }
   }, [location.state, asking, resumeId]);
@@ -543,12 +569,33 @@ export default function QAPage() {
   const [quota, setQuota] = useState<QuotaResponse | null>(null);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<(() => void) | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── 实时滚动：跟踪用户是否在底部 ──
+  // 用户上滚时暂停自动滚动，下滚回底部时恢复
+  const isNearBottomRef = useRef(true);
+
+  /** 检测滚动容器是否在底部附近（距底部 80px 以内视为"在底部"） */
+  const checkNearBottom = useCallback(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const threshold = 80;
+    isNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
+  }, []);
+
+  /** 滚动到底部（smooth） */
+  const scrollToBottom = useCallback((smooth = true) => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: smooth ? "smooth" : "instant" });
+  }, []);
 
   // ── 流式步骤 rAF 节流（性能优化） ──
   // agent_thought / tool_* 事件高频到达，若每段都 setChat 会触发整页重渲染。
   // 改为累积到 pendingStepsRef，由 requestAnimationFrame 每帧批量刷新一次。
+  // flush 后自动滚动到底部，实现实时滚动体验。
   const pendingStepsRef = useRef<AgentStep[]>([]);
   const rafRef = useRef<number | null>(null);
 
@@ -564,8 +611,12 @@ export default function QAPage() {
             : m
         )
       );
+      // rAF 刷新后立即滚动到底部（仅在用户未上滚时）
+      requestAnimationFrame(() => {
+        if (isNearBottomRef.current) scrollToBottom(false);
+      });
     },
-    []
+    [scrollToBottom]
   );
 
   /** 调度下一次 rAF 批量刷新（同帧内多次事件只刷新一次） */
@@ -628,7 +679,6 @@ export default function QAPage() {
           id: it.id,
           question: it.question,
           answer: it.answer,
-          sources: it.sources,
           streaming: false,
           created_at: it.created_at,
           token_usage: it.token_usage,
@@ -649,13 +699,129 @@ export default function QAPage() {
     [resumeId]
   );
 
-  // 加载简历元信息
+  // 加载简历元信息 + 预览数据
   useEffect(() => {
+    if (!resumeId) return;
     listResumes().then((data) => {
       const r = data.items.find((item) => item.id === resumeId);
       if (r) setResume(r);
     });
+    // v2: 加载预览模块数据
+    getBuilderResume(resumeId).then((data) => {
+      setPreviewModules(data.modules ?? []);
+      setPreviewStyle(data.style ?? null);
+      setVersion(data.version);
+      setShowPreview(true);
+    }).catch(() => {});
   }, [resumeId]);
+
+  // v2: 编辑锁生命周期
+  useEffect(() => {
+    if (!resumeId) return;
+    acquireEditLock(resumeId)
+      .then((res) => { if (res.locked && res.lock_token) lockTokenRef.current = res.lock_token; })
+      .catch(() => {});
+    const heartbeat = setInterval(() => {
+      if (lockTokenRef.current) renewEditLock(resumeId, lockTokenRef.current).catch(() => {});
+    }, 60000);
+    return () => {
+      clearInterval(heartbeat);
+      if (lockTokenRef.current) releaseEditLock(resumeId, lockTokenRef.current).catch(() => {});
+    };
+  }, [resumeId]);
+
+  // v2: 自动保存草稿（5s 防抖）
+  const doSaveDraft = useCallback(async () => {
+    if (!resume) return;
+    setSaveStatus("saving");
+    try {
+      const result = await saveDraft(resumeId, {
+        modules: modulesRef.current.map((m) => ({
+          module_type: m.module_type,
+          content: m.content,
+          sort_order: m.sort_order,
+        })),
+        style: styleRef.current ?? undefined,
+      });
+      setVersion(result.version);
+      setSaveStatus("saved");
+      setLastSaveMode("draft");
+    } catch {
+      setSaveStatus("error");
+    }
+  }, [resume, resumeId]);
+
+  useEffect(() => {
+    if (!resume || previewModules.length === 0) return;
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = setTimeout(() => { doSaveDraft(); }, 5000);
+    return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current); };
+  }, [previewModules, previewStyle, resume, doSaveDraft]);
+
+  // v2: 手动保存草稿
+  const handleSaveDraft = useCallback(async () => {
+    if (!resume) return;
+    setSaving(true);
+    try {
+      const result = await saveDraft(resumeId, {
+        modules: modulesRef.current.map((m) => ({
+          module_type: m.module_type,
+          content: m.content,
+          sort_order: m.sort_order,
+        })),
+        style: styleRef.current ?? undefined,
+      });
+      setVersion(result.version);
+      setSaveStatus("saved");
+      setLastSaveMode("draft");
+    } catch {
+      setSaveStatus("error");
+    } finally {
+      setSaving(false);
+    }
+  }, [resume, resumeId]);
+
+  // v2: 保存并完成
+  const handleSaveComplete = useCallback(async () => {
+    if (!resume) return;
+    setSaving(true);
+    try {
+      const result = await saveComplete(resumeId, version, {
+        modules: modulesRef.current.map((m) => ({
+          module_type: m.module_type,
+          content: m.content,
+          sort_order: m.sort_order,
+        })),
+        style: styleRef.current ?? undefined,
+      });
+      setVersion(result.version);
+      setSaveStatus("saved");
+      setLastSaveMode("complete");
+    } catch {
+      setSaveStatus("error");
+    } finally {
+      setSaving(false);
+    }
+  }, [resume, resumeId, version]);
+
+  // v2: 粘贴简历回调
+  const handlePasteParsed = useCallback((parsedModules: ResumeModuleInput[]) => {
+    const newModules: ResumeModule[] = parsedModules.map((m, i) => ({
+      id: -Date.now() - i,
+      resume_id: resumeId,
+      module_type: m.module_type,
+      content: m.content,
+      sort_order: m.sort_order,
+      created_at: new Date().toISOString(),
+    }));
+    setPreviewModules(newModules);
+  }, [resumeId]);
+
+  // v2: ATS 优化回调
+  const handleAtsOptimize = useCallback((company: string, position: string) => {
+    const question = `请根据 ${company} 公司的「${position}」岗位要求，对我的简历进行 ATS 机筛优化。请从以下方面优化：\n1. 关键词匹配\n2. 格式规范\n3. 内容优先级\n4. 量化成果\n5. 排版建议`;
+    sendQuestion(question);
+  }, []);
 
   // 加载 token 限额
   useEffect(() => {
@@ -716,30 +882,66 @@ export default function QAPage() {
     loadHistory(debouncedKeyword, activeConversationId);
   }, [debouncedKeyword, activeConversationId, loadHistory]);
 
-  // 滚动到底部：仅在新消息添加或流式回答增长时触发，避免每个 token 都 smooth scroll
+  // 滚动到底部：仅在新消息添加或流式回答增长时触发
+  // 仅当用户在底部附近时才自动滚动，避免打断用户阅读历史
   const prevChatLenRef = useRef(0);
   const prevLastAnswerRef = useRef("");
+  const prevStreamingRef = useRef(false);
   useEffect(() => {
     const len = chat.length;
     const lastMsg = chat[len - 1];
     const lastAnswer = lastMsg?.answer ?? "";
-    // 新消息加入 OR 流式回答内容增长 → 滚动
+    const isStreaming = lastMsg?.streaming ?? false;
+    const streamingJustEnded = prevStreamingRef.current && !isStreaming;
+
+    // 触发滚动的条件：
+    // 1. 新消息加入
+    // 2. 流式回答内容增长（streaming 中）
+    // 3. 流式刚结束（streaming→false，AgentProcessPanel 折叠后高度变化，需重新定位底部）
     if (len > prevChatLenRef.current ||
-        (lastMsg?.streaming && lastAnswer !== prevLastAnswerRef.current)) {
-      chatEndRef.current?.scrollIntoView({ behavior: "auto" });
+        (isStreaming && lastAnswer !== prevLastAnswerRef.current) ||
+        streamingJustEnded) {
+      if (isNearBottomRef.current) {
+        // 新消息加入 / 流式结束用 instant（立即跳转），流式内容增长用 smooth（平滑跟随）
+        const smooth = len === prevChatLenRef.current && !streamingJustEnded;
+        scrollToBottom(smooth);
+        // 流式结束后：AgentProcessPanel 折叠需要 DOM 更新后高度才变化，
+        // 延迟一帧确保折叠完成后再滚动一次，避免停留在被折叠挤占的位置
+        if (streamingJustEnded) {
+          requestAnimationFrame(() => scrollToBottom(false));
+        }
+      }
     }
     prevChatLenRef.current = len;
     prevLastAnswerRef.current = lastAnswer;
-  }, [chat]);
+    prevStreamingRef.current = isStreaming;
+  }, [chat, scrollToBottom]);
 
   useEffect(() => {
     return () => abortRef.current?.();
   }, []);
 
   // T19: 统一走 Agent 模式（去模式切换），支持 compare_ids
+  // v2: 支持 toolMode="builder" 触发后端 builder 意图直达（模块编辑器 AI 操作走此路径）
   const sendQuestion = useCallback(
-    (q: string) => {
+    (q: string, options?: { toolMode?: string; moduleType?: string; entryId?: string; action?: string }) => {
       setError("");
+
+      // ── 无简历时：先创建空简历，再启动 AI 创建流程 ──
+      if (!resumeId || resumeId === 0) {
+        setAiCreateMode(true);
+        // 先创建一个空的 builder 简历
+        createBuilderResume({ filename: "未命名简历" }).then((resume) => {
+          setResumeId(resume.id);
+          // 设置待发送的问题，等 resumeId 更新后自动发送
+          setPendingAiCreateQuestion(q);
+        }).catch((err) => {
+          setError(err instanceof Error ? err.message : "创建简历失败");
+          setAiCreateMode(false);
+        });
+        return;
+      }
+
       setAsking(true);
 
       // ── 快照当前模块（before），用于 diff 弹窗 ──
@@ -755,10 +957,13 @@ export default function QAPage() {
         id: tempId,
         question: q,
         answer: "",
-        sources: [],
         streaming: true,
       };
       setChat((prev) => [...prev, newMsg]);
+
+      // 发送新消息后强制滚动到底部（无论用户之前是否上滚）
+      isNearBottomRef.current = true;
+      requestAnimationFrame(() => scrollToBottom(false));
 
       abortRef.current = askAgentStream(
         resumeId,
@@ -826,6 +1031,26 @@ export default function QAPage() {
               id: event.id,
             });
             scheduleStreamingFlush(tempId);
+          } else if (event.type === "usage") {
+            // 实时更新 token 消耗（每轮 LLM 调用后推送）
+            if (event.total) {
+              setChat((prev) =>
+                prev.map((m) =>
+                  m.id === tempId
+                    ? {
+                        ...m,
+                        token_usage: {
+                          total:
+                            (event.total?.prompt_tokens ?? 0) +
+                            (event.total?.completion_tokens ?? 0),
+                          prompt: event.total?.prompt_tokens ?? 0,
+                          completion: event.total?.completion_tokens ?? 0,
+                        },
+                      }
+                    : m
+                )
+              );
+            }
           } else if (event.type === "agent_done") {
             // 先立即应用挂起的步骤，再写入最终答案
             flushStreamingNow(tempId);
@@ -849,7 +1074,6 @@ export default function QAPage() {
                       // Spec: process_trace 是紧凑摘要（rounds/tool_sequence/duration_ms），
                       // 不是 AgentStep[]，不能覆盖 agent_steps
                       // agent_steps 保留实时累积的步骤
-                      sources: event.sources?.map((s) => s.text) ?? [],
                     }
                   : m
               )
@@ -866,13 +1090,22 @@ export default function QAPage() {
                 )
               );
             }
-            // QA 改写类工具（rewrite_star/translate）写库后：通知编辑页/侧栏同步
+            // QA 改写类工具（rewrite_star/translate/rewrite_resume）写库后：通知编辑页/侧栏同步
             const wroteModules = (event.process_trace?.tool_sequence ?? []).some(
-              (t) => t === "rewrite_star" || t === "translate",
+              (t) => t === "rewrite_star" || t === "translate" || t === "rewrite_resume",
             );
             if (wroteModules) {
               window.dispatchEvent(new Event("resume:modules-refresh"));
               window.dispatchEvent(new Event("resume:list-refresh"));
+            }
+
+            // 新增：AI 创建简历完成后自动跳转到编辑器
+            if (aiCreateMode && event.process_trace?.tool_sequence?.includes("rewrite_resume")) {
+              // 等待 500ms 确保数据写入完成
+              setTimeout(() => {
+                navigate(`/resumes/${resumeId}/edit`);
+              }, 500);
+              setAiCreateMode(false);
             }
           } else if (event.type === "quota_exceeded") {
             flushStreamingNow(tempId);
@@ -929,6 +1162,10 @@ export default function QAPage() {
         {
           compareIds: compareIds.length > 0 ? compareIds : undefined,
           conversationId: activeConversationId ?? undefined,
+          toolMode: options?.toolMode,
+          moduleType: options?.moduleType,
+          entryId: options?.entryId,
+          action: options?.action,
         },
       );
     },
@@ -939,6 +1176,18 @@ export default function QAPage() {
   useEffect(() => {
     sendQuestionRef.current = sendQuestion;
   }, [sendQuestion]);
+
+  // ── AI 创建简历：resumeId 更新后发送待发送的问题 ──
+  useEffect(() => {
+    if (resumeId > 0 && pendingAiCreateQuestion) {
+      const q = pendingAiCreateQuestion;
+      setPendingAiCreateQuestion(null);
+      // 延迟一点确保 state 更新完成
+      setTimeout(() => {
+        sendQuestion(q);
+      }, 100);
+    }
+  }, [resumeId, pendingAiCreateQuestion, sendQuestion]);
 
   // ChatInput 提交回调：trim 后触发发送（asking 时忽略）
   const handleSendText = useCallback(
@@ -1143,11 +1392,6 @@ export default function QAPage() {
             <h2 className="text-base font-semibold text-[var(--color-text)] truncate">
               {resume?.filename ?? "加载中..."}
             </h2>
-            {resume && (
-              <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
-                <span className="tabular-nums">{resume.chunk_count}</span> 个分块
-              </p>
-            )}
 
             {/* 当前对话名称（对话切换已移至左侧 Sidebar） */}
             {!conversationLoading && activeConversationId && (
@@ -1238,64 +1482,249 @@ export default function QAPage() {
             <Trash size={14} weight="regular" aria-hidden="true" />
             清除历史
           </button>
+
+          {/* v2: 预览面板切换 */}
+          {resumeId > 0 && (
+            <button
+              onClick={() => setShowPreview((v) => !v)}
+              className={`shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full
+                text-xs font-medium border transition-all duration-300 cursor-pointer ${
+                showPreview
+                  ? "border-brand/30 bg-brand/10 text-brand"
+                  : "border-[var(--color-border)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)]"
+              }`}
+              title={showPreview ? "关闭预览" : "打开简历预览"}
+            >
+              📄 {showPreview ? "关闭预览" : "预览简历"}
+            </button>
+          )}
+
+          {/* v2: 保存按钮 */}
+          {resumeId > 0 && showPreview && (
+            <>
+              <button
+                onClick={() => setShowPasteDialog(true)}
+                className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full
+                  text-xs font-medium border border-[var(--color-border)] text-[var(--color-text-secondary)]
+                  hover:bg-[var(--color-bg-secondary)] transition-all cursor-pointer"
+              >
+                📋 粘贴导入
+              </button>
+              <button
+                onClick={() => setShowAtsDialog(true)}
+                className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full
+                  text-xs font-medium border border-[var(--color-border)] text-[var(--color-text-secondary)]
+                  hover:bg-[var(--color-bg-secondary)] transition-all cursor-pointer"
+              >
+                🔍 过机检测
+              </button>
+              <button
+                onClick={() => setShowStylePanel(true)}
+                className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full
+                  text-xs font-medium border border-[var(--color-border)] text-[var(--color-text-secondary)]
+                  hover:bg-[var(--color-bg-secondary)] transition-all cursor-pointer"
+              >
+                🖌️ 样式
+              </button>
+              <button
+                onClick={() => setShowVersionHistory(true)}
+                className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full
+                  text-xs font-medium border border-[var(--color-border)] text-[var(--color-text-secondary)]
+                  hover:bg-[var(--color-bg-secondary)] transition-all cursor-pointer"
+                title="查看检索索引版本历史"
+              >
+                📑 版本历史
+              </button>
+              <button
+                onClick={handleSaveDraft}
+                disabled={saving}
+                className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full
+                  text-xs font-medium border border-[var(--color-border)] text-[var(--color-text-secondary)]
+                  hover:bg-[var(--color-bg-secondary)] disabled:opacity-50 transition-all cursor-pointer"
+              >
+                💾 保存草稿
+              </button>
+              <button
+                onClick={handleSaveComplete}
+                disabled={saving}
+                className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full
+                  text-xs font-semibold bg-brand text-white
+                  hover:bg-brand/90 disabled:opacity-50 transition-all cursor-pointer"
+              >
+                ✅ 保存并完成
+              </button>
+            </>
+          )}
         </div>
       </div>
 
-      {/* ── 聊天区（T19: 支持分屏） ── */}
+      {/* ── 左右各 50%：聊天/编辑器 | 预览 ── */}
       <div className="flex-1 flex overflow-hidden">
-        {/* 左侧：聊天主区 */}
-        <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-6">
-          <div className="max-w-3xl mx-auto">
-            {historyLoading && chat.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16">
-                <span
-                  className="inline-block w-6 h-6 rounded-full border-2 border-brand border-t-transparent animate-spin"
-                  aria-hidden="true"
-                />
-                <p className="text-xs text-[var(--color-text-muted)] mt-3">加载历史中...</p>
+        {/* 左侧 50%：聊天 或 模块编辑器（点击预览模块时覆盖聊天） */}
+        <div
+          ref={scrollContainerRef}
+          className={`${showPreview ? "w-1/2" : "flex-1"} overflow-y-auto transition-all duration-300`}
+          onScroll={!editingModule ? checkNearBottom : undefined}
+        >
+          {/* Agent 聊天模式（无模块编辑时显示） */}
+          {!editingModule ? (
+            <div className="flex flex-col h-full">
+              <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-6">
+                <div className="max-w-3xl mx-auto">
+                  {historyLoading && chat.length === 0 && resumeId > 0 ? (
+                    <div className="flex flex-col items-center justify-center py-16">
+                      <span className="inline-block w-6 h-6 rounded-full border-2 border-brand border-t-transparent animate-spin" />
+                      <p className="text-xs text-[var(--color-text-muted)] mt-3">加载历史中...</p>
+                    </div>
+                  ) : chat.length === 0 ? (
+                    <EmptyState
+                      searching={debouncedKeyword.length > 0}
+                      asking={asking}
+                      onGuideClick={handleGuideClick}
+                      hasResume={resumeId > 0}
+                    />
+                  ) : (
+                    chat.map((msg) => (
+                      <MessageBubble
+                        key={String(msg.id)}
+                        msg={msg}
+                        deleting={deletingId === msg.id}
+                        onDelete={handleDeleteMessage}
+                        onFeedback={handleFeedback}
+                      />
+                    ))
+                  )}
+                  {error && (
+                    <div className="max-w-3xl mx-auto mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 text-sm animate-shake">
+                      {error}
+                    </div>
+                  )}
+                  <div ref={chatEndRef} />
+                </div>
               </div>
-            ) : chat.length === 0 ? (
-              <EmptyState
-                searching={debouncedKeyword.length > 0}
-                asking={asking}
-                onGuideClick={handleGuideClick}
-              />
-            ) : (
-              chat.map((msg) => (
-                <MessageBubble
-                  key={String(msg.id)}
-                  msg={msg}
-                  deleting={deletingId === msg.id}
-                  onDelete={handleDeleteMessage}
-                  onFeedback={handleFeedback}
+              {/* 聊天输入框（只在聊天模式下显示） */}
+              <div className="shrink-0 border-t border-[var(--color-border)]">
+                <ChatInput
+                  asking={asking}
+                  uploading={uploading}
+                  disabled={!resumeId || resumeId === 0}
+                  onSend={handleSendText}
+                  onCancel={handleCancel}
+                  onQuickTag={(q) => {
+                    if (!asking) sendQuestion(q);
+                  }}
+                  onFile={handleUploadFile}
                 />
-              ))
-            )}
-
-            {/* 错误提示 */}
-            {error && (
-              <div className="max-w-3xl mx-auto mb-4 p-3 rounded-xl
-                bg-red-500/10 border border-red-500/20 text-red-500 text-sm animate-shake">
-                {error}
               </div>
-            )}
-
-            <div ref={chatEndRef} />
-          </div>
+            </div>
+          ) : editingModule && resumeId > 0 ? (
+            /* 模块编辑器（点击预览模块时覆盖聊天） */
+            <div className="h-full flex flex-col">
+              <div className="shrink-0 px-4 py-2 border-b border-[var(--color-border)] bg-white/80 backdrop-blur-xl flex items-center gap-2">
+                <button
+                  onClick={() => setEditingModule(null)}
+                  className="text-xs text-brand hover:text-brand/80 font-medium cursor-pointer"
+                >
+                  ← 返回聊天
+                </button>
+                <span className="text-xs text-[var(--color-text-muted)]">
+                  正在编辑：{editingModule}
+                </span>
+              </div>
+              <div className="flex-1 overflow-y-auto">
+                <ModuleCardEditor
+                  resumeId={resumeId}
+                  modules={previewModules}
+                  expandedType={expandedType}
+                  onToggleExpand={(type) => setExpandedType((cur) => cur === type ? null : type)}
+                  onChange={(type, content) => {
+                    setPreviewModules((prev) =>
+                      prev.map((m) => (m.module_type === type ? { ...m, content } : m))
+                    );
+                    setPreviewKey((k) => k + 1);
+                  }}
+                  onReorder={(ordered) => {
+                    setPreviewModules((prev) =>
+                      prev.map((m) => ({
+                        ...m,
+                        sort_order: ordered.indexOf(m.module_type),
+                      }))
+                    );
+                  }}
+                  onAdd={(type) => {
+                    setPreviewModules((prev) => {
+                      const maxOrder = prev.reduce((max, m) => Math.max(max, m.sort_order), -1);
+                      return [...prev, {
+                        id: -Date.now(),
+                        resume_id: resumeId,
+                        module_type: type,
+                        content: {},
+                        sort_order: maxOrder + 1,
+                        created_at: new Date().toISOString(),
+                      }];
+                    });
+                  }}
+                  onRemove={(type) => {
+                    setPreviewModules((prev) => prev.filter((m) => m.module_type !== type));
+                  }}
+                  onAIGenerate={(type, action, customPrompt) => {
+                    const label = type;
+                    let question = "";
+                    let actionLabel = "优化";
+                    switch (action) {
+                      case "polish":
+                        question = `请帮我润色${label}模块的内容`;
+                        actionLabel = "润色";
+                        break;
+                      case "expand":
+                        question = `请帮我扩展${label}模块的内容`;
+                        actionLabel = "扩展";
+                        break;
+                      case "translate":
+                        question = `请帮我翻译${label}模块的内容为英文`;
+                        actionLabel = "翻译";
+                        break;
+                      default:
+                        question = customPrompt || `请帮我优化${label}模块的内容`;
+                    }
+                    setEditingModule(null);
+                    // v2: 走 builder 意图直达，跳过 ReAct 决定轮，1 次工具调用完成
+                    sendQuestion(question, {
+                      toolMode: "builder",
+                      moduleType: type,
+                      action: actionLabel,
+                    });
+                  }}
+                />
+              </div>
+            </div>
+          ) : null}
         </div>
-      </div>
 
-      {/* ── 输入区（独立组件，本地管理输入状态避免整页重渲染） ── */}
-      <ChatInput
-        asking={asking}
-        uploading={uploading}
-        onSend={handleSendText}
-        onCancel={handleCancel}
-        onQuickTag={(q) => {
-          if (!asking) sendQuestion(q);
-        }}
-        onFile={handleUploadFile}
-      />
+        {/* 右侧 50%：简历预览面板 */}
+        {showPreview && resumeId > 0 && (
+          <div className="w-1/2 border-l border-[var(--color-border)] overflow-hidden transition-all duration-300">
+            <A4PreviewPanel
+              resumeId={resumeId}
+              previewKey={previewKey}
+              collapsed={false}
+              onToggleCollapse={() => setShowPreview(false)}
+              modulesData={{
+                modules: previewModules.map((m) => ({
+                  module_type: m.module_type,
+                  content: m.content,
+                  sort_order: m.sort_order,
+                })),
+                style: previewStyle ?? ({} as ResumeStyle),
+              }}
+              onSelectSection={(moduleType) => {
+                setEditingModule(moduleType);
+                setExpandedType(moduleType);
+              }}
+            />
+          </div>
+        )}
+      </div>
 
       {/* ── 清除历史确认弹窗 ── */}
       <ConfirmDialog
@@ -1463,6 +1892,59 @@ export default function QAPage() {
         toolName={diffToolName}
         loading={diffLoading}
       />
+
+      {/* ── v2: 版本历史弹窗 ── */}
+      {showVersionHistory && resumeId > 0 && (
+        <VersionHistoryDialog
+          open={showVersionHistory}
+          onClose={() => setShowVersionHistory(false)}
+          resumeId={resumeId}
+          resumeFilename={resume?.filename ?? "简历"}
+        />
+      )}
+
+      {/* ── v2: 粘贴简历弹窗 ── */}
+      {showPasteDialog && resumeId > 0 && (
+        <PasteResumeDialog
+          open={showPasteDialog}
+          onClose={() => setShowPasteDialog(false)}
+          onParsed={handlePasteParsed}
+        />
+      )}
+
+      {/* ── v2: ATS 优化弹窗 ── */}
+      {showAtsDialog && (
+        <AtsOptimizeDialog
+          open={showAtsDialog}
+          onClose={() => setShowAtsDialog(false)}
+          onOptimize={handleAtsOptimize}
+        />
+      )}
+
+      {/* ── v2: 样式面板（浮动覆盖在左侧） ── */}
+      {showStylePanel && (
+        <div className="absolute inset-y-0 left-0 z-40 shadow-2xl">
+          <StylePanel
+            style={previewStyle ?? ({} as ResumeStyle)}
+            onChange={(newStyle) => {
+              setPreviewStyle(newStyle);
+              setPreviewKey((k) => k + 1);
+            }}
+            show={showStylePanel}
+            onToggle={() => setShowStylePanel(false)}
+            modules={previewModules}
+            onReorderModules={(orderedTypes) => {
+              setPreviewModules((prev) =>
+                prev.map((m) => ({
+                  ...m,
+                  sort_order: orderedTypes.indexOf(m.module_type),
+                }))
+              );
+              setPreviewKey((k) => k + 1);
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }

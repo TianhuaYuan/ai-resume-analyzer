@@ -26,6 +26,7 @@ import {
   GitBranch,
   ClipboardText,
   Funnel,
+  GridFour,
 } from "@phosphor-icons/react";
 import {
   getBuilderResume,
@@ -52,6 +53,8 @@ import type { AIAction } from "../components/builder/ModuleCard";
 import { A4PreviewPanel } from "../components/builder/A4PreviewPanel";
 import { StylePanel } from "../components/builder/StylePanel";
 import { BuilderAIChat } from "../components/builder/BuilderAIChat";
+import { TemplateSheet } from "../components/builder/TemplateSheet";
+import { getTemplateConfigs } from "../components/templates/registry";
 import { trackEvent } from "../api/analytics";
 import { useHistory } from "../hooks/useHistory";
 
@@ -120,6 +123,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
   const [expandedType, setExpandedType] = useState<ModuleType | null>(null);
   const [showStylePanel, setShowStylePanel] = useState(false);
   const [showAIChat, setShowAIChat] = useState(false);
+  const [showTemplateSheet, setShowTemplateSheet] = useState(false);
   const [previewCollapsed, setPreviewCollapsed] = useState(false);
   const [previewKey, setPreviewKey] = useState(0);
 
@@ -139,6 +143,9 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
   const [showPasteDialog, setShowPasteDialog] = useState(false);
   // ATS 优化弹窗
   const [showAtsDialog, setShowAtsDialog] = useState(false);
+
+  // 上传简历懒物化标记：false = LLM 反解析失败，需提示用户粘贴导入
+  const [materialized, setMaterialized] = useState(true);
 
   // AI 触发
   const [aiQuestion, setAiQuestion] = useState("");
@@ -197,6 +204,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
         is_indexed: data.is_indexed ?? false,
         is_stale: data.is_stale ?? false,
       });
+      setMaterialized(data.modules_materialized ?? true);
       setExpandedType("basic_info");
       setSaveStatus("idle");
       firstEditRef.current = true; // 重置首次编辑标记
@@ -223,6 +231,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
       setResume(data);
       resetHistory(data.modules ?? []);
       setVersion(data.version);
+      setMaterialized(data.modules_materialized ?? true);
       // 索引新鲜度同步（builder 响应已并入）
       setIndexInfo({
         is_indexed: data.is_indexed ?? false,
@@ -507,6 +516,21 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
   const handleCloseStylePanel = useCallback(() => setShowStylePanel(false), []);
   const handleCloseAIChat = useCallback(() => setShowAIChat(false), []);
 
+  // ── 模板切换（借鉴 Magic Resume setTemplate：覆盖主题色/间距与模板对齐） ──
+  const handleSetTemplate = useCallback((templateId: string) => {
+    const template = getTemplateConfigs().find((t) => t.id === templateId);
+    if (!template) return;
+    setStyle((prev) => ({
+      ...prev,
+      template_id: templateId,
+      accent_color: template.colorScheme.primary,
+      margin: `${template.spacing.contentPadding}px`,
+      section_spacing: `${template.spacing.sectionGap}px`,
+      spacing: `${template.spacing.itemGap}px`,
+    }));
+    setShowTemplateSheet(false);
+  }, []);
+
   // ── 粘贴简历文本回调 ──
   const handlePasteParsed = useCallback(
     (parsedModules: ResumeModuleInput[]) => {
@@ -599,7 +623,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
             value={filename}
             onChange={(e) => setFilename(e.target.value)}
             placeholder="未命名简历"
-            className="px-2 py-1 rounded-lg text-sm font-medium text-[var(--color-text)]
+            className="px-2 py-1 rounded-full text-sm font-medium text-[var(--color-text)]
               bg-[#F2F2F7] border border-transparent
               hover:border-[var(--color-border)]
               focus:outline-none focus:bg-white focus:border-brand/40
@@ -676,12 +700,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
           <button
             onClick={undo}
             disabled={!canUndo}
-            className="inline-flex items-center justify-center w-7 h-7 rounded-lg
-              text-[var(--color-text-muted)] border border-[var(--color-border)]
-              hover:text-brand hover:border-brand/30 hover:bg-[var(--color-bg-secondary)]
-              disabled:opacity-30 disabled:cursor-not-allowed
-              active:scale-[0.95] motion-reduce:active:scale-100
-              transition-all cursor-pointer"
+            className="btn-tool-icon"
             aria-label="撤销 (Ctrl+Z)"
             title="撤销 (Ctrl+Z)"
           >
@@ -690,12 +709,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
           <button
             onClick={redo}
             disabled={!canRedo}
-            className="inline-flex items-center justify-center w-7 h-7 rounded-lg
-              text-[var(--color-text-muted)] border border-[var(--color-border)]
-              hover:text-brand hover:border-brand/30 hover:bg-[var(--color-bg-secondary)]
-              disabled:opacity-30 disabled:cursor-not-allowed
-              active:scale-[0.95] motion-reduce:active:scale-100
-              transition-all cursor-pointer"
+            className="btn-tool-icon"
             aria-label="重做 (Ctrl+Shift+Z)"
             title="重做 (Ctrl+Shift+Z)"
           >
@@ -708,11 +722,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
           {/* 粘贴简历文本 */}
           <button
             onClick={() => setShowPasteDialog(true)}
-            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg
-              text-xs font-medium text-[var(--color-text-secondary)]
-              bg-[var(--color-bg-secondary)] hover:bg-[#E5E5EA]
-              active:scale-[0.98] motion-reduce:active:scale-100
-              transition-all cursor-pointer"
+            className="btn-tool"
             aria-label="粘贴简历文本"
             title="粘贴简历文本"
           >
@@ -723,11 +733,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
           {/* 过机筛优化 */}
           <button
             onClick={() => setShowAtsDialog(true)}
-            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg
-              text-xs font-medium text-[var(--color-text-secondary)]
-              bg-[var(--color-bg-secondary)] hover:bg-[#E5E5EA]
-              active:scale-[0.98] motion-reduce:active:scale-100
-              transition-all cursor-pointer"
+            className="btn-tool"
             aria-label="过机筛优化"
             title="过机筛优化 AI"
           >
@@ -742,7 +748,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
           <button
             onClick={handleSaveDraft}
             disabled={saving}
-            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full
               text-xs font-medium text-[var(--color-text-secondary)]
               bg-[var(--color-bg-secondary)] hover:bg-[#E5E5EA]
               disabled:opacity-40 disabled:cursor-not-allowed
@@ -781,15 +787,21 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
           {/* 分隔线 */}
           <div className="w-px h-5 bg-[var(--color-border)] mx-0.5" />
 
+          {/* 模板切换 */}
+          <button
+            onClick={() => setShowTemplateSheet(true)}
+            className="btn-tool"
+            aria-label="切换模板"
+            title="切换简历模板"
+          >
+            <GridFour size={12} weight="regular" aria-hidden="true" />
+            模板
+          </button>
+
           {/* 样式切换 */}
           <button
             onClick={() => setShowStylePanel((v) => !v)}
-            className={`inline-flex items-center gap-1 px-2 py-1.5 rounded-lg
-              text-[11px] font-medium border transition-all cursor-pointer
-              ${showStylePanel
-                ? "bg-brand/10 text-brand border-brand/30"
-                : "border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-brand hover:border-brand/30 hover:bg-[var(--color-bg-secondary)]"
-              }`}
+            className={`btn-tool ${showStylePanel ? "btn-tool-active" : ""}`}
             aria-label="样式配置"
             aria-pressed={showStylePanel}
           >
@@ -800,12 +812,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
           {/* AI 助手切换 */}
           <button
             onClick={() => setShowAIChat((v) => !v)}
-            className={`inline-flex items-center gap-1 px-2 py-1.5 rounded-lg
-              text-[11px] font-medium border transition-all cursor-pointer
-              ${showAIChat
-                ? "bg-brand/10 text-brand border-brand/30"
-                : "border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-brand hover:border-brand/30 hover:bg-[var(--color-bg-secondary)]"
-              }`}
+            className={`btn-tool ${showAIChat ? "btn-tool-active" : ""}`}
             aria-label="AI 助手"
             aria-pressed={showAIChat}
           >
@@ -816,10 +823,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
           {/* T18: 版本历史 */}
           <button
             onClick={() => setShowVersionHistory(true)}
-            className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg
-              text-[11px] font-medium border transition-all cursor-pointer
-              border-[var(--color-border)] text-[var(--color-text-muted)]
-              hover:text-brand hover:border-brand/30 hover:bg-[var(--color-bg-secondary)]"
+            className="btn-tool"
             aria-label="版本历史"
             title="查看检索索引版本历史"
           >
@@ -844,10 +848,26 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
         </div>
       )}
 
+      {/* 上传简历物化失败提示：解析结果未能自动转为模块，引导粘贴导入 */}
+      {materialized === false && (
+        <div className="shrink-0 px-4 py-2 bg-amber-500/10 border-b border-amber-500/20
+          text-xs text-amber-600 flex items-center justify-between gap-3">
+          <span>简历解析结果未能自动转为可编辑模块。</span>
+          <button
+            onClick={() => setShowPasteDialog(true)}
+            className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-brand/10 text-brand border border-brand/20
+              hover:bg-brand/20 transition-all cursor-pointer shrink-0"
+          >
+            <ClipboardText size={12} weight="bold" aria-hidden="true" />
+            粘贴导入恢复
+          </button>
+        </div>
+      )}
+
       {/* ── 两栏主体 ── */}
       <div className="flex-1 flex overflow-hidden">
         {/* 左栏：卡片式模块编辑器 */}
-        <div className={`flex-1 min-w-0 overflow-hidden ${previewCollapsed ? "max-w-2xl" : ""}`}>
+        <div className={`min-w-0 overflow-hidden ${previewCollapsed ? "max-w-2xl" : "w-[45%] min-w-[380px] max-w-[520px]"}`}>
           <ModuleCardEditor
             resumeId={resumeId}
             modules={modules}
@@ -862,13 +882,14 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
         </div>
 
         {/* 右栏：A4 预览面板 */}
-        <div className={`shrink-0 ${previewCollapsed ? "w-12" : "w-[45%] min-w-[400px]"}`}>
+        <div className={`flex-1 min-w-0 ${previewCollapsed ? "w-12 shrink-0" : ""}`}>
           <A4PreviewPanel
             resumeId={resumeId}
             previewKey={previewKey}
             collapsed={previewCollapsed}
             onToggleCollapse={handleTogglePreviewCollapse}
             modulesData={previewData}
+            onSelectSection={setExpandedType}
           />
         </div>
 
@@ -878,6 +899,18 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
           onChange={setStyle}
           show={showStylePanel}
           onToggle={handleCloseStylePanel}
+          modules={modules}
+          onReorderModules={handleReorder}
+        />
+
+        {/* 浮动覆盖层：模板切换抽屉 */}
+        <TemplateSheet
+          open={showTemplateSheet}
+          onClose={() => setShowTemplateSheet(false)}
+          modules={modules}
+          style={style}
+          currentTemplateId={style.template_id}
+          onSelect={handleSetTemplate}
         />
 
         {/* 浮动覆盖层：AI 聊天面板 */}

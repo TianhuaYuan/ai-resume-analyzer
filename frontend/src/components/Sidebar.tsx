@@ -8,7 +8,6 @@ import {
   Buildings,
   ChatCircle,
   Rocket,
-  Kanban,
   Plus,
   Trash,
   PencilSimple,
@@ -50,7 +49,6 @@ const NAV_ITEMS: NavItem[] = [
   { path: "/social", label: "社招", icon: Buildings, match: "exact" },
   { path: "/feedback", label: "用户反馈", icon: ChatCircle, match: "exact" },
   { path: "/product-updates", label: "产品更新", icon: Rocket, match: "exact" },
-  { path: "/workbench", label: "求职看板", icon: Kanban, match: "exact" },
 ];
 
 interface SidebarProps {
@@ -121,7 +119,7 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
 
   const handleLogout = async () => {
     await logout();
-    navigate("/login");
+    navigate("/");
   };
 
   const handleRenameSubmit = () => {

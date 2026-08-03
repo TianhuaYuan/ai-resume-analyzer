@@ -1,8 +1,8 @@
-"""T11: 工具骨架 + 注册表 — Tool 基类 + qa7/builder5/workbench2。
+"""T11: 工具骨架 + 注册表 — Tool 基类 + qa13/builder5。
 
 测试范围：
 - Tool 基类：db/user_id 注入 + args pydantic 校验 + 注入检测 + 归属校验 + schema 生成
-- TOOL_REGISTRY：3 类 14 工具 + 名称唯一 + /ask/agent 取 9 个（qa+workbench）
+- TOOL_REGISTRY：2 类 18 工具 + 名称唯一 + /ask/agent 取 13 个（qa）
 """
 
 import json
@@ -164,26 +164,21 @@ class TestToolBase:
 class TestToolRegistry:
     """工具注册表结构。"""
 
-    def test_registry_has_3_categories(self):
-        """注册表包含 qa/builder/workbench 三个分类。"""
+    def test_registry_has_2_categories(self):
+        """注册表包含 qa/builder 两个分类。"""
         assert "qa" in TOOL_REGISTRY
         assert "builder" in TOOL_REGISTRY
-        assert "workbench" in TOOL_REGISTRY
 
-    def test_qa_has_7_tools(self):
-        """qa 分类有 7 个工具。"""
-        assert len(TOOL_REGISTRY["qa"]) == 7
+    def test_qa_has_13_tools(self):
+        """qa 分类有 13 个工具。"""
+        assert len(TOOL_REGISTRY["qa"]) == 13
 
     def test_builder_has_5_tools(self):
         """builder 分类有 5 个工具。"""
         assert len(TOOL_REGISTRY["builder"]) == 5
 
-    def test_workbench_has_2_tools(self):
-        """workbench 分类有 2 个工具。"""
-        assert len(TOOL_REGISTRY["workbench"]) == 2
-
     def test_all_tool_names_unique(self):
-        """所有 14 个工具名称唯一。"""
+        """所有 18 个工具名称唯一。"""
         all_names = []
         for tools in TOOL_REGISTRY.values():
             for tool_class in tools:
@@ -202,8 +197,10 @@ class TestToolRegistry:
     def test_qa_tool_names(self):
         """qa 工具名符合预期。"""
         expected = {
-            "search_resume", "jd_match", "diagnose_resume",
-            "compare_resumes", "rewrite_star", "translate", "interview_coach",
+            "search_resume", "get_resume_content", "search_assets",
+            "answer_from_index", "save_memory", "recall_memory",
+            "jd_match", "diagnose_resume", "compare_resumes",
+            "rewrite_star", "translate", "interview_coach", "recommend_jobs",
         }
         actual = {t.name for t in TOOL_REGISTRY["qa"]}
         assert actual == expected, f"qa 工具名不匹配: {actual ^ expected}"
@@ -217,12 +214,6 @@ class TestToolRegistry:
         actual = {t.name for t in TOOL_REGISTRY["builder"]}
         assert actual == expected, f"builder 工具名不匹配: {actual ^ expected}"
 
-    def test_workbench_tool_names(self):
-        """workbench 工具名符合预期。"""
-        expected = {"generate_greeting", "reply_draft"}
-        actual = {t.name for t in TOOL_REGISTRY["workbench"]}
-        assert actual == expected, f"workbench 工具名不匹配: {actual ^ expected}"
-
 
 # ═══════════════════════════════════════════════════════════
 # 查询函数测试
@@ -232,10 +223,10 @@ class TestToolRegistry:
 class TestToolQueryFunctions:
     """工具查询函数。"""
 
-    def test_get_tools_for_agent_returns_9(self):
-        """/ask/agent 取 qa(7) + workbench(2) = 9 个工具。"""
+    def test_get_tools_for_agent_returns_13(self):
+        """/ask/agent 取 qa(13) 个工具。"""
         tools = get_tools_for_agent()
-        assert len(tools) == 9
+        assert len(tools) == 13
 
     def test_get_tools_for_agent_excludes_builder(self):
         """agent 工具集不含 builder 工具。"""
@@ -254,10 +245,10 @@ class TestToolQueryFunctions:
         tool = get_tool_by_name("nonexistent_tool")
         assert tool is None
 
-    def test_get_agent_schemas_returns_9_schemas(self):
-        """agent schema 列表有 9 个条目。"""
+    def test_get_agent_schemas_returns_13_schemas(self):
+        """agent schema 列表有 13 个条目。"""
         schemas = get_agent_schemas()
-        assert len(schemas) == 9
+        assert len(schemas) == 13
         for s in schemas:
             assert s["type"] == "function"
             assert "name" in s["function"]
@@ -268,5 +259,5 @@ class TestToolQueryFunctions:
         schemas = get_agent_schemas()
         names = {s["function"]["name"] for s in schemas}
         assert "search_resume" in names
-        assert "generate_greeting" in names
+        assert "recommend_jobs" in names
         assert "generate_module" not in names  # builder 工具不在 agent 集合

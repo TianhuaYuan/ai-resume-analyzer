@@ -68,8 +68,7 @@ describe("auth.logout 调后端撤销令牌 (SEC-005 前端)", () => {
         // 401 触发 client.ts 的 refreshToken 逻辑，但 refresh_token 也没有 → 直接 clearSessionAndRedirect
         // 这里只断言：localStorage 被清，且 fetch 至少调用了 logout 请求
         expect(fetchMock).toHaveBeenCalled();
-        // client.ts 在 401 + 刷新失败时会 localStorage.clear() + window.location.href = "/login"
-        // 所以 access_token 一定没了
+        // client.ts 在 401 + 刷新失败时会清 token + 回首页（LoginModalHost 弹登录），所以 access_token 一定没了
         expect(localStorage.getItem("access_token")).toBeNull();
     });
 

@@ -1,8 +1,8 @@
-"""T12: 纯 LLM 工具 — rewrite_star / translate / interview_coach / generate_greeting / reply_draft。
+"""T12: 纯 LLM 工具 — rewrite_star / translate / interview_coach。
 
 测试范围：
 - 各工具调用 llm_generate 并返回结果
-- 正确读取简历内容（qa 工具）或 L3 画像（workbench 工具）
+- 正确读取简历内容（qa 工具）
 - 错误处理（简历不存在 / LLM 失败）
 - target_position 传递到 prompt
 """
@@ -15,8 +15,6 @@ from services.react_agent.tools import (
     RewriteStarTool,
     TranslateTool,
     InterviewCoachTool,
-    GenerateGreetingTool,
-    ReplyDraftTool,
 )
 
 
@@ -213,146 +211,3 @@ class TestInterviewCoachTool:
             call_kwargs = mock_llm.call_args
             combined = (call_kwargs.kwargs.get("system", "") + call_kwargs.kwargs.get("user", ""))
             assert "8" in combined
-
-
-# ═══════════════════════════════════════════════════════════════
-# GenerateGreetingTool
-# ═══════════════════════════════════════════════════════════════
-
-
-class TestGenerateGreetingTool:
-    """生成打招呼语（workbench 工具，读 L3 画像）。"""
-
-    @pytest.mark.asyncio
-    async def test_returns_llm_response(self):
-        tool = GenerateGreetingTool(db=AsyncMock(), user_id=1)
-
-        with patch("services.react_agent.tools.get_l3_profile", new_callable=AsyncMock) as mock_l3, \
-             patch("services.react_agent.tools.llm_generate", new_callable=AsyncMock) as mock_llm:
-            mock_l3.return_value = {"summary": "3年Python后端", "skills": ["Python", "FastAPI"]}
-            mock_llm.return_value = "你好，我是3年经验的Python后端..."
-
-            result = await tool._execute(resume_id=1, target_position="Python后端")
-
-        assert result == "你好，我是3年经验的Python后端..."
-
-    @pytest.mark.asyncio
-    async def test_passes_l3_profile_to_prompt(self):
-        tool = GenerateGreetingTool(db=AsyncMock(), user_id=1)
-
-        with patch("services.react_agent.tools.get_l3_profile", new_callable=AsyncMock) as mock_l3, \
-             patch("services.react_agent.tools.llm_generate", new_callable=AsyncMock) as mock_llm:
-            mock_l3.return_value = {"summary": "5年Java架构师", "skills": ["Java", "Spring"]}
-            mock_llm.return_value = "result"
-
-            await tool._execute(resume_id=1, target_position="架构师")
-
-            call_kwargs = mock_llm.call_args
-            combined = (call_kwargs.kwargs.get("system", "") + call_kwargs.kwargs.get("user", ""))
-            assert "5年Java架构师" in combined or "Java" in combined
-
-    @pytest.mark.asyncio
-    async def test_works_without_l3_profile(self):
-        """无 L3 画像时仍可工作（降级）。"""
-        tool = GenerateGreetingTool(db=AsyncMock(), user_id=1)
-
-        with patch("services.react_agent.tools.get_l3_profile", new_callable=AsyncMock) as mock_l3, \
-             patch("services.react_agent.tools.llm_generate", new_callable=AsyncMock) as mock_llm:
-            mock_l3.return_value = None
-            mock_llm.return_value = "通用打招呼语"
-
-            result = await tool._execute(resume_id=1, target_position="后端")
-
-        assert result == "通用打招呼语"
-
-    @pytest.mark.asyncio
-    async def test_passes_target_position(self):
-        tool = GenerateGreetingTool(db=AsyncMock(), user_id=1)
-
-        with patch("services.react_agent.tools.get_l3_profile", new_callable=AsyncMock) as mock_l3, \
-             patch("services.react_agent.tools.llm_generate", new_callable=AsyncMock) as mock_llm:
-            mock_l3.return_value = None
-            mock_llm.return_value = "result"
-
-            await tool._execute(resume_id=1, target_position="前端工程师")
-
-            call_kwargs = mock_llm.call_args
-            combined = (call_kwargs.kwargs.get("system", "") + call_kwargs.kwargs.get("user", ""))
-            assert "前端工程师" in combined
-
-
-# ═══════════════════════════════════════════════════════════════
-# ReplyDraftTool
-# ═══════════════════════════════════════════════════════════════
-
-
-class TestReplyDraftTool:
-    """生成 HR 回复话术（workbench 工具，读 L3 画像）。"""
-
-    @pytest.mark.asyncio
-    async def test_returns_llm_response(self):
-        tool = ReplyDraftTool(db=AsyncMock(), user_id=1)
-
-        with patch("services.react_agent.tools.get_l3_profile", new_callable=AsyncMock) as mock_l3, \
-             patch("services.react_agent.tools.llm_generate", new_callable=AsyncMock) as mock_llm:
-            mock_l3.return_value = {"summary": "后端工程师", "skills": ["Python"]}
-            mock_llm.return_value = "HR您好，感谢回复..."
-
-            result = await tool._execute(
-                resume_id=1, hr_message="你好，请问你什么时候可以面试？", target_position="后端"
-            )
-
-        assert result == "HR您好，感谢回复..."
-
-    @pytest.mark.asyncio
-    async def test_passes_hr_message_to_prompt(self):
-        tool = ReplyDraftTool(db=AsyncMock(), user_id=1)
-
-        with patch("services.react_agent.tools.get_l3_profile", new_callable=AsyncMock) as mock_l3, \
-             patch("services.react_agent.tools.llm_generate", new_callable=AsyncMock) as mock_llm:
-            mock_l3.return_value = None
-            mock_llm.return_value = "result"
-
-            await tool._execute(
-                resume_id=1,
-                hr_message="请问你的期望薪资是多少？",
-                target_position="后端",
-            )
-
-            call_kwargs = mock_llm.call_args
-            combined = (call_kwargs.kwargs.get("system", "") + call_kwargs.kwargs.get("user", ""))
-            assert "期望薪资" in combined
-
-    @pytest.mark.asyncio
-    async def test_passes_target_position(self):
-        tool = ReplyDraftTool(db=AsyncMock(), user_id=1)
-
-        with patch("services.react_agent.tools.get_l3_profile", new_callable=AsyncMock) as mock_l3, \
-             patch("services.react_agent.tools.llm_generate", new_callable=AsyncMock) as mock_llm:
-            mock_l3.return_value = None
-            mock_llm.return_value = "result"
-
-            await tool._execute(
-                resume_id=1,
-                hr_message="你好",
-                target_position="全栈工程师",
-            )
-
-            call_kwargs = mock_llm.call_args
-            combined = (call_kwargs.kwargs.get("system", "") + call_kwargs.kwargs.get("user", ""))
-            assert "全栈工程师" in combined
-
-    @pytest.mark.asyncio
-    async def test_works_without_l3_profile(self):
-        tool = ReplyDraftTool(db=AsyncMock(), user_id=1)
-
-        with patch("services.react_agent.tools.get_l3_profile", new_callable=AsyncMock) as mock_l3, \
-             patch("services.react_agent.tools.llm_generate", new_callable=AsyncMock) as mock_llm:
-            mock_l3.return_value = None
-            mock_llm.return_value = "通用回复"
-
-            result = await tool._execute(
-                resume_id=1, hr_message="你好", target_position="后端"
-            )
-
-        assert result == "通用回复"

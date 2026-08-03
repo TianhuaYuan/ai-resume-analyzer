@@ -41,7 +41,6 @@ export interface SystemStats {
   total_resumes: number;
   total_qa_history: number;
   total_feedback: number;
-  total_job_applications: number;
 }
 
 export interface TemplateInfo {

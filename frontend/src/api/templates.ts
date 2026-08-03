@@ -79,12 +79,14 @@ export const FONT_OPTIONS = [
   { value: "sans-serif", label: "无衬线（系统默认）" },
 ];
 
-/** 字号选项 */
+/** 字号选项（更细档位，供 StylePanel 排版精细调参） */
 export const FONT_SIZE_OPTIONS = [
-  { value: "12px", label: "小" },
-  { value: "14px", label: "中" },
-  { value: "16px", label: "大" },
-  { value: "18px", label: "特大" },
+  { value: "12px", label: "小 (12px)" },
+  { value: "13px", label: "13px" },
+  { value: "14px", label: "中 (14px)" },
+  { value: "15px", label: "15px" },
+  { value: "16px", label: "大 (16px)" },
+  { value: "18px", label: "特大 (18px)" },
 ];
 
 /** 行高选项 */
@@ -103,14 +105,26 @@ export const SPACING_OPTIONS = [
   { value: "16px", label: "大间距" },
 ];
 
-/** 预设主题色 */
+/**
+ * 预设主题色（12 色）。
+ *
+ * 借鉴 Magic Resume THEME_COLORS：黑白灰梯度（#000~#999）+ 经典色
+ * （宝蓝 #0047AB / 深红 #8B0000 / 橙红 #FF4500 / 靛紫 #4B0082 / 海绿 #2E8B57），
+ * 并保留原有 6 色中的高频品牌色。自定义 hex 输入仍可用。
+ */
 export const ACCENT_COLOR_OPTIONS = [
+  { value: "#000000", label: "黑色" },
+  { value: "#333333", label: "深灰" },
+  { value: "#666666", label: "中灰" },
+  { value: "#999999", label: "浅灰" },
+  { value: "#0047AB", label: "宝蓝" },
   { value: "#2563eb", label: "蓝色" },
+  { value: "#2E8B57", label: "海绿" },
   { value: "#059669", label: "绿色" },
-  { value: "#7c3aed", label: "紫色" },
+  { value: "#8B0000", label: "深红" },
   { value: "#dc2626", label: "红色" },
-  { value: "#ea580c", label: "橙色" },
-  { value: "#475569", label: "灰色" },
+  { value: "#FF4500", label: "橙红" },
+  { value: "#4B0082", label: "靛紫" },
 ];
 
 /** 页面大小选项 */

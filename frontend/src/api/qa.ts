@@ -280,7 +280,15 @@ export function askAgentStream(
   onEvent: (event: AgentSSEEvent) => void,
   onError: (err: Error) => void,
   onDone?: () => void,
-  options?: { compareIds?: number[]; conversationId?: number },
+  options?: {
+    compareIds?: number[];
+    conversationId?: number;
+    // v2: Builder 上下文参数
+    toolMode?: string;
+    moduleType?: string;
+    entryId?: string;
+    action?: string;
+  },
 ): () => void {
   const abort = new AbortController();
   let aborted = false;
@@ -301,6 +309,10 @@ export function askAgentStream(
     ...(options?.conversationId != null
       ? { conversation_id: options.conversationId }
       : {}),
+    ...(options?.toolMode ? { tool_mode: options.toolMode } : {}),
+    ...(options?.moduleType ? { module_type: options.moduleType } : {}),
+    ...(options?.entryId ? { entry_id: options.entryId } : {}),
+    ...(options?.action ? { action: options.action } : {}),
   });
 
   (async () => {

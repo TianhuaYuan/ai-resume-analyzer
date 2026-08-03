@@ -1,14 +1,16 @@
 /**
  * LandingNav — 首页/内容页共享顶部导航（Apple 风格）。
  *
- * 浅色毛玻璃顶栏 + 品牌蓝胶囊按钮 + 毛玻璃登录弹窗。
+ * 浅色毛玻璃顶栏 + 品牌蓝胶囊按钮。登录使用全局 LoginModal 弹窗
+ * （见 ./LoginModal），不再跳转独立 /login 页面。
  */
 
-import { useState, useEffect, useRef, type FormEvent } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { Sparkle, CaretDown, EnvelopeSimple, LockSimple, User, Hash, Shield, Key, Gauge, SignOut, Sun } from "@phosphor-icons/react";
+import { CaretDown, EnvelopeSimple, User, Shield, Key, Gauge, SignOut, Sun } from "@phosphor-icons/react";
 import { useTheme } from "../context/ThemeContext";
+import { openLoginModal } from "./LoginModal";
 import ChangePasswordDialog from "./ChangePasswordDialog";
 import ChangeEmailDialog from "./ChangeEmailDialog";
 import ChangeUsernameDialog from "./ChangeUsernameDialog";
@@ -35,323 +37,6 @@ const NAV_ITEMS: NavItem[] = [
   { key: "updates", label: "产品更新", route: "/product-updates" },
 ];
 
-// ── 输入框（Apple 风格） ──
-
-function AppleInput({
-  type = "text",
-  value,
-  onChange,
-  placeholder,
-  icon: Icon,
-  maxLength,
-}: {
-  type?: string;
-  value: string;
-  onChange: (v: string) => void;
-  placeholder: string;
-  icon: React.ComponentType<{ size?: number; className?: string }>;
-  maxLength?: number;
-}) {
-  return (
-    <div className="relative">
-      <Icon
-        size={14}
-        className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]"
-      />
-      <input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        maxLength={maxLength}
-        className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-[#F2F2F7] text-sm text-[var(--color-text)]
-          placeholder:text-[var(--color-text-muted)] outline-none border border-transparent
-          focus:bg-white focus:border-brand/40 focus:ring-4 focus:ring-brand/15
-          transition-all duration-200"
-      />
-    </div>
-  );
-}
-
-// ── 登录/注册弹窗 ──
-
-function LoginModal({ onClose }: { onClose: () => void }) {
-  const { login, register, sendCode } = useAuth();
-
-  const [tab, setTab] = useState<"login" | "register">("login");
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  // 登录字段
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-
-  // 注册字段
-  const [regUsername, setRegUsername] = useState("");
-  const [regEmail, setRegEmail] = useState("");
-  const [regPassword, setRegPassword] = useState("");
-  const [regConfirm, setRegConfirm] = useState("");
-  const [regCode, setRegCode] = useState("");
-  const [sendCodeLoading, setSendCodeLoading] = useState(false);
-  const [cooldown, setCooldown] = useState(0);
-
-  // ESC 关闭
-  useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", handleKey);
-    return () => document.removeEventListener("keydown", handleKey);
-  }, [onClose]);
-
-  const handleSendCode = async () => {
-    if (cooldown > 0 || sendCodeLoading) return;
-    if (!regEmail.trim()) {
-      setError("请输入邮箱");
-      return;
-    }
-    setSendCodeLoading(true);
-    setError("");
-    try {
-      await sendCode(regEmail);
-      setSuccess("验证码已发送");
-      setCooldown(60);
-      const timer = setInterval(() => {
-        setCooldown((prev) => {
-          if (prev <= 1) {
-            clearInterval(timer);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "发送验证码失败");
-    } finally {
-      setSendCodeLoading(false);
-    }
-  };
-
-  const handleLogin = async (e: FormEvent) => {
-    e.preventDefault();
-    setError("");
-    if (!email.trim() || !password) {
-      setError("请填写邮箱和密码");
-      return;
-    }
-    setLoading(true);
-    try {
-      await login(email, password);
-      onClose();
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "登录失败");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleRegister = async (e: FormEvent) => {
-    e.preventDefault();
-    setError("");
-    setSuccess("");
-    if (!regUsername.trim() || regUsername.trim().length < 2) {
-      setError("用户名至少2个字符");
-      return;
-    }
-    if (!regEmail.trim()) {
-      setError("请输入邮箱");
-      return;
-    }
-    if (!regPassword || regPassword.length < 8) {
-      setError("密码至少8位，需包含字母和数字");
-      return;
-    }
-    if (regPassword !== regConfirm) {
-      setError("两次密码不一致");
-      return;
-    }
-    if (!regCode || regCode.length !== 6) {
-      setError("请输入6位验证码");
-      return;
-    }
-    setLoading(true);
-    try {
-      await register(regUsername, regEmail, regPassword, regConfirm, regCode);
-      await login(regEmail, regPassword);
-      onClose();
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "注册失败");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const switchTab = (t: "login" | "register") => {
-    setTab(t);
-    setError("");
-    setSuccess("");
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* 遮罩 */}
-      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
-
-      {/* 卡片（毛玻璃） */}
-      <div className="relative w-full max-w-sm mx-4 glass-card shadow-2xl shadow-black/10 animate-fade-in-up">
-        {/* 关闭按钮 */}
-        <button
-          onClick={onClose}
-          className="absolute top-3 right-3 p-2 rounded-full text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)] transition-all cursor-pointer z-10"
-          aria-label="关闭"
-        >
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-            <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-          </svg>
-        </button>
-
-        {/* 标题 */}
-        <div className="px-6 pt-7 pb-4 text-center">
-          <div className="mx-auto w-14 h-14 rounded-2xl bg-brand/10 flex items-center justify-center mb-4">
-            <Sparkle size={26} weight="fill" className="text-brand" />
-          </div>
-          <h2 className="text-xl font-bold text-[var(--color-text)] display-tight">
-            {tab === "login" ? "欢迎回来" : "创建账号"}
-          </h2>
-          <p className="text-xs text-[var(--color-text-muted)] mt-1.5">
-            {tab === "login" ? "登录以使用 AI 简历助手" : "注册以开始分析简历"}
-          </p>
-        </div>
-
-        {/* Tab 切换 */}
-        <div className="flex mx-6 mb-4 p-1 rounded-full bg-[var(--color-bg-secondary)]">
-          {(["login", "register"] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => switchTab(t)}
-              className={`flex-1 py-2 text-xs font-medium rounded-full transition-all cursor-pointer
-                ${tab === t
-                  ? "bg-white text-[var(--color-text)] shadow-sm"
-                  : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
-                }`}
-            >
-              {t === "login" ? "登录" : "注册"}
-            </button>
-          ))}
-        </div>
-
-        {/* 错误/成功提示 */}
-        {error && (
-          <div className="mx-6 mb-3 p-2.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 text-xs">
-            {error}
-          </div>
-        )}
-        {success && (
-          <div className="mx-6 mb-3 p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 text-xs">
-            {success}
-          </div>
-        )}
-
-        {/* 表单 */}
-        <div className="px-6 pb-7">
-          {tab === "login" ? (
-            <form onSubmit={handleLogin} className="space-y-3">
-              <AppleInput
-                type="email"
-                value={email}
-                onChange={setEmail}
-                placeholder="邮箱"
-                icon={EnvelopeSimple}
-              />
-              <AppleInput
-                type="password"
-                value={password}
-                onChange={setPassword}
-                placeholder="密码"
-                icon={LockSimple}
-              />
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-2.5 rounded-full bg-brand text-white text-sm font-semibold
-                  hover:bg-[#0077ed] hover:scale-[1.02] active:scale-[0.98]
-                  transition-all duration-300 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {loading ? (
-                  <span className="inline-block w-4 h-4 border-2 border-white/70 border-t-transparent rounded-full animate-spin" />
-                ) : (
-                  "登录"
-                )}
-              </button>
-              <p className="text-center text-xs text-[var(--color-text-muted)] pt-1">
-                没有账号？{" "}
-                <button
-                  type="button"
-                  onClick={() => switchTab("register")}
-                  className="text-brand hover:underline cursor-pointer"
-                >
-                  立即注册
-                </button>
-              </p>
-            </form>
-          ) : (
-            <form onSubmit={handleRegister} className="space-y-3">
-              <AppleInput value={regUsername} onChange={setRegUsername} placeholder="用户名（至少2个字符）" icon={User} />
-              <AppleInput type="email" value={regEmail} onChange={setRegEmail} placeholder="邮箱" icon={EnvelopeSimple} />
-              <AppleInput type="password" value={regPassword} onChange={setRegPassword} placeholder="密码（至少8位）" icon={LockSimple} />
-              <AppleInput type="password" value={regConfirm} onChange={setRegConfirm} placeholder="确认密码" icon={LockSimple} />
-              <div className="flex gap-2">
-                <div className="flex-1">
-                  <AppleInput value={regCode} onChange={setRegCode} placeholder="6位验证码" icon={Hash} maxLength={6} />
-                </div>
-                <button
-                  type="button"
-                  disabled={sendCodeLoading || cooldown > 0}
-                  onClick={handleSendCode}
-                  className="px-4 py-2.5 rounded-xl bg-[var(--color-bg-secondary)] text-xs font-medium text-[var(--color-text-secondary)]
-                    hover:bg-[#E5E5EA] transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed shrink-0"
-                >
-                  {sendCodeLoading ? (
-                    <span className="inline-block w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                  ) : cooldown > 0 ? (
-                    `${cooldown}s`
-                  ) : (
-                    "发送"
-                  )}
-                </button>
-              </div>
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-2.5 rounded-full bg-brand text-white text-sm font-semibold
-                  hover:bg-[#0077ed] hover:scale-[1.02] active:scale-[0.98]
-                  transition-all duration-300 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {loading ? (
-                  <span className="inline-block w-4 h-4 border-2 border-white/70 border-t-transparent rounded-full animate-spin" />
-                ) : (
-                  "注册"
-                )}
-              </button>
-              <p className="text-center text-xs text-[var(--color-text-muted)] pt-1">
-                已有账号？{" "}
-                <button
-                  type="button"
-                  onClick={() => switchTab("login")}
-                  className="text-brand hover:underline cursor-pointer"
-                >
-                  返回登录
-                </button>
-              </p>
-            </form>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ── 顶部导航 ──
 
 interface LandingNavProps {
@@ -364,7 +49,6 @@ export default function LandingNav({ activeKey }: LandingNavProps) {
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
 
-  const [loginModalOpen, setLoginModalOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
@@ -372,13 +56,6 @@ export default function LandingNav({ activeKey }: LandingNavProps) {
   const [usageDialogOpen, setUsageDialogOpen] = useState(false);
   const [quota, setQuota] = useState<QuotaResponse | null>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
-
-  // 支持外部触发登录弹窗（如首页 Hero 的 CTA）
-  useEffect(() => {
-    const handler = () => setLoginModalOpen(true);
-    window.addEventListener("open-login-modal", handler);
-    return () => window.removeEventListener("open-login-modal", handler);
-  }, []);
 
   // 点击外部关闭用户菜单
   useEffect(() => {
@@ -407,7 +84,7 @@ export default function LandingNav({ activeKey }: LandingNavProps) {
 
   const handleNavClick = (item: NavItem) => {
     if (item.requireAuth && !user) {
-      setLoginModalOpen(true);
+      openLoginModal();
       return;
     }
     navigate(item.route);
@@ -563,7 +240,7 @@ export default function LandingNav({ activeKey }: LandingNavProps) {
               </div>
             ) : (
               <button
-                onClick={() => setLoginModalOpen(true)}
+                onClick={() => openLoginModal()}
                 className="px-4 py-1.5 rounded-full text-sm font-semibold bg-brand text-white
                   hover:bg-[#0077ed] hover:scale-[1.02] active:scale-[0.98]
                   transition-all duration-300 cursor-pointer"
@@ -574,9 +251,6 @@ export default function LandingNav({ activeKey }: LandingNavProps) {
           </div>
         </div>
       </nav>
-
-      {/* 登录弹窗 */}
-      {loginModalOpen && <LoginModal onClose={() => setLoginModalOpen(false)} />}
 
       {/* 用户设置弹窗 */}
       <ChangePasswordDialog

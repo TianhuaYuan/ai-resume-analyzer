@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { CaretDown, Key, EnvelopeSimple, User, Briefcase, Shield } from "@phosphor-icons/react";
+import { CaretDown, Key, EnvelopeSimple, User, Shield } from "@phosphor-icons/react";
 import { useAuth } from "../context/AuthContext";
 import ChangePasswordDialog from "./ChangePasswordDialog";
 import ChangeEmailDialog from "./ChangeEmailDialog";
@@ -64,7 +64,7 @@ export default function Navbar() {
 
   const handleLogout = async () => {
     await logout();
-    navigate("/login");
+    navigate("/");
   };
 
   useEffect(() => {
@@ -116,18 +116,6 @@ export default function Navbar() {
             <span className="text-sm font-semibold text-[var(--color-text)]">
               轻舟简历
             </span>
-          </Link>
-          <Link
-            to="/workbench"
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors no-underline
-              ${location.pathname === "/workbench"
-                ? "text-brand bg-brand/10"
-                : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)]"
-              }`}
-            aria-label="求职看板"
-          >
-            <Briefcase className="w-3.5 h-3.5" />
-            求职看板
           </Link>
           {/* #9: 管理后台入口仅对管理员显示 */}
           {user.is_admin && (

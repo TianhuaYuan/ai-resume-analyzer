@@ -2,26 +2,29 @@
  * T31: StylePanel — 简历样式配置面板。
  *
  * 功能：
- * - 模板选择器（3 套模板，radio 卡片）
- * - 字体下拉、字号下拉、行高下拉、间距下拉
- * - 主题色选择器（6 预设 + 自定义 hex 输入）
+ * - 模板选择器（11 套模板，radio 卡片）
+ * - 字体下拉、间距下拉
+ * - 排版精细调参：字号下拉（细档位）、行高滑块（1.0–2.0）
+ * - 主题色选择器（12 预设 + 自定义 hex 输入）
+ * - 板块管理（可选）：模块显隐 + 排序（需传入 modules / onReorderModules）
  * - 所有变更立即调用 onChange(style)
  * - 可折叠（toggle show/hide）
  */
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { PaintBrush, X, Check } from "@phosphor-icons/react";
 import type { ResumeStyle } from "../../api/builder";
 import {
   TEMPLATE_OPTIONS,
   FONT_OPTIONS,
   FONT_SIZE_OPTIONS,
-  LINE_HEIGHT_OPTIONS,
   SPACING_OPTIONS,
   ACCENT_COLOR_OPTIONS,
   PAGE_SIZE_OPTIONS,
 } from "../../api/templates";
 import { TEMPLATE_THUMBNAILS } from "./templateThumbnails";
+import { ModuleManager } from "./ModuleManager";
+import type { StylePanelModule } from "./ModuleManager";
 
 interface StylePanelProps {
   /** 当前样式配置 */
@@ -32,6 +35,10 @@ interface StylePanelProps {
   show: boolean;
   /** 切换显示回调 */
   onToggle: () => void;
+  /** 当前模块列表（可选）。传入后启用「板块管理」区块（显隐 + 排序）。 */
+  modules?: StylePanelModule[];
+  /** 排序回调（可选）。板块管理排序完成后回传有序的模块类型数组，由上层更新 sort_order。 */
+  onReorderModules?: (orderedTypes: string[]) => void;
 }
 
 /** 通用下拉框样式 */
@@ -45,13 +52,41 @@ const SELECT_CLASS =
 const LABEL_CLASS =
   "block text-xs font-medium text-[var(--color-text-secondary)] mb-1.5";
 
-export function StylePanel({ style, onChange, show, onToggle }: StylePanelProps) {
+export function StylePanel({
+  style,
+  onChange,
+  show,
+  onToggle,
+  modules,
+  onReorderModules,
+}: StylePanelProps) {
   const [customColor, setCustomColor] = useState("");
 
   // 通用属性更新
   const updateStyle = useCallback(
     <K extends keyof ResumeStyle>(key: K, value: ResumeStyle[K]) => {
       onChange({ ...style, [key]: value });
+    },
+    [style, onChange],
+  );
+
+  // ── 板块管理（可选 props） ──────────────────────────────────
+  // hidden_modules 读写容错：style.hidden_modules ?? []
+  const hiddenModules = style.hidden_modules ?? [];
+
+  // 板块列表按 sort_order 升序排列
+  const sortedModules = useMemo(
+    () => (modules ? [...modules].sort((a, b) => a.sort_order - b.sort_order) : []),
+    [modules],
+  );
+
+  // 切换显隐：合并写回 style.hidden_modules
+  const handleToggleHidden = useCallback(
+    (moduleType: string) => {
+      const hidden = style.hidden_modules ?? [];
+      const isHidden = hidden.includes(moduleType);
+      const next = isHidden ? hidden.filter((t) => t !== moduleType) : [...hidden, moduleType];
+      onChange({ ...style, hidden_modules: next });
     },
     [style, onChange],
   );
@@ -145,38 +180,6 @@ export function StylePanel({ style, onChange, show, onToggle }: StylePanelProps)
           </select>
         </div>
 
-        {/* 字号 */}
-        <div>
-          <label className={LABEL_CLASS}>字号</label>
-          <select
-            value={style.font_size}
-            onChange={(e) => updateStyle("font_size", e.target.value)}
-            className={SELECT_CLASS}
-          >
-            {FONT_SIZE_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* 行高 */}
-        <div>
-          <label className={LABEL_CLASS}>行高</label>
-          <select
-            value={style.line_height}
-            onChange={(e) => updateStyle("line_height", Number(e.target.value))}
-            className={SELECT_CLASS}
-          >
-            {LINE_HEIGHT_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </div>
-
         {/* 间距 */}
         <div>
           <label className={LABEL_CLASS}>间距</label>
@@ -191,6 +194,45 @@ export function StylePanel({ style, onChange, show, onToggle }: StylePanelProps)
               </option>
             ))}
           </select>
+        </div>
+
+        {/* 排版精细调参 */}
+        <div>
+          <label className={LABEL_CLASS + " mb-3"}>排版精细调参</label>
+          {/* 字号档位 */}
+          <div className="mb-3">
+            <span className="text-[11px] text-[var(--color-text-muted)] block mb-1">字号</span>
+            <select
+              value={style.font_size}
+              onChange={(e) => updateStyle("font_size", e.target.value)}
+              className={SELECT_CLASS}
+            >
+              {FONT_SIZE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          {/* 行高滑块 */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[11px] text-[var(--color-text-muted)]">行高</span>
+              <span className="text-[11px] font-mono text-[var(--color-text-secondary)]">
+                {(typeof style.line_height === "number" ? style.line_height : 1.6).toFixed(1)}
+              </span>
+            </div>
+            <input
+              type="range"
+              min={1.0}
+              max={2.0}
+              step={0.1}
+              value={typeof style.line_height === "number" ? style.line_height : 1.6}
+              onChange={(e) => updateStyle("line_height", Number(e.target.value))}
+              className="w-full accent-brand cursor-pointer"
+              aria-label="行高"
+            />
+          </div>
         </div>
 
         {/* 主题色 */}
@@ -265,6 +307,19 @@ export function StylePanel({ style, onChange, show, onToggle }: StylePanelProps)
             </span>
           </div>
         </div>
+
+        {/* 板块管理（可选：需传入 modules） */}
+        {modules && (
+          <div>
+            <label className={LABEL_CLASS + " mb-2"}>板块管理</label>
+            <ModuleManager
+              modules={sortedModules}
+              hiddenModules={hiddenModules}
+              onToggleHidden={handleToggleHidden}
+              onReorder={(orderedTypes) => onReorderModules?.(orderedTypes)}
+            />
+          </div>
+        )}
 
         {/* 分隔线 */}
         <div className="border-t border-[var(--color-border)]/50 pt-4" />

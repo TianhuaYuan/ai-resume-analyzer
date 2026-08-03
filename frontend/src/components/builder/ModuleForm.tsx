@@ -11,11 +11,12 @@
  * - skills：分类 + 逗号分隔技能项
  * - interests：逗号分隔标签输入
  * - social_links：社交平台字段
- * - other/custom：标题 + 内容文本框
+ * - other：标题 + 内容文本框
+ * - custom：多板块编辑（content.entries 数组，兼容单板块 {title, content}）
  */
 
-import { memo, useCallback } from "react";
-import { Plus, Trash, CaretUp, CaretDown } from "@phosphor-icons/react";
+import { memo, useCallback, useState } from "react";
+import { Plus, Trash, CaretUp, CaretDown, Eye, EyeSlash } from "@phosphor-icons/react";
 import type { ModuleType, ModuleContent } from "../../api/builder";
 import { MODULE_LABELS } from "./ModuleList";
 import { RichTextEditor } from "./RichTextEditor";
@@ -313,7 +314,11 @@ export function EntriesEditor({ content, onChange, fields, moduleLabel }: Entrie
       {entries.map((entry, index) => (
         <div
           key={index}
-          className="p-3 rounded-xl bg-[var(--color-bg-secondary)] border border-[var(--color-border)] space-y-3"
+          className={`p-3 rounded-xl border space-y-3 transition-all ${
+            entry.hidden
+              ? "bg-amber-50/50 border-amber-200/50 opacity-60"
+              : "bg-[var(--color-bg-secondary)] border-[var(--color-border)]"
+          }`}
         >
           {/* 条目头部：序号 + 排序/删除按钮 */}
           <div className="flex items-center justify-between">
@@ -351,6 +356,27 @@ export function EntriesEditor({ content, onChange, fields, moduleLabel }: Entrie
                 aria-label="删除条目"
               >
                 <Trash size={14} weight="regular" aria-hidden="true" />
+              </button>
+              {/* 条目隐藏切换 */}
+              <button
+                onClick={() => {
+                  const newEntries = [...entries];
+                  newEntries[index] = { ...newEntries[index], hidden: !newEntries[index].hidden };
+                  onChange({ ...content, entries: newEntries });
+                }}
+                className={`p-1 rounded transition-all cursor-pointer ${
+                  entry.hidden
+                    ? "text-amber-400 bg-amber-500/10"
+                    : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-border)]"
+                }`}
+                title={entry.hidden ? "显示条目" : "隐藏条目"}
+                aria-label={entry.hidden ? "显示条目" : "隐藏条目"}
+              >
+                {entry.hidden ? (
+                  <EyeSlash size={14} weight="regular" aria-hidden="true" />
+                ) : (
+                  <Eye size={14} weight="regular" aria-hidden="true" />
+                )}
               </button>
             </div>
           </div>
@@ -410,91 +436,102 @@ interface SkillsFormProps {
 }
 
 export function SkillsForm({ content, onChange }: SkillsFormProps) {
-  const categoriesRaw = content.categories;
-  const categories: Array<{ name: string; items: string[] }> = Array.isArray(categoriesRaw)
-    ? (categoriesRaw as Array<{ name: string; items: string[] }>)
-    : [];
+  // 兼容新旧格式：items（新）或 categories（旧）
+  const items: Array<{ id?: string; name: string; level?: number; category?: string }> =
+    Array.isArray(content.items)
+      ? (content.items as Array<{ id?: string; name: string; level?: number; category?: string }>)
+      : [];
 
-  const handleAddCategory = useCallback(() => {
-    onChange({ ...content, categories: [...categories, { name: "", items: [] }] });
-  }, [content, categories, onChange]);
+  const handleAddSkill = useCallback(() => {
+    const newItems = [...items, { name: "", level: 3, category: "" }];
+    onChange({ ...content, items: newItems });
+  }, [content, items, onChange]);
 
-  const handleRemoveCategory = useCallback(
+  const handleRemoveSkill = useCallback(
     (index: number) => {
-      onChange({
-        ...content,
-        categories: categories.filter((_, i) => i !== index),
-      });
+      onChange({ ...content, items: items.filter((_, i) => i !== index) });
     },
-    [content, categories, onChange],
+    [content, items, onChange],
   );
 
-  const handleNameChange = useCallback(
-    (index: number, name: string) => {
-      const newCats = [...categories];
-      newCats[index] = { ...newCats[index], name };
-      onChange({ ...content, categories: newCats });
+  const handleSkillChange = useCallback(
+    (index: number, field: string, value: string | number) => {
+      const newItems = [...items];
+      newItems[index] = { ...newItems[index], [field]: value };
+      onChange({ ...content, items: newItems });
     },
-    [content, categories, onChange],
+    [content, items, onChange],
   );
 
-  const handleItemsChange = useCallback(
-    (index: number, itemsText: string) => {
-      const newCats = [...categories];
-      newCats[index] = { ...newCats[index], items: splitList(itemsText) };
-      onChange({ ...content, categories: newCats });
-    },
-    [content, categories, onChange],
-  );
+  // 按 category 分组显示
+  const grouped = items.reduce<Record<string, Array<{ item: typeof items[0]; index: number }>>>((acc, item, i) => {
+    const cat = item.category || "其他";
+    if (!acc[cat]) acc[cat] = [];
+    acc[cat].push({ item, index: i });
+    return acc;
+  }, {});
+
+  const categories = Object.keys(grouped);
 
   return (
     <div className="space-y-4">
-      {categories.map((cat, index) => (
+      {categories.map((cat) => (
         <div
-          key={index}
+          key={cat}
           className="p-3 rounded-xl bg-[var(--color-bg-secondary)] border border-[var(--color-border)] space-y-3"
         >
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-[var(--color-text-muted)]">
-              分类 #{index + 1}
+              {cat}
             </span>
-            <button
-              onClick={() => handleRemoveCategory(index)}
-              className="p-1 rounded text-[var(--color-text-muted)]
-                hover:text-red-400 hover:bg-red-500/10
-                transition-all cursor-pointer"
-              aria-label="删除分类"
-            >
-              <Trash size={14} weight="regular" aria-hidden="true" />
-            </button>
           </div>
-          <div>
-            <label className={LABEL_CLASS}>
-              分类名称<span className="ml-0.5 text-red-400">*</span>
-            </label>
-            <input
-              type="text"
-              value={cat.name}
-              onChange={(e) => handleNameChange(index, e.target.value)}
-              placeholder="编程语言 / 框架 / 工具"
-              className={INPUT_CLASS}
-            />
-          </div>
-          <div>
-            <label className={LABEL_CLASS}>技能项（逗号分隔）</label>
-            <input
-              type="text"
-              value={(Array.isArray(cat.items) ? (cat.items as string[]).join(", ") : "")}
-              onChange={(e) => handleItemsChange(index, e.target.value)}
-              placeholder="Python, Go, JavaScript"
-              className={INPUT_CLASS}
-            />
-          </div>
+          {/* 该分类下的技能条目 */}
+          {grouped[cat]?.map(({ item, index: i }) => (
+            <div key={i} className="flex items-center gap-2">
+              <input
+                type="text"
+                value={item.name}
+                onChange={(e) => handleSkillChange(i, "name", e.target.value)}
+                placeholder="技能名称"
+                className={`flex-1 ${INPUT_CLASS}`}
+              />
+              {/* 熟练度 1-5 */}
+              <div className="flex items-center gap-0.5" title={`熟练度 ${item.level || 3}/5`}>
+                {[1, 2, 3, 4, 5].map((v) => (
+                  <button
+                    key={v}
+                    onClick={() => handleSkillChange(i, "level", v)}
+                    className={`w-4 h-4 rounded-full text-[10px] transition-all cursor-pointer ${
+                      v <= (item.level || 3)
+                        ? "bg-brand text-white"
+                        : "bg-[var(--color-border)] text-[var(--color-text-muted)]"
+                    }`}
+                  >
+                    {v}
+                  </button>
+                ))}
+              </div>
+              {/* 分类标签 */}
+              <input
+                type="text"
+                value={item.category || ""}
+                onChange={(e) => handleSkillChange(i, "category", e.target.value)}
+                placeholder="分类"
+                className="w-20 text-xs px-2 py-1 rounded border border-[var(--color-border)] bg-white"
+              />
+              <button
+                onClick={() => handleRemoveSkill(i)}
+                className="p-1 rounded text-[var(--color-text-muted)] hover:text-red-400 hover:bg-red-500/10 transition-all cursor-pointer"
+              >
+                <Trash size={12} />
+              </button>
+            </div>
+          ))}
         </div>
       ))}
 
       <button
-        onClick={handleAddCategory}
+        onClick={handleAddSkill}
         className="w-full flex items-center justify-center gap-1.5 py-2.5
           rounded-xl text-xs font-medium text-[var(--color-text-secondary)]
           border border-dashed border-[var(--color-border)]
@@ -503,7 +540,7 @@ export function SkillsForm({ content, onChange }: SkillsFormProps) {
           transition-all cursor-pointer"
       >
         <Plus size={14} weight="bold" aria-hidden="true" />
-        添加技能分类
+        添加技能
       </button>
     </div>
   );
@@ -612,6 +649,167 @@ export function TextContentForm({
           minHeight="160px"
         />
       </div>
+    </div>
+  );
+}
+
+// ── 自定义模块多板块编辑器（custom） ──────────────────────────
+
+interface CustomModuleFormProps {
+  content: ModuleContent;
+  onChange: (content: ModuleContent) => void;
+}
+
+/**
+ * custom 模块的多板块编辑。
+ *
+ * 后端支持 content.entries: Array<{ title: string; content: string }>（多板块），
+ * 同时向后兼容旧的单板块 { title, content }。此处：
+ * - content.entries 为数组 → 多板块编辑（每板块可折叠：标题输入 + 内容编辑器 + 删除 + 添加板块）
+ * - 否则 → 复用 TextContentForm 单板块编辑（向后兼容）
+ */
+export function CustomModuleForm({ content, onChange }: CustomModuleFormProps) {
+  const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
+
+  // 向后兼容：无 entries 数组 → 单板块编辑
+  if (!Array.isArray(content.entries)) {
+    return (
+      <TextContentForm
+        content={content}
+        onChange={onChange}
+        titleLabel="板块标题"
+        contentRequired
+      />
+    );
+  }
+
+  const entries = content.entries as Array<{ title?: string; content?: string }>;
+
+  const toggleCollapsed = (index: number) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  };
+
+  const updateEntry = (
+    index: number,
+    patch: Partial<{ title: string; content: string }>,
+  ) => {
+    const next = [...entries];
+    next[index] = { ...(next[index] ?? {}), ...patch };
+    onChange({ ...content, entries: next });
+  };
+
+  const addEntry = () => {
+    onChange({ ...content, entries: [...entries, { title: "", content: "" }] });
+  };
+
+  const removeEntry = (index: number) => {
+    onChange({ ...content, entries: entries.filter((_, i) => i !== index) });
+    // 清理折叠状态：被删项之后的索引整体前移
+    setCollapsed((prev) => {
+      const next = new Set<number>();
+      prev.forEach((i) => {
+        if (i === index) return;
+        next.add(i > index ? i - 1 : i);
+      });
+      return next;
+    });
+  };
+
+  return (
+    <div className="space-y-3">
+      {entries.length === 0 && (
+        <p className="text-[11px] text-[var(--color-text-muted)]">
+          暂无板块，点击下方「添加板块」开始
+        </p>
+      )}
+
+      {entries.map((entry, index) => {
+        const isCollapsed = collapsed.has(index);
+        const title = typeof entry?.title === "string" ? entry.title : "";
+        return (
+          <div
+            key={index}
+            className="p-3 rounded-xl bg-[var(--color-bg-secondary)] border border-[var(--color-border)] space-y-2"
+          >
+            {/* 头部：折叠按钮 + 删除 */}
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => toggleCollapsed(index)}
+                className="flex-1 flex items-center gap-1.5 min-w-0 text-left
+                  text-[var(--color-text-secondary)] hover:text-brand
+                  transition-colors cursor-pointer"
+                aria-label={isCollapsed ? `展开板块 ${index + 1}` : `折叠板块 ${index + 1}`}
+                aria-expanded={!isCollapsed}
+              >
+                <CaretDown
+                  size={14}
+                  weight="bold"
+                  className={`shrink-0 transition-transform duration-200 ${
+                    isCollapsed ? "-rotate-90" : ""
+                  }`}
+                  aria-hidden="true"
+                />
+                <span className="flex-1 text-xs font-medium truncate">
+                  {title || `板块 ${index + 1}`}
+                </span>
+              </button>
+              <button
+                onClick={() => removeEntry(index)}
+                className="shrink-0 p-1 rounded text-[var(--color-text-muted)]
+                  hover:text-red-400 hover:bg-red-500/10
+                  transition-all cursor-pointer"
+                aria-label={`删除板块 ${index + 1}`}
+              >
+                <Trash size={14} weight="regular" aria-hidden="true" />
+              </button>
+            </div>
+
+            {!isCollapsed && (
+              <div className="space-y-2">
+                <div>
+                  <label className={LABEL_CLASS}>板块标题</label>
+                  <input
+                    type="text"
+                    value={title}
+                    onChange={(e) => updateEntry(index, { title: e.target.value })}
+                    placeholder="如：项目亮点 / 专业技能补充"
+                    className={INPUT_CLASS}
+                  />
+                </div>
+                <div>
+                  <label className={LABEL_CLASS}>内容</label>
+                  <RichTextEditor
+                    value={typeof entry?.content === "string" ? entry.content : ""}
+                    onChange={(v) => updateEntry(index, { content: v })}
+                    placeholder="请输入板块内容"
+                    rows={6}
+                    minHeight="120px"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {/* 添加板块 */}
+      <button
+        onClick={addEntry}
+        className="w-full flex items-center justify-center gap-1.5 py-2.5
+          rounded-xl text-xs font-medium text-[var(--color-text-secondary)]
+          border border-dashed border-[var(--color-border)]
+          hover:text-brand hover:border-brand/30 hover:bg-brand/5
+          active:scale-[0.98] motion-reduce:active:scale-100
+          transition-all cursor-pointer"
+      >
+        <Plus size={14} weight="bold" aria-hidden="true" />
+        添加板块
+      </button>
     </div>
   );
 }
@@ -774,15 +972,18 @@ function ModuleFormImpl({ moduleType, content, onChange }: ModuleFormProps) {
         {/* social_links */}
         {moduleType === "social_links" && <SocialLinksForm content={content} onChange={onChange} />}
 
-        {/* other / custom：标题 + 内容 */}
-        {(moduleType === "other" || moduleType === "custom") && (
+        {/* other：标题 + 内容 */}
+        {moduleType === "other" && (
           <TextContentForm
             content={content}
             onChange={onChange}
-            titleLabel={moduleType === "custom" ? "自定义标题" : "标题"}
+            titleLabel="标题"
             contentRequired
           />
         )}
+
+        {/* custom：多板块编辑（向后兼容单板块 {title, content}） */}
+        {moduleType === "custom" && <CustomModuleForm content={content} onChange={onChange} />}
       </div>
     </div>
   );

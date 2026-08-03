@@ -102,10 +102,10 @@ async def get_templates(
 
 @router.post("/market/sync")
 async def sync_market_data(
-    source: str | None = Query(None, description="指定数据源（campus/referral/upcv/alljobs/sample），不传同步全部"),
+    file: str | None = Query(None, description="指定四模块文件（jobs_campus/jobs_social/guides/samples），不传同步全部"),
     db: AsyncSession = Depends(get_db),
     _admin: User = Depends(require_admin),
 ):
     """触发市场数据同步（幂等）。爬虫产出 JSON 后手动调用。"""
-    stats = await sync_market(db, source=source)
+    stats = await sync_market(db, file=file)
     return stats.to_dict()

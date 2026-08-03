@@ -136,6 +136,17 @@ class Settings(BaseSettings):
     TEMPLATE_DIR: str = "backend/templates"
     BUILDER_PARSE_MODEL: str = ""  # 空 = 使用 CHAT_MODEL
 
+    # ── MinerU 精准解析 API 配置 ──
+    MINERU_ENABLED: bool = False
+    MINERU_TOKEN: str = ""  # API 管理页面创建的 token
+    MINERU_BASE_URL: str = "https://mineru.net/api/v4"
+    MINERU_MODEL_VERSION: str = "vlm"  # pipeline / vlm / MinerU-HTML
+    MINERU_TIMEOUT: int = 300  # 轮询超时（秒）
+    MINERU_POLL_INTERVAL: int = 3  # 轮询间隔（秒）
+    MINERU_ENABLE_TABLE: bool = True
+    MINERU_ENABLE_FORMULA: bool = True
+    MINERU_LANGUAGE: str = "ch"
+
     # ── /ask/agent 独立限流（LLM 调用放大器） ──
     RATE_LIMIT_ASK_AGENT: str = "8/minute"
 

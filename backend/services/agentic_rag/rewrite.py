@@ -14,7 +14,11 @@ async def rewrite_node(state: AgenticRAGState) -> dict:
     timer_start = time.monotonic()
 
     try:
-        rewritten = await rewrite_query(question, model=settings.JUDGE_MODEL if settings.JUDGE_ENABLED else None)
+        rewritten = await rewrite_query(
+            question,
+            model=settings.JUDGE_MODEL if settings.JUDGE_ENABLED else None,
+            user_id=state.get("user_id"),
+        )
     except Exception:
         logger.warning("rewrite_node: rewrite_query failed, falling back to original")
         rewritten = question
@@ -47,7 +51,7 @@ _ROUTE_SYSTEM = (
 )
 
 
-async def _classify_route(query: str, model: str | None = None) -> str:
+async def _classify_route(query: str, model: str | None = None, user_id: int | None = None) -> str:
     result = await with_retry(
         llm_generate,
         _ROUTE_SYSTEM,
@@ -55,6 +59,7 @@ async def _classify_route(query: str, model: str | None = None) -> str:
         temperature=0.0,
         max_tokens=10,
         model=model,
+        user_id=user_id,
         fallback="search",
     )
     result = (result or "search").strip().lower()

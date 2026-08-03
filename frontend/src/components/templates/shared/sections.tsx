@@ -1,0 +1,528 @@
+/**
+ * 共享 Section 渲染组件 — 平移后端 services/resume_template.py 的 15 个渲染器。
+ *
+ * 每个 Section 输出与后端 _render_xxx 一致的 DOM 结构 + class 名，
+ * 使前端 React 预览与后端 WeasyPrint PDF 导出视觉天然一致。
+ * 样式由各模板通过 CSS 变量（--font-size/--accent-color 等）驱动。
+ *
+ * ## data-resume-item-index：条目级分页的测量锚点
+ *
+ * 列表型模块（教育/工作/项目/…）的每个条目 div 都带 `data-resume-item-index={i}`。
+ * usePagination 的测量层据此拿到「section 固定开销（标题+内边距）+ 逐条目高度」，
+ * packPages 才能在条目边界处断页，而不是把整个 section 整体挪到下一页 —— 后者
+ * 会在上一页尾部留下大片空白（例如项目经历有 5 条，装不下就全部下移）。
+ *
+ * 没有这个属性的模块（basic_info / interests / social_links / other）视为不可拆分，
+ * 仍按整块装箱。
+ */
+
+import type { ModuleContent, ModuleType } from "../../../api/builder";
+
+// ── 辅助函数（content 是宽松 dict，安全读取） ──────────────────
+
+const str = (v: unknown): string => (typeof v === "string" ? v : "");
+
+const strList = (v: unknown): string[] =>
+  Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+
+const dictList = (v: unknown): Array<Record<string, unknown>> =>
+  Array.isArray(v)
+    ? v.filter((x): x is Record<string, unknown> => !!x && typeof x === "object")
+    : [];
+
+const formatDateRange = (start?: unknown, end?: unknown): string => {
+  const s = str(start);
+  const e = str(end);
+  if (s && e) return `${s} - ${e}`;
+  if (s) return `${s} - 至今`;
+  if (e) return e;
+  return "";
+};
+
+// ── 条目切片（条目级分页） ────────────────────────────────────
+
+/**
+ * 条目区间 [start, end)。
+ * 分页时同一个 section 可能被切成多段分布在连续页上，
+ * 每页只渲染属于自己的那段条目。
+ */
+export interface ItemRange {
+  start: number;
+  end: number;
+}
+
+/**
+ * 按区间切条目，同时保留**原始下标**。
+ *
+ * 保留原始下标很关键：`data-resume-item-index` 必须是全局稳定的编号，
+ * 否则续页上的第 1 条会被标成 index 0，与测量层的编号对不上，装箱结果错位。
+ */
+function sliceRows<T>(rows: T[], range?: ItemRange): Array<[T, number]> {
+  const pairs = rows.map((row, i) => [row, i] as [T, number]);
+  if (!range) return pairs;
+  return pairs.slice(range.start, range.end);
+}
+
+/** 列表型 Section 的统一 props */
+interface ListSectionProps {
+  content: ModuleContent;
+  /** 只渲染该区间内的条目（不传 = 全部，用于测量层与非分页场景） */
+  itemRange?: ItemRange;
+}
+
+// ── 模块标题映射（对齐后端 _MODULE_TITLES） ───────────────────
+
+export const MODULE_TITLES: Record<string, string> = {
+  basic_info: "个人简介",
+  education: "教育背景",
+  work_experience: "工作经历",
+  project_experience: "项目经历",
+  skills: "专业技能",
+  language: "语言能力",
+  honors: "荣誉奖项",
+  certificates: "证书",
+  interests: "兴趣爱好",
+  club_activities: "社团活动",
+  publications: "研究成果",
+  recommendation: "推荐人",
+  social_links: "社交链接",
+  other: "其他",
+  custom: "自定义",
+};
+
+// ── 各模块 Section ───────────────────────────────────────────
+
+function SectionBasicInfo({ content }: { content: ModuleContent }) {
+  const name = str(content.name);
+  const avatar = str(content.avatar);
+  const jobTitle = str(content.job_title);
+  const phone = str(content.phone);
+  const email = str(content.email);
+  const location = str(content.location);
+  const status = str(content.status);
+  const hometown = str(content.hometown);
+  const summary = str(content.summary);
+
+  const contacts = [phone, email, location, status, hometown ? `籍贯: ${hometown}` : ""].filter(Boolean);
+
+  return (
+    <div className="basic-header">
+      {(name || avatar) && (
+        <div className="basic-header-line">
+          {avatar && (
+            <img className="basic-avatar" src={avatar} alt={name} width={80} height={80} />
+          )}
+          {name && <div className="basic-name">{name}</div>}
+        </div>
+      )}
+      {jobTitle && <div className="basic-job-title">{jobTitle}</div>}
+      {contacts.length > 0 && <div className="basic-contact">{contacts.join(" | ")}</div>}
+      {(str(content.github_url) || str(content.blog_url) || str(content.homepage_url)) && (
+        <div className="basic-links">
+          {[
+            content.github_url ? <a key="gh" href={str(content.github_url)}>GitHub</a> : null,
+            content.blog_url ? <a key="blog" href={str(content.blog_url)}>博客</a> : null,
+            content.homepage_url ? <a key="home" href={str(content.homepage_url)}>主页</a> : null,
+          ].filter(Boolean).map((a, i) => (
+            <span key={i}>{a}{i < 2 ? " | " : ""}</span>
+          ))}
+        </div>
+      )}
+      {summary && <div className="basic-summary">{summary}</div>}
+      {dictList(content.custom_fields).filter((f) => str(f.key)).length > 0 && (
+        <div className="basic-custom-fields">
+          {dictList(content.custom_fields)
+            .filter((f) => str(f.key))
+            .map((f, i) => (
+              <span key={i}>
+                <b>{str(f.key)}</b>: {str(f.value)}
+                {i > 0 ? "" : ""}
+              </span>
+            ))
+            .reduce<React.ReactNode[]>((acc, node, i, arr) => {
+              acc.push(node);
+              if (i < arr.length - 1) acc.push(" | ");
+              return acc;
+            }, [])}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SectionEducation({ content, itemRange }: ListSectionProps) {
+  const rows = sliceRows(dictList(content.entries), itemRange);
+  if (!rows.length) return null;
+  return (
+    <>
+      {rows.map(([entry, i]) => {
+        const info = [
+          str(entry.degree),
+          str(entry.major),
+          entry.gpa !== undefined && entry.gpa !== "" ? `GPA: ${str(entry.gpa)}` : "",
+        ].filter(Boolean);
+        const dates = formatDateRange(entry.start_date, entry.end_date);
+        return (
+          <div key={i} className="edu-item" data-resume-item-index={i}>
+            <div className="edu-header">
+              <span className="edu-school">{str(entry.school)}</span>
+              {dates && <span className="edu-date">{dates}</span>}
+            </div>
+            {info.length > 0 && <div className="edu-info">{info.join(" | ")}</div>}
+            {str(entry.description) && <div className="edu-desc">{str(entry.description)}</div>}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+function SectionWorkExperience({ content, itemRange }: ListSectionProps) {
+  const rows = sliceRows(dictList(content.entries), itemRange);
+  if (!rows.length) return null;
+  return (
+    <>
+      {rows.map(([entry, i]) => (
+        <div key={i} className="work-item" data-resume-item-index={i}>
+          <div className="work-header">
+            <span className="work-company">{str(entry.company)}</span>
+            {str(entry.position) && <span className="work-position">{str(entry.position)}</span>}
+            {formatDateRange(entry.start_date, entry.end_date) && (
+              <span className="work-date">{formatDateRange(entry.start_date, entry.end_date)}</span>
+            )}
+          </div>
+          {str(entry.description) && <div className="work-desc">{str(entry.description)}</div>}
+          {strList(entry.achievements).length > 0 && (
+            <ul className="work-achievements">
+              {strList(entry.achievements).map((a, j) => (
+                <li key={j}>{a}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ))}
+    </>
+  );
+}
+
+function SectionProjectExperience({ content, itemRange }: ListSectionProps) {
+  const rows = sliceRows(dictList(content.entries), itemRange);
+  if (!rows.length) return null;
+  return (
+    <>
+      {rows.map(([entry, i]) => {
+        const desc = str(entry.description);
+        const tech = strList(entry.tech_stack);
+        // 去重：描述正文若已包含"技术栈"行，则不再单独渲染 proj-tech，避免重复
+        const descHasTech = /技术栈\s*[:：]/.test(desc);
+        return (
+          <div key={i} className="proj-item" data-resume-item-index={i}>
+            <div className="proj-header">
+              <span className="proj-name">{str(entry.name)}</span>
+              {str(entry.role) && <span className="proj-role">{str(entry.role)}</span>}
+              {formatDateRange(entry.start_date, entry.end_date) && (
+                <span className="proj-date">{formatDateRange(entry.start_date, entry.end_date)}</span>
+              )}
+            </div>
+            {desc && <div className="proj-desc">{desc}</div>}
+            {tech.length > 0 && !descHasTech && (
+              <div className="proj-tech">技术栈: {tech.join(", ")}</div>
+            )}
+            {str(entry.url) && <div className="proj-url">{str(entry.url)}</div>}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+function SectionSkills({ content, itemRange }: ListSectionProps) {
+  const cats = sliceRows(
+    dictList(content.categories).filter((c) => strList(c.items).length > 0),
+    itemRange,
+  );
+  if (!cats.length) return null;
+  return (
+    <>
+      {cats.map(([cat, i]) => (
+        <div key={i} className="skill-cat" data-resume-item-index={i}>
+          <span className="skill-name">{str(cat.name)}</span>{" "}
+          {strList(cat.items).map((item, j) => (
+            <span key={j} className="skill-item">{item}</span>
+          ))}
+        </div>
+      ))}
+    </>
+  );
+}
+
+function SectionLanguage({ content, itemRange }: ListSectionProps) {
+  const rows = sliceRows(dictList(content.entries), itemRange);
+  if (!rows.length) return null;
+  return (
+    <>
+      {rows.map(([entry, i]) => {
+        const parts = [
+          <strong key="n">{str(entry.name)}</strong>,
+          ...(str(entry.proficiency) ? [str(entry.proficiency)] : []),
+          ...(str(entry.score) ? [str(entry.score)] : []),
+        ];
+        return (
+          <div key={i} className="lang-item" data-resume-item-index={i}>
+            {parts.map((p, j) => (
+              <span key={j}>{j > 0 ? " - " : ""}{p}</span>
+            ))}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+function SectionHonors({ content, itemRange }: ListSectionProps) {
+  const rows = sliceRows(dictList(content.entries), itemRange);
+  if (!rows.length) return null;
+  return (
+    <>
+      {rows.map(([entry, i]) => (
+        <div key={i} className="honor-item" data-resume-item-index={i}>
+          <span className="honor-title">{str(entry.title)}</span>
+          {str(entry.date) && <span className="honor-date">{str(entry.date)}</span>}
+          {str(entry.description) && <div className="honor-desc">{str(entry.description)}</div>}
+        </div>
+      ))}
+    </>
+  );
+}
+
+function SectionCertificates({ content, itemRange }: ListSectionProps) {
+  const rows = sliceRows(dictList(content.entries), itemRange);
+  if (!rows.length) return null;
+  return (
+    <>
+      {rows.map(([entry, i]) => {
+        const parts = [
+          <strong key="n">{str(entry.name)}</strong>,
+          ...(str(entry.issuer) ? [str(entry.issuer)] : []),
+          ...(str(entry.date) ? [str(entry.date)] : []),
+          ...(str(entry.score) ? [`成绩: ${str(entry.score)}`] : []),
+        ];
+        return (
+          <div key={i} className="cert-item" data-resume-item-index={i}>
+            {parts.map((p, j) => (
+              <span key={j}>{j > 0 ? " - " : ""}{p}</span>
+            ))}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+function SectionInterests({ content }: { content: ModuleContent }) {
+  const items = strList(content.items);
+  if (!items.length) return null;
+  return <div className="interests">{items.join(", ")}</div>;
+}
+
+function SectionClubActivities({ content, itemRange }: ListSectionProps) {
+  const rows = sliceRows(dictList(content.entries), itemRange);
+  if (!rows.length) return null;
+  return (
+    <>
+      {rows.map(([entry, i]) => (
+        <div key={i} className="club-item" data-resume-item-index={i}>
+          <span className="club-name">{str(entry.name)}</span>
+          {str(entry.role) && <span className="club-role">{str(entry.role)}</span>}
+          {formatDateRange(entry.start_date, entry.end_date) && (
+            <span className="club-date">{formatDateRange(entry.start_date, entry.end_date)}</span>
+          )}
+          {str(entry.description) && <div className="club-desc">{str(entry.description)}</div>}
+        </div>
+      ))}
+    </>
+  );
+}
+
+function SectionPublications({ content, itemRange }: ListSectionProps) {
+  const rows = sliceRows(dictList(content.entries), itemRange);
+  if (!rows.length) return null;
+  return (
+    <>
+      {rows.map(([entry, i]) => {
+        const info = [str(entry.venue), str(entry.date)].filter(Boolean);
+        return (
+          <div key={i} className="pub-item" data-resume-item-index={i}>
+            <div className="pub-title">{str(entry.title)}</div>
+            {strList(entry.authors).length > 0 && (
+              <div className="pub-authors">{strList(entry.authors).join(", ")}</div>
+            )}
+            {info.length > 0 && <div className="pub-info">{info.join(" - ")}</div>}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+function SectionRecommendation({ content, itemRange }: ListSectionProps) {
+  const rows = sliceRows(dictList(content.entries), itemRange);
+  if (!rows.length) return null;
+  return (
+    <>
+      {rows.map(([entry, i]) => {
+        const parts = [
+          <strong key="n">{str(entry.name)}</strong>,
+          ...(str(entry.title) ? [str(entry.title)] : []),
+          ...(str(entry.organization) ? [str(entry.organization)] : []),
+        ];
+        const contact = [str(entry.contact), str(entry.email)].filter(Boolean);
+        return (
+          <div key={i} className="rec-item" data-resume-item-index={i}>
+            <span>
+              {parts.map((p, j) => (
+                <span key={j}>{j > 0 ? " - " : ""}{p}</span>
+              ))}
+            </span>
+            {contact.length > 0 && <div className="rec-contact">{contact.join(" | ")}</div>}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+function SectionSocialLinks({ content }: { content: ModuleContent }) {
+  const fields: Array<[string, string]> = [
+    ["github", "GitHub"],
+    ["linkedin", "LinkedIn"],
+    ["website", "个人网站"],
+    ["twitter", "Twitter"],
+    ["wechat", "微信"],
+  ];
+  const parts = fields
+    .filter(([key]) => str(content[key]))
+    .map(([key, label]) => (
+      <span key={key} className="social-link">
+        <strong>{label}</strong>: {str(content[key])}
+      </span>
+    ));
+  for (const other of dictList(content.others)) {
+    const name = str(other.name);
+    const url = str(other.url);
+    if (name || url) {
+      parts.push(
+        <span key={`o-${parts.length}`} className="social-link">
+          <strong>{name}</strong>: {url}
+        </span>,
+      );
+    }
+  }
+  if (!parts.length) return null;
+  return (
+    <div className="social-links">
+      {parts.map((p, i) => (
+        <span key={i}>{i > 0 ? " | " : ""}{p}</span>
+      ))}
+    </div>
+  );
+}
+
+function SectionOther({ content }: { content: ModuleContent }) {
+  const text = str(content.content);
+  if (!text) return null;
+  return (
+    <>
+      {str(content.title) && <div className="other-title">{str(content.title)}</div>}
+      <div className="other-content">{text}</div>
+    </>
+  );
+}
+
+function SectionCustom({ content }: { content: ModuleContent }) {
+  // 多板块模式（entries）
+  const entries = dictList(content.entries).filter((e) => str(e.content));
+  if (entries.length > 0) {
+    return (
+      <>
+        {entries.map((entry, i) => (
+          <div key={i}>
+            {str(entry.title) && <div className="custom-title">{str(entry.title)}</div>}
+            <div className="custom-content">{str(entry.content)}</div>
+          </div>
+        ))}
+      </>
+    );
+  }
+  // 向后兼容单板块模式
+  const text = str(content.content);
+  if (!text) return null;
+  return (
+    <>
+      {str(content.title) && <div className="custom-title">{str(content.title)}</div>}
+      <div className="custom-content">{text}</div>
+    </>
+  );
+}
+
+function SectionFallback({ content }: { content: ModuleContent }) {
+  const rows = Object.entries(content).filter(
+    ([, v]) => v !== null && v !== "" && !(Array.isArray(v) && v.length === 0),
+  );
+  if (!rows.length) return null;
+  return (
+    <>
+      {rows.map(([k, v]) => (
+        <div key={k} className="fallback-row">
+          <span className="fallback-key">{k}</span>:{" "}
+          {Array.isArray(v) ? v.join(", ") : String(v)}
+        </div>
+      ))}
+    </>
+  );
+}
+
+// ── 分发器（对齐后端 _MODULE_RENDERERS 映射） ─────────────────
+
+export function SectionContent({
+  moduleType,
+  content,
+}: {
+  moduleType: ModuleType;
+  content: ModuleContent;
+}) {
+  switch (moduleType) {
+    case "basic_info":
+      return <SectionBasicInfo content={content} />;
+    case "education":
+      return <SectionEducation content={content} />;
+    case "work_experience":
+      return <SectionWorkExperience content={content} />;
+    case "project_experience":
+      return <SectionProjectExperience content={content} />;
+    case "skills":
+      return <SectionSkills content={content} />;
+    case "language":
+      return <SectionLanguage content={content} />;
+    case "honors":
+      return <SectionHonors content={content} />;
+    case "certificates":
+      return <SectionCertificates content={content} />;
+    case "interests":
+      return <SectionInterests content={content} />;
+    case "club_activities":
+      return <SectionClubActivities content={content} />;
+    case "publications":
+      return <SectionPublications content={content} />;
+    case "recommendation":
+      return <SectionRecommendation content={content} />;
+    case "social_links":
+      return <SectionSocialLinks content={content} />;
+    case "other":
+      return <SectionOther content={content} />;
+    case "custom":
+      return <SectionCustom content={content} />;
+    default:
+      return <SectionFallback content={content} />;
+  }
+}

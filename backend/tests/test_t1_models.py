@@ -3,7 +3,7 @@
 测试范围：
 - 改表：resumes 加 source/style/version/expires_at；users 加 password_changed_at；
   qa_history 加 status；resumes.status 兼容 draft
-- 新表：resume_modules / job_application / audit_log / qa_feedback / user_feedback
+- 新表：resume_modules / audit_log / qa_feedback / user_feedback
 - 级联删除关系验证
 """
 
@@ -18,7 +18,6 @@ from tests.conftest import AsyncSessionTest
 # RED 步骤：先导入新模型（此时不存在，导入必失败）
 # ═══════════════════════════════════════════════════════════
 from models.resume_module import ResumeModule
-from models.job_application import JobApplication
 from models.audit_log import AuditLog
 from models.qa_feedback import QAFeedback
 from models.user_feedback import UserFeedback
@@ -225,36 +224,6 @@ async def test_resume_module_unique_constraint():
 
 
 @pytest.mark.asyncio
-async def test_job_application_crud():
-    """job_application 表 CRUD。"""
-    async with AsyncSessionTest() as db_session:
-        user = User(
-            username="jau",
-            email="ja@example.com",
-            password_hash="$2b$12$fake",
-        )
-        db_session.add(user)
-        await db_session.flush()
-
-        ja = JobApplication(
-            user_id=user.id,
-            resume_id=None,
-            company="字节跳动",
-            position="后端开发",
-            city="北京",
-            salary_range="30-50K",
-            status="投递中",
-        )
-        db_session.add(ja)
-        await db_session.commit()
-
-        result = await db_session.execute(select(JobApplication).where(JobApplication.id == ja.id))
-        j = result.scalar_one()
-        assert j.company == "字节跳动"
-        assert j.resume_id is None
-
-
-@pytest.mark.asyncio
 async def test_audit_log_crud():
     """audit_log 表 CRUD。"""
     async with AsyncSessionTest() as db_session:
@@ -391,47 +360,6 @@ async def test_resume_cascade_deletes_modules():
         # resume_modules 应被级联删除
         result = await db_session.execute(select(ResumeModule).where(ResumeModule.id == mod.id))
         assert result.scalar_one_or_none() is None
-
-
-@pytest.mark.asyncio
-async def test_resume_delete_sets_job_application_null():
-    """删除 resume 时 job_application.resume_id SET NULL。"""
-    async with AsyncSessionTest() as db_session:
-        user = User(
-            username="snl",
-            email="sn@example.com",
-            password_hash="$2b$12$fake",
-        )
-        db_session.add(user)
-        await db_session.flush()
-
-        resume = Resume(
-            user_id=user.id,
-            filename="sn.pdf",
-            file_path="/uploads/sn.pdf",
-            parsed_text="text",
-        )
-        db_session.add(resume)
-        await db_session.flush()
-
-        ja = JobApplication(
-            user_id=user.id,
-            resume_id=resume.id,
-            company="腾讯",
-            position="前端",
-            city="深圳",
-            status="面试中",
-        )
-        db_session.add(ja)
-        await db_session.commit()
-
-        # 删除 resume
-        await db_session.delete(resume)
-        await db_session.commit()
-
-        # SQLite 外键 SET NULL 在 DB 层已生效，但 ORM 缓存需刷新
-        await db_session.refresh(ja)
-        assert ja.resume_id is None
 
 
 @pytest.mark.asyncio

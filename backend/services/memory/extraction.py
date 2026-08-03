@@ -64,6 +64,7 @@ async def extract_and_save_memories(
             user=conversation_text[:4000],
             temperature=0.2,
             max_tokens=300,
+            user_id=user_id,
             fallback="[]",
         )
     except Exception as e:

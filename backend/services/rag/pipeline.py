@@ -267,7 +267,9 @@ async def llm_generate_with_tools_stream(
     }
 
 
-async def rewrite_query(question: str, model: str | None = None) -> str:
+async def rewrite_query(
+    question: str, model: str | None = None, user_id: int | None = None,
+) -> str:
     """LLM 改写问题做指代消解，失败时返回原问题兜底（轻量重试 — flash 模型单次 ~0.3s）"""
     system = "你是一个问题改写助手。"
     user = (
@@ -285,6 +287,7 @@ async def rewrite_query(question: str, model: str | None = None) -> str:
         temperature=0.1,
         max_tokens=200,
         model=model,
+        user_id=user_id,
         fallback=question,
     )
     return result or question
@@ -390,7 +393,7 @@ def build_prompt(context_chunks: list[str], question: str) -> dict:
 async def _retrieve(user_id: int, resume_id: int, question: str, timer: StepTimer) -> tuple[str, list[dict]]:
     """检索链路：改写 → 混合检索(20) → Rerank(5) → 拒答判断。
     返回 (rewritten_question, reranked_chunks)。检索失败时 reranked_chunks 为空。"""
-    rewritten = await timer.run("rewrite", rewrite_query(question))
+    rewritten = await timer.run("rewrite", rewrite_query(question, user_id=user_id))
     chunks = await timer.run("hybrid", hybrid_search(user_id, resume_id, rewritten, top_k=20))
     if not chunks:
         return rewritten, []

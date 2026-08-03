@@ -142,6 +142,13 @@ async def get_redis():
     """
     global _redis, _in_memory, _redis_down_until
 
+    # 开发/测试环境本就不配 Redis：直接走内存降级，彻底跳过连接尝试，
+    # 消除冷却期边界每次 0.5s 的重连毛刺（登录后 /me 等请求偶发变慢）。
+    if settings.ENVIRONMENT in ("development", "dev", "test", "testing"):
+        if _in_memory is None:
+            _in_memory = InMemoryRedis()
+        return _in_memory
+
     now = time.time()
 
     # 冷却期内：Redis 刚失败过，直接内存降级，不再重试

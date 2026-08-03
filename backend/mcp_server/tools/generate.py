@@ -91,6 +91,7 @@ async def generate_answer(
                 prompt["system"],
                 prompt["user"],
                 temperature=settings.DEFAULT_GENERATE_TEMPERATURE,
+                user_id=_user_id,
                 fallback="服务暂时不可用，请稍后重试。",
             ),
             timeout=MCP_HTTP_TIMEOUT.read,

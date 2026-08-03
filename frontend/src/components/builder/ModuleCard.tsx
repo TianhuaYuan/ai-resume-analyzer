@@ -19,7 +19,8 @@ import {
   PencilSimple,
 } from "@phosphor-icons/react";
 import type { ModuleType, ModuleContent } from "../../api/builder";
-import { MODULE_LABELS, isModuleEmpty } from "./ModuleList";
+import { MODULE_LABELS, getModuleTitle } from "../../api/builder";
+import { isModuleEmpty } from "./ModuleList";
 import {
   FieldRenderer,
   EntriesEditor,
@@ -235,7 +236,7 @@ function ModuleInlineForm({
   content: ModuleContent;
   onChange: (content: ModuleContent) => void;
 }) {
-  const label = MODULE_LABELS[moduleType];
+  const label = getModuleTitle(content, moduleType);
   const entryFields = ENTRY_FIELD_CONFIGS[moduleType];
 
   if (moduleType === "basic_info") {
@@ -330,8 +331,10 @@ function ModuleCardImpl({
   onDragEnd,
   onTouchDragStart,
 }: ModuleCardProps) {
-  const label = MODULE_LABELS[moduleType];
+  const label = getModuleTitle(content, moduleType);
   const isEmpty = isModuleEmpty(content);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleValue, setTitleValue] = useState(label);
   // useMemo 避免每次按键都重算摘要和文本
   const summary = useMemo(() => getContentSummary(moduleType, content), [moduleType, content]);
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -424,16 +427,49 @@ function ModuleCardImpl({
           <DotsSixVertical size={14} weight="bold" aria-hidden="true" />
         </span>
 
-        {/* 模块名称 */}
-        <span
-          className={`flex-1 text-sm truncate ${
-            expanded
-              ? "text-brand font-medium"
-              : "text-[var(--color-text-secondary)]"
-          }`}
-        >
-          {label}
-        </span>
+        {/* 模块名称（双击编辑标题） */}
+        {editingTitle ? (
+          <input
+            type="text"
+            value={titleValue}
+            onChange={(e) => setTitleValue(e.target.value)}
+            onBlur={() => {
+              const newTitle = titleValue.trim() || label;
+              if (newTitle !== label) {
+                const newMetadata = { ...(content.metadata || {}), title: newTitle };
+                onChange(moduleType, { ...content, metadata: newMetadata });
+              }
+              setEditingTitle(false);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                (e.target as HTMLInputElement).blur();
+              } else if (e.key === "Escape") {
+                setTitleValue(label);
+                setEditingTitle(false);
+              }
+            }}
+            autoFocus
+            className="flex-1 text-sm px-1 py-0 -my-0 rounded border border-brand/40 bg-white outline-none"
+            onClick={(e) => e.stopPropagation()}
+          />
+        ) : (
+          <span
+            className={`flex-1 text-sm truncate ${
+              expanded
+                ? "text-brand font-medium"
+                : "text-[var(--color-text-secondary)]"
+            }`}
+            onDoubleClick={(e) => {
+              e.stopPropagation();
+              setTitleValue(label);
+              setEditingTitle(true);
+            }}
+            title="双击编辑标题"
+          >
+            {label}
+          </span>
+        )}
 
         {/* 折叠时显示摘要 */}
         {!expanded && (
@@ -538,7 +574,7 @@ function ModuleCardImpl({
             <div className="flex items-center gap-1 flex-wrap">
               <button
                 onClick={() => setAiMode(aiMode === "optimize" ? null : "optimize")}
-                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium
+                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium
                   transition-all cursor-pointer
                   ${aiMode === "optimize"
                     ? "bg-brand/10 text-brand border border-brand/30"
@@ -554,7 +590,7 @@ function ModuleCardImpl({
 
               <button
                 onClick={() => setAiMode(aiMode === "check" ? null : "check")}
-                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium
+                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium
                   transition-all cursor-pointer
                   ${aiMode === "check"
                     ? "bg-brand/10 text-brand border border-brand/30"
@@ -570,7 +606,7 @@ function ModuleCardImpl({
 
               <button
                 onClick={() => setAiMode(aiMode === "rewrite" ? null : "rewrite")}
-                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium
+                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium
                   transition-all cursor-pointer
                   ${aiMode === "rewrite"
                     ? "bg-brand/10 text-brand border border-brand/30"

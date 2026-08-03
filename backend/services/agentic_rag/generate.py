@@ -121,6 +121,7 @@ async def generate_node(state: AgenticRAGState) -> dict:
         prompt["system"],
         prompt["user"],
         temperature=settings.DEFAULT_GENERATE_TEMPERATURE,
+        user_id=state.get("user_id"),
         fallback="服务暂时不可用，请稍后重试。",
     )
 
@@ -283,6 +284,7 @@ async def evaluate_node(state: AgenticRAGState) -> dict:
         temperature=0.0,
         max_tokens=400,
         model=settings.JUDGE_MODEL if settings.JUDGE_ENABLED else None,
+        user_id=state.get("user_id"),
         fallback='{"completeness": 5, "accuracy": 5, "source_credibility": 5, "feedback": "评估服务暂时不可用"}',
     )
 

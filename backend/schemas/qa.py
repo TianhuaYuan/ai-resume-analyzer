@@ -16,6 +16,15 @@ class QuestionRequest(BaseModel):
     compare_ids: list[int] | None = None
     """可选：指定对话会话 ID，将问答归入该会话下。不传则归入默认流。"""
     conversation_id: int | None = None
+    # v2: Builder 上下文参数（可选，用于条目级 AI 操作）
+    """工具模式：agent（默认）/ builder（builder 意图直达优化）。"""
+    tool_mode: str | None = None
+    """目标模块类型（builder 场景下指定操作哪个模块）。"""
+    module_type: str | None = None
+    """目标条目 ID（builder 场景下指定操作哪个条目）。"""
+    entry_id: str | None = None
+    """AI 操作类型：optimize/check/rewrite/expand（builder 场景）。"""
+    action: str | None = None
 
     @field_validator("resume_id")
     @classmethod

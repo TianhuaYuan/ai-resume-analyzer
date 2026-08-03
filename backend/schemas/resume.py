@@ -11,11 +11,14 @@ class ResumeResponse(BaseModel):
     status: str
     status_message: str
     created_at: datetime
+    updated_at: datetime
     # T17：索引新鲜度（脏标记 content_hash != indexed_hash → 需要懒重建）
     content_hash: str | None = None
     indexed_hash: str | None = None
     is_indexed: bool = False
     is_stale: bool = False
+    # 简历列表卡片预览：modules + style（不传时前端兜底灰色占位）
+    modules_data: ResumeModulesData | None = None
 
     @model_validator(mode="after")
     def _compute_index_state(self):
@@ -24,6 +27,23 @@ class ResumeResponse(BaseModel):
         return self
 
     model_config = {"from_attributes": True}
+
+
+class ResumeModuleLite(BaseModel):
+    """列表预览用的精简模块信息。"""
+
+    id: int = 0
+    resume_id: int = 0
+    module_type: str
+    content: dict
+    sort_order: int
+
+
+class ResumeModulesData(BaseModel):
+    """简历卡片预览用：模块列表 + 样式配置。"""
+
+    modules: list[ResumeModuleLite]
+    style: dict | None = None
 
 
 class ResumeListResponse(BaseModel):

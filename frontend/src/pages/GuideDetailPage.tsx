@@ -2,17 +2,18 @@
  * GuideDetailPage — 求职攻略详情页（站内阅读）。
  *
  * 数据来自市场数据接口：/api/v1/market/guides/{id}
- * - 标题 + 日期 + 正文（content 用 MarkdownRenderer 渲染）
- * - 正文未抓取时 content 即摘要（has_fulltext=false），展示摘要 + "阅读原文"外链按钮
+ * - 标题 + 日期 + 正文
+ * - 全文模式：纯文本智能解析（标题 / 小节标题 / 段落）
+ * - 摘要模式：MarkdownRenderer 渲染
  * - 返回按钮回到攻略列表
  */
 
+import { useMemo } from "react";
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   BookOpen,
   CalendarBlank,
-  ArrowSquareOut,
   Spinner,
   CaretLeft,
 } from "@phosphor-icons/react";
@@ -25,6 +26,53 @@ function formatDate(dateStr?: string | null): string {
   const d = new Date(normalized);
   if (isNaN(d.getTime())) return dateStr.slice(0, 10);
   return d.toLocaleDateString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" });
+}
+
+// ── 纯文本智能解析渲染 ──
+
+const HEADER_MAX_LEN = 20;
+
+/**
+ * 将纯文本逐行解析为结构化块。
+ *
+ * 规则：
+ * - 第一行 → title
+ * - 空行 → 分段间隔（gap 块）
+ * - ≤20 字的独立行 → 小节标题（h2）
+ * - 其余 → 段落（p）
+ */
+function parseTextBlocks(text: string) {
+  const lines = text.split("\n");
+  const title = lines[0]?.trim() || "";
+
+  interface ParsedBlock {
+    type: "header" | "paragraph";
+    text: string;
+  }
+
+  const blocks: ParsedBlock[] = [];
+  let i = 1;
+  while (i < lines.length) {
+    const trimmed = lines[i].trim();
+    if (trimmed === "") {
+      i++;
+      continue;
+    }
+    // 小节标题：短行（≤20字）
+    if (trimmed.length <= HEADER_MAX_LEN) {
+      blocks.push({ type: "header", text: trimmed });
+      i++;
+    } else {
+      // 段落：收集连续非空、非标题行
+      const para: string[] = [];
+      while (i < lines.length && lines[i].trim() !== "" && lines[i].trim().length > HEADER_MAX_LEN) {
+        para.push(lines[i].trim());
+        i++;
+      }
+      blocks.push({ type: "paragraph", text: para.join(" ") });
+    }
+  }
+  return { title, blocks };
 }
 
 export default function GuideDetailPage() {
@@ -44,6 +92,14 @@ export default function GuideDetailPage() {
       .catch((err) => setError(err instanceof Error ? err.message : "加载失败，请稍后再试"))
       .finally(() => setLoading(false));
   }, [id]);
+
+  // 全文模式：解析纯文本为结构化块
+  const parsed = useMemo(() => {
+    if (guide?.has_fulltext && guide.content) {
+      return parseTextBlocks(guide.content);
+    }
+    return null;
+  }, [guide]);
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -66,20 +122,9 @@ export default function GuideDetailPage() {
         ) : (
           <article className="glass-card px-6 py-6 animate-fade-in-up">
             {/* 头部 */}
-            <div className="mb-4">
-              <div className="flex items-center gap-2">
-                {guide.has_fulltext ? (
-                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium border border-emerald-500/20 bg-emerald-500/10 text-emerald-600">
-                    站内全文
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium border border-amber-500/20 bg-amber-500/10 text-amber-600">
-                    原文待收录
-                  </span>
-                )}
-              </div>
-              <h1 className="text-lg font-bold text-[var(--color-text)] display-tight leading-snug mt-2 mb-2">
-                {guide.title}
+            <div className="mb-5">
+              <h1 className="text-xl font-bold text-[var(--color-text)] display-tight leading-snug mb-2">
+                {parsed?.title || guide.title}
               </h1>
               <div className="flex items-center gap-3 text-[10px] text-[var(--color-text-muted)]">
                 <span className="inline-flex items-center gap-1">
@@ -90,28 +135,31 @@ export default function GuideDetailPage() {
             </div>
 
             {/* 正文 */}
-            <div className="border-t border-[var(--color-border)] pt-4">
+            <div className="border-t border-[var(--color-border)] pt-5">
               {guide.content ? (
-                <MarkdownRenderer>{guide.content}</MarkdownRenderer>
+                guide.has_fulltext && parsed ? (
+                  /* 全文模式：逐行智能解析渲染 */
+                  <div>
+                    {parsed.blocks.map((block, i) =>
+                      block.type === "header" ? (
+                        <h2 key={i} className="text-[15px] font-semibold text-[var(--color-text)] mt-7 mb-2 leading-snug first:mt-0">
+                          {block.text}
+                        </h2>
+                      ) : (
+                        <p key={i} className="text-[14px] text-[var(--color-text-secondary)] leading-[2] mb-4 last:mb-0">
+                          {block.text}
+                        </p>
+                      )
+                    )}
+                  </div>
+                ) : (
+                  /* 摘要模式：MarkdownRenderer 渲染 */
+                  <MarkdownRenderer>{guide.content}</MarkdownRenderer>
+                )
               ) : (
                 <p className="text-xs text-[var(--color-text-secondary)]">暂无内容</p>
               )}
             </div>
-
-            {/* 原文外链 */}
-            {guide.url && (
-              <div className="flex items-center justify-between gap-3 border-t border-[var(--color-border)] pt-4 mt-6">
-                <p className="text-[10px] text-[var(--color-text-muted)]">
-                  {guide.has_fulltext
-                    ? "全文由系统收录，如需查看原始出处可点击右侧按钮"
-                    : "正文暂未收录，以下为摘要，可前往原文链接阅读完整攻略"}
-                </p>
-                <a href={guide.url} target="_blank" rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-brand text-white text-xs font-medium hover:bg-[#0077ed] hover:scale-[1.02] active:scale-[0.98] transition-all duration-300 cursor-pointer shrink-0">
-                  <ArrowSquareOut size={13} weight="bold" /> 阅读原文
-                </a>
-              </div>
-            )}
           </article>
         )}
       </div>

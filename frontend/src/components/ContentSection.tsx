@@ -6,14 +6,14 @@
  * 数据源：模板 → /api/v1/market/templates；范文 → /api/v1/market/samples；攻略 → /api/v1/market/guides
  */
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  CaretRight,
-  MagnifyingGlass,
-} from "@phosphor-icons/react";
+import { CaretRight, MagnifyingGlass } from "@phosphor-icons/react";
+import { motion } from "framer-motion";
 import { listSamples, listTemplates, listGuides } from "../api/market";
 import type { ResumeSample, MarketTemplate, MarketGuideItem } from "../api/market";
+import TemplateGalleryModal, { TemplateCardPreview } from "./TemplateGalleryModal";
+import { useToast } from "./Toast";
 
 export type ContentTabKey = "templates" | "examples" | "tips";
 
@@ -57,58 +57,50 @@ function formatDate(iso?: string | null): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-// ── 模板预览（iframe srcDoc + transform scale 缩放适配） ──
+// ── 分类 Tab → 模板过滤规则 ──
+//
+// 基于 MarketTemplate 的 id/name/tags/description 做关键词包含匹配（大小写不敏感），
+// 命中任一关键词即归入该类；hot → 全部（默认）。同一模板可命中多个分类。
+// 关键词对齐后端 template_catalog 的 tags（如「金融咨询」「研发」）与 description。
 
-const PREVIEW_BASE_WIDTH = 800;
+const CATEGORY_KEYWORDS: Record<string, string[]> = {
+  // 行业：金融/咨询/互联网/运营/管理
+  industry: ["金融咨询", "互联网", "市场运营", "新媒体", "管理", "电商"],
+  // 职位：研发/技术/设计/产品/内容
+  position: ["研发", "技术", "设计", "产品创意", "内容", "创意"],
+  // 专业：计算机/软件/电子/信息技术向
+  major: ["计算机", "软件", "电子", "信息", "技术", "研发"],
+  // 冷门岗位：国企/事业单位/公务员等
+  niche: ["国企", "事业单位", "公务员", "教师", "沉稳"],
+};
 
-function TemplatePreview({ html }: { html: string }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [scale, setScale] = useState(1);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const update = () => {
-      if (el.clientWidth > 0) setScale(el.clientWidth / PREVIEW_BASE_WIDTH);
-    };
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
-  if (!html) {
-    return <div className="aspect-[3/4] w-full bg-[var(--color-bg-secondary)]" />;
-  }
-
-  return (
-    <div
-      ref={ref}
-      className="aspect-[3/4] w-full overflow-hidden relative bg-[var(--color-bg-secondary)]"
-    >
-      <div
-        className="absolute top-0 left-0 origin-top-left"
-        style={{
-          width: PREVIEW_BASE_WIDTH,
-          height: Math.ceil((PREVIEW_BASE_WIDTH * 4) / 3),
-          transform: `scale(${scale})`,
-        }}
-      >
-        <iframe
-          srcDoc={html}
-          scrolling="no"
-          title="模板预览"
-          className="w-full h-full border-0"
-        />
-      </div>
-    </div>
-  );
+function matchesCategory(t: MarketTemplate, category: string): boolean {
+  if (category === "hot") return true;
+  const keywords = CATEGORY_KEYWORDS[category];
+  if (!keywords || keywords.length === 0) return true;
+  const hay = `${t.id} ${t.name} ${(t.tags ?? []).join(" ")} ${t.description ?? ""}`.toLowerCase();
+  return keywords.some((kw) => hay.includes(kw.toLowerCase()));
 }
+
+// ── 主题色选择器（借鉴 Magic Resume：8 色圆点 + 3s 自动轮播，点选后停止） ──
+
+const ACCENT_COLORS = [
+  "#000000",
+  "#3b82f6",
+  "#10b981",
+  "#8b5cf6",
+  "#f97316",
+  "#ef4444",
+  "#475569",
+  "#2563eb",
+];
+const ACCENT_INTERVAL_MS = 3000;
 
 // ── 组件 ──
 
 export default function ContentSection({ activeTab }: { activeTab: ContentTabKey }) {
   const navigate = useNavigate();
+  const { info } = useToast();
   const [category, setCategory] = useState("hot");
   const [tagFilter, setTagFilter] = useState("all");
   const [query, setQuery] = useState("");
@@ -116,6 +108,10 @@ export default function ContentSection({ activeTab }: { activeTab: ContentTabKey
   const [apiTemplates, setApiTemplates] = useState<MarketTemplate[]>([]);
   const [apiTips, setApiTips] = useState<MarketGuideItem[]>([]);
   const [apiLoading, setApiLoading] = useState(false);
+  // 放大预览弹窗 + 主题色（自动轮播，点选后停止）
+  const [previewTemplate, setPreviewTemplate] = useState<MarketTemplate | null>(null);
+  const [accentIdx, setAccentIdx] = useState(0);
+  const [accentPaused, setAccentPaused] = useState(false);
 
   useEffect(() => {
     if (activeTab === "examples") {
@@ -139,6 +135,20 @@ export default function ContentSection({ activeTab }: { activeTab: ContentTabKey
     }
   }, [activeTab]);
 
+  // 主题色自动轮播（用户点选或打开预览弹窗时停止）
+  useEffect(() => {
+    if (activeTab !== "templates" || accentPaused || previewTemplate) return;
+    const timer = setInterval(() => {
+      setAccentIdx((i) => (i + 1) % ACCENT_COLORS.length);
+    }, ACCENT_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [activeTab, accentPaused, previewTemplate]);
+
+  // listTemplates() 一次性返回全量（后端无分页参数），保持全量并提示
+  const handleLoadMore = () => {
+    info("已全部加载");
+  };
+
   const tabs = [
     { key: "templates", label: "简历模板", route: "/templates" },
     { key: "examples", label: "简历范文", route: "/examples" },
@@ -147,8 +157,10 @@ export default function ContentSection({ activeTab }: { activeTab: ContentTabKey
 
   const tab = tabs.find((t) => t.key === activeTab) ?? tabs[0];
 
-  // 模板前端过滤：搜索（name/tags/description 模糊）+ 标签筛选
+  // 模板前端过滤：分类 Tab + 搜索（name/tags/description 模糊）+ 标签筛选
   const filteredTemplates = apiTemplates.filter((t) => {
+    // 分类 Tab 过滤
+    if (!matchesCategory(t, category)) return false;
     const q = query.trim().toLowerCase();
     if (q) {
       const hay = `${t.name} ${(t.tags ?? []).join(" ")} ${t.description ?? ""}`.toLowerCase();
@@ -197,10 +209,44 @@ export default function ContentSection({ activeTab }: { activeTab: ContentTabKey
             </button>
           ))}
         </div>
-        <button className="inline-flex items-center gap-1 text-sm text-[var(--color-text-muted)] hover:text-brand transition-colors cursor-pointer shrink-0 ml-3">
+        <button
+          onClick={handleLoadMore}
+          className="inline-flex items-center gap-1 text-sm text-[var(--color-text-muted)] hover:text-brand transition-colors cursor-pointer shrink-0 ml-3"
+        >
           查看更多 <CaretRight size={14} />
         </button>
       </div>
+
+      {/* 主题色选择器（仅模板 tab）：8 色圆点 + 自动轮播，点选后停止 */}
+      {activeTab === "templates" && (
+        <div className="flex items-center gap-3 mb-5">
+          <span className="text-xs text-[var(--color-text-muted)] shrink-0">主题色</span>
+          <div className="flex items-center gap-2">
+            {ACCENT_COLORS.map((c, i) => (
+              <button
+                key={c}
+                onClick={() => {
+                  setAccentIdx(i);
+                  setAccentPaused(true);
+                }}
+                aria-label={`主题色 ${c}`}
+                className={`w-5 h-5 rounded-full cursor-pointer transition-all duration-300
+                  ${accentIdx === i
+                    ? "ring-2 ring-brand ring-offset-2 ring-offset-[var(--color-bg)] scale-110"
+                    : "hover:scale-110"
+                  }`}
+                style={{ backgroundColor: c }}
+              />
+            ))}
+          </div>
+          {!accentPaused && (
+            <span className="text-[10px] text-[var(--color-text-muted)] flex items-center gap-1.5">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-brand animate-pulse" />
+              自动轮播中
+            </span>
+          )}
+        </div>
+      )}
 
       {/* 标签筛选 + 搜索 */}
       <div className="flex items-center gap-3 mb-6">
@@ -300,7 +346,7 @@ export default function ContentSection({ activeTab }: { activeTab: ContentTabKey
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
           {Array.from({ length: 8 }).map((_, i) => (
             <div key={i} className="glass-card overflow-hidden animate-pulse">
-              <div className="aspect-[3/4] bg-gray-200" />
+              <div className="aspect-[210/297] bg-gray-200" />
               <div className="p-4">
                 <div className="h-4 bg-gray-200 rounded w-3/4 mb-2" />
                 <div className="h-3 bg-gray-200 rounded w-1/2" />
@@ -314,14 +360,23 @@ export default function ContentSection({ activeTab }: { activeTab: ContentTabKey
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-          {filteredTemplates.map((item) => (
-            <div
+          {filteredTemplates.map((item, index) => (
+            <motion.div
               key={item.id}
-              onClick={() => navigate(`/templates/${item.id}`)}
-              className="glass-card overflow-hidden hover:-translate-y-1 hover:shadow-xl hover:shadow-black/5 transition-all duration-400 cursor-pointer group animate-fade-in-up"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.05, duration: 0.3 }}
+              onClick={() => setPreviewTemplate(item)}
+              className="glass-card overflow-hidden hover:-translate-y-1 hover:shadow-xl hover:shadow-black/5 transition-all duration-400 cursor-pointer group"
             >
-              {/* 预览区（iframe srcDoc + 缩放） */}
-              <TemplatePreview html={item.preview_html} />
+              {/* 预览区（有前端组件的模板用 React 渲染，其余 iframe 兜底） */}
+              <div className="p-2 bg-[var(--color-bg-secondary)]">
+                <TemplateCardPreview
+                  template={item}
+                  accentColor={ACCENT_COLORS[accentIdx]}
+                  className="rounded shadow-sm"
+                />
+              </div>
 
               {/* 信息区 */}
               <div className="p-4">
@@ -351,10 +406,17 @@ export default function ContentSection({ activeTab }: { activeTab: ContentTabKey
                   </div>
                 </div>
               </div>
-            </div>
+            </motion.div>
           ))}
         </div>
       )}
+
+      {/* 卡片放大预览弹窗 */}
+      <TemplateGalleryModal
+        template={previewTemplate}
+        onClose={() => setPreviewTemplate(null)}
+        accentColor={ACCENT_COLORS[accentIdx]}
+      />
     </div>
   );
 }

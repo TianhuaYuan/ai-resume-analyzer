@@ -17,7 +17,6 @@ import models.user  # noqa: F401
 import models.resume  # noqa: F401
 import models.qa_history  # noqa: F401
 import models.resume_module  # noqa: F401
-import models.job_application  # noqa: F401
 import models.audit_log  # noqa: F401
 import models.qa_feedback  # noqa: F401
 import models.user_feedback  # noqa: F401

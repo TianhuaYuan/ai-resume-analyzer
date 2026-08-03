@@ -1,11 +1,10 @@
 """T21: Agent 工具集成测试。
 
-通过 loop._execute_tool_call 集成入口测试全部 14 工具（9 agent + 5 builder）：
-1. 注册表完整性：TOOL_REGISTRY 3 类 14 工具
-2. Schema 生成：get_agent_schemas()=9, get_builder_schemas()=5
-3. 9 Agent 工具通过 _execute_tool_call 执行（mock 依赖）
-4. 5 LLM 工具通过 _execute_tool_call 执行（mock LLM）
-5. 工具查找：get_tool_by_name 覆盖全部 14 个名称
+通过 loop._execute_tool_call 集成入口测试全部 18 工具（unified = 13 qa + 5 builder）：
+1. 注册表完整性：TOOL_REGISTRY 3 类（qa/builder/unified）18 工具
+2. Schema 生成：get_agent_schemas()=18（unified）, get_builder_schemas()=5（deprecated）
+3. 18 Agent 工具通过 _execute_tool_call 执行（mock 依赖）
+4. 工具查找：get_tool_by_name 覆盖全部 18 个名称
 """
 
 import json
@@ -33,8 +32,8 @@ class TestToolRegistry:
     """工具注册表结构验证。"""
 
     def test_registry_has_three_categories(self):
-        """TOOL_REGISTRY 包含 qa/builder/workbench 三个类别。"""
-        assert set(TOOL_REGISTRY.keys()) == {"qa", "builder", "workbench"}
+        """TOOL_REGISTRY 包含 qa/builder/unified 三个类别。"""
+        assert set(TOOL_REGISTRY.keys()) == {"qa", "builder", "unified"}
 
     def test_qa_has_thirteen_tools(self):
         """qa 类别有 13 个工具（含 recommend_jobs）。"""
@@ -44,31 +43,24 @@ class TestToolRegistry:
         """builder 类别有 5 个工具。"""
         assert len(TOOL_REGISTRY["builder"]) == 5
 
-    def test_workbench_has_two_tools(self):
-        """workbench 类别有 2 个工具。"""
-        assert len(TOOL_REGISTRY["workbench"]) == 2
+    def test_unified_has_eighteen_tools(self):
+        """unified 类别有 18 个工具（qa + builder 合并）。"""
+        assert len(TOOL_REGISTRY["unified"]) == 18
 
-    def test_total_twenty_tools(self):
-        """总计 20 个工具。"""
-        total = sum(len(tools) for tools in TOOL_REGISTRY.values())
-        assert total == 20
-
-    def test_agent_tools_are_qa_plus_workbench(self):
-        """get_tools_for_agent = qa(13) + workbench(2) = 15。"""
+    def test_agent_tools_are_unified(self):
+        """get_tools_for_agent = unified(18)。"""
         tools = get_tools_for_agent()
-        assert len(tools) == 15
+        assert len(tools) == 18
 
-    def test_builder_tools_are_builder_only(self):
-        """get_tools_for_builder = builder(5)。"""
-        tools = get_tools_for_builder()
+    def test_builder_tools_deprecated(self):
+        """get_tools_for_builder 保留向后兼容（deprecated）。"""
+        with pytest.warns(DeprecationWarning, match="已废弃"):
+            tools = get_tools_for_builder()
         assert len(tools) == 5
 
     def test_all_tool_names_unique(self):
-        """所有 20 个工具名不重复。"""
-        names = []
-        for tools in TOOL_REGISTRY.values():
-            for tool_class in tools:
-                names.append(tool_class.name)
+        """unified 中所有 18 个工具名不重复。"""
+        names = [tc.name for tc in TOOL_REGISTRY["unified"]]
         assert len(names) == len(set(names)), f"重复工具名: {names}"
 
 
@@ -81,18 +73,19 @@ class TestSchemaGeneration:
     """OpenAI function calling schema 生成。"""
 
     def test_agent_schemas_count(self):
-        """get_agent_schemas() 返回 15 个 schema。"""
+        """get_agent_schemas() 返回 18 个 schema（unified）。"""
         schemas = get_agent_schemas()
-        assert len(schemas) == 15
+        assert len(schemas) == 18
 
-    def test_builder_schemas_count(self):
-        """get_builder_schemas() 返回 5 个 schema。"""
-        schemas = get_builder_schemas()
+    def test_builder_schemas_deprecated(self):
+        """get_builder_schemas() 保留向后兼容（deprecated）。"""
+        with pytest.warns(DeprecationWarning, match="已废弃"):
+            schemas = get_builder_schemas()
         assert len(schemas) == 5
 
     def test_each_schema_has_required_fields(self):
         """每个 schema 包含 type/function/name/parameters。"""
-        for schema in get_agent_schemas() + get_builder_schemas():
+        for schema in get_agent_schemas():
             assert schema["type"] == "function"
             assert "function" in schema
             func = schema["function"]
@@ -108,7 +101,7 @@ class TestSchemaGeneration:
 
 
 # ═══════════════════════════════════════════════════════════════
-# 3. get_tool_by_name 覆盖全部 14 工具
+# 3. get_tool_by_name 覆盖全部 18 工具
 # ═══════════════════════════════════════════════════════════════
 
 
@@ -120,10 +113,9 @@ class TestGetToolByName:
         "rewrite_star", "translate", "interview_coach",
         "generate_module", "check_module", "modify_module",
         "rewrite_resume", "ask_info",
-        "generate_greeting", "reply_draft",
     ])
     def test_find_existing_tool(self, tool_name):
-        """14 个工具名都能查到。"""
+        """12 个工具名都能查到。"""
         tool_class = get_tool_by_name(tool_name)
         assert tool_class is not None
         assert tool_class.name == tool_name
@@ -137,8 +129,6 @@ class TestGetToolByName:
         ("rewrite_star", "qa"),
         ("generate_module", "builder"),
         ("ask_info", "builder"),
-        ("generate_greeting", "workbench"),
-        ("reply_draft", "workbench"),
     ])
     def test_tool_category_correct(self, tool_name, expected_category):
         """工具类别正确。"""
@@ -147,12 +137,12 @@ class TestGetToolByName:
 
 
 # ═══════════════════════════════════════════════════════════════
-# 4. 9 Agent 工具通过 _execute_tool_call 集成测试
+# 4. 13 Agent 工具通过 _execute_tool_call 集成测试
 # ═══════════════════════════════════════════════════════════════
 
 
 class TestAgentToolExecution:
-    """通过 loop._execute_tool_call 执行 9 个 agent 工具。"""
+    """通过 loop._execute_tool_call 执行 13 个 agent 工具。"""
 
     @pytest.mark.asyncio
     async def test_search_resume_executes(self):
@@ -235,44 +225,6 @@ class TestAgentToolExecution:
         assert is_error is False
         assert "a.pdf" in result or "b.pdf" in result
 
-    @pytest.mark.asyncio
-    async def test_generate_greeting_executes(self):
-        """generate_greeting 通过 _execute_tool_call 执行（workbench 工具）。"""
-        from services.react_agent.loop import _execute_tool_call
-        from services.rag.pipeline import ToolCall
-
-        tc = ToolCall(id="tc1", name="generate_greeting", arguments=json.dumps({"resume_id": 1, "target_position": "后端"}))
-
-        with patch("services.react_agent.tools.get_l3_profile", new_callable=AsyncMock) as mock_l3, \
-             patch("services.react_agent.tools.llm_generate", new_callable=AsyncMock) as mock_llm:
-            mock_l3.return_value = {"summary": "3年Python", "skills": ["Python"]}
-            mock_llm.return_value = "你好，我是3年Python后端..."
-
-            result, is_error, _ = await _execute_tool_call(tc, AsyncMock(), user_id=1)
-
-        assert is_error is False
-        assert "你好" in result
-
-    @pytest.mark.asyncio
-    async def test_reply_draft_executes(self):
-        """reply_draft 通过 _execute_tool_call 执行（workbench 工具）。"""
-        from services.react_agent.loop import _execute_tool_call
-        from services.rag.pipeline import ToolCall
-
-        tc = ToolCall(id="tc1", name="reply_draft", arguments=json.dumps({
-            "resume_id": 1, "hr_message": "你好", "target_position": "后端",
-        }))
-
-        with patch("services.react_agent.tools.get_l3_profile", new_callable=AsyncMock) as mock_l3, \
-             patch("services.react_agent.tools.llm_generate", new_callable=AsyncMock) as mock_llm:
-            mock_l3.return_value = None
-            mock_llm.return_value = "HR您好，感谢回复..."
-
-            result, is_error, _ = await _execute_tool_call(tc, AsyncMock(), user_id=1)
-
-        assert is_error is False
-        assert "HR" in result
-
 
 # ═══════════════════════════════════════════════════════════════
 # 5. 5 LLM 工具通过 _execute_tool_call 集成测试
@@ -282,7 +234,7 @@ class TestAgentToolExecution:
 class TestLLMToolExecution:
     """5 个 LLM 工具通过 _execute_tool_call 执行（mock LLM）。
 
-    覆盖：rewrite_star / translate / interview_coach / generate_greeting / reply_draft。
+    覆盖：rewrite_star / translate / interview_coach。
     T12 已测直接调用 _execute，这里测通过 loop 的集成入口。
     """
 
@@ -374,42 +326,6 @@ class TestLLMToolExecution:
 
         assert is_error is False
         assert "面试" in result
-
-    @pytest.mark.asyncio
-    async def test_generate_greeting_through_loop(self):
-        """generate_greeting 通过 _execute_tool_call 执行（LLM mock）。"""
-        from services.react_agent.loop import _execute_tool_call
-        from services.rag.pipeline import ToolCall
-
-        tc = ToolCall(id="tc1", name="generate_greeting", arguments=json.dumps({"resume_id": 1, "target_position": "后端"}))
-
-        with patch("services.react_agent.tools.get_l3_profile", new_callable=AsyncMock) as mock_l3, \
-             patch("services.react_agent.tools.llm_generate", new_callable=AsyncMock) as mock_llm:
-            mock_l3.return_value = {"summary": "3年Python", "skills": ["FastAPI"]}
-            mock_llm.return_value = "打招呼语结果"
-            result, is_error, _ = await _execute_tool_call(tc, AsyncMock(), user_id=1)
-
-        assert is_error is False
-        assert "打招呼" in result
-
-    @pytest.mark.asyncio
-    async def test_reply_draft_through_loop(self):
-        """reply_draft 通过 _execute_tool_call 执行（LLM mock）。"""
-        from services.react_agent.loop import _execute_tool_call
-        from services.rag.pipeline import ToolCall
-
-        tc = ToolCall(id="tc1", name="reply_draft", arguments=json.dumps({
-            "resume_id": 1, "hr_message": "何时面试？", "target_position": "后端",
-        }))
-
-        with patch("services.react_agent.tools.get_l3_profile", new_callable=AsyncMock) as mock_l3, \
-             patch("services.react_agent.tools.llm_generate", new_callable=AsyncMock) as mock_llm:
-            mock_l3.return_value = None
-            mock_llm.return_value = "回复话术结果"
-            result, is_error, _ = await _execute_tool_call(tc, AsyncMock(), user_id=1)
-
-        assert is_error is False
-        assert "回复" in result
 
 
 # ═══════════════════════════════════════════════════════════════

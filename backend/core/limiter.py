@@ -26,7 +26,15 @@ def get_real_ip(request: Request) -> str:
 limiter = Limiter(
     key_func=get_real_ip,
     default_limits=[settings.RATE_LIMIT_DEFAULT],
-    storage_uri=settings.REDIS_URL,
+    # 开发/测试环境无 Redis：slowapi 每次限流检查会尝试连接 Redis，
+    # 卡在 OS 级 TCP 超时（实测 ~4s）后才降级内存 → 登录等受限流接口延迟严重。
+    # 开发/测试直接用内存限流（storage_uri=None → slowapi 默认 memory://）；
+    # 生产/预发多 worker 共享限流计数才接 Redis。
+    storage_uri=(
+        None
+        if settings.ENVIRONMENT in ("development", "dev", "test", "testing")
+        else settings.REDIS_URL
+    ),
     in_memory_fallback_enabled=True,
 )
 

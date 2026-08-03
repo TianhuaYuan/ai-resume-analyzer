@@ -19,6 +19,7 @@
 import hashlib
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -41,21 +42,20 @@ logger = logging.getLogger(__name__)
 # 爬虫 JSON 文件所在目录（与 api/campus.py 一致）
 _DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
-SOURCE_CAMPUS = "campus"      # campus_recruitment.json（校招公告）
-SOURCE_REFERRAL = "referral"  # referral_recruitment.json（内推）
-SOURCE_UPCV = "upcv"          # upcv_jobs.json（upcv 真实 JD）
-SOURCE_ALLJOBS = "alljobs"    # all_jobs.json（nowcoder 多平台岗位）
-SOURCE_SAMPLE = "sample"      # fanwen_all.json（简历范文）
-SOURCE_GUIDE = "guide"        # all_articles.json（求职攻略）
+SOURCE_CAMPUS = "campus"              # campus_recruitment.json（校招公告）
+SOURCE_REFERRAL = "referral"          # referral_recruitment.json（内推）
+SOURCE_UPCV = "upcv"                  # upcv_jobs.json（upcv 真实 JD）
+SOURCE_ALLJOBS = "alljobs"            # all_jobs.json（nowcoder 多平台岗位）
+SOURCE_SAMPLE = "sample"              # fanwen_all.json（简历范文）
+SOURCE_GUIDE = "guide"                # all_articles.json（求职攻略）
+SOURCE_UPCV_RECRUITMENTS = "upcv_recruitments"  # upcv 校招项目
 
-# source → 文件名
-SOURCE_FILES: dict[str, str] = {
-    SOURCE_CAMPUS: "campus_recruitment.json",
-    SOURCE_REFERRAL: "referral_recruitment.json",
-    SOURCE_UPCV: "upcv_jobs.json",
-    SOURCE_ALLJOBS: "all_jobs.json",
-    SOURCE_SAMPLE: "fanwen_all.json",
-    SOURCE_GUIDE: "all_articles.json",
+# 四模块分类 JSON（backend/data/ 真源，爬虫重爬后由整理脚本重新生成）
+MARKET_FILES: dict[str, str] = {
+    "jobs_campus": "jobs_campus.json",  # 校招岗位（campus公告/upcv岗位/校招项目/all_jobs校招）
+    "jobs_social": "jobs_social.json",  # 社招岗位（all_jobs社招实习/内推）
+    "guides": "guides.json",            # 攻略（仅入 MySQL，不向量化）
+    "samples": "samples.json",          # 范文模板（仅入 MySQL，不向量化）
 }
 
 # 资产类型（RAG metadata）
@@ -112,21 +112,16 @@ class MarketSyncStats:
 # ── 通用工具 ────────────────────────────────────────────────
 
 
-def _load_source_json(source: str) -> list[dict]:
-    """读 source 对应 JSON 文件，兼容顶层 list / {"data":[...]} / {"articles":[...]} 三种形态。"""
-    fpath = _DATA_DIR / SOURCE_FILES[source]
+def _load_market_records(name: str) -> list[dict]:
+    """读四模块分类 JSON 的 records 数组。"""
+    fpath = _DATA_DIR / MARKET_FILES[name]
     if not fpath.exists():
         logger.warning("market data file not found: %s", fpath)
         return []
     with open(fpath, "r", encoding="utf-8") as f:
         raw = json.load(f)
-    if isinstance(raw, dict):
-        for key in ("data", "articles", "items"):
-            if key in raw and isinstance(raw[key], list):
-                return raw[key]
-        return []
-    if isinstance(raw, list):
-        return raw
+    if isinstance(raw, dict) and isinstance(raw.get("records"), list):
+        return raw["records"]
     return []
 
 
@@ -243,6 +238,43 @@ def _normalize_upcv_jobs(r: dict) -> NormalizedAsset:
         degree=degree.get("label", "") if isinstance(degree, dict) else "",
         deadline=_resolve_deadline(r),
         payload={"work_mode": r.get("workMode"), "apply_url": r.get("detailUrl") or r.get("applyUrl")},
+    )
+
+
+def _normalize_upcv_recruitments(r: dict) -> NormalizedAsset:
+    """upcv 校招项目归一化（job 资产，校招向）。"""
+    c = r.get("company") or {}
+    company = c.get("shortName") or c.get("name") or r.get("rawCompanyName") or ""
+    title = r.get("programName") or f"校招项目{r.get('id')}"
+    sections = []
+    for key, label in (("targetGraduates", "面向对象"), ("targetDegrees", "学历要求"),
+                       ("targetMajors", "专业要求"), ("cities", "工作城市"),
+                       ("schedule", "招聘安排"), ("benefits", "福利待遇")):
+        v = r.get(key)
+        if v:
+            text = _fmt_labels(v) if isinstance(v, list) else str(v)
+            if text:
+                sections.append(f"## {label}\n{text}")
+    content = _build_job_content(
+        title=title, company=company, city=_fmt_labels(r.get("cities")),
+        salary="", degree="", body="\n".join(sections),
+    )
+    return NormalizedAsset(
+        source=SOURCE_UPCV_RECRUITMENTS,
+        external_id=str(r.get("id") or ""),
+        asset_type=ASSET_TYPE_JOB,
+        title=title,
+        content=content,
+        job_type=JOB_TYPE_CAMPUS,
+        company=company,
+        position="",
+        city=_fmt_labels(r.get("cities")),
+        deadline=_resolve_deadline(r),
+        payload={
+            "entry_type": r.get("entryType"),
+            "batch": f"{r.get('batchYear')}届{r.get('batchType')}" if r.get("batchYear") else None,
+            "apply_url": r.get("recruitUrl"),
+        },
     )
 
 
@@ -366,10 +398,56 @@ def _normalize_fanwen(r: dict) -> NormalizedAsset:
     )
 
 
+_RE_URL = re.compile(r"^https?://\S+$", re.IGNORECASE)
+_RE_UP_PROMO = re.compile(
+    r"[，,。；;！!？?\s]*"  # 前导标点/空白
+    r"(?:可以|欢迎|建议|如果需要|不妨)?\s*"
+    r"(?:参考|看看|去|访问|关注)?\s*"
+    r"UP\s*简历\S*"
+    r"[，,。；;！!？?\s]*",  # 尾部标点/空白
+    re.IGNORECASE,
+)
+
+
+def _clean_guide_body(body: str) -> str:
+    """清洗攻略正文：移除站内推广文案和独立链接。
+
+    清洗规则：
+    1. 独立 URL 行 → 删除
+    2. 整行仅含 "UP 简历" 推广 → 删除该行
+    3. 行内嵌入 "UP 简历" 片段 → 剥离片段，保留其余内容
+    4. 连续空行压缩为单行
+    """
+    cleaned_lines = []
+    for line in body.split("\n"):
+        stripped = line.strip()
+        # 独立 URL 行
+        if _RE_URL.match(stripped):
+            continue
+        # 整行仅含 UP 简历推广（去掉推广后无实质内容）
+        if _RE_UP_PROMO.sub("", stripped).strip() == "":
+            continue
+        # 行内嵌入 UP 简历片段 → 剥离
+        line = _RE_UP_PROMO.sub("", line)
+        cleaned_lines.append(line)
+    # 压缩连续空行
+    result = "\n".join(cleaned_lines)
+    result = re.sub(r"\n{3,}", "\n\n", result)
+    return result.strip()
+
+
 def _normalize_guide(r: dict) -> NormalizedAsset:
-    """求职攻略归一化。正文未抓取前 content 用摘要；正文抓取后替换为全文。"""
+    """求职攻略归一化。正文未抓取前 content 用摘要；正文抓取后替换为全文。
+
+    guides.json 字段：body（全文）、summary（摘要）、url、date。
+    has_fulltext 判断 body 是否存在；content 存全文或摘要。
+    正文经过 _clean_guide_body 清洗（移除推广文案和站内链接）。
+    """
     title = r.get("title") or f"攻略{r.get('article_id')}"
-    content = r.get("summary") or title
+    summary = r.get("summary") or ""
+    body = _clean_guide_body(r.get("body") or "")
+    has_fulltext = bool(body)
+    content = body if has_fulltext else (summary or title)
     external = r.get("article_id") or _compute_hash(r.get("url") or title)
     return NormalizedAsset(
         source=SOURCE_GUIDE,
@@ -380,7 +458,8 @@ def _normalize_guide(r: dict) -> NormalizedAsset:
         payload={
             "url": r.get("url"),
             "date": r.get("date") or r.get("datetime_iso"),
-            "has_fulltext": bool(r.get("content")),
+            "has_fulltext": has_fulltext,
+            "summary": summary,
         },
     )
 
@@ -496,44 +575,50 @@ async def _index_asset(db: AsyncSession, row: MarketAsset, stats: MarketSyncStat
         await release_index_lock(0, row.asset_type, row.id, lock_id)
 
 
-_NORMALIZERS = {
-    SOURCE_UPCV: _normalize_upcv_jobs,
-    SOURCE_ALLJOBS: _normalize_all_jobs,
-    SOURCE_CAMPUS: _normalize_campus,
-    SOURCE_REFERRAL: _normalize_referral,
-    SOURCE_SAMPLE: _normalize_fanwen,
-    SOURCE_GUIDE: _normalize_guide,
+# 四 JSON 记录里的 _source 标签 → 归一化器
+_NORMALIZERS: dict[str, callable] = {
+    "campus_recruitment": _normalize_campus,
+    "upcv_jobs": _normalize_upcv_jobs,
+    "upcv_recruitments": _normalize_upcv_recruitments,
+    "all_jobs": _normalize_all_jobs,
+    "referral": _normalize_referral,
+    "fanwen": _normalize_fanwen,
+    "guides": _normalize_guide,
 }
 
 
 async def sync_market(
     db: AsyncSession,
     *,
-    source: str | None = None,
+    file: str | None = None,
     limit_per_source: int | None = None,
 ) -> MarketSyncStats:
-    """同步市场数据。source=None 同步所有可用源文件，否则只同步指定源。
+    """同步市场数据。file=None 同步四模块全部 JSON，否则只同步指定文件。
 
     Args:
-        source: 指定数据源（campus/referral/upcv/alljobs/sample/guide），None 同步全部
-        limit_per_source: 每源最多同步条数（测试/抽样用），None 全量
+        file: 指定四模块文件（jobs_campus/jobs_social/guides/samples），None 全部
+        limit_per_source: 每条记录最多同步条数（测试/抽样用），None 全量
     """
     stats = MarketSyncStats()
-    sources = [source] if source else list(SOURCE_FILES.keys())
+    files = [file] if file else list(MARKET_FILES.keys())
 
-    for src in sources:
-        if src not in SOURCE_FILES:
-            stats.errors.append(f"未知数据源: {src}")
+    for name in files:
+        if name not in MARKET_FILES:
+            stats.errors.append(f"未知数据文件: {name}")
             continue
-        records = _load_source_json(src)
+        records = _load_market_records(name)
         if limit_per_source:
             records = records[:limit_per_source]
         if not records:
-            stats.errors.append(f"{src}: 无数据文件或为空")
+            stats.errors.append(f"{name}: 无数据或为空")
             continue
-        normalizer = _NORMALIZERS[src]
         for r in records:
             stats.total += 1
+            tag = r.get("_source")
+            normalizer = _NORMALIZERS.get(tag)
+            if normalizer is None:
+                stats.errors.append(f"{name}: 未知 _source={tag}")
+                continue
             try:
                 n = normalizer(r)
                 if not n.external_id:
@@ -544,9 +629,9 @@ async def sync_market(
                 if need_index:
                     await _index_asset(db, row, stats)
             except Exception as e:  # noqa: BLE001 单行异常不中断整批
-                logger.exception("market sync row failed source=%s", src)
-                stats.errors.append(f"{src}: {e}")
-        logger.info("market sync source=%s done, total=%d", src, len(records))
+                logger.exception("market sync row failed file=%s tag=%s", name, tag)
+                stats.errors.append(f"{name}/{tag}: {e}")
+        logger.info("market sync file=%s done, total=%d", name, len(records))
 
     await db.commit()
     return stats

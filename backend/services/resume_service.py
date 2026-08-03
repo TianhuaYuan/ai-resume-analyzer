@@ -2,6 +2,7 @@ import hashlib
 import logging
 import os
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import HTTPException, UploadFile, status
@@ -176,7 +177,7 @@ async def process_resume_background(resume_id: int, file_path: str, user_id: int
     """
     async with AsyncSessionLocal() as db:
         try:
-            parsed_text = parse_resume(file_path)
+            parsed_text = await parse_resume(file_path)
             content_hash = hashlib.sha256(parsed_text.encode("utf-8")).hexdigest()
             await db.execute(
                 update(Resume)
@@ -186,6 +187,7 @@ async def process_resume_background(resume_id: int, file_path: str, user_id: int
                     content_hash=content_hash,
                     chunk_count=0,
                     status="ready",
+                    updated_at=datetime.now(timezone.utc),
                 )
             )
             await db.commit()

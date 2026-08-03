@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.qa_history import QAHistory
 from services.react_agent.loop import ReactLoopResult, react_loop
-from services.react_agent.tools import get_tools_for_agent, get_tools_for_builder
+from services.react_agent.tools import get_tools_for_agent
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +37,11 @@ _RESULT_SUMMARY_MAX = 2000
 
 
 def _get_tool_list(tool_mode: str) -> list[dict]:
-    """获取工具列表（name + description），用于 agent_start 事件。"""
-    tool_classes = get_tools_for_builder() if tool_mode == "builder" else get_tools_for_agent()
+    """获取工具列表（name + description），用于 agent_start 事件。
+
+    v2: 统一使用 unified 工具集（qa + builder 合并）。
+    """
+    tool_classes = get_tools_for_agent()  # unified = qa + builder
     return [{"name": tc.name, "description": tc.description} for tc in tool_classes]
 
 
@@ -293,6 +296,14 @@ async def react_loop_stream(
             token_usage=loop_result.usage,
             db_trace=loop_result.db_trace,  # Spec 行 459: 完整 prompt 进 DB
         )
+
+        # ── 记录 quota 消耗（analytics 已由 llm_generate_with_tools_stream 内部 record_llm_usage 完成，
+        #    此处仅记录 quota 消耗，与传统 RAG 路径对齐） ──────
+        pt = loop_result.usage.get("prompt_tokens", 0)
+        ct = loop_result.usage.get("completion_tokens", 0)
+        if pt > 0 or ct > 0:
+            from services.token_quota import record_usage as _record_quota
+            await _record_quota(user_id, pt, ct)
 
         # ── 产出最终 agent_done 事件（Spec 字段对齐） ────────
         # SSE done.process_trace = 紧凑摘要（轮数/工具序列/耗时），非全量事件列表

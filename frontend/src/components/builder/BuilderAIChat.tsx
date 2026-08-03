@@ -3,7 +3,7 @@
  *
  * 功能：
  * - 输入框向 Builder Agent 提问
- * - 使用 askBuilderStream() 进行 SSE 流式通信
+ * - 使用 askAgentStream() 进行 SSE 流式通信（v2: 统一使用 /ask/agent）
  * - 使用 AgentProcessPanel 展示 Agent 推理过程
  * - 使用 MarkdownRenderer 渲染最终答案
  * - 会话内保留对话历史
@@ -19,7 +19,7 @@ import {
   type FormEvent,
 } from "react";
 import { ChatCircleDots, PaperPlaneRight, X, Stop } from "@phosphor-icons/react";
-import { askBuilderStream } from "../../api/builder";
+import { askAgentStream } from "../../api/qa";
 import type { AgentSSEEvent, AgentStep } from "../../api/qa";
 import AgentProcessPanel from "../AgentProcessPanel";
 import MarkdownRenderer from "../MarkdownRenderer";
@@ -81,7 +81,7 @@ export function BuilderAIChat({
       };
       setMessages((prev) => [...prev, newMsg]);
 
-      abortRef.current = askBuilderStream(
+      abortRef.current = askAgentStream(
         resumeId,
         q,
         (event: AgentSSEEvent) => {
@@ -272,6 +272,8 @@ export function BuilderAIChat({
             ),
           );
         },
+        // v2: builder 模式 — 使用 unified /ask/agent + tool_mode=builder
+        { toolMode: "builder" },
       );
     },
     [resumeId, onAgentDone],

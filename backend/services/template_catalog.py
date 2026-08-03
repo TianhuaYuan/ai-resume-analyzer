@@ -108,7 +108,7 @@ def _placeholder_modules() -> list[dict]:
         {
             "module_type": "education",
             "content": {
-                "entries": [
+                "items": [
                     {
                         "school": "示例大学",
                         "degree": "本科",
@@ -123,7 +123,7 @@ def _placeholder_modules() -> list[dict]:
         {
             "module_type": "work_experience",
             "content": {
-                "entries": [
+                "items": [
                     {
                         "company": "示例科技公司",
                         "position": "开发工程师",
@@ -138,7 +138,7 @@ def _placeholder_modules() -> list[dict]:
         {
             "module_type": "project_experience",
             "content": {
-                "entries": [
+                "items": [
                     {
                         "name": "示例项目",
                         "role": "核心开发",
@@ -154,9 +154,11 @@ def _placeholder_modules() -> list[dict]:
         {
             "module_type": "skills",
             "content": {
-                "categories": [
-                    {"name": "编程语言", "items": ["Python", "TypeScript"]},
-                    {"name": "框架工具", "items": ["FastAPI", "React"]},
+                "items": [
+                    {"name": "Python", "level": 4, "category": "编程语言"},
+                    {"name": "TypeScript", "level": 3, "category": "编程语言"},
+                    {"name": "FastAPI", "level": 4, "category": "框架工具"},
+                    {"name": "React", "level": 3, "category": "框架工具"},
                 ]
             },
             "sort_order": 4,

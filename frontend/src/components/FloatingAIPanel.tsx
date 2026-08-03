@@ -86,8 +86,8 @@ function QuickActionButton({
  *  - /campus            校招岗位：3 个上下文问题
  *  - 其他               通用 AI 问候 + 输入框
  *
- * 集成：在 AppLayout 中渲染 <FloatingAIPanel /> 即可全局生效；登录页因不
- * 经过 AppLayout 自然不显示（组件内也对 /login、/forgot-password 做了兜底）。
+ * 集成：在 AppLayout 中渲染 <FloatingAIPanel /> 即可全局生效；登录为全局弹窗
+ * 不经过 AppLayout 自然不显示（组件内对 /forgot-password 做了兜底）。
  */
 export default function FloatingAIPanel({ isAgentPage }: FloatingAIPanelProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -121,8 +121,8 @@ export default function FloatingAIPanel({ isAgentPage }: FloatingAIPanelProps) {
     setIsOpen(false);
   }, [inputValue, navigate]);
 
-  // 登录页不渲染（兜底；实际由父组件是否挂载控制）
-  if (pathname === "/login" || pathname === "/forgot-password") {
+  // 忘记密码页不渲染（兜底；实际由父组件是否挂载控制）
+  if (pathname === "/forgot-password") {
     return null;
   }
 

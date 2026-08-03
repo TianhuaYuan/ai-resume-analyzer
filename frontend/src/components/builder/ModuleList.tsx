@@ -17,25 +17,10 @@ import {
   CaretDown,
 } from "@phosphor-icons/react";
 import type { ModuleType, ResumeModule, ModuleContent } from "../../api/builder";
+import { MODULE_LABELS, getModuleTitle, getModuleItems } from "../../api/builder";
 
-/** 15 个模块类型的中文名映射 */
-export const MODULE_LABELS: Record<ModuleType, string> = {
-  basic_info: "基本信息",
-  education: "教育经历",
-  work_experience: "工作经历",
-  project_experience: "项目经历",
-  skills: "专业技能",
-  language: "语言能力",
-  honors: "荣誉奖项",
-  certificates: "证书",
-  interests: "兴趣爱好",
-  club_activities: "社团活动",
-  publications: "发表论文",
-  recommendation: "推荐人",
-  social_links: "社交链接",
-  other: "其他",
-  custom: "自定义",
-};
+// 重新导出 MODULE_LABELS（保持向后兼容，其他文件可能从 ModuleList 导入）
+export { MODULE_LABELS };
 
 /** 模块类型的显示顺序（与后端 ModuleType 枚举顺序一致） */
 export const MODULE_ORDER: ModuleType[] = [

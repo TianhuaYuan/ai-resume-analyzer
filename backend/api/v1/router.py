@@ -1,4 +1,4 @@
-"""v1 路由汇总：auth + resumes + qa + feedback + websocket + jobs + admin + analytics + campus。"""
+"""v1 路由汇总：auth + resumes + qa + feedback + websocket + market + admin + analytics + campus。"""
 
 from fastapi import APIRouter
 
@@ -7,7 +7,6 @@ from api.analytics import router as analytics_router
 from api.auth import router as auth_router
 from api.campus import router as campus_router
 from api.feedback import router as feedback_router
-from api.job_application import router as job_app_router
 from api.market import router as market_router
 from api.qa import router as qa_router
 from api.resumes import router as resumes_router
@@ -20,7 +19,6 @@ v1_router.include_router(resumes_router)
 v1_router.include_router(qa_router)
 v1_router.include_router(feedback_router)
 v1_router.include_router(websocket_router)
-v1_router.include_router(job_app_router)
 v1_router.include_router(market_router)
 v1_router.include_router(admin_router)
 v1_router.include_router(analytics_router)

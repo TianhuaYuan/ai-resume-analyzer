@@ -137,10 +137,14 @@ class TestParseDocxTables:
 class TestSectionHeadersAnnotation:
     """parse_resume 应对常见节标题加 `## 节名` 标注。"""
 
+    @pytest.mark.asyncio
+    @patch("utils.file_parser._get_mineru_client")
     @patch("utils.file_parser.pdfplumber")
-    def test_annotates_section_headers_in_pdf(self, mock_pdfplumber):
+    async def test_annotates_section_headers_in_pdf(self, mock_pdfplumber, mock_mineru):
         """PDF 文本中的节标题应被标注。"""
         from utils.file_parser import parse_resume
+
+        mock_mineru.return_value.enabled = False
 
         raw_text = "张三\n教育背景\n北京大学 计算机科学\n工作经验\n字节跳动 后端开发\n" + "a" * 50
 
@@ -152,7 +156,7 @@ class TestSectionHeadersAnnotation:
         mock_pdf.__exit__ = MagicMock(return_value=False)
         mock_pdfplumber.open.return_value = mock_pdf
 
-        result = parse_resume("/fake/resume.pdf")
+        result = await parse_resume("/fake/resume.pdf")
         assert "## 教育背景" in result
         assert "## 工作经验" in result
 
@@ -174,10 +178,14 @@ class TestSectionHeadersAnnotation:
         assert "## 专业技能" in result
         assert "## 项目经历" in result
 
+    @pytest.mark.asyncio
+    @patch("utils.file_parser._get_mineru_client")
     @patch("utils.file_parser.pdfplumber")
-    def test_does_not_duplicate_annotations(self, mock_pdfplumber):
+    async def test_does_not_duplicate_annotations(self, mock_pdfplumber, mock_mineru):
         """已标注的节标题不应重复加 `##`。"""
         from utils.file_parser import parse_resume
+
+        mock_mineru.return_value.enabled = False
 
         raw_text = "王五\n## 教育背景\n清华大学\n" + "a" * 50
 
@@ -189,7 +197,7 @@ class TestSectionHeadersAnnotation:
         mock_pdf.__exit__ = MagicMock(return_value=False)
         mock_pdfplumber.open.return_value = mock_pdf
 
-        result = parse_resume("/fake/resume.pdf")
+        result = await parse_resume("/fake/resume.pdf")
         # 不应出现 "## ## 教育背景"
         assert result.count("## 教育背景") == 1
 
@@ -221,10 +229,14 @@ class TestSectionHeadersAnnotation:
 class TestParseResumeIntegration:
     """parse_resume 集成行为保持不变。"""
 
+    @pytest.mark.asyncio
+    @patch("utils.file_parser._get_mineru_client")
     @patch("utils.file_parser.pdfplumber")
-    def test_rejects_too_short_text(self, mock_pdfplumber):
+    async def test_rejects_too_short_text(self, mock_pdfplumber, mock_mineru):
         """文本过短仍抛 ValueError。"""
         from utils.file_parser import parse_resume
+
+        mock_mineru.return_value.enabled = False
 
         mock_page = MagicMock()
         mock_page.extract_text.return_value = "hi"
@@ -235,12 +247,16 @@ class TestParseResumeIntegration:
         mock_pdfplumber.open.return_value = mock_pdf
 
         with pytest.raises(ValueError, match="解析文本过短"):
-            parse_resume("/fake/short.pdf")
+            await parse_resume("/fake/short.pdf")
 
+    @pytest.mark.asyncio
+    @patch("utils.file_parser._get_mineru_client")
     @patch("utils.file_parser.pdfplumber")
-    def test_accepts_pdf_extension(self, mock_pdfplumber):
+    async def test_accepts_pdf_extension(self, mock_pdfplumber, mock_mineru):
         """.pdf 扩展名正常解析。"""
         from utils.file_parser import parse_resume
+
+        mock_mineru.return_value.enabled = False
 
         mock_page = MagicMock()
         mock_page.extract_text.return_value = "a" * 100
@@ -250,5 +266,5 @@ class TestParseResumeIntegration:
         mock_pdf.__exit__ = MagicMock(return_value=False)
         mock_pdfplumber.open.return_value = mock_pdf
 
-        result = parse_resume("/fake/resume.PDF")
+        result = await parse_resume("/fake/resume.PDF")
         assert len(result) >= 50
