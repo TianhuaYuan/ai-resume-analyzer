@@ -26,6 +26,7 @@ from core.database import AsyncSessionLocal
 from services.rag.pipeline import (
     LLMToolResponse,
     ToolCall,
+    llm_generate_with_tools,  # noqa: F401 — 保留模块属性供测试 patch（mock 目标）
     llm_generate_with_tools_stream,
 )
 from services.react_agent.memory import assemble_system_prompt, manage_l1_context
