@@ -5,9 +5,11 @@ export interface AnswerResponse {
   id: number;
   question: string;
   answer: string;
-  sources: string[];
+  sources: SourceItem[];
   created_at: string;
   token_usage?: { total: number; prompt: number; completion: number };
+  /** 当前用户对该条问答的反馈状态，history 接口返回（刷新后按钮回显）。 */
+  feedback?: "positive" | "negative" | null;
 }
 
 export interface SSEEvent {
@@ -17,7 +19,7 @@ export interface SSEEvent {
   message?: string;
   content?: string;
   answer?: string;
-  sources?: string[];
+  sources?: SourceItem[];
   qa_id?: number;
   /** 错误代码，如 "quota_exceeded" */
   code?: string;
@@ -182,6 +184,10 @@ export interface SourceItem {
   text: string;
   score?: number;
   chunk_id?: string;
+  /** E1 可溯源：来源段落分节/字符区间（后端 sources 透出，缺失时为 undefined） */
+  section?: string;
+  start_char?: number;
+  end_char?: number;
 }
 
 /** 紧凑过程追踪摘要（Spec SSE done.process_trace，非全量事件列表） */
@@ -426,12 +432,17 @@ export async function deleteQa(qa_id: number): Promise<void> {
   await api.delete(`/api/v1/qa/${qa_id}`);
 }
 
-/** Task 5.1: 提交质量反馈。rating = "positive" | "negative"。 */
+/** Task 5.1: 提交质量反馈（upsert）。rating = "positive" | "negative"。 */
 export async function submitFeedback(
   qa_id: number,
   rating: "positive" | "negative"
 ): Promise<void> {
   await api.post(`/api/v1/qa/${qa_id}/feedback`, { rating });
+}
+
+/** 取消对单条问答的反馈（点同按钮再点一次取消，后端幂等）。 */
+export async function cancelFeedback(qa_id: number): Promise<void> {
+  await api.delete(`/api/v1/qa/${qa_id}/feedback`);
 }
 
 /** Token 限额状态。 */

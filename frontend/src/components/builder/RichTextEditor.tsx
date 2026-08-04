@@ -1,17 +1,24 @@
 /**
- * Task 5: RichTextEditor — 轻量级 Markdown 富文本编辑器。
+ * RichTextEditor — Tiptap v3 WYSIWYG 富文本编辑器。
  *
- * 方案：textarea + 工具栏（非 WYSIWYG）
- *
- * 功能：
- * - 工具栏按钮：加粗、斜体、H1/H2、无序/有序列表、链接、行内代码
- * - 键盘快捷键：Ctrl+B（加粗）、Ctrl+I（斜体）、Ctrl+K（链接）
- * - 选区操作：包裹选中文本或在当前行插入标记
- * - 预览切换：用 MarkdownRenderer 渲染实时预览
- * - 自适应高度：min-height + auto-resize
+ * 由 textarea + Markdown 标记升级为所见即所得编辑，对外 props 签名完全不变
+ * （value / onChange / placeholder / rows / minHeight / showPreviewToggle），
+ * 存储仍为 Markdown 字符串：
+ * - 初始 content 与受控回灌 setContent 均按 contentType:"markdown" 解析
+ * - onUpdate 用 editor.getMarkdown() 序列化回 Markdown 并发射 onChange
+ * - 受控回灌防抖：仅当外部 value 与"上次发射值"不一致时才 setContent，
+ *   避免光标跳动与 onChange 循环
+ * - 工具栏按钮映射 Tiptap toggle 命令，active 态用 editor.isActive() 驱动
+ * - 预览模式已删除（showPreviewToggle 参数保留但忽略，保证调用方零改动）
  */
 
-import { useRef, useCallback, useState, useEffect } from "react";
+import { useRef, useCallback, useEffect } from "react";
+import type { Editor } from "@tiptap/react";
+import { useEditor, EditorContent, useEditorState } from "@tiptap/react";
+import StarterKit from "@tiptap/starter-kit";
+import { Markdown } from "@tiptap/markdown";
+import Link from "@tiptap/extension-link";
+import Placeholder from "@tiptap/extension-placeholder";
 import {
   TextB,
   TextItalic,
@@ -21,12 +28,9 @@ import {
   ListNumbers,
   LinkSimple,
   Code,
-  Eye,
-  PencilSimple,
 } from "@phosphor-icons/react";
-import MarkdownRenderer from "../MarkdownRenderer";
 
-// ── Props ──────────────────────────────────────────────────────
+// ── Props（对外签名与旧实现完全一致）─────────────────────────────
 
 interface RichTextEditorProps {
   /** 当前 Markdown 内容 */
@@ -35,107 +39,57 @@ interface RichTextEditorProps {
   onChange: (value: string) => void;
   /** 占位提示文本 */
   placeholder?: string;
-  /** textarea 最小行数 */
+  /** 最小行数（WYSIWYG 下保留以兼容调用方，高度由 minHeight 控制） */
   rows?: number;
   /** 最小高度（CSS 值，如 "120px"） */
   minHeight?: string;
-  /** 是否显示预览切换按钮 */
+  /** 是否显示预览切换（预览模式已删除，参数保留兼容调用方） */
   showPreviewToggle?: boolean;
 }
 
-// ── 选区操作辅助函数 ──────────────────────────────────────────
+// ── 工具栏按钮配置 ──────────────────────────────────────────────
 
-interface SelectionInfo {
-  start: number;
-  end: number;
-  selected: string;
-  before: string;
-  after: string;
+/** 各按钮的 active 态字段 */
+interface ActiveState {
+  bold: boolean;
+  italic: boolean;
+  h1: boolean;
+  h2: boolean;
+  bullet: boolean;
+  ordered: boolean;
+  link: boolean;
+  code: boolean;
 }
-
-/** 获取 textarea 当前选区信息 */
-function getSelection(textarea: HTMLTextAreaElement): SelectionInfo {
-  const { selectionStart: start, selectionEnd: end, value } = textarea;
-  return {
-    start,
-    end,
-    selected: value.slice(start, end),
-    before: value.slice(0, start),
-    after: value.slice(end),
-  };
-}
-
-/** 设置 textarea 选区范围 */
-function setSelection(textarea: HTMLTextAreaElement, start: number, end: number) {
-  textarea.focus();
-  textarea.setSelectionRange(start, end);
-}
-
-// ── 编辑操作 ──────────────────────────────────────────────────
-
-/** 行内包裹操作（加粗、斜体、代码） */
-function wrapSelection(
-  textarea: HTMLTextAreaElement,
-  _value: string,
-  onChange: (v: string) => void,
-  prefix: string,
-  suffix: string = prefix,
-) {
-  const sel = getSelection(textarea);
-  const text = sel.selected || "文本";
-  const newValue = sel.before + prefix + text + suffix + sel.after;
-  onChange(newValue);
-
-  // 选中新包裹的文本（不含标记符号）
-  const newStart = sel.start + prefix.length;
-  const newEnd = newStart + text.length;
-  requestAnimationFrame(() => setSelection(textarea, newStart, newEnd));
-}
-
-/** 行首插入操作（标题、列表） */
-function prependLine(
-  textarea: HTMLTextAreaElement,
-  value: string,
-  onChange: (v: string) => void,
-  marker: string,
-) {
-  const sel = getSelection(textarea);
-  // 找到当前行起点
-  const lineStart = sel.before.lastIndexOf("\n") + 1;
-  const lineContent = value.slice(lineStart, sel.end);
-  const newValue = value.slice(0, lineStart) + marker + lineContent + sel.after;
-  onChange(newValue);
-
-  // 光标移到行尾
-  const newCursor = sel.end + marker.length;
-  requestAnimationFrame(() => setSelection(textarea, newCursor, newCursor));
-}
-
-/** 插入链接 */
-function insertLink(
-  textarea: HTMLTextAreaElement,
-  _value: string,
-  onChange: (v: string) => void,
-) {
-  const sel = getSelection(textarea);
-  const text = sel.selected || "链接文本";
-  const link = `[${text}](url)`;
-  const newValue = sel.before + link + sel.after;
-  onChange(newValue);
-
-  // 选中 url 部分方便输入
-  const urlStart = sel.start + text.length + 3; // [text](
-  const urlEnd = urlStart + 3; // url
-  requestAnimationFrame(() => setSelection(textarea, urlStart, urlEnd));
-}
-
-// ── 工具栏按钮配置 ────────────────────────────────────────────
 
 interface ToolbarButton {
   icon: React.ReactNode;
   label: string;
   shortcut?: string;
-  action: (textarea: HTMLTextAreaElement, value: string, onChange: (v: string) => void) => void;
+  /** 对应 ActiveState 中的字段，用于 active 态高亮 */
+  activeKey: keyof ActiveState;
+  /** 触发 Tiptap 命令 */
+  run: (editor: Editor) => void;
+}
+
+/** 插入链接：选区非空则套用链接，否则插入带链接的占位文本 */
+function runLink(editor: Editor) {
+  const url = window.prompt("请输入链接地址", "https://");
+  if (url === null) return;
+  const href = url.trim() || "https://";
+  const { empty } = editor.state.selection;
+  if (empty) {
+    editor
+      .chain()
+      .focus()
+      .insertContent({
+        type: "text",
+        marks: [{ type: "link", attrs: { href } }],
+        text: "链接文本",
+      })
+      .run();
+  } else {
+    editor.chain().focus().extendMarkRange("link").setLink({ href }).run();
+  }
 }
 
 const TOOLBAR_BUTTONS: ToolbarButton[] = [
@@ -143,44 +97,52 @@ const TOOLBAR_BUTTONS: ToolbarButton[] = [
     icon: <TextB size={14} weight="bold" />,
     label: "加粗",
     shortcut: "Ctrl+B",
-    action: (ta, val, cb) => wrapSelection(ta, val, cb, "**"),
+    activeKey: "bold",
+    run: (e) => e.chain().focus().toggleBold().run(),
   },
   {
     icon: <TextItalic size={14} weight="bold" />,
     label: "斜体",
     shortcut: "Ctrl+I",
-    action: (ta, val, cb) => wrapSelection(ta, val, cb, "*"),
+    activeKey: "italic",
+    run: (e) => e.chain().focus().toggleItalic().run(),
   },
   {
     icon: <TextHOne size={14} weight="bold" />,
     label: "一级标题",
-    action: (ta, val, cb) => prependLine(ta, val, cb, "# "),
+    activeKey: "h1",
+    run: (e) => e.chain().focus().toggleHeading({ level: 1 }).run(),
   },
   {
     icon: <TextHTwo size={14} weight="bold" />,
     label: "二级标题",
-    action: (ta, val, cb) => prependLine(ta, val, cb, "## "),
+    activeKey: "h2",
+    run: (e) => e.chain().focus().toggleHeading({ level: 2 }).run(),
   },
   {
     icon: <ListBullets size={14} weight="bold" />,
     label: "无序列表",
-    action: (ta, val, cb) => prependLine(ta, val, cb, "- "),
+    activeKey: "bullet",
+    run: (e) => e.chain().focus().toggleBulletList().run(),
   },
   {
     icon: <ListNumbers size={14} weight="bold" />,
     label: "有序列表",
-    action: (ta, val, cb) => prependLine(ta, val, cb, "1. "),
+    activeKey: "ordered",
+    run: (e) => e.chain().focus().toggleOrderedList().run(),
   },
   {
     icon: <LinkSimple size={14} weight="bold" />,
     label: "链接",
     shortcut: "Ctrl+K",
-    action: (ta, val, cb) => insertLink(ta, val, cb),
+    activeKey: "link",
+    run: runLink,
   },
   {
     icon: <Code size={14} weight="bold" />,
     label: "行内代码",
-    action: (ta, val, cb) => wrapSelection(ta, val, cb, "`"),
+    activeKey: "code",
+    run: (e) => e.chain().focus().toggleCode().run(),
   },
 ];
 
@@ -194,149 +156,125 @@ export function RichTextEditor({
   minHeight = "100px",
   showPreviewToggle = true,
 }: RichTextEditorProps) {
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [previewMode, setPreviewMode] = useState(false);
+  // 用 ref 持有最新 onChange，避免 useEditor 创建时闭包过期
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
 
-  // 自适应高度：内容变化时调整 textarea 高度
+  /** 上次通过 onChange 发射出去的 Markdown，用于受控回灌防抖 */
+  const lastEmittedRef = useRef<string | null>(null);
+
+  const editor = useEditor({
+    extensions: [
+      StarterKit,
+      Link.configure({ openOnClick: false }),
+      Placeholder.configure({ placeholder }),
+      Markdown,
+    ],
+    content: value ?? "",
+    contentType: "markdown",
+    onUpdate: ({ editor }) => {
+      const md = editor.getMarkdown();
+      lastEmittedRef.current = md;
+      onChangeRef.current(md);
+    },
+  });
+
+  // 受控回灌防抖：仅当外部 value 与"上次发射值"不一致时才 setContent，
+  // 避免自身发射的 onChange 回流造成光标跳动 / 无限循环。
   useEffect(() => {
-    const ta = textareaRef.current;
-    if (!ta || previewMode) return;
-    ta.style.height = "auto";
-    ta.style.height = `${Math.max(ta.scrollHeight, parseInt(minHeight))}px`;
-  }, [value, minHeight, previewMode]);
+    if (!editor) return;
+    // 首次挂载：编辑器已用 content 初始化，仅记录基准值
+    if (lastEmittedRef.current === null) {
+      lastEmittedRef.current = value;
+      return;
+    }
+    if (value !== lastEmittedRef.current) {
+      lastEmittedRef.current = value;
+      editor.commands.setContent(value ?? "", {
+        contentType: "markdown",
+        emitUpdate: false,
+      });
+    }
+  }, [editor, value]);
 
-  // 键盘快捷键
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (!(e.ctrlKey || e.metaKey)) return;
-      const ta = e.currentTarget;
+  // 订阅选区/文档变化，驱动工具栏 active 态
+  const activeState = useEditorState({
+    editor,
+    selector: ({ editor }) => ({
+      bold: editor.isActive("bold"),
+      italic: editor.isActive("italic"),
+      h1: editor.isActive("heading", { level: 1 }),
+      h2: editor.isActive("heading", { level: 2 }),
+      bullet: editor.isActive("bulletList"),
+      ordered: editor.isActive("orderedList"),
+      link: editor.isActive("link"),
+      code: editor.isActive("code"),
+    }),
+  });
 
-      switch (e.key.toLowerCase()) {
-        case "b":
-          e.preventDefault();
-          wrapSelection(ta, value, onChange, "**");
-          break;
-        case "i":
-          e.preventDefault();
-          wrapSelection(ta, value, onChange, "*");
-          break;
-        case "k":
-          e.preventDefault();
-          insertLink(ta, value, onChange);
-          break;
+  const handleToolbar = useCallback(
+    (btn: ToolbarButton) => {
+      if (!editor) return;
+      btn.run(editor);
+    },
+    [editor],
+  );
+
+  // Ctrl+K 插入链接（StarterKit 已内置 Ctrl+B / Ctrl+I）
+  const handleEditorKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        if (editor) runLink(editor);
       }
     },
-    [value, onChange],
+    [editor],
   );
 
-  // 工具栏按钮点击
-  const handleToolbarAction = useCallback(
-    (action: ToolbarButton["action"]) => {
-      const ta = textareaRef.current;
-      if (!ta) return;
-      action(ta, value, onChange);
-    },
-    [value, onChange],
-  );
+  // rows / showPreviewToggle 仅为对外签名兼容而保留（WYSIWYG 下不参与渲染）
+  void rows;
+  void showPreviewToggle;
 
-  // 预览模式渲染
-  if (previewMode) {
-    return (
-      <div className="flex flex-col">
-        {/* 工具栏（仅预览切换） */}
-        <div className="flex items-center justify-between px-2 py-1.5 rounded-t-lg
-          bg-[var(--color-bg-secondary)] border border-[var(--color-border)] border-b-0">
-          <span className="text-[10px] text-[var(--color-text-muted)] uppercase tracking-wider">
-            预览
-          </span>
-          <button
-            onClick={() => setPreviewMode(false)}
-            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px]
-              text-[var(--color-text-muted)]
-              hover:text-brand hover:bg-brand/10
-              transition-all cursor-pointer"
-            aria-label="切换到编辑模式"
-          >
-            <PencilSimple size={11} weight="bold" aria-hidden="true" />
-            编辑
-          </button>
-        </div>
-        {/* Markdown 渲染区 */}
-        <div
-          className="px-3 py-2 rounded-b-lg overflow-y-auto
-            bg-[var(--color-bg-secondary)] border border-[var(--color-border)]
-            text-sm text-[var(--color-text)]"
-          style={{ minHeight }}
-        >
-          {value ? (
-            <MarkdownRenderer>{value}</MarkdownRenderer>
-          ) : (
-            <span className="text-[var(--color-text-muted)] italic">{placeholder}</span>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // 编辑模式渲染
   return (
     <div className="flex flex-col">
       {/* 工具栏 */}
       <div className="flex items-center gap-0.5 px-1.5 py-1 rounded-t-lg
         bg-[var(--color-bg-secondary)] border border-[var(--color-border)] border-b-0">
-        {TOOLBAR_BUTTONS.map((btn) => (
-          <button
-            key={btn.label}
-            onClick={() => handleToolbarAction(btn.action)}
-            className="p-1 rounded text-[var(--color-text-muted)]
-              hover:text-brand hover:bg-brand/10
-              active:scale-90 motion-reduce:active:scale-100
-              transition-all cursor-pointer"
-            aria-label={btn.label}
-            title={btn.shortcut ? `${btn.label} (${btn.shortcut})` : btn.label}
-          >
-            {btn.icon}
-          </button>
-        ))}
-
-        {/* 分隔线 */}
-        <div className="w-px h-4 bg-[var(--color-border)] mx-0.5" />
-
-        {/* 预览切换 */}
-        {showPreviewToggle && (
-          <button
-            onClick={() => setPreviewMode(true)}
-            className="p-1 rounded text-[var(--color-text-muted)]
-              hover:text-brand hover:bg-brand/10
-              active:scale-90 motion-reduce:active:scale-100
-              transition-all cursor-pointer"
-            aria-label="预览"
-            title="预览"
-          >
-            <Eye size={14} weight="bold" aria-hidden="true" />
-          </button>
-        )}
+        {TOOLBAR_BUTTONS.map((btn) => {
+          const active = activeState?.[btn.activeKey] ?? false;
+          return (
+            <button
+              key={btn.label}
+              type="button"
+              onClick={() => handleToolbar(btn)}
+              className={`p-1 rounded text-[var(--color-text-muted)]
+                hover:text-brand hover:bg-brand/10
+                active:scale-90 motion-reduce:active:scale-100
+                transition-all cursor-pointer
+                ${active ? "text-brand bg-brand/10" : ""}`}
+              aria-label={btn.label}
+              aria-pressed={active}
+              title={btn.shortcut ? `${btn.label} (${btn.shortcut})` : btn.label}
+            >
+              {btn.icon}
+            </button>
+          );
+        })}
       </div>
 
-      {/* textarea */}
-      <textarea
-        ref={textareaRef}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={handleKeyDown}
-        placeholder={placeholder}
-        rows={rows}
-        className="w-full px-3 py-2 rounded-b-lg resize-none
-          text-sm text-[var(--color-text)]
+      {/* WYSIWYG 编辑区（min-height 作用在容器上，.ProseMirror 继承） */}
+      <div
+        className="w-full rounded-b-lg
           bg-[#F2F2F7] border border-transparent
-          placeholder:text-[var(--color-text-muted)]
-          focus:outline-none focus:bg-white focus:ring-2 focus:ring-brand/40
-          focus:border-brand/40
-          transition-all duration-150
-          font-mono leading-relaxed"
+          focus-within:bg-white focus-within:ring-2 focus-within:ring-brand/40
+          focus-within:border-brand/40
+          transition-all duration-150"
         style={{ minHeight }}
+        onKeyDown={handleEditorKeyDown}
         aria-label="Markdown 编辑器"
-      />
+      >
+        <EditorContent editor={editor} />
+      </div>
     </div>
   );
 }

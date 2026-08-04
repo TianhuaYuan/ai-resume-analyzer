@@ -7,6 +7,7 @@ import {
   Briefcase,
   Buildings,
   ChatCircle,
+  Books,
   Plus,
   Trash,
   PencilSimple,
@@ -20,8 +21,14 @@ import {
   Spinner,
   Gauge,
   Sun,
+  Sparkle,
+  Microphone,
+  ChartBar,
+  UserMinus,
 } from "@phosphor-icons/react";
 import { useAuth } from "../context/AuthContext";
+import { deleteAccount } from "../api/auth";
+import { useToast } from "./Toast";
 import { useTheme } from "../context/ThemeContext";
 import { useAppChat, dispatchSelectConversation, dispatchCreateConversation, dispatchDeleteConversation, dispatchRenameConversation } from "../context/AppChatContext";
 import ChangePasswordDialog from "./ChangePasswordDialog";
@@ -44,7 +51,11 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { path: "/qa", label: "Agent", icon: ChatCircleDots, match: "exact" },
   { path: "/resumes", label: "简历", icon: FileText, match: "prefix" },
+  { path: "/assets", label: "知识资产", icon: Books, match: "exact" },
+  { path: "/capabilities", label: "AI 能力", icon: Sparkle, match: "exact" },
+  { path: "/interviews", label: "面试复盘", icon: Microphone, match: "exact" },
   { path: "/campus", label: "校招", icon: Briefcase, match: "exact" },
+  { path: "/campus/review", label: "求职复盘", icon: ChartBar, match: "exact" },
   { path: "/social", label: "社招", icon: Buildings, match: "exact" },
   { path: "/feedback", label: "用户反馈", icon: ChatCircle, match: "exact" },
 ];
@@ -60,6 +71,7 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const { conversations, activeConversationId, conversationLoading } = useAppChat();
+  const toast = useToast();
 
   // 用户菜单
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -67,6 +79,8 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
   const [usernameDialogOpen, setUsernameDialogOpen] = useState(false);
   const [usageDialogOpen, setUsageDialogOpen] = useState(false);
+  const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
   const [quota, setQuota] = useState<QuotaResponse | null>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
 
@@ -116,6 +130,25 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
   );
 
   const handleLogout = async () => {
+    await logout();
+    navigate("/");
+  };
+
+  /** C3：注销账号（级联清理全部数据，不可撤销） */
+  const handleDeleteAccount = async () => {
+    setDeletingAccount(true);
+    try {
+      await deleteAccount();
+      toast.success("账户已注销，感谢使用");
+    } catch {
+      toast.error("注销失败，请重试");
+      setDeletingAccount(false);
+      setDeleteAccountOpen(false);
+      return;
+    }
+    setDeletingAccount(false);
+    setDeleteAccountOpen(false);
+    // 清理本地会话并回首页
     await logout();
     navigate("/");
   };
@@ -458,6 +491,15 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
 
                   <div className="border-t border-[var(--color-border)] my-1" />
 
+                  {/* 注销账号（C3） */}
+                  <button
+                    onClick={() => setDeleteAccountOpen(true)}
+                    className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-red-400/80 hover:bg-red-500/10 transition-colors cursor-pointer"
+                  >
+                    <UserMinus size={14} weight="regular" aria-hidden="true" />
+                    注销账号
+                  </button>
+
                   {/* 退出登录 */}
                   <button
                     onClick={handleLogout}
@@ -512,6 +554,18 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
           }
         }}
         onCancel={() => setDeleteTargetId(null)}
+      />
+
+      {/* 注销账号确认（C3） */}
+      <ConfirmDialog
+        open={deleteAccountOpen}
+        title="确认注销账号"
+        description="注销后将永久删除你的全部简历、问答历史、知识资产、面试记录与投递跟踪，此操作不可撤销。确定继续吗？"
+        confirmText="注销账号"
+        danger
+        loading={deletingAccount}
+        onConfirm={() => void handleDeleteAccount()}
+        onCancel={() => setDeleteAccountOpen(false)}
       />
     </>
   );

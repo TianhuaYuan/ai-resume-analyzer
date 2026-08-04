@@ -94,7 +94,12 @@ async def test_process_parse_task_success_no_retry():
         new_callable=AsyncMock,
         return_value=True,
     ) as mock_bg, \
-         patch("core.rabbitmq_client.send_message", new_callable=AsyncMock) as mock_send:
+         patch("core.rabbitmq_client.send_message", new_callable=AsyncMock) as mock_send, \
+         patch(
+             "services.resume_parse_consumer._resume_exists",
+             new_callable=AsyncMock,
+             return_value=True,
+         ) as mock_exists:
         await process_parse_task({
             "task": "resume_parse",
             "resume_id": 1,
@@ -103,6 +108,7 @@ async def test_process_parse_task_success_no_retry():
             "retry_count": 0,
         })
 
+    mock_exists.assert_awaited_once_with(1)
     mock_bg.assert_awaited_once_with(1, "/tmp/a.pdf", 2)
     mock_send.assert_not_awaited()
 
@@ -115,7 +121,12 @@ async def test_process_parse_task_failure_requeues_with_increment():
         new_callable=AsyncMock,
         return_value=False,
     ), \
-         patch("core.rabbitmq_client.send_message", new_callable=AsyncMock, return_value=True) as mock_send:
+         patch("core.rabbitmq_client.send_message", new_callable=AsyncMock, return_value=True) as mock_send, \
+         patch(
+             "services.resume_parse_consumer._resume_exists",
+             new_callable=AsyncMock,
+             return_value=True,
+         ):
         await process_parse_task({
             "task": "resume_parse",
             "resume_id": 1,
@@ -137,7 +148,12 @@ async def test_process_parse_task_failure_max_retries_stops():
         new_callable=AsyncMock,
         return_value=False,
     ), \
-         patch("core.rabbitmq_client.send_message", new_callable=AsyncMock) as mock_send:
+         patch("core.rabbitmq_client.send_message", new_callable=AsyncMock) as mock_send, \
+         patch(
+             "services.resume_parse_consumer._resume_exists",
+             new_callable=AsyncMock,
+             return_value=True,
+         ):
         await process_parse_task({
             "task": "resume_parse",
             "resume_id": 1,
@@ -157,7 +173,12 @@ async def test_process_parse_task_failure_requeue_fails_stops():
         new_callable=AsyncMock,
         return_value=False,
     ), \
-         patch("core.rabbitmq_client.send_message", new_callable=AsyncMock, return_value=False) as mock_send:
+         patch("core.rabbitmq_client.send_message", new_callable=AsyncMock, return_value=False) as mock_send, \
+         patch(
+             "services.resume_parse_consumer._resume_exists",
+             new_callable=AsyncMock,
+             return_value=True,
+         ):
         await process_parse_task({
             "task": "resume_parse",
             "resume_id": 1,
@@ -181,3 +202,29 @@ async def test_process_parse_task_missing_args_returns():
         await process_parse_task({"task": "resume_parse", "file_path": ""})
 
     mock_bg.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_process_parse_task_resume_deleted_discards():
+    """简历已删除 → 丢弃僵尸任务，不调用解析函数、不重试入队。"""
+    with patch(
+        "services.resume_parse_consumer._resume_exists",
+        new_callable=AsyncMock,
+        return_value=False,
+    ) as mock_exists, \
+         patch(
+             "services.resume_service.process_resume_background",
+             new_callable=AsyncMock,
+         ) as mock_bg, \
+         patch("core.rabbitmq_client.send_message", new_callable=AsyncMock) as mock_send:
+        await process_parse_task({
+            "task": "resume_parse",
+            "resume_id": 1,
+            "user_id": 2,
+            "file_path": "/tmp/a.pdf",
+            "retry_count": 0,
+        })
+
+    mock_exists.assert_awaited_once_with(1)
+    mock_bg.assert_not_awaited()
+    mock_send.assert_not_awaited()

@@ -23,6 +23,7 @@ import {
   clearHistory,
   deleteQa,
   submitFeedback,
+  cancelFeedback,
   getQuota,
   getConversations,
   createConversation,
@@ -53,6 +54,9 @@ import ConfirmDialog from "../components/ConfirmDialog";
 import { CompareSelectDialog } from "../components/CompareSelectDialog";
 import MarkdownRenderer from "../components/MarkdownRenderer";
 import AgentProcessPanel from "../components/AgentProcessPanel";
+// E1: 简历诊断结构化卡片（四维评分 + 诊断结论 + 可溯源来源）
+import DiagnosisCard, { isDiagnosisMessage } from "../components/DiagnosisCard";
+import type { DiagnosisSource } from "../components/DiagnosisCard";
 import ResumeEditDiffDialog from "../components/ResumeEditDiffDialog";
 import ChatInput from "../components/ChatInput";
 import VersionHistoryDialog from "../components/VersionHistoryDialog";
@@ -73,6 +77,16 @@ interface ChatMessage {
   token_usage?: { total: number; prompt: number; completion: number };
   /** T18: Agent 推理步骤 */
   agent_steps?: AgentStep[];
+  /** E1: 结构化引用来源（text / section / start_char / end_char） */
+  sources?: DiagnosisSource[];
+}
+
+/** E1: 历史 sources 兼容两种格式（后端并行升级中：string[] → SourceItem[]） */
+function normalizeHistorySources(raw: unknown): DiagnosisSource[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  return raw.map((s) =>
+    typeof s === "string" ? { text: s } : (s as DiagnosisSource)
+  );
 }
 
 // 空状态功能卡片（参考 UP简历：1 大卡 + 4 小卡 不对称网格）
@@ -237,7 +251,12 @@ interface MessageBubbleProps {
   msg: ChatMessage;
   deleting: boolean;
   onDelete: (id: number | string) => void;
-  onFeedback: (id: number | string, rating: "positive" | "negative") => void;
+  /** current 为当前反馈状态，用于判断点同按钮=取消、点异按钮=切换 */
+  onFeedback: (
+    id: number | string,
+    rating: "positive" | "negative",
+    current?: "positive" | "negative" | null
+  ) => void;
 }
 
 const MessageBubble = memo(function MessageBubble({ msg, deleting, onDelete, onFeedback }: MessageBubbleProps) {
@@ -265,6 +284,9 @@ const MessageBubble = memo(function MessageBubble({ msg, deleting, onDelete, onF
             ) : null}
             {msg.streaming && !msg.answer && !(msg.agent_steps && msg.agent_steps.length > 0) ? (
               <span className="text-[var(--color-text-muted)]">思考中...</span>
+            ) : !msg.streaming && isDiagnosisMessage(msg) ? (
+              /* E1: 简历诊断回答 → 结构化卡片（评分提取失败自动回退纯 markdown） */
+              <DiagnosisCard answer={msg.answer} sources={msg.sources} />
             ) : (
               <MarkdownRenderer>
                 {msg.answer}
@@ -304,38 +326,32 @@ const MessageBubble = memo(function MessageBubble({ msg, deleting, onDelete, onF
                 ) : null}
               </div>
               <div className="shrink-0 flex items-center gap-1 mt-2">
-                {/* Task 5.1: 质量反馈按钮 */}
+                {/* Task 5.1: 质量反馈按钮（点同按钮=取消，点异按钮=切换） */}
                 {canFeedback && (
                   <>
                     <button
-                      onClick={() => !msg.feedback && onFeedback(msg.id, "positive")}
-                      disabled={!!msg.feedback}
+                      onClick={() => onFeedback(msg.id, "positive", msg.feedback)}
                       aria-label="有帮助"
+                      title={msg.feedback === "positive" ? "取消反馈" : "标记为有帮助"}
                       className={`inline-flex items-center gap-0.5 px-1.5 py-1
                         rounded-md text-xs transition-all cursor-pointer
                         ${msg.feedback === "positive"
                           ? "text-brand bg-brand/10"
                           : "text-[var(--color-text-muted)] hover:text-brand hover:bg-brand/10"
-                        }
-                        disabled:cursor-not-allowed
-                        opacity-0 group-hover:opacity-100 focus:opacity-100
-                        ${msg.feedback ? "!opacity-100" : ""}`}
+                        }`}
                     >
                       <ThumbsUp size={12} weight={msg.feedback === "positive" ? "fill" : "regular"} aria-hidden="true" />
                     </button>
                     <button
-                      onClick={() => !msg.feedback && onFeedback(msg.id, "negative")}
-                      disabled={!!msg.feedback}
+                      onClick={() => onFeedback(msg.id, "negative", msg.feedback)}
                       aria-label="没帮助"
+                      title={msg.feedback === "negative" ? "取消反馈" : "标记为没帮助"}
                       className={`inline-flex items-center gap-0.5 px-1.5 py-1
                         rounded-md text-xs transition-all cursor-pointer
                         ${msg.feedback === "negative"
                           ? "text-red-500 bg-red-500/10"
                           : "text-[var(--color-text-muted)] hover:text-red-500 hover:bg-red-500/10"
-                        }
-                        disabled:cursor-not-allowed
-                        opacity-0 group-hover:opacity-100 focus:opacity-100
-                        ${msg.feedback ? "!opacity-100" : ""}`}
+                        }`}
                     >
                       <ThumbsDown size={12} weight={msg.feedback === "negative" ? "fill" : "regular"} aria-hidden="true" />
                     </button>
@@ -458,6 +474,13 @@ export default function QAPage() {
   const [diffAfterModules, setDiffAfterModules] = useState<ResumeModule[] | null>(null);
   const [diffToolName, setDiffToolName] = useState("");
   const [diffLoading, setDiffLoading] = useState(false);
+
+  // G 功能：diff 弹窗里逐条还原后保存，落库结果回填预览模块 + before 快照
+  const handleDiffModulesSaved = useCallback((modules: ResumeModule[]) => {
+    setPreviewModules(modules);
+    setDiffAfterModules(modules);
+    beforeModulesRef.current = modules;
+  }, []);
 
   // 打开分屏时加载预览 HTML
   // ── 自动选择简历 ──
@@ -677,6 +700,10 @@ export default function QAPage() {
           streaming: false,
           created_at: it.created_at,
           token_usage: it.token_usage,
+          // E1: 历史记录来源（后端返回 string[] 或结构化 SourceItem[]）
+          sources: normalizeHistorySources(it.sources),
+          // 回显当前用户对该条已点的赞/踩（history 接口附带）
+          feedback: it.feedback ?? null,
         }));
         // 保留正在流式输出的消息，避免搜索时把刚发出的问题冲掉
         // 按 id 升序排列（id 自增，等价于时间正序），确保旧在上、新在下
@@ -1057,6 +1084,8 @@ export default function QAPage() {
                       id: event.qa_id ?? tempId,
                       answer: event.answer ?? "",
                       streaming: false,
+                      // E1: agent_done.sources 携带可溯源来源（text/section/start_char/end_char）
+                      sources: event.sources as DiagnosisSource[] | undefined,
                       token_usage: event.token_usage
                         ? {
                             total:
@@ -1256,24 +1285,30 @@ export default function QAPage() {
     }
   }, [activeConversationId]);
 
-  // Task 5.1：质量反馈
+  // Task 5.1：质量反馈（点同按钮=取消，点异按钮=切换）
   const handleFeedback = useCallback(
-    async (msgId: number | string, rating: "positive" | "negative") => {
+    async (
+      msgId: number | string,
+      rating: "positive" | "negative",
+      current: "positive" | "negative" | null | undefined,
+    ) => {
       if (typeof msgId !== "number") return;
+      const prev = current ?? null;
+      const next = prev === rating ? null : rating;
       // 乐观更新 UI
-      setChat((prev) =>
-        prev.map((m) =>
-          m.id === msgId ? { ...m, feedback: rating } : m
-        )
+      setChat((msgs) =>
+        msgs.map((m) => (m.id === msgId ? { ...m, feedback: next } : m))
       );
       try {
-        await submitFeedback(msgId, rating);
+        if (next === null) {
+          await cancelFeedback(msgId);
+        } else {
+          await submitFeedback(msgId, next);
+        }
       } catch {
         // 失败时回滚反馈状态
-        setChat((prev) =>
-          prev.map((m) =>
-            m.id === msgId ? { ...m, feedback: null } : m
-          )
+        setChat((msgs) =>
+          msgs.map((m) => (m.id === msgId ? { ...m, feedback: prev } : m))
         );
       }
     },
@@ -1882,10 +1917,12 @@ export default function QAPage() {
       <ResumeEditDiffDialog
         open={diffDialogOpen}
         onClose={() => setDiffDialogOpen(false)}
+        resumeId={resumeId}
         beforeModules={diffBeforeModules}
         afterModules={diffAfterModules}
         toolName={diffToolName}
         loading={diffLoading}
+        onModulesSaved={handleDiffModulesSaved}
       />
 
       {/* ── v2: 版本历史弹窗 ── */}

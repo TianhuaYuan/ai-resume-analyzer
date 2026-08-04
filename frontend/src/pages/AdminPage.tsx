@@ -21,32 +21,36 @@ import {
   getAdminTemplates,
   getTrends,
   getLLMUsage,
+  getQaStats,
   type SystemStats,
   type AuditLogItem,
   type FeedbackItem,
   type TemplateInfo,
   type TrendItem,
   type LLMUsageItem,
+  type QAStatsResponse,
 } from "../api/admin";
 import {
+  Area,
+  Bar,
   CartesianGrid,
+  ComposedChart,
   Legend,
   Line,
   LineChart,
-  Bar,
-  BarChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
 
-type TabId = "stats" | "audit" | "feedback" | "templates" | "grafana";
+type TabId = "stats" | "audit" | "feedback" | "qa-quality" | "templates" | "grafana";
 
 const TABS: { id: TabId; label: string; icon: typeof ChartBar }[] = [
   { id: "stats", label: "系统概览", icon: Gauge },
   { id: "audit", label: "审计日志", icon: ListChecks },
   { id: "feedback", label: "用户反馈", icon: ChatTeardropText },
+  { id: "qa-quality", label: "问答质量", icon: ChatCircleDots },
   { id: "templates", label: "简历模板", icon: FileText },
   { id: "grafana", label: "监控面板", icon: Monitor },
 ];
@@ -118,23 +122,19 @@ function StatsSection() {
   );
 }
 
-// ── D3/D4: 数据趋势看板 ──────────────────────────────────
+// ── D3: 数据趋势看板 ─────────────────────────────────────
 
 function TrendsSection() {
   const [days, setDays] = useState(30);
   const [trends, setTrends] = useState<TrendItem[]>([]);
-  const [usage, setUsage] = useState<LLMUsageItem[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     setLoading(true);
     setError("");
-    Promise.all([getTrends(days), getLLMUsage(7)])
-      .then(([t, u]) => {
-        setTrends(t.items);
-        setUsage(u.items);
-      })
+    getTrends(days)
+      .then((t) => setTrends(t.items))
       .catch((e) => setError(e instanceof Error ? e.message : "趋势加载失败"))
       .finally(() => setLoading(false));
   }, [days]);
@@ -146,11 +146,6 @@ function TrendsSection() {
   const trendData = trends.map((t) => ({
     ...t,
     dayLabel: t.day.slice(5), // YYYY-MM-DD → MM-DD
-  }));
-  const usageData = usage.map((u) => ({
-    ...u,
-    dayLabel: u.date.slice(4), // YYYYMMDD → MMDD
-    tokens_k: Math.round(u.total_tokens / 1000), // 千 token，便于阅读
   }));
 
   return (
@@ -191,19 +186,93 @@ function TrendsSection() {
         </ResponsiveContainer>
       </div>
 
-      {usageData.length > 0 && (
+    </div>
+  );
+}
+
+// ── D4: LLM 用量趋势 ─────────────────────────────────────
+
+function LLMUsageSection() {
+  const [days, setDays] = useState(30);
+  const [usage, setUsage] = useState<LLMUsageItem[]>([]);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    setError("");
+    getLLMUsage(days)
+      .then((res) => setUsage(res.items))
+      .catch((e) => setError(e instanceof Error ? e.message : "用量加载失败"))
+      .finally(() => setLoading(false));
+  }, [days]);
+
+  const data = usage.map((u) => ({
+    dayLabel: u.date.slice(4), // YYYYMMDD → MMDD
+    tokens_k: Math.round(u.total_tokens / 1000), // 千 token，便于阅读
+    calls: u.calls,
+  }));
+
+  return (
+    <div className="mt-6 space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-[var(--color-text)]">LLM 用量趋势</h3>
+          <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">按天聚合，跨全部用户</p>
+        </div>
+        <div className="flex gap-1 text-xs">
+          {[7, 30, 90].map((d) => (
+            <button
+              key={d}
+              onClick={() => setDays(d)}
+              className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
+                days === d
+                  ? "bg-brand text-white"
+                  : "bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:bg-black/5"
+              }`}
+            >
+              {d}天
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {error ? (
+        <ErrorBox message={error} />
+      ) : loading && usage.length === 0 ? (
+        <Loading />
+      ) : usage.length === 0 ? (
+        <div className="glass-card p-6 text-center text-xs text-[var(--color-text-muted)]">
+          暂无 LLM 用量数据（近 {days} 天无调用记录）
+        </div>
+      ) : (
         <div className="glass-card p-4">
-          <h4 className="text-sm font-semibold text-[var(--color-text)] mb-2">
-            LLM 用量（近 7 天，千 token）
-          </h4>
-          <ResponsiveContainer width="100%" height={180}>
-            <BarChart data={usageData} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+          <ResponsiveContainer width="100%" height={260}>
+            <ComposedChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" />
               <XAxis dataKey="dayLabel" fontSize={11} tickLine={false} axisLine={false} />
-              <YAxis fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
+              <YAxis yAxisId="tokens" fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
+              <YAxis yAxisId="calls" orientation="right" fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
               <Tooltip />
-              <Bar dataKey="tokens_k" name="Token 用量(K)" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
-            </BarChart>
+              <Legend wrapperStyle={{ fontSize: 12 }} />
+              <Area
+                yAxisId="tokens"
+                type="monotone"
+                dataKey="tokens_k"
+                name="Token 用量(K)"
+                stroke="#8b5cf6"
+                fill="rgba(139, 92, 246, 0.12)"
+                strokeWidth={2}
+              />
+              <Bar
+                yAxisId="calls"
+                dataKey="calls"
+                name="调用次数"
+                fill="#3b82f6"
+                radius={[4, 4, 0, 0]}
+                barSize={8}
+              />
+            </ComposedChart>
           </ResponsiveContainer>
         </div>
       )}
@@ -428,6 +497,146 @@ function FeedbackSection() {
   );
 }
 
+// ── 问答质量 ──────────────────────────────────────────────
+
+function QaQualitySection() {
+  const [stats, setStats] = useState<QAStatsResponse | null>(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    setError("");
+    getQaStats()
+      .then(setStats)
+      .catch((e) => setError(e instanceof Error ? e.message : "加载失败"))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (error) return <ErrorBox message={error} />;
+  if (loading) return <Loading />;
+  if (!stats) return null;
+
+  const total = stats.total_feedback;
+  const posPct = total ? Math.round((stats.positive / total) * 100) : 0;
+  const negPct = total ? 100 - posPct : 0;
+
+  return (
+    <div className="space-y-4">
+      {/* 统计卡片 */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { label: "总反馈", value: stats.total_feedback, color: "text-sky-500" },
+          { label: "有帮助", value: stats.positive, color: "text-emerald-500" },
+          { label: "没帮助", value: stats.negative, color: "text-red-500" },
+          { label: "负向率", value: `${(stats.negative_rate * 100).toFixed(1)}%`, color: "text-amber-500" },
+        ].map((c) => (
+          <div key={c.label} className="glass-card p-4">
+            <div className="text-xs text-[var(--color-text-muted)] mb-1">{c.label}</div>
+            <div className={`text-2xl font-semibold tabular-nums ${c.color}`}>{c.value}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* 正负比例条 */}
+      {total > 0 && (
+        <div className="glass-card p-4">
+          <h3 className="text-sm font-semibold text-[var(--color-text)] mb-3">反馈正负比例</h3>
+          <div className="flex h-3 rounded-full overflow-hidden bg-[var(--color-bg-secondary)]">
+            <div className="bg-emerald-500" style={{ width: `${posPct}%` }} title={`有帮助 ${posPct}%`} />
+            <div className="bg-red-500" style={{ width: `${negPct}%` }} title={`没帮助 ${negPct}%`} />
+          </div>
+          <div className="flex items-center justify-between mt-2 text-xs text-[var(--color-text-muted)]">
+            <span>👍 有帮助 {posPct}%（{stats.positive}）</span>
+            <span>👎 没帮助 {negPct}%（{stats.negative}）</span>
+          </div>
+        </div>
+      )}
+
+      {/* 按简历排行 */}
+      {stats.by_resume.length > 0 && (
+        <div className="glass-card p-4">
+          <h3 className="text-sm font-semibold text-[var(--color-text)] mb-3">
+            按简历负向率排行（定位质量短板）
+          </h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="text-[var(--color-text-muted)]">
+                <tr>
+                  <th className="text-left px-2 py-1.5 font-medium">简历</th>
+                  <th className="text-left px-2 py-1.5 font-medium">有帮助</th>
+                  <th className="text-left px-2 py-1.5 font-medium">没帮助</th>
+                  <th className="text-left px-2 py-1.5 font-medium">负向率</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stats.by_resume.map((r) => (
+                  <tr key={r.resume_id} className="border-t border-[var(--color-border)] text-[var(--color-text-secondary)]">
+                    <td className="px-2 py-2 max-w-xs truncate" title={r.resume_title}>{r.resume_title}</td>
+                    <td className="px-2 py-2 tabular-nums text-emerald-600">{r.positive}</td>
+                    <td className="px-2 py-2 tabular-nums text-red-600">{r.negative}</td>
+                    <td className="px-2 py-2 tabular-nums">{(r.negative_rate * 100).toFixed(1)}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* negative 样本 */}
+      {stats.recent_negative.length > 0 ? (
+        <div className="glass-card p-4">
+          <h3 className="text-sm font-semibold text-[var(--color-text)] mb-3">
+            最近"没帮助"反馈（含回答截断，可复盘短板）
+          </h3>
+          <div className="space-y-2">
+            {stats.recent_negative.map((s) => {
+              const trace = s.process_trace as Record<string, unknown> | null;
+              const toolSeq = trace?.tool_sequence as string[] | undefined;
+              return (
+                <div key={s.qa_id} className="rounded-xl border border-[var(--color-border)] p-3">
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <span className="text-xs font-medium text-[var(--color-text)] truncate">
+                      Q: {s.question}
+                    </span>
+                    <span className="text-[10px] text-[var(--color-text-muted)] shrink-0 tabular-nums">
+                      {formatTimestamp(s.created_at)}
+                    </span>
+                  </div>
+                  <p className="text-xs text-[var(--color-text-secondary)] line-clamp-2">
+                    A: {s.answer_excerpt || "（无内容）"}
+                  </p>
+                  {trace && (
+                    <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[10px] text-[var(--color-text-muted)]">trace:</span>
+                      {toolSeq && toolSeq.length > 0 ? (
+                        toolSeq.slice(0, 6).map((t) => (
+                          <span key={t} className="inline-flex px-1.5 py-0.5 rounded bg-brand/10 text-brand text-[10px] font-mono">
+                            {t}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-[10px] text-[var(--color-text-muted)]">
+                          {typeof trace.duration_ms === "number" ? `${trace.duration_ms} ms` : ""}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
+        <div className="glass-card p-6 text-center text-xs text-[var(--color-text-muted)]">
+          暂无"没帮助"反馈样本
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── 简历模板 ──────────────────────────────────────────────
 
 function TemplatesSection() {
@@ -639,10 +848,12 @@ export default function AdminPage() {
           <>
             <StatsSection />
             <TrendsSection />
+            <LLMUsageSection />
           </>
         )}
         {tab === "audit" && <AuditSection />}
         {tab === "feedback" && <FeedbackSection />}
+        {tab === "qa-quality" && <QaQualitySection />}
         {tab === "templates" && <TemplatesSection />}
         {tab === "grafana" && <GrafanaSection />}
       </div>

@@ -12,12 +12,31 @@
 
 import logging
 
+from sqlalchemy import select
+
 from core import rabbitmq_client
+from core.database import AsyncSessionLocal
+from models.resume import Resume
 
 logger = logging.getLogger(__name__)
 
 # 最大重试次数（达到后不再重新入队，DB 标记 failed，等待用户手动重试）
 MAX_PARSE_RETRY = 2
+
+
+async def _resume_exists(resume_id: int) -> bool:
+    """查询简历是否仍存在（用户删除后丢弃僵尸任务，避免解析/重试空转）。
+
+    DB 查询失败时放行（返回 True），交给 process_resume_background 兜底，
+    不因校验本身阻断任务。
+    """
+    try:
+        async with AsyncSessionLocal() as db:
+            row = await db.execute(select(Resume.id).where(Resume.id == resume_id))
+            return row.scalar_one_or_none() is not None
+    except Exception:
+        logger.warning("简历存在性校验失败，放行任务: resume_id=%d", resume_id, exc_info=True)
+        return True
 
 
 async def process_parse_task(payload: dict) -> None:
@@ -37,6 +56,11 @@ async def process_parse_task(payload: dict) -> None:
 
     if resume_id is None or not file_path:
         logger.error("解析任务缺少必要参数: %s", payload)
+        return
+
+    # 用户可能在任务排队期间删除了简历 → 丢弃僵尸任务（不触发解析、不重试）
+    if not await _resume_exists(resume_id):
+        logger.warning("解析任务对应简历已删除，丢弃: resume_id=%d", resume_id)
         return
 
     from services import resume_service

@@ -15,8 +15,7 @@ import {
   Sparkle,
   TrashSimple,
   CaretDown,
-  Eyeglasses,
-  PencilSimple,
+  Check,
 } from "@phosphor-icons/react";
 import type { ModuleType, ModuleContent } from "../../api/builder";
 import { getModuleTitle } from "../../api/builder";
@@ -36,7 +35,8 @@ import {
   getListString,
   getEntries,
 } from "./ModuleForm";
-import { InlineAIPanel } from "./InlineAIPanel";
+import { CheckIssueList } from "./CheckIssueList";
+import { useSilentCheck } from "./useSilentCheck";
 import { AvatarUpload } from "./AvatarUpload";
 
 // ── AI 动作类型 ────────────────────────────────────────────────
@@ -138,7 +138,7 @@ function getContentSummary(moduleType: ModuleType, content: ModuleContent): stri
   return "空模块";
 }
 
-// ── 模块文本提取（供 InlineAIPanel 使用） ────────────────────
+// ── 模块文本提取（供静默纠错 schedule 使用） ────────────────
 
 /** 从模块内容中提取纯文本，用于 AI 优化/检查/改写 */
 function getModuleText(moduleType: ModuleType, content: ModuleContent): string {
@@ -194,34 +194,6 @@ function getModuleText(moduleType: ModuleType, content: ModuleContent): string {
   return [title, text].filter(Boolean).join("\n");
 }
 
-/** AI 结果应用到模块内容的主文本字段 */
-function applyAIToContent(moduleType: ModuleType, content: ModuleContent, newText: string): ModuleContent {
-  if (moduleType === "basic_info") {
-    return { ...content, summary: newText };
-  }
-
-  const entryFields = ENTRY_FIELD_CONFIGS[moduleType];
-  if (entryFields) {
-    const entries = getEntries(content);
-    if (entries.length > 0) {
-      // 更新第一条目的 description 字段
-      const descField = entryFields.find((f) => f.key === "description");
-      if (descField) {
-        const newEntries = [...entries];
-        newEntries[0] = { ...newEntries[0], description: newText };
-        return { ...content, entries: newEntries };
-      }
-    }
-    return content;
-  }
-
-  if (moduleType === "other" || moduleType === "custom") {
-    return { ...content, content: newText };
-  }
-
-  return content;
-}
-
 // ── 内联表单渲染 ────────────────────────────────────────────────
 
 /** 渲染模块对应的内联表单字段（复用 ModuleForm 的子组件） */
@@ -271,6 +243,7 @@ function ModuleInlineForm({
                       onChange({ ...content, [field.key]: v });
                     }
                   }}
+                  aiMenu={field.key === "summary" ? { resumeId, moduleType } : null}
                 />
               </div>
             );
@@ -282,7 +255,16 @@ function ModuleInlineForm({
   }
 
   if (entryFields) {
-    return <EntriesEditor content={content} onChange={onChange} fields={entryFields} moduleLabel={label} />;
+    return (
+      <EntriesEditor
+        resumeId={resumeId}
+        moduleType={moduleType}
+        content={content}
+        onChange={onChange}
+        fields={entryFields}
+        moduleLabel={label}
+      />
+    );
   }
 
   if (moduleType === "skills") {
@@ -304,6 +286,8 @@ function ModuleInlineForm({
         onChange={onChange}
         titleLabel={moduleType === "custom" ? "自定义标题" : "标题"}
         contentRequired
+        resumeId={resumeId}
+        moduleType={moduleType}
       />
     );
   }
@@ -339,30 +323,31 @@ function ModuleCardImpl({
   const summary = useMemo(() => getContentSummary(moduleType, content), [moduleType, content]);
   const bodyRef = useRef<HTMLDivElement>(null);
   const [bodyHeight, setBodyHeight] = useState<number | "auto">("auto");
-  const [aiMode, setAiMode] = useState<"optimize" | "check" | "rewrite" | null>(null);
 
-  const moduleText = useMemo(() => getModuleText(moduleType, content), [moduleType, content]);
+  // G 静默纠错：编辑停顿后自动检查，角标提示（防抖/限流/竞态在 useSilentCheck 内）
+  const { state: checkState, issues: checkIssues, error: checkError, schedule } = useSilentCheck(resumeId, moduleType);
+  // 问题列表展开/收起
+  const [showIssues, setShowIssues] = useState(false);
+  const hasIssues = checkIssues.length > 0;
 
-  // ref 持有最新 content，使 handleAIApply 不依赖 content → 回调引用稳定
-  const contentRef = useRef(content);
-  contentRef.current = content;
-
-  // 稳定回调：依赖 moduleType + 父级稳定引用，不会因为其他模块变化而重建
+  // 稳定回调：依赖 moduleType + schedule（稳定引用）+ 父级稳定引用
   const handleInternalChange = useCallback(
-    (newContent: ModuleContent) => onChange(moduleType, newContent),
-    [moduleType, onChange],
+    (newContent: ModuleContent) => {
+      onChange(moduleType, newContent);
+      // 编辑停顿后静默检查（schedule 内部防抖 2.5s）
+      schedule(getModuleText(moduleType, newContent));
+    },
+    [moduleType, onChange, schedule],
   );
 
-  const handleAIApply = useCallback(
-    (newText: string) => {
-      const updated = applyAIToContent(moduleType, contentRef.current, newText);
-      onChange(moduleType, updated);
-    },
-    [moduleType, onChange],
-  );
+  // 展开/收起问题列表：若卡片折叠先展开，再显示
+  const handleToggleIssues = useCallback(() => {
+    if (!expanded) onToggleExpand(moduleType);
+    setShowIssues((v) => !v);
+  }, [expanded, onToggleExpand, moduleType]);
 
   // 展开/折叠动画：测量内容高度用于 max-height transition
-  // 依赖 expanded + aiMode：aiMode 变化时（打开/关闭 AI 面板）重新测量高度
+  // 依赖 expanded + showIssues：问题列表展开/收起时重新测量高度
   useEffect(() => {
     if (!bodyRef.current) return;
     if (expanded) {
@@ -379,7 +364,7 @@ function ModuleCardImpl({
         requestAnimationFrame(() => setBodyHeight(0));
       });
     }
-  }, [expanded, aiMode]);
+  }, [expanded, showIssues]);
 
   return (
     <div
@@ -486,6 +471,33 @@ function ModuleCardImpl({
           />
         )}
 
+        {/* 静默纠错角标：检查中 spinner / N 问题红标 / 无问题绿勾（点击展开问题列表） */}
+        {checkState === "checking" && (
+          <span
+            className="shrink-0 inline-block w-3.5 h-3.5 rounded-full
+              border-2 border-brand border-t-transparent animate-spin"
+            aria-label="内容检查中"
+            title="正在检查内容..."
+          />
+        )}
+        {checkState === "done" && !checkError && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleToggleIssues();
+            }}
+            className={`shrink-0 inline-flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-semibold
+              transition-all cursor-pointer
+              ${hasIssues
+                ? "bg-red-500/15 text-red-500 border border-red-500/30 hover:bg-red-500/25"
+                : "text-emerald-500 hover:bg-emerald-500/10"}`}
+            aria-label={hasIssues ? `${checkIssues.length} 个问题，点击查看` : "内容质量良好"}
+            title={hasIssues ? `${checkIssues.length} 个问题，点击查看` : "内容质量良好"}
+          >
+            {hasIssues ? checkIssues.length : <Check size={10} weight="bold" aria-hidden="true" />}
+          </button>
+        )}
+
         {/* AI 生成按钮 */}
         <button
           onClick={(e) => {
@@ -555,78 +567,16 @@ function ModuleCardImpl({
             onChange={handleInternalChange}
           />
 
-          {/* 内联 AI 面板（optimize / check / rewrite） */}
-          {aiMode && moduleText && (
+          {/* 静默纠错问题列表（点击卡片头角标展开/收起） */}
+          {showIssues && (
             <div className="mt-3">
-              <InlineAIPanel
-                resumeId={resumeId}
-                moduleType={moduleType}
-                text={moduleText}
-                mode={aiMode}
-                onModeChange={setAiMode}
-                onApply={handleAIApply}
+              <CheckIssueList
+                issues={checkIssues}
+                loading={checkState === "checking"}
+                error={checkError}
               />
             </div>
           )}
-
-          {/* AI 辅助条：优化 / 检查 / 改写 */}
-          <div className="mt-3 pt-2 border-t border-[var(--color-border)]/50">
-            <div className="flex items-center gap-1 flex-wrap">
-              <button
-                onClick={() => setAiMode(aiMode === "optimize" ? null : "optimize")}
-                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium
-                  transition-all cursor-pointer
-                  ${aiMode === "optimize"
-                    ? "bg-brand/10 text-brand border border-brand/30"
-                    : "text-[var(--color-text-muted)] hover:text-brand hover:bg-brand/10 border border-transparent"
-                  }`}
-                disabled={!moduleText}
-                aria-label="一键优化"
-                title="AI 一键优化：润色措辞、增强专业感"
-              >
-                <Sparkle size={10} weight="fill" aria-hidden="true" />
-                优化
-              </button>
-
-              <button
-                onClick={() => setAiMode(aiMode === "check" ? null : "check")}
-                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium
-                  transition-all cursor-pointer
-                  ${aiMode === "check"
-                    ? "bg-brand/10 text-brand border border-brand/30"
-                    : "text-[var(--color-text-muted)] hover:text-brand hover:bg-brand/10 border border-transparent"
-                  }`}
-                disabled={!moduleText}
-                aria-label="智能检查"
-                title="AI 智能检查：发现问题并给出修改建议"
-              >
-                <Eyeglasses size={10} weight="bold" aria-hidden="true" />
-                检查
-              </button>
-
-              <button
-                onClick={() => setAiMode(aiMode === "rewrite" ? null : "rewrite")}
-                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium
-                  transition-all cursor-pointer
-                  ${aiMode === "rewrite"
-                    ? "bg-brand/10 text-brand border border-brand/30"
-                    : "text-[var(--color-text-muted)] hover:text-brand hover:bg-brand/10 border border-transparent"
-                  }`}
-                disabled={!moduleText}
-                aria-label="智能改写"
-                title="AI 智能改写：按指令改写内容"
-              >
-                <PencilSimple size={10} weight="bold" aria-hidden="true" />
-                改写
-              </button>
-
-              {!moduleText && (
-                <span className="text-[10px] text-[var(--color-text-muted)] italic">
-                  请先填写内容
-                </span>
-              )}
-            </div>
-          </div>
         </div>
       </div>
     </div>

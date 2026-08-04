@@ -22,6 +22,9 @@ prometheus-client==0.21.1
 psutil==6.1.1
 redis>=5.0.0,<9.0.0
 
+# 简历模板 Markdown 渲染（先转义防 XSS）
+markdown>=3.6
+
 # RabbitMQ 消息队列
 aio-pika>=10.0.0
 

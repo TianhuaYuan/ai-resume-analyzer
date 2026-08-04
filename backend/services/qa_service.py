@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timezone
 
 from sqlalchemy import delete, func, or_, select, update
@@ -5,6 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.qa_history import QAHistory
 from models.qa_conversation import QAConversation
+
+logger = logging.getLogger(__name__)
 
 
 # ── 问答记录（已有函数 + conversation_id 参数） ────────────
@@ -250,3 +253,78 @@ async def delete_conversation(
     )
     await db.commit()
     return qa_count
+
+
+# ── 问答 → L4 长期记忆回流（问答画像） ──────────────────
+
+# 拒答话术：检索不到信息时的固定回答（rag/pipeline.py + agentic_rag/generate.py），
+# 这类回答不含用户信息，不应沉淀为画像。
+_QA_REJECT_PHRASES = ("抱歉，简历中未提及该信息。", "分析失败，请稍后重试")
+# 有信息量问答的最小答案长度（字符）：短回答多为寒暄/确认/无实质内容，不沉淀。
+QA_MEMORY_MIN_ANSWER_LEN = 80
+# 问答沉淀的重要度：适中（面试复盘 importance=0.7，问答画像略低）
+QA_MEMORY_IMPORTANCE = 0.55
+# snippet 中 question / answer 的最大长度（防向量稀释 + 噪音）
+_QA_MEMORY_Q_LEN = 30
+_QA_MEMORY_A_LEN = 200
+
+
+def _truncate(text: str, n: int) -> str:
+    text = (text or "").strip()
+    return text if len(text) <= n else text[:n] + "…"
+
+
+def _looks_like_rejection(answer: str) -> bool:
+    """命中拒答话术（如"抱歉，简历中未提及该信息。"）→ 不含用户信息。"""
+    a = answer.strip()
+    return any(a.startswith(p) for p in _QA_REJECT_PHRASES)
+
+
+def is_informative_qa(question: str, answer: str) -> bool:
+    """筛选"有信息量"的问答：非拒答话术 + 答案超过长度阈值。
+
+    对齐 mem0 / graphiti 的沉淀思路（内容空洞的发言不值得记忆）：
+    拒答话术 ≈ 无实质内容的应答，短答案 ≈ 寒暄/确认，都不沉淀；
+    只有暴露用户信息的实质问答才回流到 L4 画像。
+    """
+    q = (question or "").strip()
+    a = (answer or "").strip()
+    if not q or not a:
+        return False
+    if _looks_like_rejection(a):
+        return False
+    return len(a) >= QA_MEMORY_MIN_ANSWER_LEN
+
+
+async def save_qa_to_memory(
+    *,
+    user_id: int,
+    question: str,
+    answer: str,
+) -> bool:
+    """把有信息量的问答沉淀到 L4 长期记忆（问答 → 用户画像回流）。
+
+    筛选：is_informative_qa 命中（非拒答 + 答案足够长）才写。
+    snippet 形式 ``问答沉淀（{问题前30}）：{答案前200}``，memory_type=semantic，
+    importance=0.55（面试复盘 0.7 之下，适中）。
+    幂等：save_memory 按 snippet hash 去重覆盖，同一问答不重复沉淀。
+
+    Returns: 是否成功沉淀。内部 try/except 保证失败不阻断问答主流程
+    （同 interview_service.update_scorecard 的"记忆是增强信息"约定）。
+    """
+    if not is_informative_qa(question, answer):
+        return False
+    key = _truncate(question, _QA_MEMORY_Q_LEN)
+    try:
+        from services.memory.memory_store import save_memory
+
+        await save_memory(
+            user_id=user_id,
+            snippet=f"问答沉淀（{key}）：{_truncate(answer, _QA_MEMORY_A_LEN)}",
+            memory_type="semantic",
+            importance=QA_MEMORY_IMPORTANCE,
+        )
+        return True
+    except Exception:
+        logger.warning("问答沉淀 L4 记忆失败 user_id=%s question=%s", user_id, key, exc_info=True)
+        return False

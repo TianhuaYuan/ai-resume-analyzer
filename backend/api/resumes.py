@@ -15,7 +15,7 @@ from fastapi import (
 )
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -48,6 +48,7 @@ from schemas.resume_module import (
     BuilderDraftUpdateRequest,
     BuilderResumeResponse,
     BuilderUpdateRequest,
+    ResumeFamilyItem,
     ResumeModuleCreate,
     ResumeModuleResponse,
     ResumeStyle,
@@ -70,6 +71,7 @@ from services.resume_analyze_producer import publish_analyze_task
 from services.resume_parse_producer import publish_parse_task
 from services.resume_builder import (
     complete_resume,
+    copy_resume_as_new,
     create_builder_resume,
     get_resume_with_modules,
     update_resume_draft,
@@ -220,6 +222,8 @@ def _to_builder_response(
         is_indexed=resume.indexed_hash is not None,
         is_stale=bool(resume.content_hash) and resume.content_hash != resume.indexed_hash,
         modules_materialized=modules_materialized,
+        language=resume.language,
+        family_id=resume.family_id,
         modules=[
             ResumeModuleResponse(
                 id=m.id,
@@ -375,6 +379,58 @@ async def update_resume_endpoint(
     )
     resume, modules = await update_resume_draft(db, current_user.id, resume_id, draft_body)
     return _to_builder_response(resume, modules)
+
+
+@router.post("/{resume_id}/copy", response_model=BuilderResumeResponse, status_code=status.HTTP_201_CREATED)
+async def copy_resume(
+    resume_id: int,
+    language: str = Query("", max_length=20, description="副本语言（如 zh/en）"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """复制简历为新草稿副本（多语言版本管理：复制后对副本翻译即可，不覆盖原稿）。
+
+    借鉴 Magic-Resume createVersion 的整份快照思路，但另存为**独立新简历**：
+    一份简历可同时保有中文/英文等多个语言版本。新副本 status=draft、version=1。
+    副本继承源简历的 family_id（语言版本族），language 标注副本语言。
+    非本人简历 → 404。
+    """
+    resume, modules = await copy_resume_as_new(
+        db, current_user.id, resume_id, language=language
+    )
+    return _to_builder_response(resume, modules)
+
+
+@router.get("/{resume_id}/family", response_model=list[ResumeFamilyItem])
+async def get_resume_family(
+    resume_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """返回同 family 的所有语言版本（含自身），用于多语言版本管理下拉。非本人 → 404。"""
+    src = await db.get(Resume, resume_id)
+    if src is None or src.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="简历不存在或无权访问")
+
+    root = src.family_id or src.id
+    result = await db.execute(
+        select(Resume)
+        .where(
+            or_(Resume.family_id == root, Resume.id == root),
+            Resume.user_id == current_user.id,
+        )
+        .order_by(Resume.created_at.asc(), Resume.id.asc())
+    )
+    return [
+        {
+            "id": r.id,
+            "filename": r.filename,
+            "language": r.language,
+            "created_at": r.created_at,
+            "source": r.source,
+        }
+        for r in result.scalars().all()
+    ]
 
 
 @router.get("/{resume_id}/builder", response_model=BuilderResumeResponse)
@@ -956,6 +1012,7 @@ class AICheckRequest(BaseModel):
     """智能检查请求。"""
     text: str
     module_type: str = "basic_info"
+    check_field: str | None = None  # 可选：聚焦检查某字段（如 description/summary）
 
 
 class AIRewriteRequest(BaseModel):
@@ -970,6 +1027,7 @@ class AICheckIssue(BaseModel):
     severity: str  # high / medium / low
     category: str  # 量化问题 / 描述模糊 / 角色不清 等
     description: str
+    field: str | None = None  # 可选：问题所属字段标签（如「工作描述」，LLM 标注）
 
 
 class AICheckResponse(BaseModel):
@@ -1055,9 +1113,11 @@ async def ai_check(
         "2. 描述模糊：技术栈罗列但未说明解决的核心问题或独特架构方案\n"
         "3. 角色不清：个人贡献与团队协作边界模糊，动词强度不一致\n\n"
         "请以 JSON 格式返回结果，格式如下：\n"
-        '{"issues": [{"severity": "high|medium|low", "category": "问题分类", "description": "具体问题描述"}]}\n\n'
+        '{"issues": [{"severity": "high|medium|low", "category": "问题分类", "description": "具体问题描述", "field": "所属字段"}]}\n\n'
         "severity 取值：high（红色，严重影响）、medium（黄色，建议改进）、low（绿色，小问题）\n"
         "category 使用简洁中文标签，如'量化问题'、'描述模糊'、'角色不清'\n"
+        "每个 issue 的 field 标注问题所属的字段标签（从原文中识别，如'工作描述'、'项目描述'、"
+        "'个人简介'、'主要成就'；无法确定则省略该字段）\n"
         "只返回 JSON，不要加任何其他文字。\n"
     )
 
@@ -1065,9 +1125,12 @@ async def ai_check(
         from services.rag.pipeline import llm_generate
         import json
 
+        user_context = f"模块类型：{body.module_type}"
+        if body.check_field:
+            user_context += f"，当前检查字段：{body.check_field}"
         raw = await llm_generate(
             system=system_prompt,
-            user=f"模块类型：{body.module_type}\n\n请检查以下文本：\n\n{body.text}",
+            user=f"{user_context}\n\n请检查以下文本：\n\n{body.text}",
             temperature=0.2,
             user_id=current_user.id,
         )

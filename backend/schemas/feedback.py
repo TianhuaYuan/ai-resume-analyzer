@@ -79,3 +79,40 @@ class LikeResponse(BaseModel):
 
     likes_count: int
     is_liked: bool
+
+
+# ═══════════════════════════════════════════════════════════
+# QA 反馈统计（管理员问答质量看板）
+# ═══════════════════════════════════════════════════════════
+
+
+class QAStatsResumeItem(BaseModel):
+    """按简历聚合的问答反馈统计。"""
+
+    resume_id: int
+    resume_title: str
+    positive: int
+    negative: int
+    negative_rate: float
+
+
+class QANegativeSample(BaseModel):
+    """一条 negative 反馈样本（含 process_trace，用于复盘回答短板）。"""
+
+    qa_id: int
+    question: str
+    answer_excerpt: str
+    resume_id: int
+    created_at: datetime
+    process_trace: dict | None = None
+
+
+class QAStatsResponse(BaseModel):
+    """QA 反馈总览：正负比例 + 简历维度排行 + negative 样本。"""
+
+    total_feedback: int
+    positive: int
+    negative: int
+    negative_rate: float
+    by_resume: list[QAStatsResumeItem]
+    recent_negative: list[QANegativeSample]

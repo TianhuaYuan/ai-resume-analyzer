@@ -188,6 +188,26 @@ async def test_delete_resume_clears_chroma_vectors(registered_user: dict):
     mock_clear_vectors.assert_awaited_once_with(registered_user["id"], resume_id)
 
 
+@pytest.mark.asyncio
+async def test_delete_resume_clears_redis_analysis_cache(registered_user: dict):
+    """delete_resume 应调用 invalidate_resume_cache 清 Redis 分析缓存（4 种类型）。"""
+    resume_id, _ = await _insert_resume_with_qa(registered_user["id"])
+
+    with patch(
+        "services.resume_service.invalidate_resume_cache", new_callable=AsyncMock
+    ) as mock_invalidate, patch(
+        "services.resume_service.clear_resume_vectors", new_callable=AsyncMock
+    ), patch(
+        "services.resume_service.embedding_cache.clear_resume",
+        new_callable=AsyncMock,
+        return_value=0,
+    ), patch("services.resume_service.os.remove"):
+        async with AsyncSessionTest() as session:
+            await delete_resume(session, resume_id, registered_user["id"])
+
+    mock_invalidate.assert_awaited_once_with(resume_id)
+
+
 # ---------------- 文件系统 ----------------
 
 

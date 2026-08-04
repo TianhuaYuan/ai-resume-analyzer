@@ -43,6 +43,9 @@ class Resume(Base):
     # T6：向量索引版本号（单调递增，独立于编辑器的 document version）。
     # 懒重建不能复用 document version（草稿保存不 bump，会与旧版本 chunk id 冲突）。
     index_version: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # 多语言版本：language（如 zh/en）+ family_id（同一份简历的 N 语言副本归属同族，根副本以自身为族）。
+    language: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    family_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

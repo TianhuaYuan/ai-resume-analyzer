@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import HomePage from "../HomePage";
 
 const mockNavigate = vi.fn();
@@ -66,14 +67,14 @@ beforeEach(() => {
 
 describe("HomePage 渲染", () => {
   it("渲染 Hero 标题与副标题", () => {
-    render(<HomePage />);
+    render(<MemoryRouter><HomePage /></MemoryRouter>);
     // LandingNav 按钮也有"AI简历"文本，用 heading role 精确定位 Hero h1
     expect(screen.getByRole("heading", { level: 1, name: "AI简历" })).toBeInTheDocument();
     expect(screen.getByText(/AI帮你打造高通过率简历/)).toBeInTheDocument();
   });
 
   it("未登录时显示「开始使用」CTA", () => {
-    render(<HomePage />);
+    render(<MemoryRouter><HomePage /></MemoryRouter>);
     expect(screen.getByText("开始使用")).toBeInTheDocument();
   });
 
@@ -89,7 +90,7 @@ describe("HomePage 渲染", () => {
       sessionDialog: null,
       handleSessionGoLogin: vi.fn(),
     });
-    render(<HomePage />);
+    render(<MemoryRouter><HomePage /></MemoryRouter>);
 
     const btn = screen.getByText("我的简历");
     fireEvent.click(btn);
@@ -97,7 +98,7 @@ describe("HomePage 渲染", () => {
   });
 
   it("渲染功能简介卡片", () => {
-    render(<HomePage />);
+    render(<MemoryRouter><HomePage /></MemoryRouter>);
     expect(screen.getByText("一站式求职，从简历开始")).toBeInTheDocument();
     expect(screen.getByText("AI 智能对话")).toBeInTheDocument();
     expect(screen.getByText("专业简历编辑器")).toBeInTheDocument();

@@ -20,6 +20,7 @@ import { Plus, Trash, CaretUp, CaretDown, Eye, EyeSlash } from "@phosphor-icons/
 import type { ModuleType, ModuleContent } from "../../api/builder";
 import { MODULE_LABELS } from "./ModuleList";
 import { RichTextEditor } from "./RichTextEditor";
+import { FieldAIMenu } from "./FieldAIMenu";
 
 // ── 字段配置类型 ──────────────────────────────────────────────
 
@@ -58,6 +59,23 @@ export function getListString(content: Record<string, unknown>, key: string): st
 export function getEntries(content: ModuleContent): Record<string, unknown>[] {
   const v = content.entries;
   return Array.isArray(v) ? (v as Record<string, unknown>[]) : [];
+}
+
+/**
+ * 不可变更新指定条目的某字段，返回新 content。
+ * 供条目级 AI 回填使用（如 description）。
+ */
+export function updateEntryField(
+  content: ModuleContent,
+  index: number,
+  key: string,
+  value: string | number | string[],
+): ModuleContent {
+  const entries = getEntries(content);
+  if (index < 0 || index >= entries.length) return content;
+  const newEntries = [...entries];
+  newEntries[index] = { ...newEntries[index], [key]: value };
+  return { ...content, entries: newEntries };
 }
 
 /** 将逗号分隔文本转为字符串数组（保留空串以维持输入光标） */
@@ -178,14 +196,28 @@ interface FieldRendererProps {
   field: FieldConfig;
   value: string;
   onChange: (value: string) => void;
+  /** 字段级 AI（仅 textarea 生效）；传则在该字段 label 行渲染 FieldAIMenu */
+  aiMenu?: { resumeId: number; moduleType: string } | null;
 }
 
-export function FieldRenderer({ field, value, onChange }: FieldRendererProps) {
+export function FieldRenderer({ field, value, onChange, aiMenu }: FieldRendererProps) {
   const label = (
-    <label className={LABEL_CLASS}>
-      {field.label}
-      {field.required && <span className="ml-0.5 text-red-400">*</span>}
-    </label>
+    <div className="flex items-center justify-between mb-1">
+      <label className={`${LABEL_CLASS} mb-0`}>
+        {field.label}
+        {field.required && <span className="ml-0.5 text-red-400">*</span>}
+      </label>
+      {/* 字段级 AI（仅 textarea 长文本生效，如 basic_info.summary） */}
+      {aiMenu && field.type === "textarea" && (
+        <FieldAIMenu
+          resumeId={aiMenu.resumeId}
+          moduleType={aiMenu.moduleType}
+          text={value}
+          disabled={!value}
+          onApplyText={onChange}
+        />
+      )}
+    </div>
   );
 
   if (field.type === "textarea") {
@@ -248,15 +280,37 @@ export function FieldRenderer({ field, value, onChange }: FieldRendererProps) {
 
 // ── 条目列表编辑器 ────────────────────────────────────────────
 
+/** 条目级 AI 生效的模块类型（含 description 长描述字段，适合逐条精修） */
+const AI_ENTRY_MODULE_TYPES: ReadonlySet<ModuleType> = new Set([
+  "education",
+  "work_experience",
+  "project_experience",
+  "honors",
+  "club_activities",
+]);
+
 interface EntriesEditorProps {
   content: ModuleContent;
   onChange: (content: ModuleContent) => void;
   fields: FieldConfig[];
   moduleLabel: string;
+  /** 简历 ID（条目级 AI 用） */
+  resumeId?: number;
+  /** 模块类型（条目级 AI 透传后端） */
+  moduleType?: ModuleType;
 }
 
-export function EntriesEditor({ content, onChange, fields, moduleLabel }: EntriesEditorProps) {
+export function EntriesEditor({
+  content,
+  onChange,
+  fields,
+  moduleLabel,
+  resumeId,
+  moduleType,
+}: EntriesEditorProps) {
   const entries = getEntries(content);
+  // 条目级 AI 是否对该模块生效
+  const entryAIEnabled = !!resumeId && !!moduleType && AI_ENTRY_MODULE_TYPES.has(moduleType);
 
   const handleAdd = useCallback(() => {
     onChange({ ...content, entries: [...entries, {}] });
@@ -326,6 +380,18 @@ export function EntriesEditor({ content, onChange, fields, moduleLabel }: Entrie
               {moduleLabel} #{index + 1}
             </span>
             <div className="flex items-center gap-1">
+              {/* 条目级 AI（按需显示：模块支持 + 该条 description 非空） */}
+              {entryAIEnabled && (
+                <FieldAIMenu
+                  resumeId={resumeId!}
+                  moduleType={moduleType!}
+                  text={getString(entry, "description")}
+                  disabled={!getString(entry, "description")}
+                  onApplyText={(newText) =>
+                    onChange(updateEntryField(content, index, "description", newText))
+                  }
+                />
+              )}
               <button
                 onClick={() => handleMoveUp(index)}
                 disabled={index === 0}
@@ -613,6 +679,9 @@ interface TextContentFormProps {
   onChange: (content: ModuleContent) => void;
   titleLabel: string;
   contentRequired: boolean;
+  /** 内容字段级 AI（other/custom 优化既有内容） */
+  resumeId?: number;
+  moduleType?: ModuleType;
 }
 
 export function TextContentForm({
@@ -620,6 +689,8 @@ export function TextContentForm({
   onChange,
   titleLabel,
   contentRequired,
+  resumeId,
+  moduleType,
 }: TextContentFormProps) {
   return (
     <div className="space-y-3">
@@ -637,10 +708,22 @@ export function TextContentForm({
         />
       </div>
       <div>
-        <label className={LABEL_CLASS}>
-          内容
-          <span className="ml-0.5 text-red-400">*</span>
-        </label>
+        <div className="flex items-center justify-between mb-1">
+          <label className={`${LABEL_CLASS} mb-0`}>
+            内容
+            <span className="ml-0.5 text-red-400">*</span>
+          </label>
+          {/* 内容字段级 AI（other/custom 优化既有内容） */}
+          {resumeId && moduleType && (
+            <FieldAIMenu
+              resumeId={resumeId}
+              moduleType={moduleType}
+              text={getString(content, "content")}
+              disabled={!getString(content, "content")}
+              onApplyText={(t) => onChange({ ...content, content: t })}
+            />
+          )}
+        </div>
         <RichTextEditor
           value={getString(content, "content")}
           onChange={(v) => onChange({ ...content, content: v })}
@@ -823,6 +906,8 @@ interface ModuleFormProps {
   content: ModuleContent;
   /** 内容变更回调 */
   onChange: (content: ModuleContent) => void;
+  /** 简历 ID（透传条目级 AI） */
+  resumeId?: number;
 }
 
 /**
@@ -919,7 +1004,7 @@ export function CustomFieldsEditor({
   );
 }
 
-function ModuleFormImpl({ moduleType, content, onChange }: ModuleFormProps) {
+function ModuleFormImpl({ resumeId, moduleType, content, onChange }: ModuleFormProps) {
   const label = MODULE_LABELS[moduleType];
 
   // 判断是否为条目类模块
@@ -951,6 +1036,7 @@ function ModuleFormImpl({ moduleType, content, onChange }: ModuleFormProps) {
                         onChange({ ...content, [field.key]: v });
                       }
                     }}
+                    aiMenu={field.key === "summary" && resumeId ? { resumeId, moduleType } : null}
                   />
                 </div>
               );
@@ -961,7 +1047,16 @@ function ModuleFormImpl({ moduleType, content, onChange }: ModuleFormProps) {
         )}
 
         {/* 条目类模块 */}
-        {entryFields && <EntriesEditor content={content} onChange={onChange} fields={entryFields} moduleLabel={label} />}
+        {entryFields && (
+          <EntriesEditor
+            resumeId={resumeId}
+            moduleType={moduleType}
+            content={content}
+            onChange={onChange}
+            fields={entryFields}
+            moduleLabel={label}
+          />
+        )}
 
         {/* skills：分类 + 技能项 */}
         {moduleType === "skills" && <SkillsForm content={content} onChange={onChange} />}
@@ -979,6 +1074,8 @@ function ModuleFormImpl({ moduleType, content, onChange }: ModuleFormProps) {
             onChange={onChange}
             titleLabel="标题"
             contentRequired
+            resumeId={resumeId}
+            moduleType={moduleType}
           />
         )}
 

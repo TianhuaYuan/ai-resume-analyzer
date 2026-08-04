@@ -186,6 +186,28 @@ def _esc(value) -> str:
     return escape(str(value))
 
 
+try:
+    import markdown as _markdown
+
+    def _render_md(value) -> str:
+        """渲染 Markdown 为 HTML（先 html.escape 防 XSS）。
+
+        编辑器（Tiptap WYSIWYG）存储 Markdown，渲染时先转义再交给
+        python-markdown —— 已转义的实体不会被 markdown 反转义成真实 HTML，
+        因此 **加粗**、- 列表等标记会格式化为 <strong>/<ul>，而 <script> 保持转义。
+        """
+        if value is None:
+            return ""
+        return _markdown.markdown(
+            escape(str(value)),
+            extensions=["extra", "nl2br", "sane_lists"],
+        )
+
+except ImportError:  # pragma: no cover
+    # markdown 库未安装时降级为纯 HTML 转义，行为与 _esc 一致
+    _render_md = _esc
+
+
 def _render_basic_info(content: dict) -> str:
     """渲染基本信息模块。"""
     parts = []
@@ -244,7 +266,7 @@ def _render_basic_info(content: dict) -> str:
         parts.append(f'<div class="basic-links">{" | ".join(link_parts)}</div>')
 
     if content.get("summary"):
-        parts.append(f'<div class="basic-summary">{_esc(content["summary"])}</div>')
+        parts.append(f'<div class="basic-summary">{_render_md(content["summary"])}</div>')
 
     # #6: 自定义字段（预设字段之外的自定义键值对）
     custom_fields = content.get("custom_fields", [])
@@ -293,7 +315,7 @@ def _render_education(content: dict) -> str:
         if info_parts:
             row += f'<div class="edu-info">{" | ".join(info_parts)}</div>'
         if entry.get("description"):
-            row += f'<div class="edu-desc">{_esc(entry["description"])}</div>'
+            row += f'<div class="edu-desc">{_render_md(entry["description"])}</div>'
         row += "</div>"
         rows.append(row)
     return "\n".join(rows)
@@ -319,10 +341,10 @@ def _render_work_experience(content: dict) -> str:
             row += f'<span class="work-date">{dates}</span>'
         row += "</div>"
         if entry.get("description"):
-            row += f'<div class="work-desc">{_esc(entry["description"])}</div>'
+            row += f'<div class="work-desc">{_render_md(entry["description"])}</div>'
         achievements = entry.get("achievements", [])
         if achievements:
-            items = "".join(f"<li>{_esc(a)}</li>" for a in achievements)
+            items = "".join(f"<li>{_render_md(a)}</li>" for a in achievements)
             row += f'<ul class="work-achievements">{items}</ul>'
         row += "</div>"
         rows.append(row)
@@ -349,7 +371,7 @@ def _render_project_experience(content: dict) -> str:
             row += f'<span class="proj-date">{dates}</span>'
         row += "</div>"
         if entry.get("description"):
-            row += f'<div class="proj-desc">{_esc(entry["description"])}</div>'
+            row += f'<div class="proj-desc">{_render_md(entry["description"])}</div>'
         tech_stack = entry.get("tech_stack", [])
         if tech_stack:
             techs = ", ".join(_esc(t) for t in tech_stack)
@@ -437,7 +459,7 @@ def _render_honors(content: dict) -> str:
     for entry in entries:
         title = _esc(entry.get("title", ""))
         date = _esc(entry.get("date", ""))
-        desc = _esc(entry.get("description", ""))
+        desc = _render_md(entry.get("description", ""))
         row = f'<div class="honor-item"><span class="honor-title">{title}</span>'
         if date:
             row += f'<span class="honor-date">{date}</span>'
@@ -495,7 +517,7 @@ def _render_club_activities(content: dict) -> str:
         name = _esc(entry.get("name", ""))
         role = _esc(entry.get("role", ""))
         dates = _format_date_range(entry.get("start_date"), entry.get("end_date"))
-        desc = _esc(entry.get("description", ""))
+        desc = _render_md(entry.get("description", ""))
 
         row = '<div class="club-item">'
         row += f'<span class="club-name">{name}</span>'
@@ -615,7 +637,7 @@ def _render_other(content: dict) -> str:
     html = ""
     if title:
         html += f'<div class="other-title">{_esc(title)}</div>'
-    html += f'<div class="other-content">{_esc(text)}</div>'
+    html += f'<div class="other-content">{_render_md(text)}</div>'
     return html
 
 
@@ -629,7 +651,7 @@ def _render_custom(content: dict) -> str:
             if not isinstance(item, dict):
                 continue
             title = _esc(item.get("title", ""))
-            text = _esc(item.get("content", ""))
+            text = _render_md(item.get("content", ""))
             if not text:
                 continue
             if title:
@@ -644,7 +666,7 @@ def _render_custom(content: dict) -> str:
             if not isinstance(entry, dict):
                 continue
             title = _esc(entry.get("title", ""))
-            text = _esc(entry.get("content", ""))
+            text = _render_md(entry.get("content", ""))
             if not text:
                 continue
             if title:
@@ -659,7 +681,7 @@ def _render_custom(content: dict) -> str:
     html = ""
     if title:
         html += f'<div class="custom-title">{_esc(title)}</div>'
-    html += f'<div class="custom-content">{_esc(text)}</div>'
+    html += f'<div class="custom-content">{_render_md(text)}</div>'
     return html
 
 

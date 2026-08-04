@@ -778,6 +778,8 @@ class ResumeModuleResponse(BaseModel):
     content: dict
     sort_order: int
     created_at: datetime
+    # G 可信度控制：fact/inferred/mixed（AI 改写内容来源标注）
+    source: str = "fact"
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -833,8 +835,21 @@ class BuilderResumeResponse(BaseModel):
     is_stale: bool = False
     modules_materialized: bool = True
     modules: list[ResumeModuleResponse] = Field(default_factory=list)
+    # 多语言版本：语言标注 + family 归属
+    language: str | None = None
+    family_id: int | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ResumeFamilyItem(BaseModel):
+    """多语言版本族中的单个版本（GET /resumes/{id}/family 返回项）。"""
+
+    id: int
+    filename: str
+    language: str | None = None
+    created_at: datetime
+    source: str
 
 
 # ═══════════════════════════════════════════════════════════

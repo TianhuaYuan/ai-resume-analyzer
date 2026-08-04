@@ -1,9 +1,12 @@
-from sqlalchemy import delete, func, select, and_
+from datetime import datetime, timezone
+
+from sqlalchemy import case, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.feedback_like import FeedbackLike
 from models.qa_feedback import QAFeedback
 from models.qa_history import QAHistory
+from models.resume import Resume
 from models.user import User
 from models.user_feedback import UserFeedback
 
@@ -19,9 +22,9 @@ async def submit_qa_feedback(
     qa_id: int,
     rating: str,
 ) -> None:
-    """提交问答反馈。rating: 'positive' -> 1, 'negative' -> -1。
+    """提交问答反馈（upsert 语义）。rating: 'positive' -> 1, 'negative' -> -1。
 
-    同一 qa_id 重复反馈时覆盖旧记录。
+    同一 (user_id, qa_id) 重复提交时更新 rating，不产生重复行，允许用户改主意。
     抛出：
       - LookupError: qa_id 不存在（应转 404）
       - PermissionError: 存在但不属于当前用户（应转 403）
@@ -35,13 +38,135 @@ async def submit_qa_feedback(
         raise PermissionError("无权访问该问答记录")
 
     rating_val = 1 if rating == "positive" else -1
+    now = datetime.now(timezone.utc)
 
-    # 覆盖旧记录（先删后插，保证唯一性）
-    await db.execute(delete(QAFeedback).where(QAFeedback.qa_id == qa_id))
-
-    fb = QAFeedback(qa_id=qa_id, rating=rating_val)
-    db.add(fb)
+    # upsert：同 (user_id, qa_id) 只保留一条
+    existing = await db.execute(
+        select(QAFeedback).where(
+            QAFeedback.user_id == user_id,
+            QAFeedback.qa_id == qa_id,
+        )
+    )
+    row = existing.scalar_one_or_none()
+    if row:
+        row.rating = rating_val
+        row.updated_at = now
+    else:
+        db.add(QAFeedback(user_id=user_id, qa_id=qa_id, rating=rating_val))
     await db.commit()
+
+
+async def cancel_qa_feedback(
+    db: AsyncSession,
+    user_id: int,
+    qa_id: int,
+) -> bool:
+    """取消对某条问答的反馈（点同按钮再点一次即取消）。
+
+    不存在或非本人时返回 False（不报错，幂等）。
+    """
+    result = await db.execute(
+        delete(QAFeedback).where(
+            QAFeedback.user_id == user_id,
+            QAFeedback.qa_id == qa_id,
+        )
+    )
+    await db.commit()
+    return result.rowcount > 0
+
+
+async def qa_feedback_stats(
+    db: AsyncSession,
+    top_resumes: int = 10,
+    recent_negative: int = 5,
+) -> dict:
+    """QA 反馈统计（管理员用）。
+
+    返回：
+      - 总体正/负/负向率
+      - 按简历聚合的负向率排行（定位哪份简历的问答质量差）
+      - 最近 negative 样本（问题 + 答案截断 + process_trace），用于复盘回答短板
+    """
+    total_result = await db.execute(select(func.count()).select_from(QAFeedback))
+    total = total_result.scalar_one()
+
+    pos_result = await db.execute(
+        select(func.count())
+        .select_from(QAFeedback)
+        .where(QAFeedback.rating == 1)
+    )
+    positive = pos_result.scalar_one()
+
+    neg_result = await db.execute(
+        select(func.count())
+        .select_from(QAFeedback)
+        .where(QAFeedback.rating == -1)
+    )
+    negative = neg_result.scalar_one()
+
+    negative_rate = round(negative / total, 4) if total else 0.0
+
+    # 按简历聚合正负计数
+    by_resume_result = await db.execute(
+        select(
+            QAHistory.resume_id,
+            Resume.filename.label("resume_title"),
+            func.coalesce(
+                func.sum(case((QAFeedback.rating == 1, 1), else_=0)), 0
+            ).label("positive"),
+            func.coalesce(
+                func.sum(case((QAFeedback.rating == -1, 1), else_=0)), 0
+            ).label("negative"),
+        )
+        .join(QAFeedback, QAFeedback.qa_id == QAHistory.id)
+        .outerjoin(Resume, QAHistory.resume_id == Resume.id)
+        .group_by(QAHistory.resume_id, Resume.filename)
+        .order_by(
+            func.sum(case((QAFeedback.rating == -1, 1), else_=0)).desc()
+        )
+        .limit(top_resumes)
+    )
+    by_resume = []
+    for r in by_resume_result.all():
+        pos, neg = int(r.positive), int(r.negative)
+        by_resume.append(
+            {
+                "resume_id": r.resume_id,
+                "resume_title": r.resume_title or f"简历#{r.resume_id}",
+                "positive": pos,
+                "negative": neg,
+                "negative_rate": round(neg / (pos + neg), 4) if (pos + neg) else 0.0,
+            }
+        )
+
+    # 最近 negative 样本（带 process_trace 便于定位回答短板）
+    recent_result = await db.execute(
+        select(QAHistory, QAFeedback.created_at)
+        .join(QAFeedback, QAFeedback.qa_id == QAHistory.id)
+        .where(QAFeedback.rating == -1)
+        .order_by(QAFeedback.created_at.desc())
+        .limit(recent_negative)
+    )
+    recent_negative_samples = [
+        {
+            "qa_id": qa.id,
+            "question": qa.question,
+            "answer_excerpt": (qa.answer or "")[:200],
+            "resume_id": qa.resume_id,
+            "created_at": fb_created,
+            "process_trace": qa.process_trace,
+        }
+        for qa, fb_created in recent_result.all()
+    ]
+
+    return {
+        "total_feedback": total,
+        "positive": positive,
+        "negative": negative,
+        "negative_rate": negative_rate,
+        "by_resume": by_resume,
+        "recent_negative": recent_negative_samples,
+    }
 
 
 # ═══════════════════════════════════════════════════════════

@@ -221,6 +221,89 @@ class TestCreateBuilderResume:
         assert data["modules"][0]["content"]["name"] == "张三"
 
     @pytest.mark.asyncio
+    async def test_copy_resume_creates_new_draft(
+        self, client: AsyncClient, registered_user: dict, auth_headers: dict
+    ):
+        """G 多语言版本：POST /resumes/{id}/copy → 新草稿副本，模块一致，原稿不变。"""
+        created = await client.post(
+            "/api/v1/resumes/builder",
+            json={"filename": "我的简历"},
+            headers=auth_headers,
+        )
+        src_id = created.json()["id"]
+        resp = await client.post(
+            f"/api/v1/resumes/{src_id}/copy?language=en", headers=auth_headers
+        )
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["id"] != src_id
+        assert data["status"] == "draft"
+        assert data["version"] == 1
+        assert "副本" in data["filename"]
+        # 多语言版本：language 透传 + family 归属（源无 family → 副本以源为族根）
+        assert data["language"] == "en"
+        assert data["family_id"] == src_id
+        # 模块完整复制（预置 4 个核心模块）
+        assert [m["module_type"] for m in data["modules"]] == [
+            "basic_info",
+            "education",
+            "work_experience",
+            "skills",
+        ]
+
+    @pytest.mark.asyncio
+    async def test_copy_resume_isolated(
+        self, client: AsyncClient, registered_user: dict, auth_headers: dict
+    ):
+        """非本人复制他人简历 → 404（C4 越权隔离）。"""
+        created = await client.post(
+            "/api/v1/resumes/builder",
+            json={"filename": "私有简历"},
+            headers=auth_headers,
+        )
+        src_id = created.json()["id"]
+        other = {"username": "othercp", "email": "othercp@example.com", "password": "Test1234!", "password_confirm": "Test1234!"}
+        await client.post("/api/v1/auth/send-code", json={"email": other["email"]})
+        from services.verification_service import _CODE_KEY_PREFIX, _in_memory_codes
+
+        code = _in_memory_codes.get(f"{_CODE_KEY_PREFIX}{other['email']}")["code"]
+        await client.post("/api/v1/auth/register", json={**other, "verification_code": code})
+        login = await client.post("/api/v1/auth/login", json={"email": other["email"], "password": other["password"]})
+        other_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+        resp = await client.post(f"/api/v1/resumes/{src_id}/copy", headers=other_headers)
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_resume_family_list(
+        self, client: AsyncClient, registered_user: dict, auth_headers: dict
+    ):
+        """G 多语言版本：GET /resumes/{id}/family 返回同族版本（含自身），源/副本可互换查。"""
+        created = await client.post(
+            "/api/v1/resumes/builder",
+            json={"filename": "我的简历"},
+            headers=auth_headers,
+        )
+        src_id = created.json()["id"]
+        # 复制出英文版（family 继承源为族根）
+        copied = await client.post(
+            f"/api/v1/resumes/{src_id}/copy?language=en", headers=auth_headers
+        )
+        assert copied.status_code == 201
+        copy_id = copied.json()["id"]
+
+        # 从源查 family：含源 + 英文副本，按 created_at 升序
+        resp = await client.get(f"/api/v1/resumes/{src_id}/family", headers=auth_headers)
+        assert resp.status_code == 200
+        items = resp.json()
+        assert [i["id"] for i in items] == [src_id, copy_id]
+        assert items[0]["language"] is None  # 源未标注
+        assert items[1]["language"] == "en"
+
+        # 从副本查 family：同族
+        resp2 = await client.get(f"/api/v1/resumes/{copy_id}/family", headers=auth_headers)
+        assert [i["id"] for i in resp2.json()] == [src_id, copy_id]
+
+    @pytest.mark.asyncio
     async def test_create_with_style(
         self, client: AsyncClient, registered_user: dict, auth_headers: dict
     ):

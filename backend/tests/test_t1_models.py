@@ -283,6 +283,7 @@ async def test_qa_feedback_crud():
         await db_session.flush()
 
         fb = QAFeedback(
+            user_id=user.id,
             qa_id=qa.id,
             rating=1,
         )

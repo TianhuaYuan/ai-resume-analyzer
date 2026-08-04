@@ -169,6 +169,14 @@ async def orphan_scan() -> dict[str, list[str]]:
                         orphans["chromadb"].append(coll_name)
                 except (ValueError, IndexError):
                     orphans["chromadb"].append(coll_name)
+            # L4 长期记忆集合：memory_{user_id}（账户删除/用户不存在时会残留，按用户 id 判定）
+            elif coll_name.startswith("memory_"):
+                try:
+                    uid = int(coll_name.split("_", 1)[1])
+                    if uid not in db_user_ids:
+                        orphans["chromadb"].append(coll_name)
+                except (ValueError, IndexError):
+                    orphans["chromadb"].append(coll_name)
     except Exception as e:
         logger.warning("Failed to scan Chroma collections: %s", e)
 

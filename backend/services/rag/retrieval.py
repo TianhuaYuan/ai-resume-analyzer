@@ -222,9 +222,33 @@ def _scope_bm25_key(user_id: int, scope: dict[str, list[int]]) -> str:
 
 
 async def clear_bm25(user_id: int, asset_id: int) -> None:
-    """清除指定资产的 BM25 缓存（重建/删除后调用，避免旧版本内容污染）。"""
+    """清除指定资产的 BM25 缓存（重建/删除后调用，避免旧版本内容污染）。
+
+    store_key 有两种形态：
+    - 单资产 ``{user_id}:[3]``
+    - 多资产 scope ``{user_id}:[1,2,3]``（_scope_bm25_key 按命中的全部资产 id 生成）
+
+    原实现只 pop 单资产精确 key，多资产组合 key 会残留旧索引（已删简历的 chunks）。
+    改为遍历该用户全部 key，按逗号拆分精确匹配 asset_id，一并删除。
+    只影响 ``{user_id}:[`` 前缀的个人 key，不触碰 ``market:{collection}:[`` 公共 key。
+    """
     async with _bm25_lock:
-        _bm25_indexes.pop(f"{user_id}:[{asset_id}]", None)
+        prefix = f"{user_id}:["
+        stale = [
+            key
+            for key in _bm25_indexes
+            if key.startswith(prefix) and str(asset_id) in key[len(prefix):-1].split(",")
+        ]
+        for key in stale:
+            _bm25_indexes.pop(key, None)
+
+
+async def clear_user_bm25(user_id: int) -> None:
+    """清除某用户全部 BM25 缓存（账户删除时调用，释放所有 scope 组合索引）。"""
+    async with _bm25_lock:
+        prefix = f"{user_id}:["
+        for key in [k for k in _bm25_indexes if k.startswith(prefix)]:
+            _bm25_indexes.pop(key, None)
 
 
 async def clear_market_bm25(collection: str, asset_id: int) -> None:

@@ -16,11 +16,45 @@
  * 仍按整块装箱。
  */
 
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import remarkBreaks from "remark-breaks";
+import rehypeSanitize from "rehype-sanitize";
 import type { ModuleContent, ModuleType } from "../../../api/builder";
 
 // ── 辅助函数（content 是宽松 dict，安全读取） ──────────────────
 
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
+
+/**
+ * 长文本字段的 Markdown 渲染（对齐后端 resume_template._render_md）。
+ *
+ * Tiptap 上线后编辑器存的是 Markdown，预览需渲染为格式化 HTML 而非字面量标记。
+ * - remark-breaks：单换行 → <br>（与后端 nl2br 扩展行为一致）
+ * - rehype-sanitize：剥 XSS（react-markdown 默认不转义原始 HTML，必须净化）
+ * - 组件映射只给列表/段落最小语义样式（list-style 对抗 Tailwind preflight），
+ *   主体字号/颜色继承所在模板容器（.work-desc 等），不施加 React 侧固定字号。
+ */
+function Md({ children }: { children: string }) {
+  if (!children) return null;
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm, remarkBreaks]}
+      rehypePlugins={[rehypeSanitize]}
+      components={{
+        p: ({ node, ...props }) => <p className="my-0.5 first:mt-0 last:mb-0" {...props} />,
+        ul: ({ node, ...props }) => <ul className="list-disc pl-5 my-0.5" {...props} />,
+        ol: ({ node, ...props }) => <ol className="list-decimal pl-5 my-0.5" {...props} />,
+        li: ({ node, ...props }) => <li className="my-0.5" {...props} />,
+        a: ({ node, ...props }) => (
+          <a className="underline underline-offset-2" {...props} />
+        ),
+      }}
+    >
+      {children}
+    </ReactMarkdown>
+  );
+}
 
 const strList = (v: unknown): string[] =>
   Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
@@ -128,7 +162,7 @@ function SectionBasicInfo({ content }: { content: ModuleContent }) {
           ))}
         </div>
       )}
-      {summary && <div className="basic-summary">{summary}</div>}
+      {summary && <div className="basic-summary"><Md>{summary}</Md></div>}
       {dictList(content.custom_fields).filter((f) => str(f.key)).length > 0 && (
         <div className="basic-custom-fields">
           {dictList(content.custom_fields)
@@ -169,7 +203,7 @@ function SectionEducation({ content, itemRange }: ListSectionProps) {
               {dates && <span className="edu-date">{dates}</span>}
             </div>
             {info.length > 0 && <div className="edu-info">{info.join(" | ")}</div>}
-            {str(entry.description) && <div className="edu-desc">{str(entry.description)}</div>}
+            {str(entry.description) && <div className="edu-desc"><Md>{str(entry.description)}</Md></div>}
           </div>
         );
       })}
@@ -191,11 +225,11 @@ function SectionWorkExperience({ content, itemRange }: ListSectionProps) {
               <span className="work-date">{formatDateRange(entry.start_date, entry.end_date)}</span>
             )}
           </div>
-          {str(entry.description) && <div className="work-desc">{str(entry.description)}</div>}
+          {str(entry.description) && <div className="work-desc"><Md>{str(entry.description)}</Md></div>}
           {strList(entry.achievements).length > 0 && (
             <ul className="work-achievements">
               {strList(entry.achievements).map((a, j) => (
-                <li key={j}>{a}</li>
+                <li key={j}><Md>{a}</Md></li>
               ))}
             </ul>
           )}
@@ -224,7 +258,7 @@ function SectionProjectExperience({ content, itemRange }: ListSectionProps) {
                 <span className="proj-date">{formatDateRange(entry.start_date, entry.end_date)}</span>
               )}
             </div>
-            {desc && <div className="proj-desc">{desc}</div>}
+            {desc && <div className="proj-desc"><Md>{desc}</Md></div>}
             {tech.length > 0 && !descHasTech && (
               <div className="proj-tech">技术栈: {tech.join(", ")}</div>
             )}
@@ -288,7 +322,7 @@ function SectionHonors({ content, itemRange }: ListSectionProps) {
         <div key={i} className="honor-item" data-resume-item-index={i}>
           <span className="honor-title">{str(entry.title)}</span>
           {str(entry.date) && <span className="honor-date">{str(entry.date)}</span>}
-          {str(entry.description) && <div className="honor-desc">{str(entry.description)}</div>}
+          {str(entry.description) && <div className="honor-desc"><Md>{str(entry.description)}</Md></div>}
         </div>
       ))}
     </>
@@ -337,7 +371,7 @@ function SectionClubActivities({ content, itemRange }: ListSectionProps) {
           {formatDateRange(entry.start_date, entry.end_date) && (
             <span className="club-date">{formatDateRange(entry.start_date, entry.end_date)}</span>
           )}
-          {str(entry.description) && <div className="club-desc">{str(entry.description)}</div>}
+          {str(entry.description) && <div className="club-desc"><Md>{str(entry.description)}</Md></div>}
         </div>
       ))}
     </>
@@ -434,7 +468,7 @@ function SectionOther({ content }: { content: ModuleContent }) {
   return (
     <>
       {str(content.title) && <div className="other-title">{str(content.title)}</div>}
-      <div className="other-content">{text}</div>
+      <div className="other-content"><Md>{text}</Md></div>
     </>
   );
 }
@@ -448,7 +482,7 @@ function SectionCustom({ content }: { content: ModuleContent }) {
         {entries.map((entry, i) => (
           <div key={i}>
             {str(entry.title) && <div className="custom-title">{str(entry.title)}</div>}
-            <div className="custom-content">{str(entry.content)}</div>
+            <div className="custom-content"><Md>{str(entry.content)}</Md></div>
           </div>
         ))}
       </>
@@ -460,7 +494,7 @@ function SectionCustom({ content }: { content: ModuleContent }) {
   return (
     <>
       {str(content.title) && <div className="custom-title">{str(content.title)}</div>}
-      <div className="custom-content">{text}</div>
+      <div className="custom-content"><Md>{text}</Md></div>
     </>
   );
 }

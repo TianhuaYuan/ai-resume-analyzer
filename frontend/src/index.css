@@ -455,3 +455,113 @@ button, a, input, select, textarea {
   opacity: 0.3;
   cursor: not-allowed;
 }
+
+/* ── Tiptap WYSIWYG 编辑器（RichTextEditor）───────────────────
+   .ProseMirror 为 contenteditable 根节点。
+   min-height 继承自外层容器（容器通过 style 传入 minHeight），
+   使整块区域可点击聚焦。样式与 Apple 主题 CSS 变量协调。 */
+.ProseMirror {
+  min-height: inherit;
+  padding: 0.5rem 0.75rem;
+  outline: none;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: var(--color-text);
+  caret-color: var(--color-brand);
+}
+.ProseMirror:focus,
+.ProseMirror:focus-visible {
+  outline: none;
+}
+
+/* 占位提示（Placeholder 扩展注入 data-placeholder） */
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  color: var(--color-text-muted);
+  font-style: italic;
+  pointer-events: none;
+}
+
+/* 标题 */
+.ProseMirror h1,
+.ProseMirror h2,
+.ProseMirror h3,
+.ProseMirror h4 {
+  font-weight: 600;
+  line-height: 1.3;
+}
+.ProseMirror h1 { font-size: 1.375rem; margin: 0.5em 0 0.35em; }
+.ProseMirror h2 { font-size: 1.2rem; margin: 0.45em 0 0.3em; }
+.ProseMirror h3 { font-size: 1.05rem; margin: 0.4em 0 0.25em; }
+.ProseMirror h4 { font-size: 0.95rem; margin: 0.35em 0 0.2em; }
+
+/* 段落与换行 */
+.ProseMirror p { margin: 0.25em 0; }
+.ProseMirror p:first-child { margin-top: 0; }
+
+/* 列表标记（Tailwind v4 preflight 会重置 list-style，需显式声明） */
+.ProseMirror ul,
+.ProseMirror ol {
+  padding-left: 1.25rem;
+  margin: 0.25em 0;
+}
+.ProseMirror ul { list-style-type: disc; }
+.ProseMirror ol { list-style-type: decimal; font-variant-numeric: tabular-nums; }
+.ProseMirror li { margin: 0.15em 0; }
+.ProseMirror li > p { margin: 0; }
+.ProseMirror li > ul,
+.ProseMirror li > ol { margin: 0.15em 0; }
+
+/* 链接 */
+.ProseMirror a {
+  color: var(--color-brand);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* 行内代码 / 代码块 */
+.ProseMirror code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+}
+.ProseMirror pre {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin: 0.5em 0;
+  overflow-x: auto;
+}
+.ProseMirror pre code { background: transparent; padding: 0; font-size: inherit; }
+
+/* 引用 */
+.ProseMirror blockquote {
+  border-left: 3px solid var(--color-border);
+  padding-left: 0.75rem;
+  margin: 0.5em 0;
+  color: var(--color-text-secondary);
+}
+
+/* 水平线 */
+.ProseMirror hr {
+  border: none;
+  border-top: 1px solid var(--color-border);
+  margin: 0.75em 0;
+}
+
+/* 深色主题适配 */
+[data-theme="dark"] .ProseMirror code,
+[data-theme="dark"] .ProseMirror pre {
+  background: rgba(255, 255, 255, 0.1);
+}
+[data-theme="dark"] .ProseMirror a {
+  color: var(--color-primary);
+}

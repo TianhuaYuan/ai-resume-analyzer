@@ -27,6 +27,9 @@ import {
   ClipboardText,
   Funnel,
   GridFour,
+  GlobeSimple,
+  CaretDown,
+  Plus,
 } from "@phosphor-icons/react";
 import {
   getBuilderResume,
@@ -56,6 +59,9 @@ import { BuilderAIChat } from "../components/builder/BuilderAIChat";
 import { TemplateSheet } from "../components/builder/TemplateSheet";
 import { getTemplateConfigs } from "../components/templates/registry";
 import { trackEvent } from "../api/analytics";
+import { copyResume, getResumeFamily } from "../api/resumes";
+import type { ResumeFamilyItem } from "../api/resumes";
+import { useNavigate } from "react-router-dom";
 import { useHistory } from "../hooks/useHistory";
 
 // ── 常量 ──────────────────────────────────────────────────────
@@ -95,6 +101,18 @@ function notifyListRefresh() {
 interface BuilderPageProps {
   /** 简历 ID（从 AppLayout 路由参数传入） */
   resumeId: number;
+}
+
+// ── 多语言版本标签辅助 ────────────────────────────────────────
+const LANG_LABELS: Record<string, string> = {
+  zh: "中文",
+  en: "英文",
+  ja: "日文",
+  ko: "韩文",
+};
+function langLabel(lang: string | null): string {
+  if (!lang) return "原文";
+  return LANG_LABELS[lang] ?? lang.toUpperCase();
 }
 
 // ── 主组件 ────────────────────────────────────────────────────
@@ -151,6 +169,29 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
   const [aiQuestion, setAiQuestion] = useState("");
   const [aiTrigger, setAiTrigger] = useState(0);
 
+  // ── 多语言版本管理（G） ─────────────────────────────────────
+  const navigate = useNavigate();
+  const [family, setFamily] = useState<ResumeFamilyItem[] | null>(null);
+  const [showLangMenu, setShowLangMenu] = useState(false);
+  const [langBusy, setLangBusy] = useState(false);
+
+  // 新建语言版本：copyResume → 跳转新副本
+  const handleCreateLangVersion = useCallback(
+    async (language: string) => {
+      if (langBusy) return;
+      setLangBusy(true);
+      try {
+        const res = (await copyResume(resumeId, language)) as { id?: number };
+        if (res?.id) navigate(`/resumes/${res.id}/edit`);
+        else window.location.reload();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "创建语言版本失败");
+        setLangBusy(false);
+      }
+    },
+    [resumeId, langBusy, navigate],
+  );
+
   // Refs（避免闭包陷阱）
   const lockTokenRef = useRef<string | null>(null);
   const modulesRef = useRef(modules);
@@ -197,6 +238,8 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
       setResume(data);
       resetHistory(data.modules ?? []);
       setFilename(data.filename);
+      // 多语言版本族（best-effort，失败静默为空）
+      getResumeFamily(resumeId).then(setFamily).catch(() => setFamily([]));
       setVersion(data.version);
       setStyle(data.style ?? DEFAULT_STYLE);
       // T17 渲染优化：索引新鲜度并入 builder 响应，无需再单独拉 getResume
@@ -631,6 +674,82 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
               transition-all duration-150 min-w-[120px] max-w-[240px]"
             aria-label="文件名"
           />
+
+          {/* 多语言版本管理（G）：下拉列同 family 版本 + 新建语言版 */}
+          <div className="relative shrink-0">
+            <button
+              onClick={() => {
+                setShowLangMenu((v) => !v);
+                if (family === null) {
+                  getResumeFamily(resumeId).then(setFamily).catch(() => setFamily([]));
+                }
+              }}
+              className="btn-tool"
+              aria-label="语言版本"
+              title="语言版本管理"
+            >
+              <GlobeSimple size={13} weight="regular" aria-hidden="true" />
+              {resume?.language ? langLabel(resume.language) : "语言"}
+              <CaretDown size={10} weight="bold" aria-hidden="true" />
+            </button>
+
+            {showLangMenu && (
+              <div className="absolute left-0 top-full mt-1.5 z-30 min-w-[230px] rounded-xl
+                bg-white shadow-lg border border-[var(--color-border)] overflow-hidden animate-fade-in-up motion-reduce:animate-none">
+                <div className="px-3 py-2 text-[10px] font-medium text-[var(--color-text-muted)] uppercase tracking-wider">
+                  语言版本
+                </div>
+
+                {family === null ? (
+                  <div className="px-3 py-4 text-xs text-[var(--color-text-muted)] text-center">加载中...</div>
+                ) : family.length === 0 ? (
+                  <div className="px-3 py-4 text-xs text-[var(--color-text-muted)] text-center">暂无其他版本</div>
+                ) : (
+                  <div className="max-h-56 overflow-y-auto">
+                    {family.map((v) => (
+                      <button
+                        key={v.id}
+                        onClick={() => {
+                          if (v.id !== resumeId) navigate(`/resumes/${v.id}/edit`);
+                          setShowLangMenu(false);
+                        }}
+                        className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-left
+                          text-xs hover:bg-[#F2F2F7] transition-colors cursor-pointer
+                          ${v.id === resumeId ? "text-brand font-medium" : "text-[var(--color-text-secondary)]"}`}
+                      >
+                        <span className="truncate">{v.filename}</span>
+                        <span className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium
+                          ${v.id === resumeId
+                            ? "bg-brand/10 text-brand"
+                            : "bg-[#F2F2F7] text-[var(--color-text-muted)]"}`}>
+                          {langLabel(v.language)}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <div className="border-t border-[var(--color-border)] p-1.5 space-y-0.5">
+                  <div className="px-3 py-1 text-[10px] font-medium text-[var(--color-text-muted)]">
+                    新建语言版本
+                  </div>
+                  {["zh", "en"].map((lang) => (
+                    <button
+                      key={lang}
+                      onClick={() => handleCreateLangVersion(lang)}
+                      disabled={langBusy}
+                      className="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs
+                        text-[var(--color-text-secondary)] hover:text-brand hover:bg-[#F2F2F7]
+                        disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                    >
+                      <Plus size={12} weight="bold" aria-hidden="true" />
+                      新建{langLabel(lang)}版
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* 保存状态指示器 */}
           {saveStatus === "saving" && (

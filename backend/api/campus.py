@@ -10,19 +10,21 @@ campus.py — 校招 + 内推信息 API。
 
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi import status as http_status
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_current_user
 from core.database import get_db
+from core.exceptions import AppException
 from models.campus_track import CampusTrack
+from models.campus_track_event import CampusTrackEvent
 from models.user import User
+from services import campus_review, campus_status
 
 logger = logging.getLogger(__name__)
 
@@ -200,15 +202,23 @@ def list_records(
 # ── 求职跟踪（需要认证） ──────────────────────────────────
 
 
-class CampusTrackUpsert(BaseModel):
+class CampusTrackUpdate(BaseModel):
     campus_record_id: str
     status: str
+    date_applied: date | None = None
+    source: str | None = None
+    rejection_reason: str | None = None
+    stage_reached: str | None = None
     notes: str | None = None
 
 
 class CampusTrackResponse(BaseModel):
     campus_record_id: str
     status: str
+    date_applied: date | None = None
+    source: str | None = None
+    rejection_reason: str | None = None
+    stage_reached: str | None = None
     notes: str | None = None
 
 
@@ -231,6 +241,10 @@ async def get_tracks(
         tracks[row.campus_record_id] = CampusTrackResponse(
             campus_record_id=row.campus_record_id,
             status=row.status,
+            date_applied=row.date_applied,
+            source=row.source,
+            rejection_reason=row.rejection_reason,
+            stage_reached=row.stage_reached,
             notes=row.notes,
         )
     return CampusTracksMapResponse(tracks=tracks)
@@ -238,19 +252,21 @@ async def get_tracks(
 
 @router.put("/tracks", response_model=CampusTrackResponse)
 async def upsert_track(
-    data: CampusTrackUpsert,
+    data: CampusTrackUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """创建或更新一条求职跟踪记录（upsert）。"""
-    valid_statuses = ["pending", "applied", "pending_written", "written_passed",
-                       "first_round", "second_round", "third_round", "offer",
-                       "rejected", "cancelled"]
-    if data.status not in valid_statuses:
-        raise HTTPException(
-            status_code=http_status.HTTP_400_BAD_REQUEST,
-            detail=f"无效状态: {data.status}",
-        )
+    """创建或更新一条求职跟踪记录（upsert）。
+
+    - 状态合法性 + 状态机转换校验（非法 → 400 AppException）
+    - 状态变更时事务内追加一条 campus_track_events（from → to，occurred_at=今天）
+    - 复盘字段（date_applied/source/rejection_reason/stage_reached）仅更新非空值，
+      保持对旧前端（只发 campus_record_id/status/notes）兼容
+    """
+    try:
+        campus_status.assert_valid_status(data.status)
+    except ValueError as e:
+        raise AppException(status_code=400, detail=str(e), error_code="INVALID_STATUS")
 
     result = await db.execute(
         select(CampusTrack).where(
@@ -259,18 +275,57 @@ async def upsert_track(
         )
     )
     row = result.scalar_one_or_none()
+    old_status = row.status if row else None
+
+    if old_status is not None and old_status != data.status and not campus_status.can_transition(
+        old_status, data.status
+    ):
+        allowed = ", ".join(campus_status.next_statuses(old_status))
+        raise AppException(
+            status_code=400,
+            detail=f"非法状态转换: {old_status} → {data.status}（允许: {allowed}）",
+            error_code="INVALID_STATUS_TRANSITION",
+        )
 
     if row:
-        row.status = data.status
-        row.notes = data.notes
+        if data.status != old_status:
+            row.status = data.status
+        if data.notes is not None:
+            row.notes = data.notes
+        if data.date_applied is not None:
+            row.date_applied = data.date_applied
+        if data.source is not None:
+            row.source = data.source
+        if data.rejection_reason is not None:
+            row.rejection_reason = data.rejection_reason
+        if data.stage_reached is not None:
+            row.stage_reached = data.stage_reached
     else:
         row = CampusTrack(
             user_id=current_user.id,
             campus_record_id=data.campus_record_id,
             status=data.status,
             notes=data.notes,
+            date_applied=data.date_applied,
+            source=data.source,
+            rejection_reason=data.rejection_reason,
+            stage_reached=data.stage_reached,
         )
         db.add(row)
+
+    # 状态变更 → 追加 ADD-only 事件（同状态 no-op / 新建行不产生事件）
+    if old_status is not None and old_status != data.status:
+        db.add(
+            CampusTrackEvent(
+                user_id=current_user.id,
+                campus_record_id=data.campus_record_id,
+                event_type="status_change",
+                from_status=old_status,
+                to_status=data.status,
+                reason=data.rejection_reason if data.status == "rejected" else None,
+                occurred_at=date.today(),
+            )
+        )
 
     await db.commit()
     await db.refresh(row)
@@ -278,5 +333,43 @@ async def upsert_track(
     return CampusTrackResponse(
         campus_record_id=row.campus_record_id,
         status=row.status,
+        date_applied=row.date_applied,
+        source=row.source,
+        rejection_reason=row.rejection_reason,
+        stage_reached=row.stage_reached,
         notes=row.notes,
     )
+
+
+@router.get("/review/summary")
+async def get_review_summary(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """求职复盘总览（只读）：KPI + 漏斗 + 阶段转化 + 拒因聚类 + 幽灵候选。
+
+    基于当前用户全部 track + 事件，统计逻辑在 services/campus_review.py（纯函数层）。
+    """
+    tracks_result = await db.execute(
+        select(CampusTrack).where(CampusTrack.user_id == current_user.id)
+    )
+    tracks = tracks_result.scalars().all()
+
+    events_result = await db.execute(
+        select(CampusTrackEvent).where(CampusTrackEvent.user_id == current_user.id)
+    )
+    events = events_result.scalars().all()
+
+    reached = campus_review.compute_reached(tracks, events)
+    reasons = [
+        t.rejection_reason for t in tracks
+        if t.status == "rejected" and t.rejection_reason
+    ]
+
+    return {
+        "kpis": campus_review.build_kpis(tracks, reached, events),
+        "funnel": campus_review.build_funnel(tracks),
+        "conversion": campus_review.build_stage_conversion(tracks, reached),
+        "rejection_reasons": campus_review.cluster_rejection_reasons(reasons),
+        "ghost_candidates": campus_review.find_ghost_candidates(tracks, events),
+    }

@@ -5,15 +5,17 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.deps import get_current_user
+from api.deps import get_current_user, require_admin
 from core.config import settings
 from core.database import get_db
 from core.limiter import limiter
 from core.security import detect_prompt_injection, redact_pii
+from models.qa_feedback import QAFeedback
 from models.user import User
-from schemas.feedback import QAFeedbackRequest
+from schemas.feedback import QAFeedbackRequest, QAStatsResponse
 from schemas.qa import (
     AnswerResponse,
     ConversationCreateRequest,
@@ -27,7 +29,11 @@ from schemas.qa import (
     TokenUsage,
 )
 from services import qa_service, resume_service
-from services.feedback_service import submit_qa_feedback
+from services.feedback_service import (
+    cancel_qa_feedback,
+    qa_feedback_stats,
+    submit_qa_feedback,
+)
 from services.rag.asset_source import ASSET_TYPE_RESUME
 from services.rag.clients import knowledge_collection_name
 from services.rag.ensure_indexed import ensure_indexed
@@ -58,6 +64,36 @@ def _guard_question(question: str) -> None:
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="问题含疑似提示注入内容，已拒绝处理",
         )
+
+def _to_source_item(s: dict) -> dict:
+    """E1：把来源 dict 规范化为 {text, section, start_char, end_char}。
+
+    - ``text``：保留原字段，前端现有 ``text`` 契约不断。
+    - ``section`` / ``start_char`` / ``end_char``：仅当 chunk 携带时取真实值，
+      缺失置 None。当前检索层（retrieval.py）只透传 section，
+      start_char/end_char 已写入 Chroma metadata 但检索返回时未带出，
+      因此通常为 None；上游一旦补透传即可直接命中。
+    """
+    return {
+        "text": s.get("text", ""),
+        "section": s.get("section"),
+        "start_char": s.get("start_char"),
+        "end_char": s.get("end_char"),
+    }
+
+
+def _enrich_source(s: dict) -> dict:
+    """E1：在保留来源全部原字段（text/score/chunk_id 等）前提下补全溯源元数据。
+
+    用于 agent_done.sources（已有结构化契约 {text, score?, chunk_id?}），
+    只新增缺失的 section/start_char/end_char，不丢任何既有字段。
+    """
+    out = dict(s)
+    out.setdefault("section", None)
+    out.setdefault("start_char", None)
+    out.setdefault("end_char", None)
+    return out
+
 
 async def _run_agentic_rag(user_id: int, resume_id: int, question: str) -> tuple[str, list[dict], list[dict]]:
     """跑 Agentic RAG 图，返回 (answer, sources, tool_errors)。
@@ -114,6 +150,12 @@ async def ask_question(
         ],
         conversation_id=data.conversation_id,
     )
+    # 问答 → L4 长期记忆回流（内部筛选 + try/except，失败不阻断问答）
+    await qa_service.save_qa_to_memory(
+        user_id=current_user.id,
+        question=data.question,
+        answer=answer,
+    )
     token_total = 0
     if answer and answer != "分析失败，请稍后重试":
         token_total = len(answer) // 2  # 简单估算
@@ -121,7 +163,7 @@ async def ask_question(
         id=record.id,
         question=record.question,
         answer=record.answer,
-        sources=[s.get("text", "") for s in record.sources or []],
+        sources=[_to_source_item(s) for s in (record.sources or [])],
         created_at=record.created_at,
         degraded=degraded,
         token_usage=TokenUsage(total=token_total),
@@ -170,7 +212,7 @@ async def ask_question_stream(
         if settings.REDACT_PII_OUTPUT:
             answer = redact_pii(answer)
         degraded = bool(tool_errors)
-        sources_texts = [s.get("text", "") for s in sources]
+        source_items = [_to_source_item(s) for s in sources]
         sources_for_db = [
             {
                 "chunk_id": s.get("chunk_index", i),
@@ -195,7 +237,13 @@ async def ask_question_stream(
                     sources_for_db,
                     conversation_id=data.conversation_id,
                 )
-                yield f"data: {json.dumps({'type': 'done', 'answer': answer, 'sources': sources_texts, 'qa_id': record.id, 'degraded': degraded}, ensure_ascii=False)}\n\n"
+                # 问答 → L4 长期记忆回流（内部筛选 + try/except，失败不阻断问答）
+                await qa_service.save_qa_to_memory(
+                    user_id=current_user.id,
+                    question=data.question,
+                    answer=answer,
+                )
+                yield f"data: {json.dumps({'type': 'done', 'answer': answer, 'sources': source_items, 'qa_id': record.id, 'degraded': degraded}, ensure_ascii=False)}\n\n"
             except Exception as e:
                 logger.error("Agentic stream error: %s", e)
                 yield f"data: {json.dumps({'type': 'error', 'message': '生成失败，请重试'}, ensure_ascii=False)}\n\n"
@@ -219,7 +267,7 @@ async def ask_question_stream(
         completion_tokens = 0
         try:
             full_answer = ""
-            sources_texts: list[str] = []
+            source_items: list[dict] = []
             try:
                 async for event in _ask_question_stream(data.resume_id, data.question, user_id=current_user.id):
                     if event["type"] == "usage":
@@ -247,14 +295,20 @@ async def ask_question_stream(
                             sources_for_db,
                             conversation_id=data.conversation_id,
                         )
-                        sources_texts = [s["text"] for s in sources_data]
+                        # 问答 → L4 长期记忆回流（内部筛选 + try/except，失败不阻断问答）
+                        await qa_service.save_qa_to_memory(
+                            user_id=current_user.id,
+                            question=data.question,
+                            answer=full_answer,
+                        )
+                        source_items = [_to_source_item(s) for s in sources_data]
 
                         # 记录 token 消耗
                         if prompt_tokens > 0 or completion_tokens > 0:
                             await record_usage(current_user.id, prompt_tokens, completion_tokens)
 
                         token_total = prompt_tokens + completion_tokens
-                        yield f"data: {json.dumps({'type': 'done', 'sources': sources_texts, 'qa_id': record.id, 'token_usage': {'total': token_total, 'prompt': prompt_tokens, 'completion': completion_tokens}}, ensure_ascii=False)}\n\n"
+                        yield f"data: {json.dumps({'type': 'done', 'sources': source_items, 'qa_id': record.id, 'token_usage': {'total': token_total, 'prompt': prompt_tokens, 'completion': completion_tokens}}, ensure_ascii=False)}\n\n"
                     else:
                         yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
             except asyncio.CancelledError:
@@ -326,9 +380,14 @@ async def ask_agent(
                 tool_mode=data.tool_mode or "agent",
                 conversation_id=data.conversation_id,
             ):
-                # PII 脱敏（对 agent_done 的 answer）
-                if event.get("type") == "agent_done" and settings.REDACT_PII_OUTPUT:
-                    event["answer"] = redact_pii(event.get("answer", ""))
+                if event.get("type") == "agent_done":
+                    # PII 脱敏（对 agent_done 的 answer）
+                    if settings.REDACT_PII_OUTPUT:
+                        event["answer"] = redact_pii(event.get("answer", ""))
+                    # E1：agent_done.sources 补全 section/start_char/end_char（保留 text/score 等原字段）
+                    src = event.get("sources")
+                    if isinstance(src, list):
+                        event["sources"] = [_enrich_source(s) for s in src]
 
                 # 记录 token 消耗
                 if event.get("type") == "agent_done" and "usage" in event:
@@ -398,9 +457,14 @@ async def ask_builder(
                 tool_mode="builder",
                 conversation_id=data.conversation_id,
             ):
-                # PII 脱敏
-                if event.get("type") == "agent_done" and settings.REDACT_PII_OUTPUT:
-                    event["answer"] = redact_pii(event.get("answer", ""))
+                if event.get("type") == "agent_done":
+                    # PII 脱敏
+                    if settings.REDACT_PII_OUTPUT:
+                        event["answer"] = redact_pii(event.get("answer", ""))
+                    # E1：agent_done.sources 补全 section/start_char/end_char（保留 text/score 等原字段）
+                    src = event.get("sources")
+                    if isinstance(src, list):
+                        event["sources"] = [_enrich_source(s) for s in src]
 
                 # 记录 token 消耗
                 if event.get("type") == "agent_done" and "usage" in event:
@@ -465,14 +529,28 @@ async def get_history(
         keyword=keyword,
         conversation_id=conversation_id,
     )
+    # 批量查当前用户对这批问答的反馈状态（刷新后按钮能回显已点过的赞/踩）
+    feedback_map: dict[int, str] = {}
+    if items:
+        fb_result = await db.execute(
+            select(QAFeedback.qa_id, QAFeedback.rating).where(
+                QAFeedback.user_id == current_user.id,
+                QAFeedback.qa_id.in_([it.id for it in items]),
+            )
+        )
+        feedback_map = {
+            qa_id: ("positive" if rating == 1 else "negative")
+            for qa_id, rating in fb_result.all()
+        }
     return QAHistoryResponse(
         items=[
             AnswerResponse(
                 id=it.id,
                 question=it.question,
                 answer=it.answer,
-                sources=[s.get("text", "") for s in (it.sources or [])],
+                sources=[_to_source_item(s) for s in (it.sources or [])],
                 created_at=it.created_at,
+                feedback=feedback_map.get(it.id),
             )
             for it in items
         ],
@@ -659,3 +737,30 @@ async def create_qa_feedback(
             detail="无权访问该问答记录",
         )
     return None
+
+
+@router.delete("/{qa_id}/feedback", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_qa_feedback(
+    qa_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """取消对单条问答的反馈（点同按钮再点一次即取消）。
+
+    幂等：无反馈记录时同样返回 204，不报错。
+    """
+    await cancel_qa_feedback(db, current_user.id, qa_id)
+    return None
+
+
+@router.get("/stats", response_model=QAStatsResponse)
+async def get_qa_feedback_stats(
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    """管理员问答质量统计。
+
+    返回正负比例、按简历聚合的负向率排行、最近 negative 样本
+    （含 question / answer 截断 / process_trace），用于定位回答质量短板。
+    """
+    return await qa_feedback_stats(db)

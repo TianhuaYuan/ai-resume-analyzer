@@ -173,9 +173,9 @@ class TestToolRegistry:
         """注册表包含 qa/builder/unified 三个分类（v2 合并）。"""
         assert set(TOOL_REGISTRY.keys()) == {"qa", "builder", "unified"}
 
-    def test_qa_has_13_tools(self):
-        """qa 分类有 13 个工具。"""
-        assert len(TOOL_REGISTRY["qa"]) == 13
+    def test_qa_has_14_tools(self):
+        """qa 分类有 14 个工具。"""
+        assert len(TOOL_REGISTRY["qa"]) == 14
 
     def test_builder_has_5_tools(self):
         """builder 分类有 5 个工具。"""
@@ -205,6 +205,7 @@ class TestToolRegistry:
             "answer_from_index", "save_memory", "recall_memory",
             "jd_match", "diagnose_resume", "compare_resumes",
             "rewrite_star", "translate", "interview_coach", "recommend_jobs",
+            "cover_letter",
         }
         actual = {t.name for t in TOOL_REGISTRY["qa"]}
         assert actual == expected, f"qa 工具名不匹配: {actual ^ expected}"
@@ -227,10 +228,10 @@ class TestToolRegistry:
 class TestToolQueryFunctions:
     """工具查询函数。"""
 
-    def test_get_tools_for_agent_returns_unified_18(self):
-        """/ask/agent 取 unified(18) 个工具（qa + builder 合并）。"""
+    def test_get_tools_for_agent_returns_unified_19(self):
+        """/ask/agent 取 unified(19) 个工具（qa + builder 合并）。"""
         tools = get_tools_for_agent()
-        assert len(tools) == 18
+        assert len(tools) == 19
 
     def test_get_tools_for_agent_includes_qa_and_builder(self):
         """agent 工具集 = unified，同时包含 qa 和 builder 工具。"""
@@ -250,10 +251,10 @@ class TestToolQueryFunctions:
         tool = get_tool_by_name("nonexistent_tool")
         assert tool is None
 
-    def test_get_agent_schemas_returns_18_schemas(self):
-        """agent schema 列表有 18 个条目（unified）。"""
+    def test_get_agent_schemas_returns_19_schemas(self):
+        """agent schema 列表有 19 个条目（unified）。"""
         schemas = get_agent_schemas()
-        assert len(schemas) == 18
+        assert len(schemas) == 19
         for s in schemas:
             assert s["type"] == "function"
             assert "name" in s["function"]

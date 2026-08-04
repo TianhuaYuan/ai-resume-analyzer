@@ -14,7 +14,7 @@ from core.config import settings
 from core.database import AsyncSessionLocal
 from models.resume import Resume
 from services.rag.pipeline import clear_resume_vectors
-from services.resume_analysis_cache import get_analysis_cache
+from services.resume_analysis_cache import get_analysis_cache, invalidate_resume_cache
 from utils.file_parser import parse_resume
 
 logger = logging.getLogger(__name__)
@@ -393,6 +393,12 @@ async def delete_resume(db: AsyncSession, resume_id: int, user_id: int) -> None:
     P2-4 修正：原顺序「先删 DB 再清外部资源」，若 DB commit 后外部清理失败，
     会产生孤儿（DB 没了但 Chroma/文件还在，无法重试）。改为先清外部资源，
     DB 删除放最后——外部清理失败时 DB 仍保留，用户可重试删除。
+
+    外部资源清理清单（杜绝孤儿）：
+    - Chroma knowledge_{user_id} 内该资产全部版本 chunks + BM25 内存索引
+    - Embedding 内存缓存（按 resume_id 追踪）
+    - Redis 分析缓存 resume_analysis:{resume_id}:{type}（4 种类型，TTL 7 天）
+    - 上传的原始文件
     """
     resume = await get_resume(db, resume_id, user_id)
     file_path = resume.file_path
@@ -402,6 +408,8 @@ async def delete_resume(db: AsyncSession, resume_id: int, user_id: int) -> None:
     # 2. 清 Embedding 内存缓存
     cleared = await embedding_cache.clear_resume(resume_id)
     logger.info("Cleared %d embedding cache entries for resume %d", cleared, resume_id)
+    # 2.5 清 Redis 分析缓存（4 个 key 一次 DEL；invalidate_resume_cache 内部已吞异常）
+    await invalidate_resume_cache(resume_id)
     # 3. 删上传的原始文件（文件丢失仅 warning，不影响 DB 删除）
     try:
         os.remove(file_path)

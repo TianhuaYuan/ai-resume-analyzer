@@ -92,6 +92,26 @@ export async function deleteResume(id: number) {
   return api.delete(`/api/v1/resumes/${id}`);
 }
 
+/** 多语言版本族中的一个版本（GET /resumes/{id}/family 返回项） */
+export interface ResumeFamilyItem {
+  id: number;
+  filename: string;
+  language: string | null;
+  created_at: string;
+  source: string;
+}
+
+/** 复制为新语言版本（language 如 zh/en，空则未标注）。返回新副本 BuilderResumeResponse */
+export async function copyResume(id: number, language?: string): Promise<unknown> {
+  const q = language ? `?language=${encodeURIComponent(language)}` : "";
+  return api.post(`/api/v1/resumes/${id}/copy${q}`);
+}
+
+/** 获取同 family 的所有语言版本（含自身），用于多语言版本管理下拉 */
+export async function getResumeFamily(id: number): Promise<ResumeFamilyItem[]> {
+  return api.get(`/api/v1/resumes/${id}/family`) as Promise<ResumeFamilyItem[]>;
+}
+
 // Task 1.3: 重试失败的简历处理。后端会将 status 改回 processing 并重新触发解析。
 // 仅 status=failed 的简历可重试，否则后端返回 409。
 export async function retryResume(id: number) {

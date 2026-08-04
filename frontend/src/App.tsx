@@ -17,6 +17,10 @@ const TermsPage = lazy(() => import("./pages/TermsPage"));
 const HomePage = lazy(() => import("./pages/HomePage"));
 const QAPage = lazy(() => import("./pages/QAPage"));
 const ResumeManagementPage = lazy(() => import("./pages/ResumeManagementPage"));
+const AssetsPage = lazy(() => import("./pages/AssetsPage"));
+const AICapabilitiesPage = lazy(() => import("./pages/AICapabilitiesPage"));
+const InterviewPage = lazy(() => import("./pages/InterviewPage"));
+const CampusReviewPage = lazy(() => import("./pages/CampusReviewPage"));
 const BuilderPage = lazy(() =>
   import("./pages/BuilderPage").then((m) => ({ default: m.BuilderPage })),
 );
@@ -124,6 +128,50 @@ function AppRoutes() {
           <ProtectedRoute>
             <AppLayout>
               <ResumeManagementPage />
+            </AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      {/* 知识资产页 */}
+      <Route
+        path="/assets"
+        element={
+          <ProtectedRoute>
+            <AppLayout>
+              <AssetsPage />
+            </AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      {/* AI 能力目录页 */}
+      <Route
+        path="/capabilities"
+        element={
+          <ProtectedRoute>
+            <AppLayout>
+              <AICapabilitiesPage />
+            </AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      {/* 面试复盘页 */}
+      <Route
+        path="/interviews"
+        element={
+          <ProtectedRoute>
+            <AppLayout>
+              <InterviewPage />
+            </AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      {/* 求职复盘看板页 */}
+      <Route
+        path="/campus/review"
+        element={
+          <ProtectedRoute>
+            <AppLayout>
+              <CampusReviewPage />
             </AppLayout>
           </ProtectedRoute>
         }

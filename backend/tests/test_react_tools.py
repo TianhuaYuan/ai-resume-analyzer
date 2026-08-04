@@ -35,22 +35,22 @@ class TestToolRegistry:
         """TOOL_REGISTRY 包含 qa/builder/unified 三个类别。"""
         assert set(TOOL_REGISTRY.keys()) == {"qa", "builder", "unified"}
 
-    def test_qa_has_thirteen_tools(self):
-        """qa 类别有 13 个工具（含 recommend_jobs）。"""
-        assert len(TOOL_REGISTRY["qa"]) == 13
+    def test_qa_has_fourteen_tools(self):
+        """qa 类别有 14 个工具（含 recommend_jobs、cover_letter）。"""
+        assert len(TOOL_REGISTRY["qa"]) == 14
 
     def test_builder_has_five_tools(self):
         """builder 类别有 5 个工具。"""
         assert len(TOOL_REGISTRY["builder"]) == 5
 
-    def test_unified_has_eighteen_tools(self):
-        """unified 类别有 18 个工具（qa + builder 合并）。"""
-        assert len(TOOL_REGISTRY["unified"]) == 18
+    def test_unified_has_nineteen_tools(self):
+        """unified 类别有 19 个工具（qa + builder 合并）。"""
+        assert len(TOOL_REGISTRY["unified"]) == 19
 
     def test_agent_tools_are_unified(self):
-        """get_tools_for_agent = unified(18)。"""
+        """get_tools_for_agent = unified(19)。"""
         tools = get_tools_for_agent()
-        assert len(tools) == 18
+        assert len(tools) == 19
 
     def test_builder_tools_deprecated(self):
         """get_tools_for_builder 保留向后兼容（deprecated）。"""
@@ -59,7 +59,7 @@ class TestToolRegistry:
         assert len(tools) == 5
 
     def test_all_tool_names_unique(self):
-        """unified 中所有 18 个工具名不重复。"""
+        """unified 中所有 19 个工具名不重复。"""
         names = [tc.name for tc in TOOL_REGISTRY["unified"]]
         assert len(names) == len(set(names)), f"重复工具名: {names}"
 
@@ -73,9 +73,9 @@ class TestSchemaGeneration:
     """OpenAI function calling schema 生成。"""
 
     def test_agent_schemas_count(self):
-        """get_agent_schemas() 返回 18 个 schema（unified）。"""
+        """get_agent_schemas() 返回 19 个 schema（unified）。"""
         schemas = get_agent_schemas()
-        assert len(schemas) == 18
+        assert len(schemas) == 19
 
     def test_builder_schemas_deprecated(self):
         """get_builder_schemas() 保留向后兼容（deprecated）。"""

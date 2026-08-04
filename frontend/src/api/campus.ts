@@ -73,6 +73,19 @@ export interface CampusTrack {
   campus_record_id: string;
   status: string;
   notes: string | null;
+  /** E3 复盘扩展字段（后端 B/E3 已加） */
+  date_applied?: string | null;
+  source?: string | null;
+  rejection_reason?: string | null;
+  stage_reached?: string | null;
+}
+
+export interface CampusTrackUpdate {
+  /** 状态变更时写拒信原因（到 rejected）与被拒前阶段 */
+  rejection_reason?: string;
+  stage_reached?: string;
+  date_applied?: string;
+  source?: string;
 }
 
 export async function getCampusTracks(): Promise<Record<string, CampusTrack>> {
@@ -83,9 +96,32 @@ export async function getCampusTracks(): Promise<Record<string, CampusTrack>> {
 export async function upsertCampusTrack(
   campus_record_id: string,
   status: string,
-  notes: string | null = null
+  notes: string | null = null,
+  extra: CampusTrackUpdate = {}
 ): Promise<CampusTrack> {
-  return api.put("/api/v1/campus/tracks", { campus_record_id, status, notes }) as Promise<CampusTrack>;
+  return api.put("/api/v1/campus/tracks", { campus_record_id, status, notes, ...extra }) as Promise<CampusTrack>;
+}
+
+// ── E3 求职复盘 ──
+
+export interface CampusReviewSummary {
+  kpis: {
+    applied: number;
+    active: number;
+    response_rate: number;
+    interview_rate: number;
+    offer_rate: number;
+    ghost_count: number;
+    avg_response_days: number | null;
+  };
+  funnel: { status: string; count: number }[];
+  conversion: { from: string; to: string; count: number; rate: number }[];
+  rejection_reasons: { bucket: string; count: number }[];
+  ghost_candidates: { campus_record_id: string; days_since: number; last_contact: string }[];
+}
+
+export async function getReviewSummary(): Promise<CampusReviewSummary> {
+  return api.get("/api/v1/campus/review/summary") as Promise<CampusReviewSummary>;
 }
 
 // ── 求职进度选项（带颜色） ──

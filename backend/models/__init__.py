@@ -18,6 +18,8 @@ from models.resume_entity import (
     ResumeEpisode,
 )
 from models.resume_status_event import ResumeStatusEvent
+from models.campus_track_event import CampusTrackEvent
+from models.interview_session import InterviewSession
 
 __all__ = [
     "Base",
@@ -38,4 +40,6 @@ __all__ = [
     "ResumeEntityFact",
     "ResumeEpisode",
     "ResumeStatusEvent",
+    "CampusTrackEvent",
+    "InterviewSession",
 ]

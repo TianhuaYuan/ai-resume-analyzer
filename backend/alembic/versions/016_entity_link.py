@@ -45,6 +45,22 @@ def upgrade() -> None:
     op.create_index("ix_resume_entities_name_normalized", "resume_entities", ["name_normalized"])
 
     op.create_table(
+        "resume_episodes",
+        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
+        sa.Column("user_id", sa.Integer(), nullable=False),
+        sa.Column("resume_id", sa.Integer(), nullable=False),
+        sa.Column("source_type", sa.String(32), nullable=False),
+        sa.Column("content", sa.Text(), nullable=False),
+        sa.Column("valid_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.PrimaryKeyConstraint("id"),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["resume_id"], ["resumes.id"], ondelete="CASCADE"),
+    )
+    op.create_index("ix_resume_episodes_user_id", "resume_episodes", ["user_id"])
+    op.create_index("ix_resume_episodes_resume_id", "resume_episodes", ["resume_id"])
+
+    op.create_table(
         "resume_entity_facts",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.Column("user_id", sa.Integer(), nullable=False),
@@ -70,22 +86,6 @@ def upgrade() -> None:
     op.create_index("ix_resume_entity_facts_resume_id", "resume_entity_facts", ["resume_id"])
     op.create_index("ix_resume_entity_facts_entity_id", "resume_entity_facts", ["entity_id"])
     op.create_index("ix_resume_entity_facts_episode_id", "resume_entity_facts", ["episode_id"])
-
-    op.create_table(
-        "resume_episodes",
-        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("user_id", sa.Integer(), nullable=False),
-        sa.Column("resume_id", sa.Integer(), nullable=False),
-        sa.Column("source_type", sa.String(32), nullable=False),
-        sa.Column("content", sa.Text(), nullable=False),
-        sa.Column("valid_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.PrimaryKeyConstraint("id"),
-        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["resume_id"], ["resumes.id"], ondelete="CASCADE"),
-    )
-    op.create_index("ix_resume_episodes_user_id", "resume_episodes", ["user_id"])
-    op.create_index("ix_resume_episodes_resume_id", "resume_episodes", ["resume_id"])
 
 
 def downgrade() -> None:

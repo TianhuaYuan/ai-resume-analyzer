@@ -54,6 +54,11 @@ export async function logout() {
   localStorage.removeItem("refresh_token");
 }
 
+/** C3：注销当前用户账户（级联清理全部数据，不可撤销） */
+export async function deleteAccount(): Promise<void> {
+  await api.delete("/api/v1/auth/account");
+}
+
 /**
  * 发起密码重置：新流程。
  *

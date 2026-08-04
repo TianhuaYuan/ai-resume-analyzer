@@ -177,6 +177,163 @@ class TestQAFeedback:
         rows = result.scalars().all()
         assert len(rows) == 1
         assert rows[0].rating == -1
+        assert rows[0].user_id == registered_user["id"]  # 新结构：记录归属
+
+    @pytest.mark.asyncio
+    async def test_switch_feedback_rating(
+        self, client: AsyncClient, registered_user: dict, auth_headers: dict, db_session: AsyncSession
+    ):
+        """同 (user_id, qa_id) 重复提交为 upsert：切换 rating 不产生重复行，且记录 user_id。"""
+        qa = await _create_qa_record(db_session, registered_user["id"])
+
+        await client.post(
+            f"/api/v1/qa/{qa.id}/feedback",
+            json={"rating": "positive"},
+            headers=auth_headers,
+        )
+        await client.post(
+            f"/api/v1/qa/{qa.id}/feedback",
+            json={"rating": "negative"},
+            headers=auth_headers,
+        )
+
+        result = await db_session.execute(select(QAFeedback).where(QAFeedback.qa_id == qa.id))
+        rows = result.scalars().all()
+        assert len(rows) == 1
+        assert rows[0].rating == -1
+        assert rows[0].user_id == registered_user["id"]
+
+    @pytest.mark.asyncio
+    async def test_cancel_feedback(
+        self, client: AsyncClient, registered_user: dict, auth_headers: dict, db_session: AsyncSession
+    ):
+        """DELETE /qa/{id}/feedback 取消反馈：记录删除，幂等。"""
+        qa = await _create_qa_record(db_session, registered_user["id"])
+        await client.post(
+            f"/api/v1/qa/{qa.id}/feedback",
+            json={"rating": "positive"},
+            headers=auth_headers,
+        )
+
+        resp = await client.delete(f"/api/v1/qa/{qa.id}/feedback", headers=auth_headers)
+        assert resp.status_code == 204
+
+        result = await db_session.execute(select(QAFeedback).where(QAFeedback.qa_id == qa.id))
+        assert result.scalar_one_or_none() is None
+
+        # 幂等：无反馈时再删仍 204
+        resp2 = await client.delete(f"/api/v1/qa/{qa.id}/feedback", headers=auth_headers)
+        assert resp2.status_code == 204
+
+    @pytest.mark.asyncio
+    async def test_history_includes_feedback(
+        self, client: AsyncClient, registered_user: dict, auth_headers: dict, db_session: AsyncSession
+    ):
+        """history 接口返回当前用户的反馈状态，前端刷新后可回显。"""
+        qa = await _create_qa_record(db_session, registered_user["id"])
+        await client.post(
+            f"/api/v1/qa/{qa.id}/feedback",
+            json={"rating": "negative"},
+            headers=auth_headers,
+        )
+
+        resp = await client.get(
+            f"/api/v1/qa/history/{qa.resume_id}", headers=auth_headers
+        )
+        assert resp.status_code == 200
+        items = resp.json()["items"]
+        match = [it for it in items if it["id"] == qa.id]
+        assert len(match) == 1
+        assert match[0]["feedback"] == "negative"
+
+    @pytest.mark.asyncio
+    async def test_history_feedback_null_when_none(
+        self, client: AsyncClient, registered_user: dict, auth_headers: dict, db_session: AsyncSession
+    ):
+        """未反馈的问答 history 返回 feedback=null。"""
+        qa = await _create_qa_record(db_session, registered_user["id"])
+
+        resp = await client.get(
+            f"/api/v1/qa/history/{qa.resume_id}", headers=auth_headers
+        )
+        assert resp.status_code == 200
+        items = resp.json()["items"]
+        match = [it for it in items if it["id"] == qa.id]
+        assert len(match) == 1
+        assert match[0]["feedback"] is None
+
+
+# ═══════════════════════════════════════════════════════════
+# QA 反馈统计（管理员问答质量看板）
+# ═══════════════════════════════════════════════════════════
+
+
+class TestQAStats:
+    """GET /api/v1/qa/stats"""
+
+    @pytest.mark.asyncio
+    async def test_stats_as_admin(
+        self, client: AsyncClient, registered_user: dict, auth_headers: dict, db_session: AsyncSession
+    ):
+        """管理员可查看统计：正负比例 + 按简历排行 + negative 样本。"""
+        from core.config import settings
+        original = settings.ADMIN_EMAILS
+        settings.ADMIN_EMAILS = [registered_user["email"]]
+
+        qa = await _create_qa_record(db_session, registered_user["id"])
+        await client.post(
+            f"/api/v1/qa/{qa.id}/feedback",
+            json={"rating": "negative"},
+            headers=auth_headers,
+        )
+
+        resp = await client.get("/api/v1/qa/stats", headers=auth_headers)
+        settings.ADMIN_EMAILS = original
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total_feedback"] == 1
+        assert data["positive"] == 0
+        assert data["negative"] == 1
+        assert data["negative_rate"] == 1.0
+        assert len(data["by_resume"]) == 1
+        assert data["by_resume"][0]["negative"] == 1
+        assert data["by_resume"][0]["resume_title"] == "test.pdf"
+        assert len(data["recent_negative"]) == 1
+        sample = data["recent_negative"][0]
+        assert sample["qa_id"] == qa.id
+        assert sample["question"] == "测试问题"
+        assert sample["answer_excerpt"]
+        assert "process_trace" in sample
+
+    @pytest.mark.asyncio
+    async def test_stats_empty(
+        self, client: AsyncClient, registered_user: dict, auth_headers: dict
+    ):
+        """无反馈数据时返回全零统计，不报错。"""
+        from core.config import settings
+        original = settings.ADMIN_EMAILS
+        settings.ADMIN_EMAILS = [registered_user["email"]]
+
+        resp = await client.get("/api/v1/qa/stats", headers=auth_headers)
+        settings.ADMIN_EMAILS = original
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total_feedback"] == 0
+        assert data["positive"] == 0
+        assert data["negative"] == 0
+        assert data["negative_rate"] == 0.0
+        assert data["by_resume"] == []
+        assert data["recent_negative"] == []
+
+    @pytest.mark.asyncio
+    async def test_stats_as_non_admin(
+        self, client: AsyncClient, auth_headers: dict
+    ):
+        """非管理员访问 stats 返回 403。"""
+        resp = await client.get("/api/v1/qa/stats", headers=auth_headers)
+        assert resp.status_code == 403
 
 
 # ═══════════════════════════════════════════════════════════

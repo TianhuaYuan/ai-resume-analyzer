@@ -275,6 +275,8 @@ export interface ResumeModule {
   content: ModuleContent;
   sort_order: number;
   created_at: string;
+  /** G 可信度控制：fact/inferred/mixed（AI 改写内容来源标注） */
+  source?: string;
 }
 
 /** 创建/更新模块请求 */
@@ -313,6 +315,9 @@ export interface BuilderResume {
   is_stale?: boolean;
   modules_materialized?: boolean;
   modules: ResumeModule[];
+  /** 多语言版本：语言标注（zh/en/...）+ family 归属 */
+  language?: string | null;
+  family_id?: number | null;
 }
 
 /** 新建 builder 简历请求 */
@@ -478,6 +483,8 @@ export interface AICheckIssue {
   severity: "high" | "medium" | "low";
   category: string;
   description: string;
+  /** 问题所属字段标签（LLM 标注，如「工作描述」） */
+  field?: string;
 }
 
 /** 一键优化 */
@@ -497,10 +504,12 @@ export async function aiCheck(
   resumeId: number,
   text: string,
   moduleType: string = "basic_info",
+  checkField?: string,
 ): Promise<{ issues: AICheckIssue[] }> {
   return api.post(`/api/v1/resumes/${resumeId}/ai/check`, {
     text,
     module_type: moduleType,
+    ...(checkField ? { check_field: checkField } : {}),
   }) as Promise<{ issues: AICheckIssue[] }>;
 }
 

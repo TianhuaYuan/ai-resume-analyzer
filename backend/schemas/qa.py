@@ -55,14 +55,29 @@ class QuestionRequest(BaseModel):
         return v
 
 
+class SourceItem(BaseModel):
+    """E1 结构化引用来源：text 保留向后兼容；section/start_char/end_char 仅当 chunk 携带时非空。
+
+    start_char/end_char 当前检索层未透传（存于 Chroma metadata），因此通常为 None；
+    上游一旦带出即可直接命中，前端可据此定位简历原文段落。
+    """
+
+    text: str
+    section: str | None = None
+    start_char: int | None = None
+    end_char: int | None = None
+
+
 class AnswerResponse(BaseModel):
     id: int
     question: str
     answer: str
-    sources: list[str]
+    sources: list[SourceItem]
     created_at: datetime
     token_usage: TokenUsage = TokenUsage()
     degraded: bool = False
+    """当前用户对该条问答的反馈状态（"positive"/"negative"/null）。history 查询时填充。"""
+    feedback: str | None = None
 
     model_config = {"from_attributes": True}
 

@@ -12,6 +12,7 @@ v2 统一 Agent 编辑器：合并 qa(13) + builder(5) → unified(18)。
 """
 
 import logging
+from typing import Literal
 
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
@@ -436,6 +437,36 @@ class DiagnoseResumeTool(Tool):
         if not sections:
             return "⚠️ 诊断失败，请稍后重试。"
 
+        # E1 可溯源：填充诊断所依据的简历原文段落（供前端诊断卡片来源区展示）
+        # 用覆盖主要分节的关键词检索，best-effort（失败不影响诊断结果）
+        try:
+            await ensure_indexed(
+                self.db,
+                user_id=self.user_id,
+                asset_id=resume_id,
+                asset_type=ASSET_TYPE_RESUME,
+                collection=knowledge_collection_name(self.user_id),
+            )
+            chunks = await hybrid_search(
+                self.user_id,
+                resume_id,
+                "项目经历 技能 量化成果 工作经历 教育背景 专业能力",
+                top_k=20,
+            )
+            if chunks:
+                reranked = await rerank("简历完整性与质量诊断依据", chunks, top_k=5)
+                self.sources = [
+                    {
+                        "section": c.get("section", "未知"),
+                        "text": c.get("text", ""),
+                        "score": c.get("rerank_score", c.get("score", 0)),
+                    }
+                    for c in reranked
+                ]
+        except Exception:
+            # sources 是增强信息，填充失败不阻断诊断
+            pass
+
         return "\n\n".join(sections)
 
 
@@ -500,7 +531,9 @@ class RewriteStarTool(Tool):
             "（Situation 情境、Task 任务、Action 行动、Result 结果）"
             f"改写简历中的经历描述，使其更专业有力{position_hint}。\n"
             "必须通过调用 submit_rewritten_resume 工具提交：modules 参数为【完整】模块数组，"
-            "覆盖输入中的所有模块（不增不减 module_type），每个元素含 module_type、content、sort_order。\n"
+            "覆盖输入中的所有模块（不增不减 module_type），每个元素含 module_type、content、sort_order、source。\n"
+            "对每个模块的 source 标注内容来源：直接来自简历事实标 fact，AI 推断/补充标 inferred，"
+            "混合标 mixed。不得把推断内容标为 fact。\n"
             "对 work_experience/project_experience/club_activities 等经历类模块 entries 的 description 用 STAR 结构重写；"
             "其余模块（basic_info/skills/language 等）保持内容不变。保持事实不变，不要编造。"
         )
@@ -592,6 +625,58 @@ class InterviewCoachTool(Tool):
         )
         user = f"目标岗位：{target_position}\n\n简历内容：\n{resume.parsed_text}"
 
+        return await llm_generate(system=system, user=user, user_id=self.user_id)
+
+
+class CoverLetterArgs(BaseModel):
+    resume_id: int = Field(..., description="简历 ID")
+    jd_text: str | None = Field(None, description="目标岗位 JD 原文（可选，用于关键词贴合）")
+    mode: str = Field("letter", description="生成类型：letter（求职信）/ greeting（打招呼语）")
+
+
+class CoverLetterTool(Tool):
+    """G 功能空白：针对岗位一键生成求职信/打招呼语。
+
+    借鉴 InterviewCoachTool 的文本生成模式（llm_generate 出自由文本），
+    never-exceed 约束对齐 RewriteStarTool：「只基于简历实际经历，不编造」。
+    """
+
+    name = "cover_letter"
+    description = (
+        "针对目标岗位一键生成求职信（letter）或打招呼语（greeting），"
+        "只基于简历真实经历，不编造任何学历/公司/项目/技能"
+    )
+    args_model = CoverLetterArgs
+    category = "qa"
+
+    async def _execute(self, **kwargs) -> str:
+        resume_id = kwargs["resume_id"]
+        jd_text = kwargs.get("jd_text") or ""
+        mode = kwargs.get("mode", "letter")
+
+        resume, input_context = await _read_modules_context(self.db, self.user_id, resume_id)
+        if resume is None:
+            return "⚠️ 简历不存在或无权访问。"
+        if not input_context:
+            return "⚠️ 简历为空，无法生成。请先在「编辑」页填写内容。"
+
+        jd_part = f"目标岗位 JD：\n{jd_text or '（未提供，根据简历推断意向岗位）'}\n\n"
+        if mode == "greeting":
+            system = (
+                "你是求职投递助手。基于候选人的简历，为 HR 写一段 50-80 字的打招呼语"
+                "（用于招聘平台私信/投递附言）。突出与目标岗位最匹配的 1-2 个亮点，"
+                "语气礼貌、简洁、真诚。\n"
+                "只使用简历中已有的真实经历与技能，不得编造学历、公司、项目、技能、获奖。"
+            )
+        else:
+            system = (
+                "你是求职信撰写专家。根据候选人的简历与目标岗位 JD，写一封 200-300 字的中文求职信。\n"
+                "要求：\n"
+                "1. 只使用简历中已有的真实经历、技能与成果，不得编造学历、公司、项目、技能、奖项；\n"
+                "2. 针对 JD 中的关键词突出匹配点（提炼简历中相关的真实经历作支撑）；\n"
+                "3. 结构：简短自我介绍 → 匹配点论证 → 表达意愿，语气专业真诚。"
+            )
+        user = f"{jd_part}简历内容：\n{input_context}"
         return await llm_generate(system=system, user=user, user_id=self.user_id)
 
 
@@ -813,6 +898,10 @@ class _RewrittenModule(BaseModel):
         "给出完整内容，不要留空占位。",
     )
     sort_order: int = Field(..., ge=0, description="模块在简历中的排序位置（从 0 开始）")
+    source: Literal["fact", "inferred", "mixed"] = Field(
+        "fact",
+        description="G 可信度控制：内容来源。fact=简历已有事实；inferred=AI 推断/补充（需用户核对）；mixed=混合",
+    )
 
 
 class _RewriteResumeOutput(BaseModel):
@@ -907,6 +996,9 @@ async def _submit_modules_via_llm(
         mt_str = raw.get("module_type", "")
         content = raw.get("content", {})
         sort_order = raw.get("sort_order", idx)
+        source = raw.get("source", "fact")
+        if source not in ("fact", "inferred", "mixed"):
+            source = "fact"
         try:
             mt = ModuleType(mt_str)
             validate_module_content(mt, content)
@@ -917,6 +1009,7 @@ async def _submit_modules_via_llm(
                     "sort_order": sort_order
                     if isinstance(sort_order, int) and sort_order >= 0
                     else idx,
+                    "source": source,
                 }
             )
         except (ValueError, ValidationError) as e:
@@ -930,6 +1023,13 @@ async def _submit_modules_via_llm(
     )
     if errors:
         result += f"\n⚠️ {len(errors)} 个模块校验失败被跳过。"
+    # G 可信度控制：AI 推断/补充内容（source≠fact）提醒用户核对具体模块
+    inferred_modules = [m["module_type"] for m in validated_modules if m.get("source", "fact") != "fact"]
+    if inferred_modules:
+        result += (
+            f"\n⚠️ {len(inferred_modules)} 个模块含 AI 推断/补充内容"
+            f"（{', '.join(inferred_modules)}），请核对推断内容是否属实后再发布。"
+        )
     return result
 
 
@@ -1048,6 +1148,8 @@ async def _replace_all_modules_short_txn(
                 module_type=mod_data["module_type"],
                 content=mod_data["content"],
                 sort_order=mod_data.get("sort_order", idx),
+                # G 可信度控制：AI 改写内容来源标注（fact/inferred/mixed）
+                source=mod_data.get("source", "fact"),
             )
             session.add(module)
 
@@ -1417,13 +1519,15 @@ class RewriteResumeTool(Tool):
                 "必须包含至少：basic_info、education、work_experience、skills 四个核心模块；"
                 "可选模块：project_experience、language、honors、certificates 等。\n"
                 "必须通过调用 submit_rewritten_resume 工具提交，modules 参数为模块数组，"
-                "每个元素含 module_type、content、sort_order。"
+                "每个元素含 module_type、content、sort_order、source；source 标注内容来源："
+                "fact=简历事实/inferred=AI 推断补充/mixed=混合，不得把推断标为 fact。"
             )
         else:
             system_prompt = (
                 "你是简历优化专家。请根据目标岗位优化现有简历内容。\n"
                 f"{position_hint}\n"
-                "保持原有模块结构，通过 submit_rewritten_resume 工具提交优化后的完整 modules 数组。"
+                "保持原有模块结构，通过 submit_rewritten_resume 工具提交优化后的完整 modules 数组，"
+                "每模块带 source 标注（fact=简历事实/inferred=AI 推断/mixed=混合），不得把推断标为 fact。"
             )
         if few_shot:
             system_prompt += (
@@ -1541,6 +1645,7 @@ TOOL_REGISTRY: dict[str, list[type[Tool]]] = {
         RewriteStarTool,
         TranslateTool,
         InterviewCoachTool,
+        CoverLetterTool,
         RecommendJobsTool,
     ],
     "builder": [

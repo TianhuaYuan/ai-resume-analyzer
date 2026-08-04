@@ -19,6 +19,7 @@ from services.resume_template import (
     _build_css_vars,
     _format_date_range,
     _render_fallback,
+    _render_md,
     preparse_css_variables,
     render_module,
     render_resume,
@@ -506,6 +507,72 @@ class TestHtmlEscape:
         html = render_module("custom", {"title": "标题", "content": "<b>bold</b>"})
         assert "<b>bold</b>" not in html
         assert "&lt;b&gt;" in html
+
+
+# ═══════════════════════════════════════════════════════════
+# Markdown 渲染（_render_md）
+# ═══════════════════════════════════════════════════════════
+
+
+class TestMarkdownRendering:
+    """长文本字段的 Markdown 渲染 — 格式化为 HTML 而非字面量标记。"""
+
+    def test_bold_renders_strong(self):
+        """**加粗** → <strong>。"""
+        html = render_module("other", {"content": "**加粗** 文本"})
+        assert "<strong>加粗</strong>" in html
+
+    def test_list_renders_ul(self):
+        """- 列表项 → <ul>/<li>。"""
+        html = render_module("custom", {"content": "- 第一项\n- 第二项"})
+        assert "<ul>" in html
+        assert "<li>第一项</li>" in html
+        assert "<li>第二项</li>" in html
+
+    def test_xss_script_still_escaped(self):
+        """<script> 在 Markdown 字段中仍被转义，真实标签不出现。"""
+        html = render_module("other", {"content": "<script>alert(1)</script>"})
+        assert "<script>" not in html
+        assert "&lt;script&gt;" in html
+
+    def test_xss_img_still_escaped(self):
+        """<img onerror> 在 Markdown 字段中仍被转义。"""
+        html = render_module("custom", {"content": "<img src=x onerror=alert(1)>"})
+        assert "<img" not in html
+        assert "&lt;img" in html
+
+    def test_summary_renders_markdown(self):
+        """basic_info.summary 渲染 Markdown。"""
+        html = render_module("basic_info", {"summary": "**加粗** 摘要"})
+        assert "<strong>加粗</strong>" in html
+
+    def test_work_description_renders_markdown(self):
+        """work_experience.description 渲染 Markdown。"""
+        html = render_module(
+            "work_experience",
+            {"entries": [{"company": "字节跳动", "description": "- 成就一\n- 成就二"}]},
+        )
+        assert "<ul>" in html
+        assert "<li>成就一</li>" in html
+        assert "<li>成就二</li>" in html
+
+    def test_short_fields_not_rendered_as_markdown(self):
+        """短字段（company 等）保持纯文本转义，不做 Markdown 展开。"""
+        html = render_module(
+            "work_experience",
+            {"entries": [{"company": "**不是加粗**", "description": "描述"}]},
+        )
+        assert "<strong>" not in html
+        assert "**不是加粗**" in html
+
+    def test_render_md_none_and_empty(self):
+        """_render_md 空值/None 返回空串，与 _esc 一致。"""
+        assert _render_md(None) == ""
+        assert _render_md("") == ""
+
+    def test_render_md_plain_text(self):
+        """纯文本经 Markdown 渲染后保留原文。"""
+        assert "热爱技术" in _render_md("热爱技术")
 
 
 # ═══════════════════════════════════════════════════════════

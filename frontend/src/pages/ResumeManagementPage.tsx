@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useCallback, type ChangeEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { Upload, FileText, Sparkle, Trash, Plus, Spinner, TrendUp, X, ClipboardText } from "@phosphor-icons/react";
-import { listResumes, uploadResume, deleteResume, generateIdempotencyKey, analyzeResume, matchJD, type ResumeItem, type AnalyzeResult, type MatchJDResult } from "../api/resumes";
+import { Upload, FileText, Sparkle, Trash, Plus, Spinner, TrendUp, X, ClipboardText, Copy } from "@phosphor-icons/react";
+import { listResumes, uploadResume, deleteResume, copyResume, generateIdempotencyKey, analyzeResume, matchJD, type ResumeItem, type AnalyzeResult, type MatchJDResult } from "../api/resumes";
 import { createBuilderResume } from "../api/builder";
 import { useToast } from "../components/Toast";
 import ConfirmDialog from "../components/ConfirmDialog";
@@ -271,6 +271,16 @@ export default function ResumeManagementPage() {
     } finally {
       setDeleting(false);
       setDeleteTarget(null);
+    }
+  };
+
+  const handleCopy = async (r: ResumeItem) => {
+    try {
+      await copyResume(r.id);
+      toast.success("已复制为草稿副本（可在编辑器中另存语言版本）");
+      await fetchResumes();
+    } catch {
+      toast.error("复制失败");
     }
   };
 
@@ -575,6 +585,24 @@ export default function ResumeManagementPage() {
                     title={r.status === "ready" ? "AI 评分" : "简历未就绪"}
                   >
                     <TrendUp size={14} weight="bold" aria-hidden="true" />
+                  </button>
+
+                  {/* 复制按钮 — hover 显示（多语言版本：复制副本后编辑器中翻译） */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void handleCopy(r);
+                    }}
+                    className="absolute top-2.5 right-10 z-10 p-1.5 rounded-md
+                      bg-[var(--color-bg)]/80 backdrop-blur-sm
+                      text-[var(--color-text-muted)]
+                      hover:text-brand hover:bg-brand/10
+                      opacity-0 group-hover:opacity-100 focus:opacity-100
+                      transition-all cursor-pointer"
+                    aria-label={`复制 ${r.filename}`}
+                    title="复制为草稿副本（可另存语言版本）"
+                  >
+                    <Copy size={14} weight="bold" aria-hidden="true" />
                   </button>
 
                   {/* 删除按钮 — hover 显示（与卡片为兄弟元素，避免嵌套 interactive） */}

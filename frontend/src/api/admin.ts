@@ -91,6 +91,34 @@ export interface FeedbackListResponse {
   total: number;
 }
 
+// ── QA 反馈质量统计（问答质量看板） ──────────────────────
+
+export interface QAStatsResumeItem {
+  resume_id: number;
+  resume_title: string;
+  positive: number;
+  negative: number;
+  negative_rate: number;
+}
+
+export interface QANegativeSample {
+  qa_id: number;
+  question: string;
+  answer_excerpt: string;
+  resume_id: number;
+  created_at: string;
+  process_trace: Record<string, unknown> | null;
+}
+
+export interface QAStatsResponse {
+  total_feedback: number;
+  positive: number;
+  negative: number;
+  negative_rate: number;
+  by_resume: QAStatsResumeItem[];
+  recent_negative: QANegativeSample[];
+}
+
 // ── API 函数 ──────────────────────────────────────────────
 
 /** 查询审计日志（可按 action / user_id 过滤）。 */
@@ -148,4 +176,9 @@ export async function getAdminFeedback(params: {
 /** 列出可用简历模板。 */
 export async function getAdminTemplates(): Promise<TemplateListResponse> {
   return api.get("/api/v1/admin/templates") as Promise<TemplateListResponse>;
+}
+
+/** 管理员问答质量统计（正负比例 + 简历维度排行 + negative 样本）。 */
+export async function getQaStats(): Promise<QAStatsResponse> {
+  return api.get("/api/v1/qa/stats") as Promise<QAStatsResponse>;
 }

@@ -261,6 +261,71 @@ async def create_builder_resume(
     return resume, modules
 
 
+async def copy_resume_as_new(
+    db: AsyncSession,
+    user_id: int,
+    source_resume_id: int,
+    filename: str | None = None,
+    language: str = "",
+) -> tuple[Resume, list[ResumeModule]]:
+    """复制一份简历为新草稿记录（含全部模块），用于多语言版本管理等。
+
+    借鉴 Magic-Resume createVersion 的「整份快照」思路，但存为**独立新简历**
+    而非覆盖原稿——保证一份简历可同时保有中文/英文等多个语言版本。
+    新副本 status=draft、version=1、content_hash/indexed_hash 为空（独立懒索引）。
+
+    family 关联（多语言版本族）：副本 family_id = 源 resume.family_id or 源 resume.id
+    （首个副本以源为族根，后续副本继承族），language 标注副本语言。
+    """
+    src = await db.get(Resume, source_resume_id)
+    if src is None or src.user_id != user_id:
+        raise HTTPException(status_code=404, detail="简历不存在或无权访问")
+
+    mod_result = await db.execute(
+        select(ResumeModule)
+        .where(ResumeModule.resume_id == source_resume_id)
+        .order_by(ResumeModule.sort_order, ResumeModule.id)
+    )
+    src_modules = mod_result.scalars().all()
+
+    new_resume = Resume(
+        user_id=user_id,
+        filename=filename or f"{src.filename} 副本",
+        file_path="",
+        parsed_text=src.parsed_text or "",
+        chunk_count=0,
+        status="draft",
+        source="builder",
+        style=src.style,
+        version=1,
+        language=language or None,
+        family_id=src.family_id or src.id,
+    )
+    db.add(new_resume)
+    await db.flush()  # 拿到 new_resume.id
+
+    new_modules: list[ResumeModule] = []
+    for m in src_modules:
+        module = ResumeModule(
+            resume_id=new_resume.id,
+            module_type=m.module_type,
+            content=m.content,
+            sort_order=m.sort_order,
+        )
+        db.add(module)
+        new_modules.append(module)
+
+    await db.commit()
+    await db.refresh(new_resume)
+    logger.info(
+        "Copied resume: user=%d, src=%d -> copy=%d",
+        user_id,
+        source_resume_id,
+        new_resume.id,
+    )
+    return new_resume, new_modules
+
+
 # ═══════════════════════════════════════════════════════════
 # 草稿更新（last-write-wins）
 # ═══════════════════════════════════════════════════════════
