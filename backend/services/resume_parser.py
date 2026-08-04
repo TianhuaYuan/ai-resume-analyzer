@@ -20,6 +20,7 @@
 import json
 import logging
 import re
+import unicodedata
 
 from pydantic import ValidationError
 
@@ -128,8 +129,59 @@ _SYSTEM_PROMPT = """你是一个专业的简历解析助手。你的任务是将
 - 其余字段（日期/公司/技能名等短字段）一律输出字符串，不要用 lines"""
 
 
+# 乱码串正则（PDF 水印/损坏字体的长字母数字串特征，来自 SmartResume should_remove）
+_GARBLED_PATTERN = re.compile(r"[a-zA-Z0-9\-~_]{40,}")
+
+
+def _is_garbled(s: str) -> bool:
+    """乱码判定（SmartResume should_remove 的无 tiktoken 等价）。
+
+    SmartResume 用 BPE token 数 > 字符数*0.5 判定（乱码每个字符一个 token）。
+    本项目不引 tiktoken，用「唯一字符率 ≥ 0.9」近似：正常英文/URL 串的字符重复率
+    通常 < 0.9，而随机乱码串几乎每个字符都不同。
+    """
+    if not s:
+        return False
+    return len(set(s)) / len(s) >= 0.9
+
+
+def _clean_text_content(text: str) -> str:
+    """输入侧文本规范化（直接复制 SmartResume data_processor._clean_text_content，Apache-2.0）。
+
+    与 SmartResume 一致的三步：
+    1. NFKC 归一化（全角→半角，兼容字符统一）
+    2. 空白字符统一为普通空格（含全角空格 U+3000 / NBSP U+00A0 / 狭义空白 U+2000-U+200A 等）
+    3. 连续空格折叠 + 乱码长串过滤（PDF 水印/损坏字体的长字母数字串）
+
+    前置到 _index_lines 之前：保证行号索引与 LLM 引用基于清洗后文本，
+    行数不变（NFKC/空白折叠不改行数），行号索引安全。
+    """
+    if not text:
+        return ""
+
+    text = unicodedata.normalize("NFKC", text)
+
+    text = re.sub(
+        r"[ \u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\u00A7]",
+        " ",
+        text,
+    )
+
+    text = re.sub(r" {2,}", " ", text)
+
+    text = re.sub(
+        _GARBLED_PATTERN,
+        lambda m: "" if _is_garbled(m.group(0)) else m.group(0),
+        text,
+    )
+    return text
+
+
 def _index_lines(text: str) -> tuple[str, list[str]]:
     """给简历文本每行加 [行号] 前缀（A2 索引指针机制）。
+
+    A2 深化（SmartResume 对照）：输入侧先经 _clean_text_content 规范化
+    （NFKC/空白统一/乱码过滤），再切行索引——LLM 引用的行内容即清洗后原文。
 
     Args:
         text: 简历纯文本
@@ -138,6 +190,7 @@ def _index_lines(text: str) -> tuple[str, list[str]]:
         (带行号文本, 原文行列表) —— 行号从 1 开始，
         后处理用原文行列表把 LLM 的 {"lines": [a, b]} 引用切片还原
     """
+    text = _clean_text_content(text)
     lines = text.split("\n")
     indexed = "\n".join(f"[{i + 1}] {line}" for i, line in enumerate(lines))
     return indexed, lines
@@ -183,6 +236,45 @@ def _resolve_line_refs(obj, lines: list[str]):
     if isinstance(obj, list):
         return [_resolve_line_refs(item, lines) for item in obj]
     return obj
+
+
+def _collect_line_refs(obj, lines: list[str], path: str = "") -> list[dict]:
+    """收集 LLM 行号引用（SmartResume refer_index_range 保留的对应物，A2 深化）。
+
+    _resolve_line_refs 把 {"lines"} 替换为字符串后引用信息即丢失，
+    故在替换前调用本函数收集溯源证据：字段路径 + 行号区间 + 切片原文。
+    供 E1 可溯源诊断展示「字段 ↔ 原文行号区间」双向可查（SmartResume 保留
+    refer_index_range 字段的等价实现）。
+
+    Args:
+        obj: LLM 输出的模块原始字典（未做 lines 替换）
+        lines: 原文行列表（行号从 1 起）
+        path: 当前字段路径（如 "content.items[0].description"）
+
+    Returns:
+        [{path, lines: [a, b], text, provenance: "line_ref"}]
+    """
+    out: list[dict] = []
+    if isinstance(obj, dict):
+        if set(obj.keys()) == {"lines"} and isinstance(obj.get("lines"), list):
+            ref = obj["lines"]
+            if len(ref) == 2 and isinstance(ref[0], int) and isinstance(ref[1], int):
+                a, b = ref
+                if 1 <= a <= b <= len(lines):
+                    out.append(
+                        {
+                            "path": path or "<root>",
+                            "lines": [a, b],
+                            "text": "\n".join(lines[a - 1 : b]),
+                            "provenance": "line_ref",
+                        }
+                    )
+        for key, value in obj.items():
+            out.extend(_collect_line_refs(value, lines, f"{path}.{key}" if path else str(key)))
+    elif isinstance(obj, list):
+        for i, item in enumerate(obj):
+            out.extend(_collect_line_refs(item, lines, f"{path}[{i}]"))
+    return out
 
 
 def _build_error_feedback(errors: list[str]) -> str:
@@ -331,9 +423,7 @@ def _normalize_modules(raw_modules: list[dict]) -> list[dict]:
     return raw_modules
 
 
-def verify_fields_in_original_text(
-    modules: list[dict], original_lines: list[str]
-) -> list[dict]:
+def verify_fields_in_original_text(modules: list[dict], original_lines: list[str]) -> list[dict]:
     """A2 深化：字段级溯源验证（借鉴 SmartResume _validate_fields_in_text）。
 
     对关键短字段（姓名/手机/公司/岗位/学校/专业）做规范化包含检查——
@@ -353,7 +443,9 @@ def verify_fields_in_original_text(
 
     def _norm(s: str) -> str:
         """NFKC + 去空白/标点，用于宽松包含匹配。"""
-        return re.sub(r"[\s，。、,.;;：:（）()\[\]【】\"'“”\-–—_]+", "", unicodedata.normalize("NFKC", s))
+        return re.sub(
+            r"[\s，。、,.;;：:（）()\[\]【】\"'“”\-–—_]+", "", unicodedata.normalize("NFKC", s)
+        )
 
     corpus = _norm("\n".join(original_lines))
 
@@ -449,7 +541,9 @@ def _validate_parsed_modules(
             mt = ModuleType(module_type)
         except ValueError:
             valid_types = ", ".join(mt.value for mt in ModuleType)
-            errors.append(f"模块 {idx}: 未知 module_type '{module_type}'，必须是以下之一: {valid_types}")
+            errors.append(
+                f"模块 {idx}: 未知 module_type '{module_type}'，必须是以下之一: {valid_types}"
+            )
             continue
 
         # 用 T22 四方契约 schema 校验 content
@@ -457,8 +551,7 @@ def _validate_parsed_modules(
             validate_module_content(mt, content)
         except ValidationError as e:
             error_details = "; ".join(
-                f"{'.'.join(str(p) for p in err['loc'])}: {err['msg']}"
-                for err in e.errors()
+                f"{'.'.join(str(p) for p in err['loc'])}: {err['msg']}" for err in e.errors()
             )
             errors.append(f"模块 {idx} ({module_type}): {error_details}")
             continue
@@ -530,7 +623,9 @@ async def parse_text_to_modules(
                 user_id=user_id,
             )
         except Exception as e:
-            logger.exception("LLM call failed during parse_text_to_modules (attempt %d)", attempt + 1)
+            logger.exception(
+                "LLM call failed during parse_text_to_modules (attempt %d)", attempt + 1
+            )
             raise ValueError(f"LLM 调用失败: {e}") from e
 
         if not response or not response.strip():
@@ -545,9 +640,14 @@ async def parse_text_to_modules(
             raw_modules = _extract_json_from_response(response)
             # A2 深化: 规范化（日期/邮箱）→ 指针引用切片 → 校验
             raw_modules = _normalize_modules(raw_modules)
+            # A2 深化: 溯源证据保留——行号引用在替换前收集（SmartResume refer_index_range 对应物）
+            line_refs = _collect_line_refs(raw_modules, original_lines)
             raw_modules = _resolve_line_refs(raw_modules, original_lines)
             # A2 深化: 字段级溯源验证（缺失字段记日志，供 E1 诊断展示）
             provenance_report = verify_fields_in_original_text(raw_modules, original_lines)
+            if line_refs:
+                provenance_report.extend(line_refs)
+                logger.info("解析行号引用（溯源证据）: %d 个", len(line_refs))
             missing = [r for r in provenance_report if r["provenance"] == "missing"]
             if missing:
                 logger.warning(
@@ -571,15 +671,14 @@ async def parse_text_to_modules(
                 # 避免上层（materialize / parse-to-modules）把"失败"误当"成功空结果"。
                 errors_history.append("LLM 返回空数组，未解析出任何模块")
                 if attempt < _MAX_RETRIES:
-                    logger.warning(
-                        "Empty module list from LLM, retrying (attempt %d)", attempt + 1
-                    )
+                    logger.warning("Empty module list from LLM, retrying (attempt %d)", attempt + 1)
                     continue
                 raise ValueError("未解析出任何模块（LLM 返回空数组）")
             # 全部校验通过
             logger.info(
                 "parse_text_to_modules succeeded: attempt=%d, modules=%d",
-                attempt + 1, len(validated),
+                attempt + 1,
+                len(validated),
             )
             return validated
 
@@ -588,7 +687,8 @@ async def parse_text_to_modules(
         if attempt < _MAX_RETRIES:
             logger.warning(
                 "Validation failed (attempt %d), %d errors, retrying with feedback",
-                attempt + 1, len(errors),
+                attempt + 1,
+                len(errors),
             )
             continue
 
@@ -596,7 +696,8 @@ async def parse_text_to_modules(
         if validated:
             logger.warning(
                 "parse_text_to_modules partial success: %d valid, %d invalid modules",
-                len(validated), len(errors),
+                len(validated),
+                len(errors),
             )
             return validated
 

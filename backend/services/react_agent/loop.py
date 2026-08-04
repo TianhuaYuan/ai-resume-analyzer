@@ -26,12 +26,10 @@ from core.database import AsyncSessionLocal
 from services.rag.pipeline import (
     LLMToolResponse,
     ToolCall,
-    llm_generate_with_tools,
     llm_generate_with_tools_stream,
 )
 from services.react_agent.memory import assemble_system_prompt, manage_l1_context
 from services.react_agent.tools import (
-    get_agent_schemas,
     get_tool_by_name,
     get_tools_for_agent,
 )
@@ -131,11 +129,13 @@ async def react_loop(
 
         reasoning_content 已在流式调用中逐段 emit 为 agent_thought，此处只推 usage。
         """
-        await _emit({
-            "type": "usage",
-            "usage": dict(resp.usage),
-            "total": dict(total_usage),
-        })
+        await _emit(
+            {
+                "type": "usage",
+                "usage": dict(resp.usage),
+                "total": dict(total_usage),
+            }
+        )
 
     # 0. 分阶段耗时追踪（定位 agent 交互瓶颈，只打日志不改行为）
     _t0 = time.perf_counter()
@@ -176,7 +176,11 @@ async def react_loop(
     # 2. 装配 system prompt（L2 历史 + L3 画像 + L4 记忆注入；builder 模式用允许生成的专属指令）
     _phases["prompt_assembly_ms"] = round((time.perf_counter() - _t0) * 1000)
     system_prompt = await assemble_system_prompt(
-        db, user_id, resume_id, builder=(tool_mode == "builder"), query=question,
+        db,
+        user_id,
+        resume_id,
+        builder=(tool_mode == "builder"),
+        query=question,
     )
     _phases["prompt_assembly_ms"] = round((time.perf_counter() - _t0) * 1000)
 
@@ -245,6 +249,25 @@ async def react_loop(
     while rounds < MAX_ROUNDS:
         rounds += 1
 
+        # DeepInterview SessionGuard 对照：会话墙钟总时长上限（防模型循环/上游慢失控烧 token）
+        if time.perf_counter() - _t0 > settings.REACT_MAX_DURATION_SEC:
+            msg = "会话时长已达上限，请重试。"
+            await _emit({"type": "agent_done", "content": msg})
+            logger.warning(
+                "ReAct 会话超时（%ss）强制结束: user=%d resume=%d rounds=%d",
+                settings.REACT_MAX_DURATION_SEC,
+                user_id,
+                resume_id,
+                rounds,
+            )
+            return ReactLoopResult(
+                answer=msg,
+                process_trace=process_trace,
+                usage=total_usage,
+                sources=_deduplicate_sources(all_sources),
+                db_trace=_build_db_trace(system_prompt, db_rounds),
+            )
+
         # 每轮 LLM 调用前复查配额（Spec A#5：超限立即停止）
         if rounds > 1:
             allowed, quota_msg = await check_quota(user_id)
@@ -293,20 +316,24 @@ async def react_loop(
 
         # 先发所有 tool_call 事件（让用户立刻看到 Agent 在调哪些工具）
         for tc in response.tool_calls:
-            await _emit({
-                "type": "tool_call",
-                "name": tc.name,
-                "arguments": tc.arguments,
-                "id": tc.id,
-            })
+            await _emit(
+                {
+                    "type": "tool_call",
+                    "name": tc.name,
+                    "arguments": tc.arguments,
+                    "id": tc.id,
+                }
+            )
 
         # 并行执行所有工具（Spec A#32: Semaphore 限单轮并发）
         tool_semaphore = _get_tool_semaphore()
         _tool_start = time.perf_counter()
-        results = await asyncio.gather(*[
-            _execute_tool_call_with_limit(tc, user_id, tool_semaphore, emit=_emit)
-            for tc in response.tool_calls
-        ])
+        results = await asyncio.gather(
+            *[
+                _execute_tool_call_with_limit(tc, user_id, tool_semaphore, emit=_emit)
+                for tc in response.tool_calls
+            ]
+        )
         _tool_exec_ms += (time.perf_counter() - _tool_start) * 1000
         _phases["tool_exec_ms"] = round(_tool_exec_ms)
 
@@ -324,21 +351,27 @@ async def react_loop(
 
         # 处理结果：发 tool_result/tool_error 事件 + 回灌 messages + 收集 sources + 累计工具 LLM usage
         all_bad = True
-        for tc, (tool_result, is_error, tool_sources, tool_usage) in zip(response.tool_calls, results):
+        for tc, (tool_result, is_error, tool_sources, tool_usage) in zip(
+            response.tool_calls, results
+        ):
             if is_error:
-                await _emit({
-                    "type": "tool_error",
-                    "name": tc.name,
-                    "error": tool_result,
-                    "id": tc.id,
-                })
+                await _emit(
+                    {
+                        "type": "tool_error",
+                        "name": tc.name,
+                        "error": tool_result,
+                        "id": tc.id,
+                    }
+                )
             else:
-                await _emit({
-                    "type": "tool_result",
-                    "name": tc.name,
-                    "result": tool_result,
-                    "id": tc.id,
-                })
+                await _emit(
+                    {
+                        "type": "tool_result",
+                        "name": tc.name,
+                        "result": tool_result,
+                        "id": tc.id,
+                    }
+                )
                 all_bad = False
 
             # 累计工具内部 LLM 调用的 token 消耗到主 usage（builder 工具内部有独立 LLM 调用）
@@ -348,18 +381,22 @@ async def react_loop(
             all_sources.extend(tool_sources)
 
             # tool 结果/错误回灌到 messages
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tc.id,
-                "content": tool_result,
-            })
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": tool_result,
+                }
+            )
 
             # 记录工具结果到 db_round（截断避免 DB 膨胀）
-            db_round["tool_results"].append({
-                "name": tc.name,
-                "result": tool_result[:500],
-                "is_error": is_error,
-            })
+            db_round["tool_results"].append(
+                {
+                    "name": tc.name,
+                    "result": tool_result[:500],
+                    "is_error": is_error,
+                }
+            )
 
         # 工具执行完毕后推送累计 usage（含工具内部 LLM 消耗），让前端实时更新 token 计数
         await _emit({"type": "usage", "usage": dict(total_usage), "total": dict(total_usage)})
@@ -374,7 +411,10 @@ async def react_loop(
                     exceeded = True
                     logger.warning(
                         "工具 %s 连续失败 %d 次，终止本轮重试: user=%d, resume=%d",
-                        tc.name, tool_retries[tc.name], user_id, resume_id,
+                        tc.name,
+                        tool_retries[tc.name],
+                        user_id,
+                        resume_id,
                     )
             if exceeded:
                 break
@@ -440,31 +480,46 @@ async def _stream_middle_round(
     _llm_t0 = time.perf_counter()
     _first_chunk = True
 
-    async for ev in llm_generate_with_tools_stream(
-        messages=messages,
-        tools=tools,
-        user_id=user_id,
-        model=model,
-    ):
-        if _first_chunk:
-            _first_chunk = False
-            logger.info(
-                "middle_round_first_chunk_ms=%d",
-                round((time.perf_counter() - _llm_t0) * 1000),
-            )
-        et = ev.get("type")
-        if et == "reasoning":
-            reasoning_parts.append(ev["content"])
-            await emit({"type": "agent_thought", "content": ev["content"]})
-        elif et == "token":
-            content_parts.append(ev["content"])
-        elif et == "usage":
-            round_usage = {
-                "prompt_tokens": ev.get("prompt_tokens", 0),
-                "completion_tokens": ev.get("completion_tokens", 0),
-            }
-        elif et == "done":
-            tool_calls = ev["tool_calls"]
+    async def _consume() -> None:
+        """消费流式事件（DeepInterview _guarded 对照：整个流包一层墙钟超时）。"""
+        nonlocal round_usage, tool_calls, _first_chunk
+        async for ev in llm_generate_with_tools_stream(
+            messages=messages,
+            tools=tools,
+            user_id=user_id,
+            model=model,
+        ):
+            if _first_chunk:
+                _first_chunk = False
+                logger.info(
+                    "middle_round_first_chunk_ms=%d",
+                    round((time.perf_counter() - _llm_t0) * 1000),
+                )
+            et = ev.get("type")
+            if et == "reasoning":
+                reasoning_parts.append(ev["content"])
+                await emit({"type": "agent_thought", "content": ev["content"]})
+            elif et == "token":
+                content_parts.append(ev["content"])
+            elif et == "usage":
+                round_usage = {
+                    "prompt_tokens": ev.get("prompt_tokens", 0),
+                    "completion_tokens": ev.get("completion_tokens", 0),
+                }
+            elif et == "done":
+                tool_calls = ev["tool_calls"]
+
+    try:
+        await asyncio.wait_for(_consume(), timeout=settings.REACT_LLM_TIMEOUT)
+    except asyncio.TimeoutError:
+        # 超时护栏（DeepInterview _guarded 对照）：降级为提示而非永久挂起
+        logger.warning("middle round LLM 超时（%ss），降级为提示", settings.REACT_LLM_TIMEOUT)
+        return LLMToolResponse(
+            content="生成超时，请重试。",
+            tool_calls=[],
+            reasoning_content="".join(reasoning_parts) or None,
+            usage=round_usage,
+        )
 
     return LLMToolResponse(
         content="".join(content_parts),
@@ -492,29 +547,44 @@ async def _stream_final_round(
     _llm_t0 = time.perf_counter()
     _first_chunk = True
 
-    async for ev in llm_generate_with_tools_stream(
-        messages=messages,
-        tools=None,
-        user_id=user_id,
-        model=FINAL_MODEL,
-    ):
-        if _first_chunk:
-            _first_chunk = False
-            logger.info(
-                "final_round_first_chunk_ms=%d",
-                round((time.perf_counter() - _llm_t0) * 1000),
-            )
-        et = ev.get("type")
-        if et == "reasoning":
-            reasoning_parts.append(ev["content"])
-            await emit({"type": "agent_thought", "content": ev["content"]})
-        elif et == "token":
-            content_parts.append(ev["content"])
-        elif et == "usage":
-            round_usage = {
-                "prompt_tokens": ev.get("prompt_tokens", 0),
-                "completion_tokens": ev.get("completion_tokens", 0),
-            }
+    async def _consume() -> None:
+        """消费流式事件（DeepInterview _guarded 对照：整个流包一层墙钟超时）。"""
+        nonlocal round_usage, _first_chunk
+        async for ev in llm_generate_with_tools_stream(
+            messages=messages,
+            tools=None,
+            user_id=user_id,
+            model=FINAL_MODEL,
+        ):
+            if _first_chunk:
+                _first_chunk = False
+                logger.info(
+                    "final_round_first_chunk_ms=%d",
+                    round((time.perf_counter() - _llm_t0) * 1000),
+                )
+            et = ev.get("type")
+            if et == "reasoning":
+                reasoning_parts.append(ev["content"])
+                await emit({"type": "agent_thought", "content": ev["content"]})
+            elif et == "token":
+                content_parts.append(ev["content"])
+            elif et == "usage":
+                round_usage = {
+                    "prompt_tokens": ev.get("prompt_tokens", 0),
+                    "completion_tokens": ev.get("completion_tokens", 0),
+                }
+
+    try:
+        await asyncio.wait_for(_consume(), timeout=settings.REACT_LLM_TIMEOUT)
+    except asyncio.TimeoutError:
+        # 超时护栏（DeepInterview _guarded 对照）：降级为提示而非永久挂起
+        logger.warning("final round LLM 超时（%ss），降级为提示", settings.REACT_LLM_TIMEOUT)
+        return LLMToolResponse(
+            content="生成超时，请重试。",
+            tool_calls=[],
+            reasoning_content="".join(reasoning_parts) or None,
+            usage=round_usage,
+        )
 
     return LLMToolResponse(
         content="".join(content_parts),
@@ -562,7 +632,12 @@ async def _execute_tool_call(
     try:
         args = json.loads(tc.arguments) if tc.arguments else {}
     except json.JSONDecodeError:
-        return f"参数 JSON 解析失败: {tc.arguments}", True, [], {"prompt_tokens": 0, "completion_tokens": 0}
+        return (
+            f"参数 JSON 解析失败: {tc.arguments}",
+            True,
+            [],
+            {"prompt_tokens": 0, "completion_tokens": 0},
+        )
 
     # 2. 查找工具（A3: 未知工具附可用列表，模型几乎必然自愈——借鉴 pydantic-ai _resolve_tool）
     tool_class = get_tool_by_name(tc.name)
@@ -570,14 +645,21 @@ async def _execute_tool_call(
         available = ", ".join(sorted(t.name for t in get_tools_for_agent()))
         return (
             f"工具 '{tc.name}' 不存在。可用工具: {available}。请从列表中选择正确的工具。",
-            True, [], {"prompt_tokens": 0, "completion_tokens": 0},
+            True,
+            [],
+            {"prompt_tokens": 0, "completion_tokens": 0},
         )
 
     # 3. 实例化并执行（注入 emit 供工具内部 LLM 流式推送）
     tool = tool_class(db=db, user_id=user_id, emit=emit)
     try:
         result = await tool.execute(**args)
-        return result, False, getattr(tool, "sources", []), getattr(tool, "last_usage", {"prompt_tokens": 0, "completion_tokens": 0})
+        return (
+            result,
+            False,
+            getattr(tool, "sources", []),
+            getattr(tool, "last_usage", {"prompt_tokens": 0, "completion_tokens": 0}),
+        )
     except ToolRetryError as e:
         # A3 契约化：可重试错误（参数格式等）→ 结构化错误文本回灌，累计坏调用
         logger.warning("工具可重试失败: %s, args=%s, error=%s", tc.name, tc.arguments, e)

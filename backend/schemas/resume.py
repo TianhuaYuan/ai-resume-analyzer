@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import datetime
 from typing import Literal
 from pydantic import BaseModel, Field, model_validator
@@ -65,12 +67,40 @@ class AnalyzeRequest(BaseModel):
     analysis_type: Literal["summary", "skills", "experience", "score"]
 
 
+# 分数→档位阈值（Magic-Resume scoreBandKey 对照：>=85 excellent / >=70 good / >=50 medium）
+SCORE_BAND_EXCELLENT = 85
+SCORE_BAND_GOOD = 70
+SCORE_BAND_MEDIUM = 50
+
+
+def derive_band(overall: int) -> Literal["excellent", "good", "medium", "needsWork"]:
+    """分数→档位同源派生（DeepInterview level_for_score 对照）。
+
+    关键设计：分数与档位绝不由 LLM 同时给出——档位永远由分数派生，
+    避免「LLM 给 80 分却写 strong」这类不一致；前端展示统一消费 band。
+    """
+    if overall >= SCORE_BAND_EXCELLENT:
+        return "excellent"
+    if overall >= SCORE_BAND_GOOD:
+        return "good"
+    if overall >= SCORE_BAND_MEDIUM:
+        return "medium"
+    return "needsWork"
+
+
 class ScoreDetail(BaseModel):
-    """量化评分维度。"""
-    ats_match: int
-    keyword_coverage: int
-    skill_density: int
-    overall: int
+    """量化评分维度（Magic-Resume analysis.ts 的 zod min/max 校验对照：0-100 边界落在类型上）。"""
+
+    ats_match: int = Field(ge=0, le=100)
+    keyword_coverage: int = Field(ge=0, le=100)
+    skill_density: int = Field(ge=0, le=100)
+    overall: int = Field(ge=0, le=100)
+    band: Literal["excellent", "good", "medium", "needsWork"] = "needsWork"
+
+    @model_validator(mode="after")
+    def _derive_band(self):
+        self.band = derive_band(self.overall)
+        return self
 
 
 class AnalyzeResponse(BaseModel):
@@ -104,7 +134,9 @@ CompareDimension = Literal["summary", "skills", "experience", "score", "projects
 class CompareRequest(BaseModel):
     """多简历对比请求。"""
 
-    resume_ids: list[int] = Field(..., min_length=2, max_length=5, description="简历 ID 列表，2-5 个")
+    resume_ids: list[int] = Field(
+        ..., min_length=2, max_length=5, description="简历 ID 列表，2-5 个"
+    )
     dimensions: list[CompareDimension] = Field(
         default_factory=lambda: ["summary", "skills", "experience", "score", "projects"],
         description="对比维度，默认全部",
@@ -163,9 +195,25 @@ class MatchJDRequest(BaseModel):
     jd_text: str = Field(..., min_length=1, max_length=5000, description="JD 文本，1-5000 字符")
 
 
+class MatchJDScores(BaseModel):
+    """JD 匹配总分（Magic-Resume FitReport.overall + band 对照）。"""
+
+    overall: int = Field(ge=0, le=100)
+    band: Literal["excellent", "good", "medium", "needsWork"] = "needsWork"
+
+
 class MatchJDResponse(BaseModel):
+    """JD 匹配响应（Magic-Resume FitReport 契约对照：结构化字段 + markdown 兜底）。
+
+    structured 字段仅在 LLM JSON 输出成功时填充；失败时前端只消费 analysis。
+    """
+
     resume_id: int
     analysis: str
+    scores: MatchJDScores | None = None
+    matched_keywords: list[str] = Field(default_factory=list)
+    missing_keywords: list[str] = Field(default_factory=list)
+    gaps: list[str] = Field(default_factory=list)
 
 
 class AnalysisStatusResponse(BaseModel):

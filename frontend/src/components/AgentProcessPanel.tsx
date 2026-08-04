@@ -196,6 +196,19 @@ export default function AgentProcessPanel({
   // 合并连续的 agent_thought 步骤
   const displaySteps = useMemo(() => mergeThoughtSteps(steps), [steps]);
 
+  // 计划进度（Magic-Resume ChatThread todos 卡对照：工具调用 = 清单项，结果/错误 = 已完成）
+  const planProgress = useMemo(() => {
+    const calls = steps.filter((s) => s.type === "tool_call").length;
+    const done = steps.filter(
+      (s) => s.type === "tool_result" || s.type === "tool_error"
+    ).length;
+    return {
+      calls,
+      done,
+      pct: calls > 0 ? Math.min(100, Math.round((done / calls) * 100)) : 0,
+    };
+  }, [steps]);
+
   // 流式期间：步骤列表自动滚到底部，让用户始终看到最新步骤
   useEffect(() => {
     if (!streaming) return;
@@ -294,6 +307,26 @@ export default function AgentProcessPanel({
           </span>
         )}
       </div>
+
+      {/* 计划进度（Magic-Resume todos 卡对照：工具清单 + 完成度进度条） */}
+      {planProgress.calls > 0 && (
+        <div className="mt-2.5">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[10px] text-[var(--color-text-muted)]">
+              工具执行计划
+            </span>
+            <span className="text-[10px] text-[var(--color-text-secondary)] tabular-nums">
+              {planProgress.done}/{planProgress.calls} 完成
+            </span>
+          </div>
+          <div className="h-1 rounded-full bg-[var(--color-bg-secondary)] overflow-hidden">
+            <div
+              className="h-full rounded-full bg-brand transition-all duration-500"
+              style={{ width: `${planProgress.pct}%` }}
+            />
+          </div>
+        </div>
+      )}
 
       {/* 步骤列表（流式期间可滚动，自动滚到底部展示最新步骤） */}
       <div

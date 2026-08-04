@@ -20,6 +20,7 @@
 
 import json
 import logging
+import math
 import re
 import unicodedata
 
@@ -98,6 +99,46 @@ def _cosine(a: list[float], b: list[float]) -> float:
     if not na or not nb:
         return 0.0
     return dot / (na * nb)
+
+
+def _shannon_entropy(s: str) -> float:
+    """字符 Shannon 熵（graphiti _has_high_entropy 同款判定基础）。"""
+    if not s:
+        return 0.0
+    counts: dict[str, int] = {}
+    for c in s:
+        counts[c] = counts.get(c, 0) + 1
+    n = len(s)
+    return -sum((cnt / n) * math.log2(cnt / n) for cnt in counts.values())
+
+
+def _is_low_entropy_name(name: str) -> bool:
+    """熵门控（graphiti _NAME_ENTROPY_THRESHOLD=1.5 对照）：低信息量名字不信任模糊匹配。
+
+    过短（<2 字符）或 Shannon 熵 < 1.5 的名字（如「字节」「Java」的简称）embedding
+    相似度高但极易误并（Java 编程语言 vs Java 岛）——跳过 embedding 快路径，直接升级
+    LLM 兜底判定，由「same real-world object or concept」准则把关。
+    """
+    if len(name) < 2:
+        return True
+    return _shannon_entropy(name) < 1.5
+
+
+def _promote_entity(entity: "ResumeEntity", entity_type: str, description: str | None) -> bool:
+    """类型提升（graphiti _promote_resolved_node 对照）：消解命中时合并更具体信息。
+
+    - ``other`` → 具体类型提升（保留既有更具体类型，不降级）
+    - summary 为空时补新描述（增量累积，graphiti summary 语义）
+    返回是否发生变更（供日志/测试观察）。
+    """
+    promoted = False
+    if entity.entity_type == "other" and entity_type != "other":
+        entity.entity_type = entity_type
+        promoted = True
+    if not entity.summary and description:
+        entity.summary = description[:2000]
+        promoted = True
+    return promoted
 
 
 def _rrf_score(rank: int) -> float:
@@ -261,8 +302,10 @@ async def resolve_entity(
     """消解实体名 → 复用既有实体或新建。返回 (entity, created)。
 
     - 快路径 1：name_normalized 精确匹配唯一命中 → 复用（零 LLM）
-    - 快路径 2：name embedding 相似度 ≥ 0.9 且明显领先 → 复用（mem0 语义消解）
+    - 快路径 2：name embedding 相似度 ≥ 0.9 且明显领先 → 复用（mem0 语义消解）；
+      熵门控（graphiti）：短名/低熵名不信任模糊匹配，直接升级 LLM
     - 兜底：LLM 判定（graphiti dedupe_nodes 准则 + 越界防御）
+    - 命中复用时做类型提升（graphiti _promote_resolved_node：other→具体类型、补 summary）
     """
     name = (name or "").strip()
     if not name:
@@ -273,13 +316,24 @@ async def resolve_entity(
         db, user_id=user_id, resume_id=resume_id, name_normalized=name_norm
     )
     if entity is not None:
+        _promote_entity(entity, entity_type, description)
         return entity, False
 
-    matched, candidates = await _semantic_match_entity(
-        db, user_id=user_id, resume_id=resume_id, name=name
-    )
-    if matched is not None:
-        return matched, False
+    # 熵门控：低信息量名字跳过 embedding 快路径（防「Java 语言 vs Java 岛」误并）
+    if _is_low_entropy_name(name):
+        candidates_result = await db.execute(
+            select(ResumeEntity)
+            .where(ResumeEntity.user_id == user_id, ResumeEntity.resume_id == resume_id)
+            .limit(MAX_CANDIDATES)
+        )
+        candidates = list(candidates_result.scalars().all())
+    else:
+        matched, candidates = await _semantic_match_entity(
+            db, user_id=user_id, resume_id=resume_id, name=name
+        )
+        if matched is not None:
+            _promote_entity(matched, entity_type, description)
+            return matched, False
 
     dup_idx = await _llm_resolve_entity(
         db,
@@ -290,6 +344,7 @@ async def resolve_entity(
         candidates=candidates,
     )
     if dup_idx >= 0 and dup_idx < len(candidates):
+        _promote_entity(candidates[dup_idx], entity_type, description)
         return candidates[dup_idx], False
 
     entity = ResumeEntity(

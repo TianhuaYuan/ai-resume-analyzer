@@ -1,7 +1,11 @@
 import asyncio
 import inspect
+import json
 import logging
+import os
 import random
+import re
+from datetime import datetime, timezone
 from collections.abc import Callable
 from typing import Any, TypeVar
 
@@ -23,21 +27,21 @@ DEFAULT_MAX_CAP = 60.0
 
 # 各分类的默认重试次数上限（即使 max_retries=10，TIMEOUT 也只重试 1 次）
 _CATEGORY_MAX_RETRIES: dict[ErrorCategory, int] = {
-    ErrorCategory.RATE_LIMIT: 5,    # 限流：多重试（短时间内可能恢复）
-    ErrorCategory.TIMEOUT: 1,        # 超时：少重试（可能下游死锁）
-    ErrorCategory.NETWORK: 3,        # 网络：正常重试
-    ErrorCategory.UNKNOWN: 3,         # 未知：正常重试
+    ErrorCategory.RATE_LIMIT: 5,  # 限流：多重试（短时间内可能恢复）
+    ErrorCategory.TIMEOUT: 1,  # 超时：少重试（可能下游死锁）
+    ErrorCategory.NETWORK: 3,  # 网络：正常重试
+    ErrorCategory.UNKNOWN: 3,  # 未知：正常重试
     ErrorCategory.NON_RETRYABLE: 0,  # 编程错误：不重试
-    ErrorCategory.AUTH: 0,           # 认证失败：不重试
-    ErrorCategory.NOT_FOUND: 0,      # 资源不存在：不重试
+    ErrorCategory.AUTH: 0,  # 认证失败：不重试
+    ErrorCategory.NOT_FOUND: 0,  # 资源不存在：不重试
 }
 
 # 各分类的退避乘数（对 base_delay 的缩放）
 _CATEGORY_BACKOFF_MULTIPLIER: dict[ErrorCategory, float] = {
-    ErrorCategory.RATE_LIMIT: 2.0,   # 翻倍退避
-    ErrorCategory.TIMEOUT: 0.5,       # 缩短退避
-    ErrorCategory.NETWORK: 1.0,       # 正常退避
-    ErrorCategory.UNKNOWN: 1.0,       # 正常退避
+    ErrorCategory.RATE_LIMIT: 2.0,  # 翻倍退避
+    ErrorCategory.TIMEOUT: 0.5,  # 缩短退避
+    ErrorCategory.NETWORK: 1.0,  # 正常退避
+    ErrorCategory.UNKNOWN: 1.0,  # 正常退避
 }
 
 
@@ -47,6 +51,7 @@ class RetryBudget:
     P3-10：本类是**不可变的配置对象**（stateless），不保存运行时状态。
     因此可以安全地跨协程/线程共享，无需锁保护。
     """
+
     def __init__(
         self,
         max_retries: int = 3,
@@ -66,8 +71,53 @@ class RetryBudget:
         - 多协程同时失败时不会共振重试（随机性打散）
         - 退避时间随次数增长但被 max_cap 封顶，避免退避失控
         """
-        upper = min(self.base_delay * (2 ** attempt), self.max_cap)
+        upper = min(self.base_delay * (2**attempt), self.max_cap)
         return random.uniform(0, upper)
+
+
+# ── LLM 失败落盘诊断（SmartResume llm_client.py L316-339 对照）────────────────
+# 敏感键脱敏纪律（SmartResume 只写 channel 名不写 api key）
+_SENSITIVE_KEY_HINTS = ("api_key", "token", "secret", "password", "authorization", "key")
+
+
+def _sanitize_for_diagnostics(kwargs: dict) -> dict:
+    """脱敏 kwargs（api key/token 等敏感键替换为 ***）。"""
+    return {
+        k: ("***" if any(h in k.lower() for h in _SENSITIVE_KEY_HINTS) else str(v)[:200])
+        for k, v in kwargs.items()
+    }
+
+
+def _dump_llm_error(
+    fn: Callable[..., Any], args: tuple, kwargs: dict, error: Exception, attempt: int
+) -> None:
+    """重试耗尽时写 error.json（SmartResume 模式：error_type/message/fn/脱敏参数/时间）。"""
+    try:
+        from core.config import settings
+
+        diag_dir = settings.LLM_DIAGNOSTICS_DIR
+        if not diag_dir:
+            return
+        info = {
+            "error_type": type(error).__name__,
+            "error_message": str(error),
+            "fn_name": getattr(fn, "__name__", str(fn)),
+            "attempt": attempt,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "args": [str(a)[:200] for a in args],
+            "kwargs": _sanitize_for_diagnostics(kwargs),
+        }
+        os.makedirs(diag_dir, exist_ok=True)
+        safe_name = re.sub(r"[^\w\-.]", "_", getattr(fn, "__name__", "fn"))
+        path = os.path.join(
+            diag_dir,
+            f"{safe_name}_{int(datetime.now(timezone.utc).timestamp())}_error.json",
+        )
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(info, f, ensure_ascii=False, indent=2)
+        logger.info("LLM 失败已落盘诊断: %s", path)
+    except Exception as dump_e:
+        logger.warning("LLM 失败落盘失败: %s", dump_e)
 
 
 async def with_retry(
@@ -118,9 +168,7 @@ async def with_retry(
             if is_async_fn:
                 # 异步 callable：可选套 asyncio.wait_for 落实 timeout
                 if budget is not None and budget.timeout is not None:
-                    result = await asyncio.wait_for(
-                        fn(*args, **kwargs), timeout=budget.timeout
-                    )
+                    result = await asyncio.wait_for(fn(*args, **kwargs), timeout=budget.timeout)
                 else:
                     result = await fn(*args, **kwargs)
             else:
@@ -148,7 +196,9 @@ async def with_retry(
             ):
                 logger.warning(
                     "category=%s not retryable, stopping (attempt=%d): %s",
-                    category.value, attempt, e,
+                    category.value,
+                    attempt,
+                    e,
                 )
                 break
 
@@ -157,7 +207,9 @@ async def with_retry(
             if attempt >= cat_max:
                 logger.error(
                     "category=%s retries exhausted (attempt=%d): %s",
-                    category.value, attempt, e,
+                    category.value,
+                    attempt,
+                    e,
                 )
                 break
 
@@ -166,20 +218,27 @@ async def with_retry(
                 raw_delay = budget.delay_for(attempt)
             else:
                 # 不用 budget 时也要 Full Jitter（保持一致性）
-                upper = min(base_delay * (2 ** attempt), DEFAULT_MAX_CAP)
+                upper = min(base_delay * (2**attempt), DEFAULT_MAX_CAP)
                 raw_delay = random.uniform(0, upper)
             multiplier = _CATEGORY_BACKOFF_MULTIPLIER.get(category, 1.0)
             delay = min(raw_delay * multiplier, DEFAULT_MAX_CAP)
 
             logger.warning(
                 "retry %d/%d (cat=%s) after %.2fs: %s",
-                attempt + 1, max_retries, category.value, delay, e,
+                attempt + 1,
+                max_retries,
+                category.value,
+                delay,
+                e,
             )
             await asyncio.sleep(delay)
 
     # 最终失败：通知 breaker
     if breaker is not None:
         await breaker.report_failure()
+
+    # 失败落盘诊断（SmartResume llm_client 对照）：重试耗尽写 error.json（含 fallback 场景）
+    _dump_llm_error(fn, args, kwargs, last_error, max_retries)
 
     if fallback is not None:
         return fallback

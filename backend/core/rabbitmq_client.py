@@ -8,7 +8,7 @@
 
 import json
 import logging
-from typing import Callable, Awaitable, Optional
+from typing import Callable, Awaitable
 
 from core.config import settings
 
@@ -17,14 +17,30 @@ logger = logging.getLogger(__name__)
 _connection = None
 _channel = None
 _consumer_tag = None
+# 协作停止标志（JobHunter set_stop_check/should_stop 对照）：
+# 应用关闭时置位，消费者循环检查后停止拉新消息，避免 shutdown 截断正在处理的任务
+_stop_requested = False
 
 
 def _reset() -> None:
     """重置全局状态（仅测试用）。"""
-    global _connection, _channel, _consumer_tag
+    global _connection, _channel, _consumer_tag, _stop_requested
     _connection = None
     _channel = None
     _consumer_tag = None
+    _stop_requested = False
+
+
+def request_stop() -> None:
+    """请求协作停止（main.py lifespan shutdown 时调用，优先于关连接）。"""
+    global _stop_requested
+    _stop_requested = True
+    logger.info("RabbitMQ 协作停止已请求（不再消费新消息）")
+
+
+def should_stop() -> bool:
+    """协作停止检查（JobHunter should_stop 对照）：消费者循环内每消息检查。"""
+    return _stop_requested
 
 
 async def init_producer() -> bool:
@@ -93,6 +109,10 @@ async def init_consumer(
 
         # 注册消息处理回调
         async def _on_message(message: aio_pika.IncomingMessage) -> None:
+            # 协作停止（JobHunter should_stop 对照）：shutdown 已请求 → 拒绝新消息（reject 回队列）
+            if _stop_requested:
+                await message.reject(requeue=True)
+                return
             async with message.process():
                 try:
                     body = json.loads(message.body.decode("utf-8"))
@@ -152,9 +172,14 @@ async def send_message(payload: dict) -> bool:
 
 
 async def shutdown() -> None:
-    """关闭 RabbitMQ 连接和频道。"""
+    """关闭 RabbitMQ 连接和频道。
+
+    先发协作停止（JobHunter 对照）：消费者拒绝新消息（requeue），
+    正在处理的消息不被 shutdown 截断。
+    """
     global _connection, _channel, _consumer_tag
 
+    request_stop()
     _consumer_tag = None
     _channel = None
 

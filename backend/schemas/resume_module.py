@@ -16,7 +16,6 @@ v2 设计原则（统一 Agent 编辑器重设计）：
 import hashlib
 from datetime import datetime
 from enum import Enum
-from typing import Any
 
 from pydantic import BaseModel, Field, ConfigDict, model_validator
 
@@ -48,9 +47,7 @@ def _migrate_entries_to_items(data: dict, prefix: str) -> dict:
         # 如果 entries 是 Pydantic 对象列表，转为 dict
         if entries and hasattr(entries[0], "model_dump"):
             entries = [e.model_dump() for e in entries]
-        data["items"] = [
-            _ensure_item_id(entry, i, prefix) for i, entry in enumerate(entries)
-        ]
+        data["items"] = [_ensure_item_id(entry, i, prefix) for i, entry in enumerate(entries)]
     return data
 
 
@@ -123,7 +120,9 @@ class ModuleMetadata(BaseModel):
 class BaseItem(BaseModel):
     """所有条目的基础字段。"""
 
-    id: str = Field(default_factory=lambda: _make_id(str(datetime.now().timestamp())), description="唯一标识")
+    id: str = Field(
+        default_factory=lambda: _make_id(str(datetime.now().timestamp())), description="唯一标识"
+    )
     hidden: bool = Field(False, description="条目级隐藏")
 
 
@@ -146,14 +145,17 @@ class BasicInfoContent(BaseModel):
     v2 新增 metadata 字段。
     """
 
-    metadata: ModuleMetadata = Field(
-        default_factory=lambda: ModuleMetadata(title="基本信息")
-    )
+    metadata: ModuleMetadata = Field(default_factory=lambda: ModuleMetadata(title="基本信息"))
     name: str = Field(..., min_length=1, max_length=50, description="姓名")
     phone: str | None = Field(None, max_length=20, description="手机号")
     email: str | None = Field(None, max_length=100, description="邮箱")
     gender: str | None = Field(None, max_length=10, description="性别")
     age: int | None = Field(None, ge=0, le=150, description="年龄")
+    # SmartResume 派生字段对照（services/derived_fields.py）：服务端从经历/教育推导，缺失时补
+    work_years: int | None = Field(None, ge=0, le=60, description="工作年限（派生）")
+    highest_education: str | None = Field(
+        None, max_length=20, description="最高学历（派生，标准档位 key）"
+    )
     location: str | None = Field(None, max_length=100, description="所在城市")
     avatar: str | None = Field(None, max_length=500, description="头像 URL")
     job_title: str | None = Field(None, max_length=100, description="求职意向/当前职位")
@@ -192,9 +194,7 @@ class EducationItem(BaseItem):
 class EducationContent(BaseModel):
     """教育经历模块 — 列表。"""
 
-    metadata: ModuleMetadata = Field(
-        default_factory=lambda: ModuleMetadata(title="教育经历")
-    )
+    metadata: ModuleMetadata = Field(default_factory=lambda: ModuleMetadata(title="教育经历"))
     items: list[EducationItem] = Field(default_factory=list, description="教育经历列表")
 
     @model_validator(mode="before")
@@ -220,9 +220,7 @@ class WorkExperienceItem(BaseItem):
 class WorkExperienceContent(BaseModel):
     """工作经历模块 — 列表。"""
 
-    metadata: ModuleMetadata = Field(
-        default_factory=lambda: ModuleMetadata(title="工作经历")
-    )
+    metadata: ModuleMetadata = Field(default_factory=lambda: ModuleMetadata(title="工作经历"))
     items: list[WorkExperienceItem] = Field(default_factory=list, description="工作经历列表")
 
     @model_validator(mode="before")
@@ -260,9 +258,7 @@ class SkillsContent(BaseModel):
     新格式: {items: [{id, name, level, category}]}
     """
 
-    metadata: ModuleMetadata = Field(
-        default_factory=lambda: ModuleMetadata(title="专业技能")
-    )
+    metadata: ModuleMetadata = Field(default_factory=lambda: ModuleMetadata(title="专业技能"))
     items: list[SkillItem] = Field(default_factory=list, description="技能列表")
     show_levels: bool = Field(False, description="是否显示熟练度条")
 
@@ -286,11 +282,13 @@ class SkillsContent(BaseModel):
                     cat_name = getattr(cat, "name", "")
                     skill_names = getattr(cat, "items", [])
                 for skill_name in skill_names:
-                    items.append({
-                        "id": f"skill_{_make_id(skill_name)}",
-                        "name": skill_name,
-                        "category": cat_name,
-                    })
+                    items.append(
+                        {
+                            "id": f"skill_{_make_id(skill_name)}",
+                            "name": skill_name,
+                            "category": cat_name,
+                        }
+                    )
             data["items"] = items
         return data
 
@@ -310,9 +308,7 @@ class ProjectExperienceItem(BaseItem):
 class ProjectExperienceContent(BaseModel):
     """项目经历模块 — 列表。"""
 
-    metadata: ModuleMetadata = Field(
-        default_factory=lambda: ModuleMetadata(title="项目经历")
-    )
+    metadata: ModuleMetadata = Field(default_factory=lambda: ModuleMetadata(title="项目经历"))
     items: list[ProjectExperienceItem] = Field(default_factory=list)
 
     @model_validator(mode="before")
@@ -335,9 +331,7 @@ class LanguageItem(BaseItem):
 class LanguageContent(BaseModel):
     """语言能力模块 — 列表。"""
 
-    metadata: ModuleMetadata = Field(
-        default_factory=lambda: ModuleMetadata(title="语言能力")
-    )
+    metadata: ModuleMetadata = Field(default_factory=lambda: ModuleMetadata(title="语言能力"))
     items: list[LanguageItem] = Field(default_factory=list)
 
     @model_validator(mode="before")
@@ -360,9 +354,7 @@ class HonorItem(BaseItem):
 class HonorsContent(BaseModel):
     """荣誉奖项模块 — 列表。"""
 
-    metadata: ModuleMetadata = Field(
-        default_factory=lambda: ModuleMetadata(title="荣誉奖项")
-    )
+    metadata: ModuleMetadata = Field(default_factory=lambda: ModuleMetadata(title="荣誉奖项"))
     items: list[HonorItem] = Field(default_factory=list)
 
     @model_validator(mode="before")
@@ -386,9 +378,7 @@ class CertificateItem(BaseItem):
 class CertificatesContent(BaseModel):
     """证书模块 — 列表。"""
 
-    metadata: ModuleMetadata = Field(
-        default_factory=lambda: ModuleMetadata(title="证书")
-    )
+    metadata: ModuleMetadata = Field(default_factory=lambda: ModuleMetadata(title="证书"))
     items: list[CertificateItem] = Field(default_factory=list)
 
     @model_validator(mode="before")
@@ -409,9 +399,7 @@ class InterestItem(BaseItem):
 class InterestsContent(BaseModel):
     """兴趣爱好模块 — 列表。"""
 
-    metadata: ModuleMetadata = Field(
-        default_factory=lambda: ModuleMetadata(title="兴趣爱好")
-    )
+    metadata: ModuleMetadata = Field(default_factory=lambda: ModuleMetadata(title="兴趣爱好"))
     items: list[InterestItem] = Field(default_factory=list)
 
     @model_validator(mode="before")
@@ -425,8 +413,7 @@ class InterestsContent(BaseModel):
             if isinstance(first, str):
                 raw_items = data["items"]
                 data["items"] = [
-                    {"id": f"interest_{_make_id(name)}", "name": name}
-                    for name in raw_items
+                    {"id": f"interest_{_make_id(name)}", "name": name} for name in raw_items
                 ]
             # Pydantic objects → dict list
             elif hasattr(first, "model_dump"):
@@ -447,9 +434,7 @@ class ClubActivityItem(BaseItem):
 class ClubActivitiesContent(BaseModel):
     """社团活动模块 — 列表。"""
 
-    metadata: ModuleMetadata = Field(
-        default_factory=lambda: ModuleMetadata(title="社团活动")
-    )
+    metadata: ModuleMetadata = Field(default_factory=lambda: ModuleMetadata(title="社团活动"))
     items: list[ClubActivityItem] = Field(default_factory=list)
 
     @model_validator(mode="before")
@@ -474,9 +459,7 @@ class PublicationItem(BaseItem):
 class PublicationsContent(BaseModel):
     """发表论文模块 — 列表。"""
 
-    metadata: ModuleMetadata = Field(
-        default_factory=lambda: ModuleMetadata(title="研究成果")
-    )
+    metadata: ModuleMetadata = Field(default_factory=lambda: ModuleMetadata(title="研究成果"))
     items: list[PublicationItem] = Field(default_factory=list)
 
     @model_validator(mode="before")
@@ -501,9 +484,7 @@ class RecommendationItem(BaseItem):
 class RecommendationContent(BaseModel):
     """推荐人模块 — 列表。"""
 
-    metadata: ModuleMetadata = Field(
-        default_factory=lambda: ModuleMetadata(title="推荐人")
-    )
+    metadata: ModuleMetadata = Field(default_factory=lambda: ModuleMetadata(title="推荐人"))
     items: list[RecommendationItem] = Field(default_factory=list)
 
     @model_validator(mode="before")
@@ -535,9 +516,7 @@ class SocialLinksContent(BaseModel):
     新格式: {items: [{id, platform, url, icon?}]}
     """
 
-    metadata: ModuleMetadata = Field(
-        default_factory=lambda: ModuleMetadata(title="社交链接")
-    )
+    metadata: ModuleMetadata = Field(default_factory=lambda: ModuleMetadata(title="社交链接"))
     items: list[SocialProfileItem] = Field(default_factory=list)
 
     @model_validator(mode="before")
@@ -557,22 +536,26 @@ class SocialLinksContent(BaseModel):
             for field, label in field_map.items():
                 val = data.pop(field, None)
                 if val:
-                    items.append({
-                        "id": f"social_{_make_id(field)}",
-                        "platform": label,
-                        "url": val,
-                    })
+                    items.append(
+                        {
+                            "id": f"social_{_make_id(field)}",
+                            "platform": label,
+                            "url": val,
+                        }
+                    )
             # 旧的 others 字段
             others = data.pop("others", [])
             if others and hasattr(others[0], "model_dump"):
                 others = [o.model_dump() for o in others]
             for other in others:
                 if isinstance(other, dict) and (other.get("name") or other.get("url")):
-                    items.append({
-                        "id": f"social_{_make_id(other.get('name', 'other'))}",
-                        "platform": other.get("name", ""),
-                        "url": other.get("url", ""),
-                    })
+                    items.append(
+                        {
+                            "id": f"social_{_make_id(other.get('name', 'other'))}",
+                            "platform": other.get("name", ""),
+                            "url": other.get("url", ""),
+                        }
+                    )
             data["items"] = items
         return data
 
@@ -583,9 +566,7 @@ class OtherContent(BaseModel):
     用于不属于任何固定模块的补充信息。
     """
 
-    metadata: ModuleMetadata = Field(
-        default_factory=lambda: ModuleMetadata(title="其他")
-    )
+    metadata: ModuleMetadata = Field(default_factory=lambda: ModuleMetadata(title="其他"))
     title: str | None = Field(None, max_length=100, description="段落标题")
     content: str = Field("", max_length=5000, description="内容文本")
 
@@ -610,9 +591,7 @@ class CustomContent(BaseModel):
     新数据: {items: [{id, title, content}, ...]}（多板块）
     """
 
-    metadata: ModuleMetadata = Field(
-        default_factory=lambda: ModuleMetadata(title="自定义")
-    )
+    metadata: ModuleMetadata = Field(default_factory=lambda: ModuleMetadata(title="自定义"))
     title: str | None = Field(None, max_length=100, description="模块标题（单板块模式）")
     content: str | None = Field(None, max_length=5000, description="内容文本（单板块模式）")
     items: list[CustomSectionItem] = Field(default_factory=list, description="多板块列表")
@@ -627,16 +606,16 @@ class CustomContent(BaseModel):
             entries = data.pop("entries")
             if entries and hasattr(entries[0], "model_dump"):
                 entries = [e.model_dump() for e in entries]
-            data["items"] = [
-                _ensure_item_id(entry, i, "custom") for i, entry in enumerate(entries)
-            ]
+            data["items"] = [_ensure_item_id(entry, i, "custom") for i, entry in enumerate(entries)]
         # 单板块模式 title+content → items
         if not data.get("items") and data.get("title") and data.get("content"):
-            data["items"] = [{
-                "id": f"custom_{_make_id(data['title'])}",
-                "title": data["title"],
-                "content": data["content"],
-            }]
+            data["items"] = [
+                {
+                    "id": f"custom_{_make_id(data['title'])}",
+                    "title": data["title"],
+                    "content": data["content"],
+                }
+            ]
         return data
 
     @model_validator(mode="after")
@@ -767,9 +746,7 @@ class ResumeStyle(BaseModel):
     page_size: str = Field("A4", description="页面大小")
     section_spacing: str = Field("16px", description="段落/条目间距")
     custom_css: str = Field("", description="自定义 CSS")
-    hidden_modules: list[str] = Field(
-        default_factory=list, description="隐藏的模块类型列表"
-    )
+    hidden_modules: list[str] = Field(default_factory=list, description="隐藏的模块类型列表")
 
 
 # ═══════════════════════════════════════════════════════════

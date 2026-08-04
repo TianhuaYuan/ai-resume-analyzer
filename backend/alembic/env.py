@@ -27,6 +27,7 @@ import models.campus_track  # noqa: F401
 import models.feedback_like  # noqa: F401
 import models.market_asset  # noqa: F401
 import models.resume_entity  # noqa: F401
+import models.resume_status_event  # noqa: F401
 
 config = context.config
 

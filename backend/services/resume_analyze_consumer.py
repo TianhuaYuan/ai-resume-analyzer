@@ -16,14 +16,11 @@
 """
 
 import asyncio
-import json
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
-from core.config import settings
 from core.distributed_lock import acquire_lock, release_lock
-from core.redis_client import get_redis
 from core.websocket_manager import ws_manager
 from services.analyze_service import analyze_resume
 from services.resume_analysis_cache import (
@@ -54,7 +51,6 @@ async def process_analyze_task(payload: dict) -> None:
     """
     resume_id = payload.get("resume_id")
     user_id = payload.get("user_id")
-    filename = payload.get("filename", "unknown")
     retry_count = payload.get("retry_count", 0)
 
     if resume_id is None or user_id is None:
@@ -63,7 +59,9 @@ async def process_analyze_task(payload: dict) -> None:
 
     logger.info(
         "开始处理分析任务: resume_id=%d, user_id=%d, retry=%d",
-        resume_id, user_id, retry_count,
+        resume_id,
+        user_id,
+        retry_count,
     )
 
     lock_id = None
@@ -73,12 +71,11 @@ async def process_analyze_task(payload: dict) -> None:
         if lock_id is None:
             logger.info(
                 "用户%d已有分析任务在执行，跳过 resume_id=%d",
-                user_id, resume_id,
+                user_id,
+                resume_id,
             )
             # 通知前端分析已在运行
-            await _push_progress(
-                user_id, resume_id, 0, 4, "pending"
-            )
+            await _push_progress(user_id, resume_id, 0, 4, "pending")
             return
 
         # 2. 检查 Redis 缓存（幂等）
@@ -93,19 +90,28 @@ async def process_analyze_task(payload: dict) -> None:
         if not allowed:
             logger.warning(
                 "Token 额度不足，跳过后台分析: user_id=%d, error=%s",
-                user_id, quota_error,
+                user_id,
+                quota_error,
             )
-            await _push_notification(user_id, resume_id, "quota_exceeded", {
-                "message": quota_error,
-            })
+            await _push_notification(
+                user_id,
+                resume_id,
+                "quota_exceeded",
+                {
+                    "message": quota_error,
+                },
+            )
             return
 
         # 4. 初始化数据库 session
         from core.database import AsyncSessionLocal as async_session
+
         async with async_session() as db:
-            # 5. 批量分析 4 种类型
+            # 5. 批量分析 4 种类型（per-type 隔离：DeepInterview _guarded 对照——
+            #    单类型失败 drop 记日志，绝不因一个类型毁掉整批已成功的工作）
             results = {}
             total_tokens = 0
+            failed_types: list[str] = []
 
             total_types = len(VALID_ANALYSIS_TYPES)
             for i, analysis_type in enumerate(VALID_ANALYSIS_TYPES):
@@ -122,28 +128,42 @@ async def process_analyze_task(payload: dict) -> None:
 
                     logger.info(
                         "分析完成: resume_id=%d, type=%s",
-                        resume_id, analysis_type,
+                        resume_id,
+                        analysis_type,
                     )
 
                     # 每完成一项就推送进度
-                    await _push_progress(
-                        user_id, resume_id, i + 1, total_types, analysis_type
-                    )
+                    await _push_progress(user_id, resume_id, i + 1, total_types, analysis_type)
 
                 except asyncio.TimeoutError:
                     logger.error(
-                        "分析超时: resume_id=%d, type=%s",
-                        resume_id, analysis_type,
+                        "分析超时（跳过该类型）: resume_id=%d, type=%s",
+                        resume_id,
+                        analysis_type,
                     )
-                    raise
+                    failed_types.append(analysis_type)
                 except Exception as e:
                     logger.exception(
-                        "分析失败: resume_id=%d, type=%s: %s",
-                        resume_id, analysis_type, e,
+                        "分析失败（跳过该类型）: resume_id=%d, type=%s: %s",
+                        resume_id,
+                        analysis_type,
+                        e,
                     )
-                    raise
+                    failed_types.append(analysis_type)
 
-            # 6. 写入完整缓存
+            # 全部失败 → 视为任务失败（MQ 重试/死信）；部分失败 → 写部分缓存
+            if not results:
+                raise RuntimeError(f"所有分析类型均失败: {failed_types}")
+            if failed_types:
+                logger.warning(
+                    "部分类型失败（写部分缓存，成功 %d/%d）: resume_id=%d, failed=%s",
+                    len(results),
+                    total_types,
+                    resume_id,
+                    failed_types,
+                )
+
+            # 6. 写入完整缓存（set_full_analysis_cache 缺类型自动跳过）
             await set_full_analysis_cache(resume_id, results)
 
             # 7. 记录 token 消耗
@@ -155,20 +175,30 @@ async def process_analyze_task(payload: dict) -> None:
 
             logger.info(
                 "分析任务完成: resume_id=%d, user_id=%d, tokens=%d",
-                resume_id, user_id, total_tokens,
+                resume_id,
+                user_id,
+                total_tokens,
             )
 
     except Exception as e:
         logger.exception(
             "分析任务失败: resume_id=%d, user_id=%d, retry=%d: %s",
-            resume_id, user_id, retry_count, e,
+            resume_id,
+            user_id,
+            retry_count,
+            e,
         )
 
         # 推送失败通知
-        await _push_notification(user_id, resume_id, "failed", {
-            "message": str(e),
-            "retry_count": retry_count,
-        })
+        await _push_notification(
+            user_id,
+            resume_id,
+            "failed",
+            {
+                "message": str(e),
+                "retry_count": retry_count,
+            },
+        )
 
         # 重新抛出让 MQ 决定是否重试
         raise
@@ -188,8 +218,10 @@ async def _push_progress(
 ) -> None:
     """推送分析进度到 WebSocket。"""
     type_labels = {
-        "summary": "总结", "skills": "技能",
-        "experience": "经历", "score": "评分",
+        "summary": "总结",
+        "skills": "技能",
+        "experience": "经历",
+        "score": "评分",
     }
     type_label = type_labels.get(current_type, current_type)
     message = {
@@ -205,7 +237,10 @@ async def _push_progress(
     await ws_manager.send_to_user(user_id, message)
     logger.info(
         "分析进度推送: resume_id=%d, %d/%d (当前: %s)",
-        resume_id, completed, total, type_label,
+        resume_id,
+        completed,
+        total,
+        type_label,
     )
 
 
@@ -243,7 +278,10 @@ async def _push_notification(
     await ws_manager.send_to_user(user_id, message)
     logger.info(
         "分析状态通知推送: user_id=%d, resume_id=%d, status=%s, tokens=%d",
-        user_id, resume_id, status, token_used,
+        user_id,
+        resume_id,
+        status,
+        token_used,
     )
 
 

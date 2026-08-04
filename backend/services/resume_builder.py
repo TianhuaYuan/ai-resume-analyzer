@@ -32,7 +32,6 @@ from schemas.resume_module import (
     BuilderUpdateRequest,
     ModuleType,
     ResumeModuleCreate,
-    ResumeStyle,
     validate_module_content,
 )
 from services.rag.asset_source import ASSET_TYPE_RESUME
@@ -76,24 +75,25 @@ def _validate_modules(modules: list[ResumeModuleCreate], strict: bool = True) ->
 
 
 # 条目类模块（content.entries: [...]，含必填字段）
-_ENTRY_MODULE_TYPES = frozenset({
-    ModuleType.EDUCATION,
-    ModuleType.WORK_EXPERIENCE,
-    ModuleType.PROJECT_EXPERIENCE,
-    ModuleType.LANGUAGE,
-    ModuleType.HONORS,
-    ModuleType.CERTIFICATES,
-    ModuleType.CLUB_ACTIVITIES,
-    ModuleType.PUBLICATIONS,
-    ModuleType.RECOMMENDATION,
-})
+_ENTRY_MODULE_TYPES = frozenset(
+    {
+        ModuleType.EDUCATION,
+        ModuleType.WORK_EXPERIENCE,
+        ModuleType.PROJECT_EXPERIENCE,
+        ModuleType.LANGUAGE,
+        ModuleType.HONORS,
+        ModuleType.CERTIFICATES,
+        ModuleType.CLUB_ACTIVITIES,
+        ModuleType.PUBLICATIONS,
+        ModuleType.RECOMMENDATION,
+    }
+)
 
 
 def _entry_is_blank(entry: dict) -> bool:
     """判断条目是否全空（草稿中间态残留，如刚点"添加条目"还没填）。"""
     return all(
-        v is None or v == "" or (isinstance(v, list) and len(v) == 0)
-        for v in entry.values()
+        v is None or v == "" or (isinstance(v, list) and len(v) == 0) for v in entry.values()
     )
 
 
@@ -118,14 +118,14 @@ def _sanitize_draft_modules(modules: list[ResumeModuleCreate]) -> None:
             items = content.get("items")
             if isinstance(items, list):
                 content["items"] = [
-                    i for i in items
-                    if isinstance(i, dict) and (i.get("name") or "").strip()
+                    i for i in items if isinstance(i, dict) and (i.get("name") or "").strip()
                 ]
             # 旧格式 categories：name 空且 items 空 → 移除
             categories = content.get("categories")
             if isinstance(categories, list):
                 content["categories"] = [
-                    c for c in categories
+                    c
+                    for c in categories
                     if isinstance(c, dict) and ((c.get("name") or "").strip() or c.get("items"))
                 ]
         elif mod.module_type in _ENTRY_MODULE_TYPES:
@@ -134,8 +134,7 @@ def _sanitize_draft_modules(modules: list[ResumeModuleCreate]) -> None:
                 field_items = content.get(field)
                 if isinstance(field_items, list):
                     content[field] = [
-                        i for i in field_items
-                        if isinstance(i, dict) and not _entry_is_blank(i)
+                        i for i in field_items if isinstance(i, dict) and not _entry_is_blank(i)
                     ]
         elif mod.module_type in (ModuleType.OTHER, ModuleType.CUSTOM):
             if not (content.get("content") or "").strip():
@@ -255,7 +254,9 @@ async def create_builder_resume(
 
     logger.info(
         "Created builder resume: user=%d, resume=%d, modules=%d",
-        user_id, resume.id, len(modules),
+        user_id,
+        resume.id,
+        len(modules),
     )
     return resume, modules
 
@@ -410,7 +411,9 @@ async def update_resume_draft(
 
     logger.info(
         "Updated resume draft: user=%d, resume=%d, modules=%d",
-        user_id, resume_id, len(new_modules),
+        user_id,
+        resume_id,
+        len(new_modules),
     )
     return resume, new_modules
 
@@ -440,18 +443,42 @@ _MODULE_SECTION_HEADERS: dict[str, str] = {
 
 # content JSON key → 中文标签
 _FIELD_LABELS: dict[str, str] = {
-    "name": "姓名", "phone": "手机", "email": "邮箱", "gender": "性别",
-    "age": "年龄", "location": "所在城市", "avatar": "头像",
-    "job_title": "求职意向", "summary": "个人总结",
-    "school": "学校", "degree": "学历", "major": "专业",
-    "start_date": "开始时间", "end_date": "结束时间", "gpa": "GPA",
-    "description": "描述", "company": "公司", "position": "职位",
-    "achievements": "主要成就", "role": "角色", "url": "链接",
-    "tech_stack": "技术栈", "proficiency": "熟练度", "score": "成绩",
-    "title": "标题", "issuer": "颁发机构", "date": "时间",
-    "authors": "作者", "venue": "发表期刊", "organization": "组织",
-    "contact": "联系方式", "github": "GitHub", "linkedin": "LinkedIn",
-    "website": "个人网站", "twitter": "Twitter", "wechat": "微信",
+    "name": "姓名",
+    "phone": "手机",
+    "email": "邮箱",
+    "gender": "性别",
+    "age": "年龄",
+    "location": "所在城市",
+    "avatar": "头像",
+    "job_title": "求职意向",
+    "summary": "个人总结",
+    "school": "学校",
+    "degree": "学历",
+    "major": "专业",
+    "start_date": "开始时间",
+    "end_date": "结束时间",
+    "gpa": "GPA",
+    "description": "描述",
+    "company": "公司",
+    "position": "职位",
+    "achievements": "主要成就",
+    "role": "角色",
+    "url": "链接",
+    "tech_stack": "技术栈",
+    "proficiency": "熟练度",
+    "score": "成绩",
+    "title": "标题",
+    "issuer": "颁发机构",
+    "date": "时间",
+    "authors": "作者",
+    "venue": "发表期刊",
+    "organization": "组织",
+    "contact": "联系方式",
+    "github": "GitHub",
+    "linkedin": "LinkedIn",
+    "website": "个人网站",
+    "twitter": "Twitter",
+    "wechat": "微信",
     "content": "内容",
 }
 
@@ -510,8 +537,10 @@ def _module_content_to_text(module_type: str, content: dict) -> str:
         return "\n".join(lines)
 
     # 兴趣模块（扁平字符串列表）
-    if "items" in content and isinstance(content["items"], list) and all(
-        isinstance(i, str) for i in content["items"]
+    if (
+        "items" in content
+        and isinstance(content["items"], list)
+        and all(isinstance(i, str) for i in content["items"])
     ):
         return ", ".join(content["items"])
 
@@ -546,6 +575,66 @@ def _merge_modules_to_text(modules: list[ResumeModule]) -> str:
         if content_text.strip():
             parts.append(f"{header}\n{content_text}")
     return "\n\n".join(parts)
+
+
+def _enrich_derived_fields(modules: list[ResumeModule]) -> None:
+    """派生字段增强（SmartResume data_processor 对照，直接复制其纯函数）。
+
+    - work_experience.items[].company → clean_company_name（重复后缀折叠）
+    - education.items[].school → clean_school_name（去括号）
+    - basic_info：缺失时补 work_years / highest_education（derive_work_years /
+      derive_highest_education），age/gpa 若存在则做范围校验清洗
+    - 不改 parsed_text（派生字段不入检索原文，避免污染向量内容）
+    """
+    from services.derived_fields import (
+        clean_company_name,
+        clean_school_name,
+        derive_highest_education,
+        derive_work_years,
+        extract_age,
+        extract_gpa,
+    )
+
+    work_items: list[dict] = []
+    edu_items: list[dict] = []
+    basic: dict | None = None
+
+    for m in modules:
+        content = m.content or {}
+        if m.module_type == "work_experience":
+            for it in content.get("items", []) or []:
+                if isinstance(it, dict) and it.get("company"):
+                    it["company"] = clean_company_name(it["company"])
+                    work_items.append(it)
+        elif m.module_type == "education":
+            for it in content.get("items", []) or []:
+                if isinstance(it, dict):
+                    if it.get("school"):
+                        it["school"] = clean_school_name(it["school"])
+                    edu_items.append(it)
+        elif m.module_type == "basic_info":
+            basic = content
+
+    if basic is None:
+        return
+    # 缺失时补派生字段（不覆盖用户显式填写值）
+    if basic.get("work_years") is None:
+        wy = derive_work_years(work_items, edu_items)
+        if wy >= 0:
+            basic["work_years"] = wy
+    if not basic.get("highest_education"):
+        he = derive_highest_education(edu_items)
+        if he:
+            basic["highest_education"] = he
+    # 范围校验清洗（SmartResume 年龄/GPA 提取对照）
+    if basic.get("age") is not None:
+        age = extract_age(basic["age"])
+        if age >= 0:
+            basic["age"] = age
+    if basic.get("gpa") is not None:
+        gpa = extract_gpa(basic["gpa"])
+        if gpa >= 0:
+            basic["gpa"] = gpa
 
 
 async def complete_resume(
@@ -629,6 +718,12 @@ async def complete_resume(
             db.add(module)
             current_modules.append(module)
 
+    # 4.5 派生字段增强（SmartResume 对照）：公司/校名清洗 + 工作年限/最高学历推导（缺失时补）
+    try:
+        _enrich_derived_fields(current_modules)
+    except Exception as e:
+        logger.warning("派生字段增强失败（不影响主流程）: %s", e)
+
     # 5. 合并模块 → parsed_text + content_hash（content_hash 统一 = hash(parsed_text)，与上传语义一致）
     # 兜底：请求未带 modules 且简历无模块（如上传简历绕过编辑器直调 complete）→ 保留原解析文本
     if body.modules is None and not current_modules and resume.parsed_text:
@@ -660,7 +755,9 @@ async def complete_resume(
         ) from e
 
     # 8. 更新 resume（chunk_count 已由 ensure_indexed 重建写回；未重建时是上次值，内容未变故正确）
-    resume.status = "ready"
+    from services.resume_service import set_resume_status
+
+    await set_resume_status(db, resume, "ready", reason="保存并完成")
     resume.version += 1
     resume.updated_at = datetime.now(timezone.utc)
 
@@ -672,6 +769,9 @@ async def complete_resume(
 
     logger.info(
         "Completed resume: user=%d, resume=%d, chunks=%d, version=%d",
-        user_id, resume_id, resume.chunk_count, resume.version,
+        user_id,
+        resume_id,
+        resume.chunk_count,
+        resume.version,
     )
     return resume, current_modules

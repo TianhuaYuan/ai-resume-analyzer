@@ -17,6 +17,7 @@ from models.resume_entity import (
     ResumeEntityFact,
     ResumeEpisode,
 )
+from models.resume_status_event import ResumeStatusEvent
 
 __all__ = [
     "Base",
@@ -36,4 +37,5 @@ __all__ = [
     "ResumeEntity",
     "ResumeEntityFact",
     "ResumeEpisode",
+    "ResumeStatusEvent",
 ]

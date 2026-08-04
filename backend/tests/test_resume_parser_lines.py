@@ -63,7 +63,8 @@ def test_resolve_invalid_ref_kept_for_validation():
     assert _resolve_line_refs({"lines": [2, 1]}, lines) == {"lines": [2, 1]}  # a > b
     assert _resolve_line_refs({"lines": [1]}, lines) == {"lines": [1]}  # 长度错
     assert _resolve_line_refs({"lines": [1, 2], "extra": 1}, lines) == {
-        "lines": [1, 2], "extra": 1,
+        "lines": [1, 2],
+        "extra": 1,
     }  # 非纯引用 dict 不替换
 
 
@@ -99,26 +100,32 @@ def test_resolve_scalars_and_arrays_untouched():
 async def test_parse_with_line_refs_resolves_long_fields():
     """LLM 输出长字段用 lines 引用 → 校验通过，字段为原文切片。"""
     resume_text = "张三\nPython 工程师\n负责后端系统开发\n性能提升 30%"
-    llm_response = json.dumps([
-        {
-            "module_type": "basic_info",
-            "content": {"name": "张三", "job_title": "Python 工程师"},
-            "sort_order": 0,
-        },
-        {
-            "module_type": "work_experience",
-            "content": {
-                "items": [{
-                    "company": "某公司",
-                    "position": "后端工程师",
-                    "description": {"lines": [3, 4]},
-                }],
+    llm_response = json.dumps(
+        [
+            {
+                "module_type": "basic_info",
+                "content": {"name": "张三", "job_title": "Python 工程师"},
+                "sort_order": 0,
             },
-            "sort_order": 1,
-        },
-    ])
+            {
+                "module_type": "work_experience",
+                "content": {
+                    "items": [
+                        {
+                            "company": "某公司",
+                            "position": "后端工程师",
+                            "description": {"lines": [3, 4]},
+                        }
+                    ],
+                },
+                "sort_order": 1,
+            },
+        ]
+    )
 
-    with patch("services.rag.pipeline.llm_generate", new_callable=AsyncMock, return_value=llm_response):
+    with patch(
+        "services.rag.pipeline.llm_generate", new_callable=AsyncMock, return_value=llm_response
+    ):
         modules = await parse_text_to_modules(resume_text)
 
     work = modules[1]
@@ -128,15 +135,19 @@ async def test_parse_with_line_refs_resolves_long_fields():
 @pytest.mark.asyncio
 async def test_parse_line_refs_not_required():
     """LLM 不使用引用（全部字符串）→ 行为与 A2 前一致。"""
-    llm_response = json.dumps([
-        {
-            "module_type": "basic_info",
-            "content": {"name": "李四", "job_title": "前端"},
-            "sort_order": 0,
-        },
-    ])
+    llm_response = json.dumps(
+        [
+            {
+                "module_type": "basic_info",
+                "content": {"name": "李四", "job_title": "前端"},
+                "sort_order": 0,
+            },
+        ]
+    )
 
-    with patch("services.rag.pipeline.llm_generate", new_callable=AsyncMock, return_value=llm_response):
+    with patch(
+        "services.rag.pipeline.llm_generate", new_callable=AsyncMock, return_value=llm_response
+    ):
         modules = await parse_text_to_modules("李四\n前端工程师")
 
     assert modules[0].content["name"] == "李四"
@@ -145,34 +156,46 @@ async def test_parse_line_refs_not_required():
 @pytest.mark.asyncio
 async def test_parse_invalid_line_ref_retries():
     """无效 lines 引用（越界）→ 校验失败回灌 → 第二次输出字符串 → 成功。"""
-    bad_response = json.dumps([
-        {
-            "module_type": "work_experience",
-            "content": {
-                "items": [{
-                    "company": "某公司",
-                    "position": "后端",
-                    "description": {"lines": [1, 99]},  # 越界 → 校验失败
-                }],
+    bad_response = json.dumps(
+        [
+            {
+                "module_type": "work_experience",
+                "content": {
+                    "items": [
+                        {
+                            "company": "某公司",
+                            "position": "后端",
+                            "description": {"lines": [1, 99]},  # 越界 → 校验失败
+                        }
+                    ],
+                },
+                "sort_order": 0,
             },
-            "sort_order": 0,
-        },
-    ])
-    good_response = json.dumps([
-        {
-            "module_type": "work_experience",
-            "content": {
-                "items": [{
-                    "company": "某公司",
-                    "position": "后端",
-                    "description": "负责开发",
-                }],
+        ]
+    )
+    good_response = json.dumps(
+        [
+            {
+                "module_type": "work_experience",
+                "content": {
+                    "items": [
+                        {
+                            "company": "某公司",
+                            "position": "后端",
+                            "description": "负责开发",
+                        }
+                    ],
+                },
+                "sort_order": 0,
             },
-            "sort_order": 0,
-        },
-    ])
+        ]
+    )
 
-    with patch("services.rag.pipeline.llm_generate", new_callable=AsyncMock, side_effect=[bad_response, good_response]):
+    with patch(
+        "services.rag.pipeline.llm_generate",
+        new_callable=AsyncMock,
+        side_effect=[bad_response, good_response],
+    ):
         modules = await parse_text_to_modules("某公司\n后端\n负责开发")
 
     assert modules[0].content["items"][0]["description"] == "负责开发"
@@ -213,6 +236,87 @@ def test_normalize_modules_dates_and_emails():
     assert modules[1]["content"]["email"] == "zhangsan@qq.com"
 
 
+# ═══════════════════════════════════════════════════════════
+# _clean_text_content / _is_garbled（SmartResume 输入侧规范化，直接复制）
+# ═══════════════════════════════════════════════════════════
+
+
+def test_clean_text_content_nfkc_and_whitespace():
+    """NFKC 归一化 + 全角空格统一 + 多空格折叠（SmartResume _clean_text_content 复制验证）。"""
+    from services.resume_parser import _clean_text_content
+
+    # 全角字母 → 半角；全角空格（U+3000）→ 普通空格；NBSP → 普通空格；多空格折叠
+    assert _clean_text_content("Ｐｙｔｈｏｎ　开发") == "Python 开发"
+    assert _clean_text_content("后端 开发") == "后端 开发"
+    assert _clean_text_content("a    b") == "a b"
+    assert _clean_text_content("") == ""
+
+
+def test_clean_text_content_garbled_filtered():
+    """乱码长串（PDF 水印/损坏字体特征）被过滤，正常文本保留。"""
+    from services.resume_parser import _clean_text_content, _is_garbled
+
+    garbled = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVW"  # 49 个全不同字符
+    assert _is_garbled(garbled) is True
+    assert garbled not in _clean_text_content(f"行1 {garbled} 行2")
+
+    normal = "machine-learning-engineer-experience-2024-summer-internship"
+    assert _is_garbled(normal) is False  # 有重复字符（-、e 等），唯一率 < 0.9
+    assert normal in _clean_text_content(normal)
+
+    assert _is_garbled("") is False
+
+
+def test_index_lines_cleans_input_first():
+    """_index_lines 前置清洗：全角/全角空格被规范化后再索引，行号对齐清洗后文本。"""
+    indexed, lines = _index_lines("Ａ公司\nPython　开发")
+
+    assert lines == ["A公司", "Python 开发"]
+    assert indexed == "[1] A公司\n[2] Python 开发"
+
+
+# ═══════════════════════════════════════════════════════════
+# _collect_line_refs（溯源证据保留，SmartResume refer_index_range 对应物）
+# ═══════════════════════════════════════════════════════════
+
+
+def test_collect_line_refs_paths_and_slices():
+    """行号引用在替换前被收集：字段路径 + 行号区间 + 切片原文。"""
+    from services.resume_parser import _collect_line_refs
+
+    lines = ["公司A", "负责系统开发", "维护稳定性", "项目B"]
+    modules = [
+        {
+            "module_type": "work_experience",
+            "content": {
+                "items": [
+                    {
+                        "company": "公司A",
+                        "description": {"lines": [2, 3]},  # 引用原文 2-3 行
+                    }
+                ]
+            },
+        }
+    ]
+    refs = _collect_line_refs(modules, lines)
+
+    assert len(refs) == 1
+    assert refs[0]["path"] == "[0].content.items[0].description"  # 顶层是模块列表 → 从 [0] 起
+    assert refs[0]["lines"] == [2, 3]
+    assert refs[0]["text"] == "负责系统开发\n维护稳定性"
+    assert refs[0]["provenance"] == "line_ref"
+
+
+def test_collect_line_refs_invalid_ignored():
+    """越界/格式错误的引用不产生溯源证据（与 _resolve_line_refs 行为一致）。"""
+    from services.resume_parser import _collect_line_refs
+
+    lines = ["A", "B"]
+    assert _collect_line_refs({"description": {"lines": [5, 9]}}, lines) == []
+    assert _collect_line_refs({"description": {"lines": "xx"}}, lines) == []
+    assert _collect_line_refs({"description": "普通文本"}, lines) == []
+
+
 def test_verify_fields_provenance():
     """字段级溯源：原文包含 → verified，否则 missing。"""
     lines = ["张三", "Python 工程师", "在腾讯公司担任后端开发", "毕业于广东海洋大学"]
@@ -244,21 +348,27 @@ def test_verify_fields_provenance():
 @pytest.mark.asyncio
 async def test_parse_normalizes_dates_end_to_end():
     """端到端：LLM 输出 '2024年9月' → 校验通过且为 '2024-09'。"""
-    llm_response = json.dumps([
-        {
-            "module_type": "work_experience",
-            "content": {
-                "items": [{
-                    "company": "某公司",
-                    "position": "后端",
-                    "start_date": "2024年9月",
-                    "end_date": "至今",
-                }],
+    llm_response = json.dumps(
+        [
+            {
+                "module_type": "work_experience",
+                "content": {
+                    "items": [
+                        {
+                            "company": "某公司",
+                            "position": "后端",
+                            "start_date": "2024年9月",
+                            "end_date": "至今",
+                        }
+                    ],
+                },
+                "sort_order": 0,
             },
-            "sort_order": 0,
-        },
-    ])
-    with patch("services.rag.pipeline.llm_generate", new_callable=AsyncMock, return_value=llm_response):
+        ]
+    )
+    with patch(
+        "services.rag.pipeline.llm_generate", new_callable=AsyncMock, return_value=llm_response
+    ):
         modules = await parse_text_to_modules("某公司\n后端\n2024年9月\n至今")
 
     assert modules[0].content["items"][0]["start_date"] == "2024-09"

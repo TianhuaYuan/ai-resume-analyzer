@@ -4,11 +4,14 @@
 MCP 工具捕获 HTTPException 转 TextContent 错误 JSON，REST 端点直接抛出。
 """
 
+import asyncio
+import json
 import logging
 import re
 from typing import Literal
 
 from fastapi import HTTPException, status
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,6 +31,103 @@ from services.resume_analysis_cache import (
 logger = logging.getLogger(__name__)
 
 AnalysisType = Literal["summary", "skills", "experience", "score"]
+
+# ── 对抗二评（DeepInterview verifier.py 整体移植）──────────────────
+# 只对低于此阈值的维度做二评（对齐 _VERIFY_LEVELS weak/developing 语义）
+VERIFY_SCORE_THRESHOLD = 60
+# 每个二评 LLM 调用的墙钟上限
+VERIFY_TIMEOUT = 30
+
+_VERIFY_SYSTEM = (
+    "你是一个怀疑派二次评审，审计简历评分是否过高或过低（over/under-scoring）。\n"
+    "给定一个评分维度、候选人的真实简历原文片段、一审引用的依据与原始 0-100 分数，\n"
+    "判断该分数是否被候选人的真实内容【充分支撑】。\n"
+    "- 若支撑充分：justified=true，adjusted_score 与原始分数相同\n"
+    "- 若支撑不足：justified=false，给出修正后的 adjusted_score（同 0-100 量表，\n"
+    "  0=完全无相关内容，50=一般，100=杰出），附简短 reason\n"
+    "保持保守：证据明确支持时才调整分数。只输出 JSON。"
+)
+
+
+async def _verify_score_llm(label: str, score: int, excerpt: str, user_id: int) -> int | None:
+    """单个维度二评（DeepInterview _guarded 对照）：任何失败保原分（返回 None）。"""
+    user_prompt = (
+        f"评分维度：{label}\n"
+        f"原始分数：{score} / 100\n\n"
+        f"候选人简历原文片段：\n{excerpt[:4000]}\n\n"
+        f"一审依据：该维度低于 {VERIFY_SCORE_THRESHOLD} 分（疑似低评或误评）"
+    )
+    try:
+        raw = await asyncio.wait_for(
+            with_retry(
+                llm_generate,
+                system=_VERIFY_SYSTEM,
+                user=user_prompt,
+                temperature=0.0,
+                max_tokens=120,
+                user_id=user_id,
+                fallback='{"justified": true, "adjusted_score": 0, "reason": ""}',
+                max_retries=1,
+            ),
+            timeout=VERIFY_TIMEOUT,
+        )
+        data = json.loads(raw.strip())
+        if data.get("justified") is True:
+            return None  # 分数站得住 → 保原分
+        adjusted = int(data.get("adjusted_score", score))
+        return max(0, min(100, adjusted))  # 0-100 夹紧（_clamp_score 对照）
+    except Exception as e:
+        logger.warning("评分二评失败（保原分）: %s: %s", label, e)
+        return None
+
+
+async def verify_scores(scores: ScoreDetail, parsed_text: str, user_id: int) -> ScoreDetail:
+    """对抗二评（DeepInterview verifier.py 移植）：只审低分维度，grounded 原文，失败保原分。
+
+    - 仅 `JUDGE_ENABLED` 时启用（对齐 Settings.enable_score_verifier 默认关）
+    - 只审低于 VERIFY_SCORE_THRESHOLD 的维度（对齐 _VERIFY_LEVELS）
+    - grounded 在简历原文（对齐"不拿一审自己的摘要评一审"防循环论证）
+    - band 由 ScoreDetail model_validator 从最终分数重派生（分数↔档位同源）
+    """
+    if not settings.JUDGE_ENABLED or not parsed_text:
+        return scores
+
+    low_dims: dict[str, int] = {}
+    if scores.ats_match < VERIFY_SCORE_THRESHOLD:
+        low_dims["ATS 匹配"] = scores.ats_match
+    if scores.keyword_coverage < VERIFY_SCORE_THRESHOLD:
+        low_dims["关键词覆盖"] = scores.keyword_coverage
+    if scores.skill_density < VERIFY_SCORE_THRESHOLD:
+        low_dims["技能密度"] = scores.skill_density
+    if scores.overall < VERIFY_SCORE_THRESHOLD:
+        low_dims["综合评价"] = scores.overall
+    if not low_dims:
+        return scores
+
+    # 并发二评（独立维度互不依赖）
+    import asyncio as _asyncio
+
+    tasks = {
+        label: _verify_score_llm(label, score, parsed_text, user_id)
+        for label, score in low_dims.items()
+    }
+    results = await _asyncio.gather(*tasks.values())
+
+    adjusted: dict[str, int] = {}
+    for label, value in zip(tasks.keys(), results):
+        if value is not None:
+            adjusted[label] = value
+    if not adjusted:
+        return scores
+
+    logger.info("评分二评调整: %s", adjusted)
+    return ScoreDetail(
+        ats_match=adjusted.get("ATS 匹配", scores.ats_match),
+        keyword_coverage=adjusted.get("关键词覆盖", scores.keyword_coverage),
+        skill_density=adjusted.get("技能密度", scores.skill_density),
+        overall=adjusted.get("综合评价", scores.overall),
+    )
+
 
 _ANALYSIS_PROMPTS: dict[str, str] = {
     "summary": (
@@ -68,9 +168,11 @@ _ANALYSIS_PROMPTS: dict[str, str] = {
 def _parse_scores(analysis: str) -> ScoreDetail | None:
     r"""从 LLM 返回的评分文本中提取量化分数。
 
-    Task 2.5: 支持多种 LLM 输出格式，按优先级匹配：
+    A3 评分契约升级（Magic-Resume JSON 契约对照）：JSON-first——
+    LLM 输出完整 JSON 对象时直接过 ScoreDetail.model_validate（0-100 边界 +
+    band 同源派生落在类型上）；非 JSON 输出回退到原有 4 级正则：
     1. Markdown 表格（最常见）
-    2. JSON 格式
+    2. JSON 键值（正则版）
     3. 键值对 / 分节标题（中英文标签：XX/100、XX分、score: XX、得分: XX，标签与数字可跨行）
     4. 裸数字序列（无标签，按出现顺序取前 4 个）
 
@@ -79,12 +181,20 @@ def _parse_scores(analysis: str) -> ScoreDetail | None:
     if not analysis:
         return None
 
+    # 0. JSON-first（Magic-Resume fit-report JSON 契约对照）：完整对象 → 契约校验直接返回
+    try:
+        data = json.loads(analysis.strip())
+        if isinstance(data, dict) and all(
+            k in data for k in ("ats_match", "keyword_coverage", "skill_density", "overall")
+        ):
+            return ScoreDetail.model_validate(data)  # 越界/缺键 → ValidationError → 正则降级
+    except (json.JSONDecodeError, ValueError, ValidationError):
+        pass  # 非 JSON 或契约不通过 → 走正则降级
+
     all_scores: list[int] = []
 
     # 1. 尝试从 Markdown 表格中提取
-    table_pattern = re.compile(
-        r"\|\s*(?:ATS|关键词|技能密度|综合|评价)\s*\|\s*(\d+)\s*\|"
-    )
+    table_pattern = re.compile(r"\|\s*(?:ATS|关键词|技能密度|综合|评价)\s*\|\s*(\d+)\s*\|")
     all_scores = [int(m.group(1)) for m in table_pattern.finditer(analysis)]
 
     # 2. 尝试 JSON 格式
@@ -102,7 +212,7 @@ def _parse_scores(analysis: str) -> ScoreDetail | None:
             r"ATS\s*得分|关键词\s*得分|技能\s*得分|综合\s*得分)"
         )
         for m in label_pattern.finditer(analysis):
-            tail = analysis[m.end():m.end() + 80]
+            tail = analysis[m.end() : m.end() + 80]
             num = re.search(r"(\d+)", tail)
             if num:
                 all_scores.append(int(num.group(1)))
@@ -117,12 +227,16 @@ def _parse_scores(analysis: str) -> ScoreDetail | None:
     if len(valid_scores) < 4:
         return None
 
-    return ScoreDetail(
-        ats_match=valid_scores[0],
-        keyword_coverage=valid_scores[1],
-        skill_density=valid_scores[2],
-        overall=valid_scores[3],
-    )
+    # 契约收口（Magic-Resume zod min/max 对照）：越界分数不落库
+    try:
+        return ScoreDetail(
+            ats_match=valid_scores[0],
+            keyword_coverage=valid_scores[1],
+            skill_density=valid_scores[2],
+            overall=valid_scores[3],
+        )
+    except ValidationError:
+        return None
 
 
 async def analyze_resume(
@@ -191,14 +305,19 @@ async def analyze_resume(
 
     try:
         client = get_chat_client()
-        response = await client.chat.completions.create(
-            model=settings.CHAT_MODEL,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=0.3,
-        )
+
+        async def _call() -> "object":
+            return await client.chat.completions.create(
+                model=settings.CHAT_MODEL,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=0.3,
+            )
+
+        # 超时护栏（DeepInterview _guarded 对照）：LLM 挂起时返回明确错误而非无限等待
+        response = await asyncio.wait_for(_call(), timeout=settings.ANALYZE_LLM_TIMEOUT)
         analysis = (response.choices[0].message.content or "").strip()
         usage_info = {}
         if hasattr(response, "usage") and response.usage:
@@ -207,11 +326,17 @@ async def analyze_resume(
             usage_info = {"total_tokens": pt + ct, "prompt_tokens": pt, "completion_tokens": ct}
             # T3: 统一记账
             await record_llm_usage(user_id, pt, ct)
-            logger.info("分析 token: type=%s, prompt=%d, completion=%d, total=%d",
-                        analysis_type, pt, ct, pt + ct)
+            logger.info(
+                "分析 token: type=%s, prompt=%d, completion=%d, total=%d",
+                analysis_type,
+                pt,
+                ct,
+                pt + ct,
+            )
         else:
-            logger.info("分析无 usage 返回: type=%s, hasattr=%s",
-                        analysis_type, hasattr(response, "usage"))
+            logger.info(
+                "分析无 usage 返回: type=%s, hasattr=%s", analysis_type, hasattr(response, "usage")
+            )
     except Exception as e:
         logger.exception("analyze_resume failed for resume %d", resume_id)
         raise HTTPException(
@@ -226,11 +351,12 @@ async def analyze_resume(
         "usage": usage_info,
     }
 
-    # score 类型：解析量化分数
+    # score 类型：解析量化分数 → 对抗二评（DeepInterview verifier 移植，仅低分维度 + JUDGE_ENABLED）
     if analysis_type == "score":
         scores = _parse_scores(analysis)
         if scores is not None:
-            result["scores"] = scores.model_dump()
+            verified = await verify_scores(scores, parsed_text, user_id)
+            result["scores"] = verified.model_dump()
 
     return result
 

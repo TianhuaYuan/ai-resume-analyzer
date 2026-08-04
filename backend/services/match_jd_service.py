@@ -2,8 +2,12 @@
 
 将简历内容与 JD（Job Description）文本进行 LLM 对比分析，
 返回匹配分数、匹配点、差距分析和改进建议。
+
+A3 评分契约升级（Magic-Resume fit-report.ts 对照）：JSON-first 结构化输出
+（score/matched/missing/gaps/reason），解析失败降级为原 markdown 分析。
 """
 
+import json
 import logging
 
 from fastapi import HTTPException, status
@@ -12,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.retry import with_retry
 from models.resume import Resume
+from schemas.resume import derive_band
 from services.rag.pipeline import llm_generate
 
 logger = logging.getLogger(__name__)
@@ -24,6 +29,57 @@ _SYSTEM_PROMPT = (
     "## 差距分析\n（列出 JD 要求但简历中缺失或不足的技能/经验）\n\n"
     "## 改进建议\n（针对差距给出具体可执行的改进建议）"
 )
+
+# Magic-Resume FitReport 契约对照：结构化 JSON 输出（JSON-first）
+_STRUCTURED_SYSTEM = (
+    "你是一个专业的招聘分析师。将简历与 JD 对比分析。\n"
+    "严格输出 JSON 对象（不要 Markdown，不要 ```json 包裹）：\n"
+    '{"score": <0-100 整数>,\n'
+    ' "matched": ["简历中与 JD 匹配的技能/经历关键词", ...],\n'
+    ' "missing": ["JD 要求但简历中缺失的关键词/技能", ...],\n'
+    ' "gaps": ["针对缺失的低成本改进建议", ...],\n'
+    ' "reason": "<一句话匹配总结>"}'
+)
+
+
+def _extract_json_object(raw: str) -> dict:
+    """抗截断 JSON 对象提取（SmartResume {..} 区间 + 三层降级）。"""
+    start, end = raw.find("{"), raw.rfind("}")
+    if start == -1 or end <= start:
+        raise ValueError("无 JSON 对象")
+    content = raw[start : end + 1]
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        fixed = content.replace("'", '"').replace("True", "true").replace("False", "false")
+        return json.loads(fixed)
+
+
+async def _structured_match(user_prompt: str, user_id: int) -> dict | None:
+    """结构化匹配（JSON-first）：失败返回 None → 调用方降级 markdown。"""
+    try:
+        raw = await with_retry(
+            llm_generate,
+            _STRUCTURED_SYSTEM,
+            user_prompt,
+            user_id=user_id,
+            fallback="",
+            max_retries=1,
+        )
+        data = _extract_json_object(raw)
+        score = int(data.get("score", 0))
+        score = max(0, min(100, score))  # 0-100 夹紧
+        return {
+            "score": score,
+            "band": derive_band(score),
+            "matched": [str(s) for s in data.get("matched", []) if str(s).strip()][:10],
+            "missing": [str(s) for s in data.get("missing", []) if str(s).strip()][:10],
+            "gaps": [str(s) for s in data.get("gaps", []) if str(s).strip()][:5],
+            "reason": str(data.get("reason", "")).strip(),
+        }
+    except Exception as e:
+        logger.warning("JD 结构化匹配失败（降级 markdown）: %s", e)
+        return None
 
 
 async def match_jd(
@@ -71,10 +127,25 @@ async def match_jd(
         )
 
     user_prompt = (
-        f"简历内容：\n\n{parsed_text}\n\n"
-        f"职位描述（JD）：\n\n{jd_text}\n\n"
-        f"请按要求进行匹配分析。"
+        f"简历内容：\n\n{parsed_text}\n\n职位描述（JD）：\n\n{jd_text}\n\n请按要求进行匹配分析。"
     )
+
+    # JSON-first 结构化匹配（Magic-Resume FitReport 契约对照）：
+    # LLM 一次输出 score/matched/missing/gaps/reason，失败降级 markdown 分析
+    structured = await _structured_match(user_prompt, user_id)
+    if structured is not None:
+        reason = structured["reason"] or (
+            f"匹配度 {structured['score']} 分：匹配 {len(structured['matched'])} 项，"
+            f"缺失 {len(structured['missing'])} 项"
+        )
+        return {
+            "resume_id": resume_id,
+            "analysis": reason,
+            "scores": {"overall": structured["score"], "band": structured["band"]},
+            "matched_keywords": structured["matched"],
+            "missing_keywords": structured["missing"],
+            "gaps": structured["gaps"],
+        }
 
     try:
         analysis = await with_retry(

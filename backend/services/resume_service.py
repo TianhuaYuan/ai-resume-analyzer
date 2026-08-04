@@ -20,6 +20,35 @@ from utils.file_parser import parse_resume
 logger = logging.getLogger(__name__)
 
 
+async def set_resume_status(
+    db: AsyncSession,
+    resume: Resume,
+    new_status: str,
+    reason: str | None = None,
+) -> None:
+    """简历状态流转收敛（fieldwork applications.ts setStatus 对照）。
+
+    一次调用 = 更新状态 + 插入 status_change 事件（from → to + reason），
+    所有状态迁移必须走本函数——保证事件时间线完整（失败复盘/卡死诊断/前端时间线）。
+    同状态迁移为 no-op（不产生事件）。
+    """
+    if resume.status == new_status:
+        return
+    from models.resume_status_event import ResumeStatusEvent
+
+    db.add(
+        ResumeStatusEvent(
+            resume_id=resume.id,
+            from_status=resume.status,
+            to_status=new_status,
+            reason=reason,
+        )
+    )
+    resume.status = new_status
+    if reason:
+        resume.status_message = reason
+
+
 UPLOAD_DIR = Path(settings.UPLOAD_DIR).resolve()
 UPLOAD_DIR.mkdir(exist_ok=True)
 
@@ -122,23 +151,18 @@ async def recover_stuck_resumes() -> int:
         被恢复的简历数量
     """
     async with AsyncSessionLocal() as db:
-        result = await db.execute(
-            select(Resume).where(Resume.status == "processing")
-        )
+        result = await db.execute(select(Resume).where(Resume.status == "processing"))
         stuck = result.scalars().all()
         if not stuck:
             return 0
         for resume in stuck:
-            resume.status = "failed"
-            resume.status_message = "处理异常中断，请重试"
+            await set_resume_status(db, resume, "failed", reason="处理异常中断，请重试")
         await db.commit()
         logger.warning("Recovered %d stuck resumes (processing → failed)", len(stuck))
         return len(stuck)
 
 
-async def retry_resume_processing(
-    db: AsyncSession, resume_id: int, user_id: int
-) -> Resume:
+async def retry_resume_processing(db: AsyncSession, resume_id: int, user_id: int) -> Resume:
     """P1-24：手动重试失败的简历处理。
 
     Args:
@@ -159,8 +183,7 @@ async def retry_resume_processing(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"仅失败简历可重试（当前状态: {resume.status}）",
         )
-    resume.status = "processing"
-    resume.status_message = ""
+    await set_resume_status(db, resume, "processing", reason="用户手动重试")
     await db.commit()
     await db.refresh(resume)
     return resume
@@ -205,9 +228,7 @@ async def _push_parse_progress(
         logger.debug("解析进度推送失败（非阻塞）resume=%d", resume_id, exc_info=True)
 
 
-async def process_resume_background(
-    resume_id: int, file_path: str, user_id: int = 0
-) -> bool:
+async def process_resume_background(resume_id: int, file_path: str, user_id: int = 0) -> bool:
     """后台任务：解析文本 → LLM 反解析填 Builder 表单 → 标记 ready → 发布分析任务。
 
     用独立的 DB session，因为原请求 session 已关闭。
@@ -255,18 +276,24 @@ async def process_resume_background(
                 )
             )
             await db.commit()
-            await _update_parse_progress(db, resume_id, "parsing", 40, "文本解析完成，AI 正在整理简历...")
-            await _push_parse_progress(user_id, resume_id, "parsing", 40, "文本解析完成，AI 正在整理简历...")
+            await _update_parse_progress(
+                db, resume_id, "parsing", 40, "文本解析完成，AI 正在整理简历..."
+            )
+            await _push_parse_progress(
+                user_id, resume_id, "parsing", 40, "文本解析完成，AI 正在整理简历..."
+            )
 
             # ── 阶段 2：LLM 反解析 → Builder 表单 ──
-            await _update_parse_progress(db, resume_id, "materializing", 60, "AI 正在将简历解析为可编辑表单...")
-            await _push_parse_progress(user_id, resume_id, "materializing", 60, "AI 正在将简历解析为可编辑表单...")
+            await _update_parse_progress(
+                db, resume_id, "materializing", 60, "AI 正在将简历解析为可编辑表单..."
+            )
+            await _push_parse_progress(
+                user_id, resume_id, "materializing", 60, "AI 正在将简历解析为可编辑表单..."
+            )
             from services.resume_builder import materialize_modules_from_text
 
             # 归属校验用 resume 记录自身的 user_id，不依赖后台任务调用方传参（避免误 404）
-            owner_result = await db.execute(
-                select(Resume.user_id).where(Resume.id == resume_id)
-            )
+            owner_result = await db.execute(select(Resume.user_id).where(Resume.id == resume_id))
             owner_id = owner_result.scalar_one_or_none() or 0
             # 返回 (resume, modules, materialized) —— 与 materialize 实际 return 保持一致
             _, _, materialized = await materialize_modules_from_text(db, owner_id, resume_id)
@@ -287,6 +314,7 @@ async def process_resume_background(
             if user_id:
                 try:
                     from services.resume_analyze_producer import publish_analyze_task
+
                     await publish_analyze_task(
                         resume_id=resume_id,
                         user_id=user_id,
@@ -301,6 +329,7 @@ async def process_resume_background(
             if user_id:
                 try:
                     from services.react_agent.memory import build_l3_profile_background
+
                     await build_l3_profile_background(resume_id=resume_id, user_id=user_id)
                 except Exception as e:
                     logger.warning("L3 画像构建失败（不影响主流程）: %s", e)
@@ -325,9 +354,7 @@ async def process_resume_background(
                 await db.commit()
             except Exception:
                 # P1-10：二次 commit 也可能失败（如 DB 连接断开），不能静默吞掉
-                logger.exception(
-                    "Failed to mark resume %d as failed (commit error)", resume_id
-                )
+                logger.exception("Failed to mark resume %d as failed (commit error)", resume_id)
             return False
 
 
@@ -421,9 +448,7 @@ async def compare_resumes(
 
     # 1. 查询所有简历（验证归属）
     result = await db.execute(
-        select(Resume).where(
-            Resume.id.in_(resume_ids), Resume.user_id == user_id
-        )
+        select(Resume).where(Resume.id.in_(resume_ids), Resume.user_id == user_id)
     )
     resumes = result.scalars().all()
 
@@ -459,17 +484,19 @@ async def compare_resumes(
                 else:
                     # 缓存未命中：实时调用 LLM 分析（会自动写入缓存）
                     try:
-                        analysis_result = await analyze_resume(
-                            db, user_id, resume.id, dim
-                        )
+                        analysis_result = await analyze_resume(db, user_id, resume.id, dim)
                         if dim == "score" and "scores" in analysis_result:
                             response["dimensions"][dim][str(resume.id)] = analysis_result["scores"]
                         else:
-                            response["dimensions"][dim][str(resume.id)] = analysis_result.get("analysis", "")
+                            response["dimensions"][dim][str(resume.id)] = analysis_result.get(
+                                "analysis", ""
+                            )
                     except Exception as e:
                         logger.warning(
                             "对比时分析失败 resume_id=%d dim=%s: %s",
-                            resume.id, dim, e,
+                            resume.id,
+                            dim,
+                            e,
                         )
                         response["dimensions"][dim][str(resume.id)] = "分析失败"
 

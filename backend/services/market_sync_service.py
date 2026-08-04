@@ -18,9 +18,10 @@
 
 import hashlib
 import json
+import re
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -40,10 +41,10 @@ logger = logging.getLogger(__name__)
 # 爬虫 JSON 文件所在目录（与 api/campus.py 一致）
 _DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
-SOURCE_CAMPUS = "campus"              # campus_recruitment.json（校招公告）
-SOURCE_REFERRAL = "referral"          # referral_recruitment.json（内推）
-SOURCE_UPCV = "upcv"                  # upcv_jobs.json（upcv 真实 JD）
-SOURCE_ALLJOBS = "alljobs"            # all_jobs.json（nowcoder 多平台岗位）
+SOURCE_CAMPUS = "campus"  # campus_recruitment.json（校招公告）
+SOURCE_REFERRAL = "referral"  # referral_recruitment.json（内推）
+SOURCE_UPCV = "upcv"  # upcv_jobs.json（upcv 真实 JD）
+SOURCE_ALLJOBS = "alljobs"  # all_jobs.json（nowcoder 多平台岗位）
 SOURCE_UPCV_RECRUITMENTS = "upcv_recruitments"  # upcv 校招项目
 
 # 岗位分类 JSON（backend/data/ 真源，爬虫重爬后由整理脚本重新生成）
@@ -118,7 +119,8 @@ def _load_market_records(name: str) -> list[dict]:
 
 
 def _parse_dt(value: Any) -> datetime | None:
-    """解析多种日期形态：'2026-07-31 00:00:00' / '2026-08-01T00:00:00Z' / '2026-07-31'。"""
+    """解析多种日期形态：'2026-07-31 00:00:00' / '2026-08-01T00:00:00Z' / '2026-07-31' /
+    中文相对日期（今天/昨天/X天前/...，JobHunter parse_relative_date 对照）。"""
     if not value:
         return None
     s = str(value).strip()
@@ -129,6 +131,55 @@ def _parse_dt(value: Any) -> datetime | None:
             return datetime.strptime(s[:19], fmt).replace(tzinfo=timezone.utc)
         except ValueError:
             continue
+    # 兜底：中文相对日期（复制 JobHunter base_crawler.parse_relative_date 逻辑，MIT）
+    return _parse_relative_date(s)
+
+
+def _parse_relative_date(s: str, now: datetime | None = None) -> datetime | None:
+    """中文相对日期 → UTC datetime（直接复制 JobHunter base_crawler.parse_relative_date 逻辑，MIT）。
+
+    支持：今天/今日/today、昨天/昨日/yesterday、X天前/X周前/X个月前/X小时前/X分钟前、MM-DD（今年）。
+    无法解析返回 None。
+    """
+    if not s:
+        return None
+    text = str(s).strip()
+    now = now or datetime.now(timezone.utc)
+
+    if text in ("今天", "今日", "today"):
+        return now
+    if text in ("昨天", "昨日", "yesterday"):
+        return now - timedelta(days=1)
+
+    m = re.search(r"(\d+)\s*(天|周|个月|月|小时|分钟)前?", text)
+    if m:
+        n = int(m.group(1))
+        unit = m.group(2)
+        if unit == "天":
+            return now - timedelta(days=n)
+        if unit == "周":
+            return now - timedelta(weeks=n)
+        if unit in ("个月", "月"):
+            return now - timedelta(days=30 * n)  # 月份近似 30 天
+        if unit == "小时":
+            return now - timedelta(hours=n)
+        if unit == "分钟":
+            return now - timedelta(minutes=n)
+
+    # MM-DD（今年）
+    m = re.match(r"(\d{1,2})-(\d{1,2})$", text)
+    if m:
+        try:
+            return now.replace(
+                month=int(m.group(1)),
+                day=int(m.group(2)),
+                hour=0,
+                minute=0,
+                second=0,
+                microsecond=0,
+            )
+        except ValueError:
+            return None
     return None
 
 
@@ -179,8 +230,9 @@ def _resolve_job_type(record: dict, source: str) -> str | None:
     """跨源 job_type 标准化映射（campus / social / intern）。"""
     if source == SOURCE_UPCV:
         jt = record.get("jobType") or ""
-        return {JOB_TYPE_CAMPUS.upper(): JOB_TYPE_CAMPUS,
-                "INTERNSHIP": JOB_TYPE_INTERN}.get(jt, JOB_TYPE_SOCIAL)
+        return {JOB_TYPE_CAMPUS.upper(): JOB_TYPE_CAMPUS, "INTERNSHIP": JOB_TYPE_INTERN}.get(
+            jt, JOB_TYPE_SOCIAL
+        )
     if source == SOURCE_ALLJOBS:
         # 华为 recruit_type / 腾讯 recruit_label / 牛客 platform / 智联 recruit_type
         # 优先级：社招 > 实习 > 校招/应届（"应届实习"含实习 → intern）
@@ -213,13 +265,13 @@ def _normalize_upcv_jobs(r: dict) -> NormalizedAsset:
     title = r.get("title") or r.get("position") or "未命名岗位"
     position = title
     content = _build_job_content(
-        title=title, company=company,
+        title=title,
+        company=company,
         city=_fmt_labels(r.get("cities")),
         salary=r.get("salaryDisplay") or "",
         degree=degree.get("label", "") if isinstance(degree, dict) else "",
         body="\n".join(
-            str(r.get(k) or "") for k in ("description", "requirements", "benefits")
-            if r.get(k)
+            str(r.get(k) or "") for k in ("description", "requirements", "benefits") if r.get(k)
         ),
     )
     return NormalizedAsset(
@@ -246,17 +298,26 @@ def _normalize_upcv_recruitments(r: dict) -> NormalizedAsset:
     company = c.get("shortName") or c.get("name") or r.get("rawCompanyName") or ""
     title = r.get("programName") or f"校招项目{r.get('id')}"
     sections = []
-    for key, label in (("targetGraduates", "面向对象"), ("targetDegrees", "学历要求"),
-                       ("targetMajors", "专业要求"), ("cities", "工作城市"),
-                       ("schedule", "招聘安排"), ("benefits", "福利待遇")):
+    for key, label in (
+        ("targetGraduates", "面向对象"),
+        ("targetDegrees", "学历要求"),
+        ("targetMajors", "专业要求"),
+        ("cities", "工作城市"),
+        ("schedule", "招聘安排"),
+        ("benefits", "福利待遇"),
+    ):
         v = r.get(key)
         if v:
             text = _fmt_labels(v) if isinstance(v, list) else str(v)
             if text:
                 sections.append(f"## {label}\n{text}")
     content = _build_job_content(
-        title=title, company=company, city=_fmt_labels(r.get("cities")),
-        salary="", degree="", body="\n".join(sections),
+        title=title,
+        company=company,
+        city=_fmt_labels(r.get("cities")),
+        salary="",
+        degree="",
+        body="\n".join(sections),
     )
     return NormalizedAsset(
         source=SOURCE_UPCV_RECRUITMENTS,
@@ -281,8 +342,10 @@ def _normalize_all_jobs(r: dict) -> NormalizedAsset:
     # company 为空且 platform 不像聚合平台时，回退为 company（修复历史错位：公司名被存进 industry）。
     company = (r.get("company") or "").strip()
     platform = (r.get("platform") or "").strip()
-    if not company and platform and not any(
-        k in platform for k in ("牛客", "智联", "招聘", "实习", "校招", "猎聘", "BOSS")
+    if (
+        not company
+        and platform
+        and not any(k in platform for k in ("牛客", "智联", "招聘", "实习", "校招", "猎聘", "BOSS"))
     ):
         company = platform
     # all_jobs 无真实行业字段，industry 不再取 platform（避免错位）。
@@ -313,12 +376,21 @@ def _normalize_all_jobs(r: dict) -> NormalizedAsset:
 
 def _normalize_campus(r: dict) -> NormalizedAsset:
     title = r.get("title") or r.get("company") or "未命名校招"
-    parts = [r.get("positions"), r.get("industry"), r.get("workLocation"),
-             r.get("remarks"), r.get("referralMethod")]
+    parts = [
+        r.get("positions"),
+        r.get("industry"),
+        r.get("workLocation"),
+        r.get("remarks"),
+        r.get("referralMethod"),
+    ]
     body = "\n".join(str(p) for p in parts if p)
     content = _build_job_content(
-        title=title, company=r.get("company") or "",
-        city=r.get("workLocation") or "", salary="", degree="", body=body,
+        title=title,
+        company=r.get("company") or "",
+        city=r.get("workLocation") or "",
+        salary="",
+        degree="",
+        body=body,
     )
     return NormalizedAsset(
         source=SOURCE_CAMPUS,
@@ -340,12 +412,21 @@ def _normalize_campus(r: dict) -> NormalizedAsset:
 
 def _normalize_referral(r: dict) -> NormalizedAsset:
     title = r.get("title") or r.get("company") or "未命名内推"
-    parts = [r.get("positions"), r.get("industry"), r.get("workLocation"),
-             r.get("remarks"), r.get("referralMethod")]
+    parts = [
+        r.get("positions"),
+        r.get("industry"),
+        r.get("workLocation"),
+        r.get("remarks"),
+        r.get("referralMethod"),
+    ]
     body = "\n".join(str(p) for p in parts if p)
     content = _build_job_content(
-        title=title, company=r.get("company") or "",
-        city=r.get("workLocation") or "", salary="", degree="", body=body,
+        title=title,
+        company=r.get("company") or "",
+        city=r.get("workLocation") or "",
+        salary="",
+        degree="",
+        body=body,
     )
     return NormalizedAsset(
         source=SOURCE_REFERRAL,
@@ -374,17 +455,23 @@ def _build_job_content(*, title, company, city, salary, degree, body) -> str:
 
 # 各 String 列长度上限（MySQL 严格模式 Data too long 保护）
 _FIELD_LIMITS = {
-    "title": 255, "company": 255, "position": 255, "city": 255,
-    "industry": 255, "salary": 100, "degree": 100, "apply_url": 2000,
+    "title": 255,
+    "company": 255,
+    "position": 255,
+    "city": 255,
+    "industry": 255,
+    "salary": 100,
+    "degree": 100,
+    "apply_url": 2000,
 }
 
 
 def _clip_fields(n: NormalizedAsset) -> NormalizedAsset:
     """截断超长字符串字段，防止 MySQL 严格模式 Data too long 报错（源数据不可控）。"""
-    for field, limit in _FIELD_LIMITS.items():
-        val = getattr(n, field)
+    for fname, limit in _FIELD_LIMITS.items():
+        val = getattr(n, fname)
         if isinstance(val, str) and len(val) > limit:
-            setattr(n, field, val[:limit])
+            setattr(n, fname, val[:limit])
     return n
 
 
@@ -405,12 +492,22 @@ async def _upsert_asset(db: AsyncSession, n: NormalizedAsset, stats: MarketSyncS
 
     if row is None:
         row = MarketAsset(
-            source=n.source, external_id=n.external_id,
-            job_type=n.job_type, title=n.title, company=n.company,
-            position=n.position, city=n.city, industry=n.industry,
-            salary=n.salary, degree=n.degree, deadline=n.deadline,
-            is_expired=is_expired, apply_url=n.apply_url, published_at=n.published_at,
-            content=n.content, content_hash=content_hash,
+            source=n.source,
+            external_id=n.external_id,
+            job_type=n.job_type,
+            title=n.title,
+            company=n.company,
+            position=n.position,
+            city=n.city,
+            industry=n.industry,
+            salary=n.salary,
+            degree=n.degree,
+            deadline=n.deadline,
+            is_expired=is_expired,
+            apply_url=n.apply_url,
+            published_at=n.published_at,
+            content=n.content,
+            content_hash=content_hash,
         )
         db.add(row)
         await db.flush()
@@ -428,20 +525,25 @@ async def _upsert_asset(db: AsyncSession, n: NormalizedAsset, stats: MarketSyncS
         stats.unchanged += 1
         return row, False
 
+    # 保留旧值模式（JobHunter models.py CASE WHEN ?!='' THEN ? ELSE 旧值 对照）：
+    # 爬虫 JSON 某字段缺失/为空时不清空旧值，防止数据退化
+    def _keep(new_value, old_value):
+        return new_value if new_value is not None and str(new_value).strip() else old_value
+
     row.source = n.source
-    row.job_type = n.job_type
-    row.title = n.title
-    row.company = n.company
-    row.position = n.position
-    row.city = n.city
-    row.industry = n.industry
-    row.salary = n.salary
-    row.degree = n.degree
-    row.deadline = n.deadline
+    row.job_type = _keep(n.job_type, row.job_type)
+    row.title = _keep(n.title, row.title)
+    row.company = _keep(n.company, row.company)
+    row.position = _keep(n.position, row.position)
+    row.city = _keep(n.city, row.city)
+    row.industry = _keep(n.industry, row.industry)
+    row.salary = _keep(n.salary, row.salary)
+    row.degree = _keep(n.degree, row.degree)
+    row.deadline = _keep(n.deadline, row.deadline)
     row.is_expired = is_expired
-    row.apply_url = n.apply_url
-    row.published_at = n.published_at
-    row.content = n.content
+    row.apply_url = _keep(n.apply_url, row.apply_url)
+    row.published_at = _keep(n.published_at, row.published_at)
+    row.content = _keep(n.content, row.content)
     row.content_hash = content_hash
     await db.flush()
     stats.updated += 1
@@ -470,7 +572,9 @@ async def _index_asset(db: AsyncSession, row: MarketAsset, stats: MarketSyncStat
             stats.indexed += 1
         logger.info(
             "market asset indexed source=%s id=%s chunks=%d",
-            row.source, row.id, chunk_count,
+            row.source,
+            row.id,
+            chunk_count,
         )
     finally:
         await release_index_lock(0, ASSET_TYPE_JOB, row.id, lock_id)

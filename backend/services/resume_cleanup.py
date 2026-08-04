@@ -93,11 +93,18 @@ async def cleanup_stale_processing() -> int:
             return 0
 
         for resume in stale_resumes:
-            resume.status = "failed"
-            resume.status_message = f"处理超时（>{STALE_PROCESSING_MINUTES}分钟未完成的自动标记为失败，请重试）"
+            from services.resume_service import set_resume_status
+
+            await set_resume_status(
+                db,
+                resume,
+                "failed",
+                reason=f"处理超时（>{STALE_PROCESSING_MINUTES}分钟未完成的自动标记为失败，请重试）",
+            )
             logger.warning(
                 "Stale processing resume %d marked as failed (created_at=%s)",
-                resume.id, resume.created_at,
+                resume.id,
+                resume.created_at,
             )
 
         await db.commit()
@@ -168,7 +175,8 @@ async def orphan_scan() -> dict[str, list[str]]:
     if orphans["files"] or orphans["chromadb"]:
         logger.info(
             "Orphan scan found %d files, %d chromadb collections",
-            len(orphans["files"]), len(orphans["chromadb"]),
+            len(orphans["files"]),
+            len(orphans["chromadb"]),
         )
 
     return orphans

@@ -8,6 +8,7 @@
  */
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { deadlineInfo } from "../utils/deadline";
 import {
   CalendarBlank,
   Clock,
@@ -61,7 +62,7 @@ function truncate(text: string, maxLen: number): string {
 // ── CSV 导出 ──
 
 function exportProgressCSV(records: MarketJob[], tracks: Record<string, CampusTrack>) {
-  const headers = ["发布时间", "公司", "投递链接", "求职进度", "备注", "工作地点", "岗位"];
+  const headers = ["发布时间", "截止", "公司", "投递链接", "求职进度", "备注", "工作地点", "岗位"];
   const statusLabelMap = Object.fromEntries(TRACK_STATUS_OPTIONS.map((o) => [o.value, o.label]));
   const rows = records
     .filter((r) => tracks[String(r.id)])
@@ -332,6 +333,27 @@ export default function CampusPage() {
           </span>
         </div>
 
+        {/* ── 投递 Momentum 统计条（fieldwork MomentumStrip 对照：已投递/进行中/Offer/已拒绝）── */}
+        {isProgress && progressRecords.length > 0 && (() => {
+          const trackList = Object.values(tracks);
+          const momentumStats = [
+            { label: "已投递", value: trackList.filter((t) => t.status !== "pending" && t.status !== "cancelled").length },
+            { label: "进行中", value: trackList.filter((t) => ["applied", "pending_written", "written_passed", "first_round", "second_round", "third_round"].includes(t.status)).length },
+            { label: "Offer", value: trackList.filter((t) => t.status === "offer").length },
+            { label: "已拒绝", value: trackList.filter((t) => t.status === "rejected").length },
+          ];
+          return (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+              {momentumStats.map((s) => (
+                <div key={s.label} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] px-4 py-3">
+                  <p className="text-lg font-bold tabular-nums text-[var(--color-text)]">{s.value}</p>
+                  <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5">{s.label}</p>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
+
         {/* ── 表格 ── */}
         <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] overflow-hidden">
           <div className="overflow-x-auto">
@@ -339,6 +361,7 @@ export default function CampusPage() {
               <thead>
                 <tr className="border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
                   <th className="text-left px-4 py-3 text-xs font-medium text-[var(--color-text-secondary)] whitespace-nowrap">发布时间</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-[var(--color-text-secondary)] whitespace-nowrap">截止</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-[var(--color-text-secondary)]">公司</th>
                   {!isProgress && <th className="text-left px-4 py-3 text-xs font-medium text-[var(--color-text-secondary)]">标题</th>}
                   <th className="text-left px-4 py-3 text-xs font-medium text-[var(--color-text-secondary)] whitespace-nowrap">投递方式</th>
@@ -356,6 +379,10 @@ export default function CampusPage() {
                     <tr key={r.id} className="border-b border-[var(--color-border)] last:border-b-0 hover:bg-[var(--color-bg-secondary)] transition-colors">
                       <td className="px-4 py-3 text-xs text-[var(--color-text-muted)] whitespace-nowrap tabular-nums">
                         {formatDate(r.published_at ?? r.created_at)}
+                      </td>
+                      {/* 截止日期分级着色（Job deadlineInfo 对照：<=3 红 / <=7 黄 / 过期深红 / 正常绿） */}
+                      <td className={`px-4 py-3 text-xs whitespace-nowrap ${deadlineInfo(r.deadline, r.is_expired).className}`}>
+                        {deadlineInfo(r.deadline, r.is_expired).text}
                       </td>
                       <td className="px-4 py-3 text-xs font-semibold text-[var(--color-text)] whitespace-nowrap">{r.company}</td>
                       {!isProgress && (
@@ -411,7 +438,7 @@ export default function CampusPage() {
                   );
                 })}
                 {!loading && (isProgress ? progressRecords : records).length === 0 && (
-                  <tr><td colSpan={isProgress ? 7 : 8} className="px-4 py-16 text-center text-xs text-[var(--color-text-muted)]">
+                  <tr><td colSpan={isProgress ? 8 : 9} className="px-4 py-16 text-center text-xs text-[var(--color-text-muted)]">
                     {isProgress ? "暂无投递记录，设置求职进度后自动显示" : "未找到匹配的校招信息"}
                   </td></tr>
                 )}

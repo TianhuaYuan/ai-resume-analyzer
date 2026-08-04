@@ -1,10 +1,12 @@
 import { useEffect, useState, useRef, useCallback, type ChangeEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { Upload, FileText, Sparkle, Trash, Plus, Spinner } from "@phosphor-icons/react";
-import { listResumes, uploadResume, deleteResume, generateIdempotencyKey, type ResumeItem } from "../api/resumes";
+import { Upload, FileText, Sparkle, Trash, Plus, Spinner, TrendUp, X, ClipboardText } from "@phosphor-icons/react";
+import { listResumes, uploadResume, deleteResume, generateIdempotencyKey, analyzeResume, matchJD, type ResumeItem, type AnalyzeResult, type MatchJDResult } from "../api/resumes";
 import { createBuilderResume } from "../api/builder";
 import { useToast } from "../components/Toast";
 import ConfirmDialog from "../components/ConfirmDialog";
+import ScoreCard from "../components/ScoreCard";
+import JDMatchReport from "../components/JDMatchReport";
 import { ResumeTemplateView } from "../components/templates";
 import { A4PreviewContainer } from "../components/builder/A4PreviewContainer";
 import type { ResumeModule, ResumeStyle } from "../api/builder";
@@ -82,6 +84,47 @@ export default function ResumeManagementPage() {
   const [deleteTarget, setDeleteTarget] = useState<ResumeItem | null>(null);
   const [deleting, setDeleting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // A3 评分卡：评分弹窗状态（analyzeResume("score") 消费结构化四维分数）
+  const [scoreTarget, setScoreTarget] = useState<ResumeItem | null>(null);
+  const [scoreResult, setScoreResult] = useState<AnalyzeResult | null>(null);
+  const [scoreLoading, setScoreLoading] = useState(false);
+  const [scoreError, setScoreError] = useState<string | null>(null);
+  // JD 匹配弹窗（A3 结构化匹配报告，Magic-Resume FitReport 对照）
+  const [jdTarget, setJdTarget] = useState<ResumeItem | null>(null);
+  const [jdText, setJdText] = useState("");
+  const [jdResult, setJdResult] = useState<MatchJDResult | null>(null);
+  const [jdLoading, setJdLoading] = useState(false);
+  const [jdError, setJdError] = useState<string | null>(null);
+
+  const handleScore = async (r: ResumeItem) => {
+    setScoreTarget(r);
+    setScoreResult(null);
+    setScoreError(null);
+    setScoreLoading(true);
+    try {
+      const result = await analyzeResume(r.id, "score");
+      setScoreResult(result);
+    } catch (e) {
+      setScoreError(e instanceof Error ? e.message : "评分失败");
+    } finally {
+      setScoreLoading(false);
+    }
+  };
+
+  const handleJDMatch = async () => {
+    if (!jdTarget || !jdText.trim()) return;
+    setJdLoading(true);
+    setJdResult(null);
+    setJdError(null);
+    try {
+      const result = await matchJD(jdTarget.id, jdText.trim());
+      setJdResult(result);
+    } catch (e) {
+      setJdError(e instanceof Error ? e.message : "匹配失败");
+    } finally {
+      setJdLoading(false);
+    }
+  };
 
   // 解析进度：resume_id → {stage, percent, message}（WebSocket parse_progress 驱动）
   const [parseProgress, setParseProgress] = useState<Record<number, { stage: string; percent: number; message: string }>>({});
@@ -100,6 +143,17 @@ export default function ResumeManagementPage() {
   useEffect(() => {
     fetchResumes();
   }, [fetchResumes]);
+
+  // 解析兜底轮询（JobHunter app.js 2s 轮询状态机对照）：
+  // 存在解析中的简历时每 3s 刷新列表——WS 断连期间进度/状态也不丢失
+  useEffect(() => {
+    const hasActive = Object.keys(parseProgress).length > 0;
+    if (!hasActive) return;
+    const timer = setInterval(() => {
+      void fetchResumes();
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [parseProgress, fetchResumes]);
 
   // 监听分析状态变化 / Builder 保存成功 → 刷新列表
   useEffect(() => {
@@ -480,6 +534,49 @@ export default function ResumeManagementPage() {
                     </div>
                   </div>
 
+                  {/* JD 匹配按钮 — hover 显示（A3 结构化匹配报告入口） */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setJdTarget(r);
+                      setJdResult(null);
+                      setJdText("");
+                      setJdError(null);
+                    }}
+                    disabled={r.status !== "ready"}
+                    className="absolute top-2.5 right-20 z-10 p-1.5 rounded-md
+                      bg-[var(--color-bg)]/80 backdrop-blur-sm
+                      text-[var(--color-text-muted)]
+                      hover:text-violet-400 hover:bg-violet-500/10
+                      opacity-0 group-hover:opacity-100 focus:opacity-100
+                      disabled:opacity-0 disabled:cursor-not-allowed
+                      transition-all cursor-pointer"
+                    aria-label={`JD 匹配 ${r.filename}`}
+                    title={r.status === "ready" ? "JD 匹配" : "简历未就绪"}
+                  >
+                    <ClipboardText size={14} weight="bold" aria-hidden="true" />
+                  </button>
+
+                  {/* 评分按钮 — hover 显示（A3 评分卡入口，消费 analyzeResume 结构化四维分数） */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void handleScore(r);
+                    }}
+                    disabled={r.status !== "ready"}
+                    className="absolute top-2.5 right-11 z-10 p-1.5 rounded-md
+                      bg-[var(--color-bg)]/80 backdrop-blur-sm
+                      text-[var(--color-text-muted)]
+                      hover:text-sky-400 hover:bg-sky-500/10
+                      opacity-0 group-hover:opacity-100 focus:opacity-100
+                      disabled:opacity-0 disabled:cursor-not-allowed
+                      transition-all cursor-pointer"
+                    aria-label={`评分 ${r.filename}`}
+                    title={r.status === "ready" ? "AI 评分" : "简历未就绪"}
+                  >
+                    <TrendUp size={14} weight="bold" aria-hidden="true" />
+                  </button>
+
                   {/* 删除按钮 — hover 显示（与卡片为兄弟元素，避免嵌套 interactive） */}
                   <button
                     onClick={(e) => {
@@ -515,6 +612,137 @@ export default function ResumeManagementPage() {
         onConfirm={handleDelete}
         onCancel={() => setDeleteTarget(null)}
       />
+
+      {/* ── AI 评分弹窗（A3 评分卡）── */}
+      {scoreTarget !== null && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+          onClick={() => setScoreTarget(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${scoreTarget.filename} 评分`}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl bg-[var(--color-bg)] border border-[var(--color-border)] p-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div className="min-w-0">
+                <h3 className="text-base font-semibold text-[var(--color-text)] truncate">
+                  {scoreTarget.filename}
+                </h3>
+                <p className="text-xs text-[var(--color-text-muted)] mt-0.5">AI 综合评分</p>
+              </div>
+              <button
+                onClick={() => setScoreTarget(null)}
+                className="p-1.5 rounded-md text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer"
+                aria-label="关闭"
+              >
+                <X size={16} weight="bold" aria-hidden="true" />
+              </button>
+            </div>
+
+            {scoreLoading ? (
+              <div className="flex items-center justify-center py-16">
+                <Spinner size={22} className="animate-spin text-[var(--color-text-muted)]" aria-hidden="true" />
+                <span className="text-sm text-[var(--color-text-secondary)] ml-2.5">AI 评分中...</span>
+              </div>
+            ) : scoreError ? (
+              <div className="py-8 text-center">
+                <p className="text-sm text-rose-400">{scoreError}</p>
+                <p className="text-xs text-[var(--color-text-muted)] mt-2">请确认简历已完成分析后再试</p>
+              </div>
+            ) : scoreResult?.scores ? (
+              <ScoreCard scores={scoreResult.scores} />
+            ) : (
+              <div className="py-8 text-center text-sm text-[var(--color-text-secondary)]">
+                暂未获取到评分结果，请稍后重试
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── JD 匹配弹窗（A3 结构化匹配报告）── */}
+      {jdTarget !== null && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+          onClick={() => setJdTarget(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${jdTarget.filename} JD 匹配`}
+        >
+          <div
+            className="w-full max-w-lg rounded-2xl bg-[var(--color-bg)] border border-[var(--color-border)] p-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div className="min-w-0">
+                <h3 className="text-base font-semibold text-[var(--color-text)] truncate">
+                  JD 匹配 · {jdTarget.filename}
+                </h3>
+                <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
+                  粘贴目标岗位描述，AI 分析匹配度
+                </p>
+              </div>
+              <button
+                onClick={() => setJdTarget(null)}
+                className="p-1.5 rounded-md text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer"
+                aria-label="关闭"
+              >
+                <X size={16} weight="bold" aria-hidden="true" />
+              </button>
+            </div>
+
+            {!jdResult && (
+              <>
+                <textarea
+                  value={jdText}
+                  onChange={(e) => setJdText(e.target.value)}
+                  placeholder="粘贴 JD 文本（如岗位职责、任职要求）..."
+                  rows={5}
+                  className="w-full px-3 py-2.5 rounded-xl text-sm bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] outline-none focus:border-brand/50 focus:ring-4 focus:ring-brand/15 transition-all resize-none"
+                />
+                <button
+                  onClick={() => void handleJDMatch()}
+                  disabled={jdLoading || !jdText.trim()}
+                  className="mt-3 w-full inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium text-white bg-brand hover:bg-[#0077ed] active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {jdLoading ? (
+                    <>
+                      <Spinner size={14} className="animate-spin" aria-hidden="true" />
+                      匹配分析中...
+                    </>
+                  ) : (
+                    <>
+                      <ClipboardText size={14} weight="bold" aria-hidden="true" />
+                      开始匹配
+                    </>
+                  )}
+                </button>
+                {jdError && (
+                  <p className="mt-2.5 text-xs text-rose-400">{jdError}</p>
+                )}
+              </>
+            )}
+
+            {jdResult && (
+              <>
+                <JDMatchReport result={jdResult} />
+                <button
+                  onClick={() => {
+                    setJdResult(null);
+                    setJdText("");
+                  }}
+                  className="mt-4 w-full px-3.5 py-2 rounded-lg text-sm font-medium text-[var(--color-text)] bg-[var(--color-bg-secondary)] hover:bg-[#E5E5EA] active:scale-[0.98] transition-all cursor-pointer"
+                >
+                  重新匹配
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </>
   );
 }

@@ -7,6 +7,7 @@
  */
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { deadlineInfo } from "../utils/deadline";
 import {
   CalendarBlank,
   Clock,
@@ -360,6 +361,7 @@ export default function SocialPage() {
               <thead>
                 <tr className="border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
                   <th className="text-left px-4 py-3 text-xs font-medium text-[var(--color-text-secondary)] whitespace-nowrap">发布时间</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-[var(--color-text-secondary)] whitespace-nowrap">截止</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-[var(--color-text-secondary)]">公司</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-[var(--color-text-secondary)]">标题</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-[var(--color-text-secondary)] whitespace-nowrap">投递方式</th>
@@ -374,6 +376,10 @@ export default function SocialPage() {
                   <tr key={r.id} className="border-b border-[var(--color-border)] last:border-b-0 hover:bg-[var(--color-bg-secondary)] transition-colors">
                     <td className="px-4 py-3 text-xs text-[var(--color-text-muted)] whitespace-nowrap tabular-nums">
                       {formatDate(r.published_at ?? r.created_at)}
+                    </td>
+                    {/* 截止日期分级着色（Job deadlineInfo 对照） */}
+                    <td className={`px-4 py-3 text-xs whitespace-nowrap ${deadlineInfo(r.deadline, r.is_expired).className}`}>
+                      {deadlineInfo(r.deadline, r.is_expired).text}
                     </td>
                     <td className="px-4 py-3 text-xs font-semibold text-[var(--color-text)] whitespace-nowrap">{r.company}</td>
                     <td className="px-4 py-3 max-w-[220px]">
@@ -408,7 +414,7 @@ export default function SocialPage() {
                   </tr>
                 ))}
                 {!loading && jobs.length === 0 && (
-                  <tr><td colSpan={8} className="px-4 py-16 text-center text-xs text-[var(--color-text-muted)]">
+                  <tr><td colSpan={9} className="px-4 py-16 text-center text-xs text-[var(--color-text-muted)]">
                     未找到匹配的社招岗位
                   </td></tr>
                 )}

@@ -234,6 +234,74 @@ class TestResolveEntity:
                 db_session, user_id=user.id, resume_id=resume.id, name="  ", entity_type="skill"
             )
 
+    def test_is_low_entropy_name(self):
+        """熵门控判定（graphiti _NAME_ENTROPY_THRESHOLD=1.5 对照）。"""
+        assert entity_link._is_low_entropy_name("J") is True  # <2 字符
+        assert entity_link._is_low_entropy_name("字节") is True  # 2 字符熵 1.0 < 1.5
+        assert entity_link._is_low_entropy_name("Java") is False  # 4 字符熵 2.0
+        assert entity_link._is_low_entropy_name("Python3") is False
+        assert entity_link._is_low_entropy_name("后端开发工程师") is False
+
+    async def test_entropy_gate_skips_embedding(
+        self, db_session, user_and_resume, _no_external_calls
+    ):
+        """熵门控：短名即使 embedding 高度相似也不走快路径 2（防「Java 语言 vs Java 岛」误并）。"""
+        user, resume = user_and_resume
+        await resolve_entity(
+            db_session, user_id=user.id, resume_id=resume.id, name="Java", entity_type="skill"
+        )
+
+        async def all_similar(texts, resume_id=None):
+            # "J"（新实体）不相似 → 不污染第二名；其余全 1.0 余弦
+            return [[0.0] * 8 if t == "J" else [1.0] * 8 for t in texts]
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(entity_link, "get_embeddings", all_similar)
+            # 短名 "J"：门控跳过 embedding → LLM 默认 -1 → 新建，未误并 Java
+            e2, created = await resolve_entity(
+                db_session, user_id=user.id, resume_id=resume.id, name="J", entity_type="skill"
+            )
+        assert created is True
+        # 正常长度名 "Java3"：仍走快路径 2 → 命中既有 Java
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(entity_link, "get_embeddings", all_similar)
+            e3, created3 = await resolve_entity(
+                db_session, user_id=user.id, resume_id=resume.id, name="Java3", entity_type="skill"
+            )
+        assert created3 is False
+        assert e3.name == "Java"
+
+    async def test_promote_entity_type_and_summary(
+        self, db_session, user_and_resume, _no_external_calls
+    ):
+        """类型提升（graphiti _promote_resolved_node）：other→具体类型 + 补 summary。"""
+        user, resume = user_and_resume
+        e1, _ = await resolve_entity(
+            db_session,
+            user_id=user.id,
+            resume_id=resume.id,
+            name="字节跳动",
+            entity_type="other",
+        )
+        # 再次以 company 类型 + description 命中（精确匹配路径）
+        e2, created = await resolve_entity(
+            db_session,
+            user_id=user.id,
+            resume_id=resume.id,
+            name="字节跳动",
+            entity_type="company",
+            description="互联网大厂",
+        )
+        assert created is False
+        assert e2.id == e1.id
+        assert e2.entity_type == "company"  # other → company 提升
+        assert e2.summary == "互联网大厂"  # summary 补全
+        # 已提升后不降级：以 other 类型再命中，类型保持 company
+        e3, _ = await resolve_entity(
+            db_session, user_id=user.id, resume_id=resume.id, name="字节跳动", entity_type="other"
+        )
+        assert e3.entity_type == "company"
+
 
 # ═══════════════════════════════════════════════════════════════
 # add_fact：ADD-only + L4 双向关联

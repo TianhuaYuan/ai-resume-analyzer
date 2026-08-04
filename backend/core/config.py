@@ -132,6 +132,14 @@ class Settings(BaseSettings):
     REACT_MAX_ITER_TOKENS: int = 16000
     REACT_TOOL_RESULT_MAX_CHARS: int = 2000
     REACT_KEEP_LAST_ROUNDS: int = 4
+    # DeepInterview _guarded 对照：每轮 LLM 流式调用墙钟上限（超时降级为提示，不挂死 SSE）
+    REACT_LLM_TIMEOUT: float = 90
+    # DeepInterview SessionGuard 对照：整次 ReAct 会话墙钟上限（防模型循环失控烧 token）
+    REACT_MAX_DURATION_SEC: float = 180
+    # 同步分析路径（analyze_resume）LLM 调用上限
+    ANALYZE_LLM_TIMEOUT: float = 90
+    # LLM 失败落盘诊断目录（SmartResume 对照；空 = 关闭）
+    LLM_DIAGNOSTICS_DIR: str = ""
 
     # ── Thinking 配置 ──
     THINKING_ENABLED: bool = True
@@ -165,14 +173,14 @@ class Settings(BaseSettings):
     # ── 后台周期任务（默认全关；仅 staging/production 的 .env 显式开启） ──
     # 注意：不能用 ENVIRONMENT 判断（.env.test 是 testing），必须默认 False 的显式开关
     PERIODIC_TASKS_ENABLED: bool = False
-    STALE_CLEANUP_INTERVAL_MINUTES: int = 30      # cleanup_stale_processing 间隔
-    MEMORY_CONSOLIDATE_INTERVAL_HOURS: int = 6    # consolidate 间隔（低频，重）
-    ORPHAN_SCAN_INTERVAL_HOURS: int = 24          # orphan_scan 间隔（纯诊断日志）
+    STALE_CLEANUP_INTERVAL_MINUTES: int = 30  # cleanup_stale_processing 间隔
+    MEMORY_CONSOLIDATE_INTERVAL_HOURS: int = 6  # consolidate 间隔（低频，重）
+    ORPHAN_SCAN_INTERVAL_HOURS: int = 24  # orphan_scan 间隔（纯诊断日志）
     MEMORY_CONSOLIDATE_MAX_USERS_PER_RUN: int = 100  # consolidate 每轮封顶用户数
 
     # ── 记忆提炼触发（默认关；staging/prod 开启） ──
     MEMORY_EXTRACTION_ENABLED: bool = False
-    MEMORY_EXTRACTION_INTERVAL_SEC: int = 600     # 每用户提炼节流窗口（秒）
+    MEMORY_EXTRACTION_INTERVAL_SEC: int = 600  # 每用户提炼节流窗口（秒）
 
     model_config = SettingsConfigDict(
         env_file=f".env.{_APP_ENV}",
@@ -231,6 +239,7 @@ _REQUIRED_NON_EMPTY = (
 )
 # METRICS_TOKEN 仅在非开发环境强制，避免阻断本地开发；生产/预发缺失即启动失败
 _PROD_ENVIRONMENTS = ("production", "staging")
+
 
 def validate_required_settings() -> None:
     """校验关键环境变量/配置是否齐全。

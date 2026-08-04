@@ -41,6 +41,7 @@ FALLBACK_MESSAGE = "服务暂时不可用，请稍后重试。"
 @dataclass
 class ToolCall:
     """LLM 返回的工具调用结构。"""
+
     id: str = ""
     name: str = ""
     arguments: str = ""
@@ -49,6 +50,7 @@ class ToolCall:
 @dataclass
 class LLMToolResponse:
     """llm_generate_with_tools 非流式返回。"""
+
     content: str = ""
     tool_calls: list[ToolCall] = field(default_factory=list)
     reasoning_content: str | None = None
@@ -98,11 +100,13 @@ def _parse_tool_calls_from_message(message) -> list[ToolCall]:
     if raw_tcs:
         for tc in raw_tcs:
             func = getattr(tc, "function", None)
-            tool_calls.append(ToolCall(
-                id=getattr(tc, "id", "") or "",
-                name=getattr(func, "name", "") or "" if func else "",
-                arguments=getattr(func, "arguments", "") or "" if func else "",
-            ))
+            tool_calls.append(
+                ToolCall(
+                    id=getattr(tc, "id", "") or "",
+                    name=getattr(func, "name", "") or "" if func else "",
+                    arguments=getattr(func, "arguments", "") or "" if func else "",
+                )
+            )
     return tool_calls
 
 
@@ -141,7 +145,18 @@ async def llm_generate_with_tools(
         thinking_enabled=thinking_enabled,
         thinking_effort=thinking_effort,
     )
-    response = await client.chat.completions.create(**kwargs)
+    try:
+        response = await client.chat.completions.create(**kwargs)
+    except Exception as e:
+        # JUDGE_FALLBACK_TO_CHAT（SmartResume backup channel 对照）：
+        # judge 客户端失败（配置开启时）退回 chat 客户端重试一次
+        if model == "judge" and settings.JUDGE_FALLBACK_TO_CHAT:
+            logger.warning("judge 客户端调用失败，退回 chat 客户端: %s", e)
+            client, model_name = get_chat_client(), settings.CHAT_MODEL
+            kwargs["model"] = model_name
+            response = await client.chat.completions.create(**kwargs)
+        else:
+            raise
 
     # usage 解析 + 记账
     usage = {"prompt_tokens": 0, "completion_tokens": 0}
@@ -268,7 +283,9 @@ async def llm_generate_with_tools_stream(
 
 
 async def rewrite_query(
-    question: str, model: str | None = None, user_id: int | None = None,
+    question: str,
+    model: str | None = None,
+    user_id: int | None = None,
 ) -> str:
     """LLM 改写问题做指代消解，失败时返回原问题兜底（轻量重试 — flash 模型单次 ~0.3s）"""
     system = "你是一个问题改写助手。"
@@ -394,7 +411,9 @@ def build_prompt(context_chunks: list[str], question: str) -> dict:
     return {"system": system, "user": user}
 
 
-async def _retrieve(user_id: int, resume_id: int, question: str, timer: StepTimer) -> tuple[str, list[dict]]:
+async def _retrieve(
+    user_id: int, resume_id: int, question: str, timer: StepTimer
+) -> tuple[str, list[dict]]:
     """检索链路：改写 → 混合检索(20) → Rerank(5) → 拒答判断。
     返回 (rewritten_question, reranked_chunks)。检索失败时 reranked_chunks 为空。"""
     rewritten = await timer.run("rewrite", rewrite_query(question, user_id=user_id))
