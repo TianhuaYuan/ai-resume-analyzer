@@ -165,6 +165,11 @@ export async function getResumeVersions(
 export interface MatchJDResult {
   resume_id: number;
   analysis: string;
+  /** A3 结构化匹配（Magic-Resume FitReport 契约对照；LLM JSON 输出失败时为 null/空） */
+  scores?: { overall: number; band: string } | null;
+  matched_keywords?: string[];
+  missing_keywords?: string[];
+  gaps?: string[];
 }
 
 export async function matchJD(

@@ -31,6 +31,7 @@ from services.rag.pipeline import (
 )
 from services.react_agent.memory import assemble_system_prompt, manage_l1_context
 from services.react_agent.tools import (
+    get_agent_schemas,  # noqa: F401 — 保留模块属性供测试 patch（mock 目标）
     get_tool_by_name,
     get_tools_for_agent,
 )
