@@ -60,6 +60,10 @@ def _make_stream_response(content="", tool_calls=None, usage=None):
 def _make_mock_tool_class(result="工具结果"):
     mock_tool = MagicMock()
     mock_tool.execute = AsyncMock(return_value=result)
+    # 工具内部 LLM 消耗与来源必须是真实值，否则 _accumulate_usage 会把 MagicMock
+    # 累加进 usage，streaming.py 的 pt > 0 比较会抛 TypeError
+    mock_tool.last_usage = {"prompt_tokens": 0, "completion_tokens": 0}
+    mock_tool.sources = []
     return MagicMock(return_value=mock_tool)
 
 

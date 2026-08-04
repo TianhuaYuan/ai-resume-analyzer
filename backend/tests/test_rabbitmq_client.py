@@ -6,8 +6,23 @@ RED-GREEN-REFACTOR cycle:
 3. Now: Verify all tests pass, then REFACTOR
 """
 
+import sys
+import types
+
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
+
+# aio_pika 是 requirements 声明的可选依赖，但开发机可能未安装。
+# 生产代码在函数内 `import aio_pika` 并优雅降级；测试通过 @patch("aio_pika.connect_robust")
+# mock 其 API。若真实模块缺失，注入模块桩，保证测试在无该依赖环境下也能通过。
+if "aio_pika" not in sys.modules:
+    _aio_pika_stub = types.ModuleType("aio_pika")
+    _aio_pika_stub.connect_robust = AsyncMock()
+    _aio_pika_stub.Message = MagicMock()
+    _aio_pika_stub.DeliveryMode = MagicMock()
+    _aio_pika_stub.DeliveryMode.PERSISTENT = MagicMock()
+    _aio_pika_stub.IncomingMessage = MagicMock()
+    sys.modules["aio_pika"] = _aio_pika_stub
 
 
 class TestRabbitMQClient:

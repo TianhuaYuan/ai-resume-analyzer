@@ -1,7 +1,7 @@
 """P2-3b: mcp_client.tools.mcp_rerank 降级路径不得原地修改输入 chunks。
 
-mcp_nodes.py 已修，但底层 mcp_client/tools.py 的 rerank 降级路径
-仍用 c.setdefault 原地修改传入的 chunks 列表，污染调用方数据。
+mcp_client/tools.py 的 rerank 降级路径曾用 c.setdefault 原地修改
+传入的 chunks 列表，污染调用方数据。本测试守护该不可变性。
 """
 from unittest.mock import AsyncMock, MagicMock, patch
 

@@ -121,13 +121,22 @@ def _sanitize_draft_modules(modules: list[ResumeModuleCreate]) -> None:
                     i for i in items
                     if isinstance(i, dict) and (i.get("name") or "").strip()
                 ]
-        elif mod.module_type in _ENTRY_MODULE_TYPES:
-            items = content.get("items")
-            if isinstance(items, list):
-                content["items"] = [
-                    i for i in items
-                    if isinstance(i, dict) and not _entry_is_blank(i)
+            # 旧格式 categories：name 空且 items 空 → 移除
+            categories = content.get("categories")
+            if isinstance(categories, list):
+                content["categories"] = [
+                    c for c in categories
+                    if isinstance(c, dict) and ((c.get("name") or "").strip() or c.get("items"))
                 ]
+        elif mod.module_type in _ENTRY_MODULE_TYPES:
+            # 兼容新格式 items 与旧格式 entries，两个字段都过滤全空条目
+            for field in ("items", "entries"):
+                field_items = content.get(field)
+                if isinstance(field_items, list):
+                    content[field] = [
+                        i for i in field_items
+                        if isinstance(i, dict) and not _entry_is_blank(i)
+                    ]
         elif mod.module_type in (ModuleType.OTHER, ModuleType.CUSTOM):
             if not (content.get("content") or "").strip():
                 content["content"] = "未填写"

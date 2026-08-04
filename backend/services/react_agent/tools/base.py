@@ -6,15 +6,49 @@ T11 实现：
 - 注入检测（detect_prompt_injection 对文本参数）
 - 归属校验（resume_id(s) 归属当前 user）
 - OpenAI function calling schema 生成
+
+A3 工具契约化（借鉴 pydantic-ai 的 ModelRetry/ToolFailed 双通道）：
+- ToolRetryError：可重试错误（参数格式错/暂时不可用）→ loop 累计坏调用，LLM 可修复重试
+- ToolFailed：终端失败（业务确定性失败，如简历不存在/无权访问）→ loop 不累计坏调用
+- args 校验失败格式化为逐字段错误回灌（替代 str(e) 黑盒，模型可自愈）
 """
 
 from abc import ABC, abstractmethod
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.security import detect_prompt_injection
+
+
+class ToolRetryError(Exception):
+    """工具可重试错误（A3，借鉴 pydantic-ai ModelRetry）。
+
+    语义：参数格式错误 / 资源暂时不可用——LLM 收到结构化错误后可修复参数重试，
+    loop 会累计该工具的失败次数（per-tool 重试预算）。
+    """
+
+
+class ToolFailed(Exception):
+    """工具终端失败（A3，借鉴 pydantic-ai ToolFailed）。
+
+    语义：业务确定性失败（简历不存在/无权访问/草稿未就绪）——重试也不会成功，
+    loop 不累计坏调用；错误文本回灌给 LLM 让其换路径。
+    """
+
+
+def format_validation_error(e: ValidationError) -> str:
+    """把 pydantic ValidationError 压缩为逐字段错误文本（A3 契约化回灌）。
+
+    借鉴 pydantic-ai _format_error_details：逐字段输出 loc + type + msg，
+    让 LLM 能精确定位哪个参数错了、怎么改。
+    """
+    lines = []
+    for err in e.errors():
+        loc = ".".join(str(p) for p in err.get("loc", []))
+        lines.append(f"- {loc}: {err.get('msg', '')} [type={err.get('type', '')}]")
+    return f"{len(lines)} 个参数校验错误:\n" + "\n".join(lines)
 
 
 class Tool(ABC):
@@ -61,9 +95,16 @@ class Tool(ABC):
         ...
 
     async def execute(self, **kwargs) -> str:
-        """入口：args 校验 → 注入检测 → 归属校验 → 执行。"""
-        # 1. args pydantic 校验
-        validated = self.args_model(**kwargs)
+        """入口：args 校验 → 注入检测 → 归属校验 → 执行。
+
+        A3 契约化：校验失败抛 ToolRetryError（结构化错误文本由 loop 回灌），
+        业务确定性失败（归属校验不过）抛 ToolFailed（不累计坏调用）。
+        """
+        # 1. args pydantic 校验（失败 → 结构化错误回灌，模型可自愈）
+        try:
+            validated = self.args_model(**kwargs)
+        except ValidationError as e:
+            raise ToolRetryError(format_validation_error(e)) from e
 
         # 2. 注入检测（对文本类参数）
         for _field, value in validated.model_dump().items():
@@ -72,14 +113,14 @@ class Tool(ABC):
                 if is_suspicious:
                     return f"⚠️ 检测到潜在提示注入（{reason}），请提供正常的内容。"
 
-        # 3. 归属校验（对 resume_id 类参数）
+        # 3. 归属校验（对 resume_id 类参数）——确定性失败 → ToolFailed 不累计坏调用
         resume_ids = self._extract_resume_ids(validated)
         if resume_ids and self.db is not None and self.user_id is not None:
             for rid in resume_ids:
                 if not await self._verify_ownership(rid):
-                    return f"⚠️ 简历 {rid} 不存在或无权访问。"
+                    raise ToolFailed(f"简历 {rid} 不存在或无权访问，请先确认简历 ID。")
 
-        # 4. 执行
+        # 4. 执行（子类可抛 ToolRetryError / ToolFailed 表达业务语义）
         return await self._execute(**validated.model_dump())
 
     def _extract_resume_ids(self, validated: BaseModel) -> list[int]:

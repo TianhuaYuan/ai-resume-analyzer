@@ -1,4 +1,4 @@
-import type { TemplateConfig } from "../../registry";
+import type { TemplateConfig } from "../registry";
 
 /** 商务 — 深色主题色标题，模块间细分隔线（对齐后端 templates/business.html） */
 export const businessConfig: TemplateConfig = {

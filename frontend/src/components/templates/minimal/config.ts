@@ -1,4 +1,4 @@
-import type { TemplateConfig } from "../../registry";
+import type { TemplateConfig } from "../registry";
 
 /** 极简 — 无装饰线，紧凑留白（对齐后端 templates/minimal.html） */
 export const minimalConfig: TemplateConfig = {

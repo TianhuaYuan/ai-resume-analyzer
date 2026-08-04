@@ -20,6 +20,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_current_user
+from core.config import settings
 from core.database import get_db
 from core.security import detect_prompt_injection
 from models.resume import Resume
@@ -66,6 +67,7 @@ from services.rag.metadata import META_ASSET_ID, META_IS_LATEST, META_VERSION
 from services.vector_store import get_vector_store
 from services.resume_analysis_cache import VALID_ANALYSIS_TYPES, get_analysis_cache
 from services.resume_analyze_producer import publish_analyze_task
+from services.resume_parse_producer import publish_parse_task
 from services.resume_builder import (
     complete_resume,
     create_builder_resume,
@@ -102,11 +104,15 @@ def _guard_jd_text(jd_text: str) -> None:
         )
 
 
+def _upload_estimated_seconds() -> int:
+    """上传简历处理预估总耗时（秒），供前端提示"预计等待时间"。"""
+    return settings.ESTIMATED_PARSE_SECONDS + settings.ESTIMATED_MATERIALIZE_SECONDS
+
+
 @router.post("", response_model=UploadAsyncResponse)
 async def upload_resume(
     file: UploadFile = File(...),
     idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
-    background: BackgroundTasks = None,  # type: ignore[assignment]
     response: Response = None,  # type: ignore[assignment]
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -115,6 +121,9 @@ async def upload_resume(
 
     带 Idempotency-Key 且当前用户已存在同 key 的简历时，直接返回已有记录（200），
     避免前端重试/网络抖动导致重复创建简历；否则新建（202）并异步解析+分块+向量化。
+
+    A1: 解析任务通过 publish_parse_task 入队（RabbitMQ 或进程内后台），
+    不再依赖 BackgroundTasks（服务重启即丢）。
 
     P1-9: 应用层短路检查 + DB 层 UNIQUE 约束双重防御并发竞态。
     即使两个请求同时通过短路检查，DB UNIQUE 也会让第二个 commit 抛 IntegrityError，
@@ -134,6 +143,7 @@ async def upload_resume(
                 id=existing.id,
                 filename=existing.filename,
                 status=existing.status,
+                estimated_seconds=_upload_estimated_seconds(),
             )
 
     file_path, filename = await resume_service.save_upload_file(file)
@@ -158,6 +168,7 @@ async def upload_resume(
                 id=existing.id,
                 filename=existing.filename,
                 status=existing.status,
+                estimated_seconds=_upload_estimated_seconds(),
             )
         # 罕见：IntegrityError 但查不到记录（如其他约束冲突）
         # 转成 HTTPException 500，避免裸 IntegrityError 冒泡到 middleware 层
@@ -173,17 +184,19 @@ async def upload_resume(
     # T37: 漏斗埋点（best-effort，失败不影响上传主流程）
     await record_event(db, user_id, "resume.upload")
 
-    if background is not None:
-        background.add_task(
-            resume_service.process_resume_background,
-            resume.id, file_path, user_id,
-        )
+    # A1: 解析任务入队（RabbitMQ 或进程内后台），不阻塞请求
+    await publish_parse_task(
+        resume_id=resume.id,
+        user_id=user_id,
+        file_path=file_path,
+    )
 
     response.status_code = 202
     return UploadAsyncResponse(
         id=resume.id,
         filename=resume.filename,
         status=resume.status,
+        estimated_seconds=_upload_estimated_seconds(),
     )
 
 
@@ -405,14 +418,13 @@ async def delete_resume(
 @router.post("/{resume_id}/retry", response_model=UploadAsyncResponse, status_code=status.HTTP_202_ACCEPTED)
 async def retry_resume(
     resume_id: int,
-    background: BackgroundTasks = None,  # type: ignore[assignment]
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """P1-24：手动重试失败的简历处理。
 
     仅 status=failed 的简历可重试。重试时把状态改回 processing，
-    并重新触发后台解析 → 分块 → 向量化流程。
+    并重新触发后台解析 → 分块 → 向量化流程（A1: 经 publish_parse_task 入队）。
 
     错误码：
     - 401 未登录
@@ -420,15 +432,16 @@ async def retry_resume(
     - 409 简历状态不是 failed
     """
     resume = await resume_service.retry_resume_processing(db, resume_id, current_user.id)
-    if background is not None:
-        background.add_task(
-            resume_service.process_resume_background,
-            resume.id, resume.file_path, current_user.id,
-        )
+    await publish_parse_task(
+        resume_id=resume.id,
+        user_id=current_user.id,
+        file_path=resume.file_path,
+    )
     return UploadAsyncResponse(
         id=resume.id,
         filename=resume.filename,
         status=resume.status,
+        estimated_seconds=_upload_estimated_seconds(),
     )
 
 

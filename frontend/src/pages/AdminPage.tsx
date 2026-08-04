@@ -19,11 +19,27 @@ import {
   getAuditLogs,
   getAdminFeedback,
   getAdminTemplates,
+  getTrends,
+  getLLMUsage,
   type SystemStats,
   type AuditLogItem,
   type FeedbackItem,
   type TemplateInfo,
+  type TrendItem,
+  type LLMUsageItem,
 } from "../api/admin";
+import {
+  CartesianGrid,
+  Legend,
+  Line,
+  LineChart,
+  Bar,
+  BarChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 type TabId = "stats" | "audit" | "feedback" | "templates" | "grafana";
 
@@ -98,6 +114,99 @@ function StatsSection() {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// ── D3/D4: 数据趋势看板 ──────────────────────────────────
+
+function TrendsSection() {
+  const [days, setDays] = useState(30);
+  const [trends, setTrends] = useState<TrendItem[]>([]);
+  const [usage, setUsage] = useState<LLMUsageItem[]>([]);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    setError("");
+    Promise.all([getTrends(days), getLLMUsage(7)])
+      .then(([t, u]) => {
+        setTrends(t.items);
+        setUsage(u.items);
+      })
+      .catch((e) => setError(e instanceof Error ? e.message : "趋势加载失败"))
+      .finally(() => setLoading(false));
+  }, [days]);
+
+  if (error) return <ErrorBox message={error} />;
+  if (loading) return <Loading />;
+
+  // 趋势图数据：日期 → "MM-DD" 显示
+  const trendData = trends.map((t) => ({
+    ...t,
+    dayLabel: t.day.slice(5), // YYYY-MM-DD → MM-DD
+  }));
+  const usageData = usage.map((u) => ({
+    ...u,
+    dayLabel: u.date.slice(4), // YYYYMMDD → MMDD
+    tokens_k: Math.round(u.total_tokens / 1000), // 千 token，便于阅读
+  }));
+
+  return (
+    <div className="mt-6 space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-[var(--color-text)]">
+          数据趋势（注册 / 日活 / 事件）
+        </h3>
+        <div className="flex gap-1 text-xs">
+          {[7, 30, 90].map((d) => (
+            <button
+              key={d}
+              onClick={() => setDays(d)}
+              className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
+                days === d
+                  ? "bg-brand text-white"
+                  : "bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:bg-black/5"
+              }`}
+            >
+              {d}天
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="glass-card p-4">
+        <ResponsiveContainer width="100%" height={220}>
+          <LineChart data={trendData} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" />
+            <XAxis dataKey="dayLabel" fontSize={11} tickLine={false} axisLine={false} />
+            <YAxis fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
+            <Tooltip />
+            <Legend wrapperStyle={{ fontSize: 12 }} />
+            <Line type="monotone" dataKey="registrations" name="注册" stroke="#3b82f6" strokeWidth={2} dot={false} />
+            <Line type="monotone" dataKey="active_users" name="活跃用户" stroke="#10b981" strokeWidth={2} dot={false} />
+            <Line type="monotone" dataKey="events" name="事件数" stroke="#f59e0b" strokeWidth={2} dot={false} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+
+      {usageData.length > 0 && (
+        <div className="glass-card p-4">
+          <h4 className="text-sm font-semibold text-[var(--color-text)] mb-2">
+            LLM 用量（近 7 天，千 token）
+          </h4>
+          <ResponsiveContainer width="100%" height={180}>
+            <BarChart data={usageData} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" />
+              <XAxis dataKey="dayLabel" fontSize={11} tickLine={false} axisLine={false} />
+              <YAxis fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
+              <Tooltip />
+              <Bar dataKey="tokens_k" name="Token 用量(K)" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
     </div>
   );
 }
@@ -526,7 +635,12 @@ export default function AdminPage() {
 
       {/* Tab 内容 */}
       <div>
-        {tab === "stats" && <StatsSection />}
+        {tab === "stats" && (
+          <>
+            <StatsSection />
+            <TrendsSection />
+          </>
+        )}
         {tab === "audit" && <AuditSection />}
         {tab === "feedback" && <FeedbackSection />}
         {tab === "templates" && <TemplatesSection />}

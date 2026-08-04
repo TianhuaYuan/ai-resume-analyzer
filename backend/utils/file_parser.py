@@ -133,6 +133,18 @@ async def parse_resume(path: str) -> str:
         except Exception as e:
             logger.warning("MinerU 解析失败，fallback 本地解析: %s", e)
 
+    # 1.5 Docling 本地版面解析（MinerU 不可用/未配置时的版面感知兜底）
+    if ext == ".pdf":
+        from utils.docling_parser import parse_pdf_with_docling
+
+        docling_text = await parse_pdf_with_docling(path)
+        if docling_text and len(docling_text) >= MIN_SCAN_TEXT_LENGTH:
+            logger.info(
+                "Docling 版面解析成功: path=%s, len=%d",
+                path, len(docling_text),
+            )
+            return _annotate_sections(docling_text)
+
     # 2. Fallback 本地解析
     parser = _PARSERS.get(ext)
     if parser is None:
@@ -148,6 +160,18 @@ async def parse_resume(path: str) -> str:
         text = _annotate_sections(text)
 
     if len(text) < MIN_SCAN_TEXT_LENGTH:
+        # A2: 疑似扫描件 PDF → RapidOCR 本地逐页 OCR 兜底
+        # （MinerU 在线不可用 / 未配置 token 时的本地扫描件识别）
+        if ext == ".pdf":
+            from utils.ocr_parser import ocr_pdf
+
+            ocr_text = await ocr_pdf(path)
+            if ocr_text and len(ocr_text) >= MIN_SCAN_TEXT_LENGTH:
+                logger.info(
+                    "RapidOCR 扫描件识别成功: path=%s, len=%d",
+                    path, len(ocr_text),
+                )
+                return _annotate_sections(ocr_text)
         logger.warning("解析文本过短: path=%s, len=%d", path, len(text))
         raise ValueError("解析文本过短，可能是扫描件 PDF")
 

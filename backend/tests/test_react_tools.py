@@ -155,12 +155,13 @@ class TestAgentToolExecution:
 
         mock_resume = MagicMock(status="ready")
         with patch.object(SearchResumeTool, "_get_resume", new_callable=AsyncMock, return_value=mock_resume), \
+             patch("services.react_agent.tools.ensure_indexed", new_callable=AsyncMock), \
              patch("services.react_agent.tools.hybrid_search", new_callable=AsyncMock) as mock_search, \
              patch("services.react_agent.tools.rerank", new_callable=AsyncMock) as mock_rerank:
             mock_search.return_value = [{"text": "Python经验", "section": "技能", "score": 0.9, "chunk_index": 0}]
             mock_rerank.return_value = [{"text": "Python经验", "section": "技能", "rerank_score": 0.95, "chunk_index": 0}]
 
-            result, is_error, _ = await _execute_tool_call(tc, AsyncMock(), user_id=1)
+            result, is_error, _, _ = await _execute_tool_call(tc, AsyncMock(), user_id=1)
 
         assert is_error is False
         assert "Python经验" in result
@@ -179,7 +180,7 @@ class TestAgentToolExecution:
              patch("services.react_agent.tools.match_jd", new_callable=AsyncMock) as mock_match:
             mock_match.return_value = {"resume_id": 1, "analysis": "匹配度 85%"}
 
-            result, is_error, _ = await _execute_tool_call(tc, AsyncMock(), user_id=1)
+            result, is_error, _, _ = await _execute_tool_call(tc, AsyncMock(), user_id=1)
 
         assert is_error is False
         assert "85%" in result
@@ -201,7 +202,7 @@ class TestAgentToolExecution:
                 {"analysis": "评分: 75分", "scores": {"overall": 75}},
             ]
 
-            result, is_error, _ = await _execute_tool_call(tc, AsyncMock(), user_id=1)
+            result, is_error, _, _ = await _execute_tool_call(tc, AsyncMock(), user_id=1)
 
         assert is_error is False
         assert "经历分析" in result
@@ -220,7 +221,7 @@ class TestAgentToolExecution:
                 "dimensions": {"skills": {"1": "Python", "2": "Java"}},
             }
 
-            result, is_error, _ = await _execute_tool_call(tc, AsyncMock(), user_id=1)
+            result, is_error, _, _ = await _execute_tool_call(tc, AsyncMock(), user_id=1)
 
         assert is_error is False
         assert "a.pdf" in result or "b.pdf" in result
@@ -276,7 +277,7 @@ class TestLLMToolExecution:
             patch("services.react_agent.tools._replace_all_modules_short_txn",
                   new_callable=AsyncMock, return_value="✅ 简历已重写，共 3 个模块已保存。"),
         ):
-            result, is_error, _ = await _execute_tool_call(tc, AsyncMock(), user_id=1)
+            result, is_error, _, _ = await _execute_tool_call(tc, AsyncMock(), user_id=1)
 
         assert is_error is False
         assert "重写" in result and "3" in result
@@ -306,7 +307,7 @@ class TestLLMToolExecution:
             patch("services.react_agent.tools._replace_all_modules_short_txn",
                   new_callable=AsyncMock, return_value="✅ 简历已重写，共 2 个模块已保存。"),
         ):
-            result, is_error, _ = await _execute_tool_call(tc, AsyncMock(), user_id=1)
+            result, is_error, _, _ = await _execute_tool_call(tc, AsyncMock(), user_id=1)
 
         assert is_error is False
         assert "重写" in result and "2" in result
@@ -322,7 +323,7 @@ class TestLLMToolExecution:
 
         with patch("services.react_agent.tools.llm_generate", new_callable=AsyncMock) as mock_llm:
             mock_llm.return_value = "面试问题 Q&A"
-            result, is_error, _ = await _execute_tool_call(tc, mock_db, user_id=1)
+            result, is_error, _, _ = await _execute_tool_call(tc, mock_db, user_id=1)
 
         assert is_error is False
         assert "面试" in result
@@ -343,7 +344,7 @@ class TestExecuteToolCallErrors:
         from services.rag.pipeline import ToolCall
 
         tc = ToolCall(id="tc1", name="search_resume", arguments="{invalid}")
-        result, is_error, _ = await _execute_tool_call(tc, AsyncMock(), user_id=1)
+        result, is_error, _, _ = await _execute_tool_call(tc, AsyncMock(), user_id=1)
 
         assert is_error is True
         assert "JSON" in result or "解析" in result
@@ -355,7 +356,7 @@ class TestExecuteToolCallErrors:
         from services.rag.pipeline import ToolCall
 
         tc = ToolCall(id="tc1", name="nonexistent", arguments="{}")
-        result, is_error, _ = await _execute_tool_call(tc, AsyncMock(), user_id=1)
+        result, is_error, _, _ = await _execute_tool_call(tc, AsyncMock(), user_id=1)
 
         assert is_error is True
         assert "不存在" in result
@@ -364,14 +365,18 @@ class TestExecuteToolCallErrors:
     async def test_tool_execution_failure_returns_error(self):
         """工具 execute 抛异常 → (error_text, True)。"""
         from services.react_agent.loop import _execute_tool_call
+        from services.react_agent.tools import SearchResumeTool
         from services.rag.pipeline import ToolCall
 
         tc = ToolCall(id="tc1", name="search_resume", arguments=json.dumps({"resume_id": 1, "query": "test"}))
 
-        with patch("services.react_agent.tools.hybrid_search", new_callable=AsyncMock) as mock_search:
+        with patch.object(SearchResumeTool, "_get_resume", new_callable=AsyncMock,
+                          return_value=MagicMock(status="ready")), \
+             patch("services.react_agent.tools.ensure_indexed", new_callable=AsyncMock), \
+             patch("services.react_agent.tools.hybrid_search", new_callable=AsyncMock) as mock_search:
             mock_search.side_effect = RuntimeError("连接失败")
 
-            result, is_error, _ = await _execute_tool_call(tc, AsyncMock(), user_id=1)
+            result, is_error, _, _ = await _execute_tool_call(tc, AsyncMock(), user_id=1)
 
         assert is_error is True
         assert "失败" in result or "错误" in result
@@ -388,7 +393,7 @@ class TestExecuteToolCallErrors:
 
         tc = ToolCall(id="tc1", name="diagnose_resume", arguments="")
 
-        result, is_error, _ = await _execute_tool_call(tc, AsyncMock(), user_id=1)
+        result, is_error, _, _ = await _execute_tool_call(tc, AsyncMock(), user_id=1)
 
         # 空 arguments 被当作 {} 处理，不会触发 JSON 解析错误
         # 但 diagnose_resume 需要 resume_id → Pydantic 校验失败

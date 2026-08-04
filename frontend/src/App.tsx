@@ -11,6 +11,9 @@ import { captureCtaSource } from "./api/analytics";
 
 // ── 路由级懒加载（拆分 JS bundle，首屏只加载当前路由代码） ──
 const ForgotPasswordPage = lazy(() => import("./pages/ForgotPasswordPage"));
+// C2: 信任合规公开页
+const PrivacyPage = lazy(() => import("./pages/PrivacyPage"));
+const TermsPage = lazy(() => import("./pages/TermsPage"));
 const HomePage = lazy(() => import("./pages/HomePage"));
 const QAPage = lazy(() => import("./pages/QAPage"));
 const ResumeManagementPage = lazy(() => import("./pages/ResumeManagementPage"));
@@ -20,14 +23,7 @@ const BuilderPage = lazy(() =>
 const CampusPage = lazy(() => import("./pages/CampusPage"));
 const CampusDetailPage = lazy(() => import("./pages/CampusDetailPage"));
 const SocialPage = lazy(() => import("./pages/SocialPage"));
-const TemplatesPage = lazy(() => import("./pages/TemplatesPage"));
-const TemplateDetailPage = lazy(() => import("./pages/TemplateDetailPage"));
-const ExamplesPage = lazy(() => import("./pages/ExamplesPage"));
-const ExampleDetailPage = lazy(() => import("./pages/ExampleDetailPage"));
-const TipsPage = lazy(() => import("./pages/TipsPage"));
-const GuideDetailPage = lazy(() => import("./pages/GuideDetailPage"));
 const FeedbackPage = lazy(() => import("./pages/FeedbackPage"));
-const ProductUpdatesPage = lazy(() => import("./pages/ProductUpdatesPage"));
 const AdminPage = lazy(() => import("./pages/AdminPage"));
 
 /** 懒加载路由的 fallback */
@@ -105,6 +101,9 @@ function AppRoutes() {
     <Routes>
       {/* 登录使用全局 LoginModal 弹窗，无独立 /login 页面 */}
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      {/* C2: 信任合规公开页（隐私政策 / 用户协议） */}
+      <Route path="/privacy" element={<PrivacyPage />} />
+      <Route path="/terms" element={<TermsPage />} />
       {/* 首页：登录/未登录两种视图，无侧边栏 */}
       <Route path="/" element={<HomePage />} />
       {/* Agent 聊天页（侧边栏布局） */}
@@ -162,40 +161,12 @@ function AppRoutes() {
           </AppLayout>
         }
       />
-      {/* 简历模板详情页（公开） */}
-      <Route path="/templates/:id" element={<TemplateDetailPage />} />
-      {/* 简历模板页（公开） */}
-      <Route path="/templates" element={<TemplatesPage />} />
-      {/* 简历范文页（公开） */}
-      <Route path="/examples" element={<ExamplesPage />} />
-      {/* 简历范文详情页（公开） */}
-      <Route path="/examples/:id" element={<ExampleDetailPage />} />
-      {/* 求职攻略页（公开） */}
-      <Route path="/tips" element={<TipsPage />} />
-      {/* 攻略详情页（公开，站内阅读） */}
-      <Route
-        path="/guides/:id"
-        element={
-          <AppLayout>
-            <GuideDetailPage />
-          </AppLayout>
-        }
-      />
       {/* 用户反馈页（公开） */}
       <Route
         path="/feedback"
         element={
           <AppLayout>
             <FeedbackPage />
-          </AppLayout>
-        }
-      />
-      {/* 产品更新页（公开） */}
-      <Route
-        path="/product-updates"
-        element={
-          <AppLayout>
-            <ProductUpdatesPage />
           </AppLayout>
         }
       />

@@ -539,18 +539,17 @@ ai-resume-analyzer/
 │   ├── mcp_client/             # MCP Client（JSON-RPC 2.0）
 │   ├── tests/                  # 500+ 测试
 │   ├── alembic/                # 数据库迁移
-│   └── rag_tuning/             # RAG 参数调优实验框架
+│   ├── scripts/                # 独立迁移/诊断脚本
+│   └── data/                   # 市场数据（jobs_campus / jobs_social）
 │
 ├── frontend/                   # React 19 + TypeScript + Tailwind
 │   └── src/
 │       ├── api/                # API 封装 + JWT 管理
 │       ├── context/            # AuthContext 状态管理
-│       ├── components/         # AgentProcessPanel / builder/* / Navbar ...
-│       └── pages/              # Login / ResumeList / QA / Builder / Compare / Workbench / Admin
+│       ├── components/         # AgentProcessPanel / builder/* / templates/*
+│       └── pages/              # Home / QA / ResumeManagement / Builder / Campus / Social / Feedback / Admin
 │
-├── docs/                       # 架构 / API / 部署文档
 ├── scripts/perf_e2e.py         # 端到端性能测试脚本
-├── deploy/                     # CD 部署配置
 ├── monitoring/                 # Prometheus + Grafana
 ├── docker-compose.staging.yml  # 本地 staging 环境（Docker）
 ├── docker-compose.prod.yml     # CD 生产部署
@@ -565,7 +564,7 @@ ai-resume-analyzer/
 
 ```
 生产环境：http://localhost/api/v1/
-开发环境：http://localhost:8000/api/v1/
+开发环境：http://localhost:8081/api/v1/
 ```
 
 ### 鉴权

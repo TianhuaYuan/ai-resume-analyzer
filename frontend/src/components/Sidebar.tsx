@@ -7,7 +7,6 @@ import {
   Briefcase,
   Buildings,
   ChatCircle,
-  Rocket,
   Plus,
   Trash,
   PencilSimple,
@@ -48,7 +47,6 @@ const NAV_ITEMS: NavItem[] = [
   { path: "/campus", label: "校招", icon: Briefcase, match: "exact" },
   { path: "/social", label: "社招", icon: Buildings, match: "exact" },
   { path: "/feedback", label: "用户反馈", icon: ChatCircle, match: "exact" },
-  { path: "/product-updates", label: "产品更新", icon: Rocket, match: "exact" },
 ];
 
 interface SidebarProps {

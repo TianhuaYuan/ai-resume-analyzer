@@ -49,6 +49,30 @@ export interface TemplateInfo {
   description: string;
 }
 
+// D3/D4: 后台看板趋势 + LLM 用量
+export interface TrendItem {
+  day: string;
+  registrations: number;
+  active_users: number;
+  events: number;
+}
+
+export interface TrendResponse {
+  days: number;
+  items: TrendItem[];
+}
+
+export interface LLMUsageItem {
+  date: string;
+  total_tokens: number;
+  calls: number;
+}
+
+export interface LLMUsageResponse {
+  days: number;
+  items: LLMUsageItem[];
+}
+
 export interface TemplateListResponse {
   templates: TemplateInfo[];
 }
@@ -98,6 +122,16 @@ export async function getAdminUsers(params: {
 /** 系统级统计数据。 */
 export async function getSystemStats(): Promise<SystemStats> {
   return api.get("/api/v1/admin/stats") as Promise<SystemStats>;
+}
+
+/** D3: 按天趋势（注册/日活/事件），后台看板图表。 */
+export async function getTrends(days: number = 30): Promise<TrendResponse> {
+  return api.get(`/api/v1/track/trends?days=${days}`) as Promise<TrendResponse>;
+}
+
+/** D4: LLM 用量历史（按天聚合），后台看板图表。 */
+export async function getLLMUsage(days: number = 7): Promise<LLMUsageResponse> {
+  return api.get(`/api/v1/track/llm-usage?days=${days}`) as Promise<LLMUsageResponse>;
 }
 
 /** 管理员查看意见箱反馈。 */

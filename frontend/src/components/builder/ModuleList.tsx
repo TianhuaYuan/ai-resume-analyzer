@@ -17,7 +17,7 @@ import {
   CaretDown,
 } from "@phosphor-icons/react";
 import type { ModuleType, ResumeModule, ModuleContent } from "../../api/builder";
-import { MODULE_LABELS, getModuleTitle, getModuleItems } from "../../api/builder";
+import { MODULE_LABELS } from "../../api/builder";
 
 // 重新导出 MODULE_LABELS（保持向后兼容，其他文件可能从 ModuleList 导入）
 export { MODULE_LABELS };

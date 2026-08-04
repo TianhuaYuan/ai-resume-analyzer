@@ -24,6 +24,7 @@ import time
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.config import settings
 from models.qa_history import QAHistory
 from services.react_agent.loop import ReactLoopResult, react_loop
 from services.react_agent.tools import get_tools_for_agent
@@ -304,6 +305,23 @@ async def react_loop_stream(
         if pt > 0 or ct > 0:
             from services.token_quota import record_usage as _record_quota
             await _record_quota(user_id, pt, ct)
+
+        # ── 记忆提炼（后台 fire-and-forget，节流触发写 L4） ────
+        # 仅 Agent 问答路径（tool_mode != "builder"）；开关默认关，测试零污染。
+        # 此处置于 update_qa_answer 之后、agent_done 之前：若消费端在 agent_done
+        # 前断连，此段抛 CancelledError 走下方异常分支，天然不提炼（不完整回合不沉淀记忆）。
+        if settings.MEMORY_EXTRACTION_ENABLED and tool_mode != "builder":
+            try:
+                from services.memory.extraction_trigger import maybe_extract_memories
+
+                asyncio.create_task(
+                    maybe_extract_memories(
+                        user_id=user_id,
+                        conversation_text=f"用户：{question}\nAI：{loop_result.answer}",
+                    )
+                )
+            except Exception:
+                logger.warning("记忆提炼调度失败（不影响主流程）", exc_info=True)
 
         # ── 产出最终 agent_done 事件（Spec 字段对齐） ────────
         # SSE done.process_trace = 紧凑摘要（轮数/工具序列/耗时），非全量事件列表

@@ -13,7 +13,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { PaintBrush, X, Check } from "@phosphor-icons/react";
-import type { ResumeStyle } from "../../api/builder";
+import type { ResumeStyle, ModuleType } from "../../api/builder";
 import {
   TEMPLATE_OPTIONS,
   FONT_OPTIONS,
@@ -38,7 +38,7 @@ interface StylePanelProps {
   /** 当前模块列表（可选）。传入后启用「板块管理」区块（显隐 + 排序）。 */
   modules?: StylePanelModule[];
   /** 排序回调（可选）。板块管理排序完成后回传有序的模块类型数组，由上层更新 sort_order。 */
-  onReorderModules?: (orderedTypes: string[]) => void;
+  onReorderModules?: (orderedTypes: ModuleType[]) => void;
 }
 
 /** 通用下拉框样式 */
@@ -316,7 +316,7 @@ export function StylePanel({
               modules={sortedModules}
               hiddenModules={hiddenModules}
               onToggleHidden={handleToggleHidden}
-              onReorder={(orderedTypes) => onReorderModules?.(orderedTypes)}
+              onReorder={(orderedTypes) => onReorderModules?.(orderedTypes as ModuleType[])}
             />
           </div>
         )}

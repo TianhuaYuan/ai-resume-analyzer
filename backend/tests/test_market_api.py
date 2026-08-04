@@ -9,13 +9,14 @@ from models.market_asset import MarketAsset
 
 def _make_job(*, id=1, external_id="j1", job_type="campus", company="测试公司",
               title="算法工程师", salary="20-40K", city="北京", deadline=None, content="...",
-              is_expired=False):
+              is_expired=False, apply_url=None, published_at=None):
     from datetime import datetime, timezone
     return MarketAsset(
-        id=id, source="upcv", external_id=external_id, asset_type="job",
+        id=id, source="upcv", external_id=external_id,
         job_type=job_type, title=title, company=company, position=title,
         city=city, salary=salary, deadline=deadline, is_expired=is_expired,
-        content=content, content_hash="abc", is_published=True,
+        apply_url=apply_url, published_at=published_at,
+        content=content, content_hash="abc",
     )
 
 
@@ -30,15 +31,21 @@ async def _seed_job(db_session, **kw):
 @pytest.mark.asyncio
 async def test_jobs_public_anonymous(db_session, client):
     """岗位列表公开可匿名访问。"""
-    await _seed_job(db_session)
+    from datetime import datetime, timezone
+    await _seed_job(db_session, apply_url="https://x.com/apply", published_at=datetime(2026, 7, 1))
     resp = await client.get("/api/v1/market/jobs")
     assert resp.status_code == 200
     data = resp.json()
     assert data["total"] == 1
-    assert data["items"][0]["company"] == "测试公司"
-    assert data["items"][0]["job_type"] == "campus"
+    item = data["items"][0]
+    assert item["company"] == "测试公司"
+    assert item["job_type"] == "campus"
+    assert item["apply_url"] == "https://x.com/apply"
+    assert item["published_at"] is not None
+    # source 仅内部幂等键，API 不暴露
+    assert "source" not in item
     # 列表不含 content 全文
-    assert "content" not in data["items"][0]
+    assert "content" not in item
 
 
 @pytest.mark.asyncio
@@ -83,31 +90,6 @@ async def test_job_detail_public(db_session, client):
 async def test_job_detail_not_found(client):
     resp = await client.get("/api/v1/market/jobs/999")
     assert resp.status_code == 404
-
-
-@pytest.mark.asyncio
-async def test_samples_list_and_detail(db_session, client):
-    """范文列表不含 content；详情含 payload 但同样不含原文 content。"""
-    db_session.add(MarketAsset(
-        id=1, source="sample", external_id="s1", asset_type="sample",
-        title="嵌入式开发简历范文", position="嵌入式开发工程师",
-        content="含个人信息的原文", payload={"target_position": "嵌入式开发工程师", "category": "技术"},
-        is_published=True,
-    ))
-    await db_session.commit()
-
-    resp = await client.get("/api/v1/market/samples")
-    assert resp.status_code == 200
-    item = resp.json()["items"][0]
-    assert item["title"] == "嵌入式开发简历范文"
-    assert item["category"] == "技术"  # 从 payload 映射
-    assert "content" not in item  # 合规：列表不含原文
-    assert "payload" not in item
-
-    resp = await client.get("/api/v1/market/samples/1")
-    detail = resp.json()
-    assert detail["payload"]["target_position"] == "嵌入式开发工程师"
-    assert detail["content"] == "含个人信息的原文"  # 详情带原文（范文原文展示）
 
 
 @pytest.mark.asyncio

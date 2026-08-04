@@ -66,6 +66,52 @@ async def record_llm_usage(user_id: int, prompt_tokens: int, completion_tokens: 
         _log_redis_fail_limited()
 
 
+async def get_usage_summary(days: int = 7) -> list[dict]:
+    """D4: 读取近 N 天 LLM 用量（按天聚合，跨全部用户）。
+
+    Redis Key 格式：llm_usage:{user_id}:{YYYYMMDD}:{prompt|completion|total|calls}
+    通过 scan 收集 total/calls 后缀的 key，按日期聚合。
+
+    Returns:
+        形如 [{"date": "20260804", "total_tokens": 123, "calls": 5}, ...]，
+        按日期升序；Redis 不可用返回空列表
+    """
+    try:
+        redis = await get_redis()
+        keys = await redis.keys("llm_usage:*:*:total")
+        if not keys:
+            return []
+    except Exception:
+        _log_redis_fail_limited()
+        return []
+
+    # 解析 key → (date, total/calls 值)，跨用户聚合
+    merged: dict[str, dict] = {}
+    for key in keys:
+        parts = key.split(":")
+        if len(parts) < 4:
+            continue
+        date_str = parts[-2]  # llm_usage:{user_id}:{date}:total
+        try:
+            value = int(await redis.get(key) or 0)
+        except Exception:
+            value = 0
+        entry = merged.setdefault(
+            date_str, {"date": date_str, "total_tokens": 0, "calls": 0}
+        )
+        entry["total_tokens"] += value
+
+        # 对应的 calls 计数
+        calls_key = ":".join(parts[:-1] + ["calls"])
+        try:
+            calls = int(await redis.get(calls_key) or 0)
+        except Exception:
+            calls = 0
+        entry["calls"] += calls
+
+    return [merged[d] for d in sorted(merged)]
+
+
 def _log_redis_fail_limited() -> None:
     """限频记录 Redis 降级日志。"""
     global _LAST_FAIL_LOG_TIME

@@ -1,4 +1,4 @@
-import type { TemplateConfig } from "../../registry";
+import type { TemplateConfig } from "../registry";
 
 /** 优雅单栏 — 细线分隔，宽松字距（对齐后端 templates/elegant.html） */
 export const elegantConfig: TemplateConfig = {

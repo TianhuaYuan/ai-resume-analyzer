@@ -20,9 +20,9 @@ class TestMCPSearchFieldName:
 
         from mcp_server.server import _current_user_id
 
-        _current_user_id.set(1)
+        token = _current_user_id.set(1)
 
-        from unittest.mock import patch, AsyncMock, MagicMock
+        from unittest.mock import patch, AsyncMock
 
         mock_chunks = [
             {
@@ -33,45 +33,37 @@ class TestMCPSearchFieldName:
             }
         ]
 
-        mock_resume = MagicMock()
-        mock_resume.status = "ready"
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = mock_resume
-        mock_session = AsyncMock()
-        mock_session.__aenter__.return_value.execute.return_value = mock_result
+        try:
+            with (
+                patch(
+                    "mcp_server.tools.search.assert_user_owns_assets",
+                    new_callable=AsyncMock,
+                    return_value={"resume": [1]},
+                ),
+                patch(
+                    "services.rag.retrieval.hybrid_search_corpus",
+                    new_callable=AsyncMock,
+                    return_value=mock_chunks,
+                ),
+            ):
+                result = await search_knowledge_base(
+                    query="测试查询",
+                    resume_id="1",
+                    top_k=1,
+                )
 
-        with (
-            patch(
-                "mcp_server.tools.search.AsyncSessionLocal",
-                return_value=mock_session,
-            ),
-            patch(
-                "services.rag.retrieval.hybrid_search",
-                new_callable=AsyncMock,
-                return_value=mock_chunks,
-            ),
-            patch(
-                "services.rag.retrieval.rerank",
-                new_callable=AsyncMock,
-                return_value=mock_chunks,
-            ),
-        ):
-            result = await search_knowledge_base(
-                query="测试查询",
-                resume_id="1",
-                top_k=1,
-            )
+            assert len(result) == 1
+            import json
 
-        assert len(result) == 1
-        import json
+            data = json.loads(result[0].text)
+            assert isinstance(data, list)
+            assert len(data) == 1
 
-        data = json.loads(result[0].text)
-        assert isinstance(data, list)
-        assert len(data) == 1
-
-        item = data[0]
-        assert "text" in item, f"Expected 'text' field but got keys: {list(item.keys())}"
-        assert item["text"] == "测试简历内容"
+            item = data[0]
+            assert "text" in item, f"Expected 'text' field but got keys: {list(item.keys())}"
+            assert item["text"] == "测试简历内容"
+        finally:
+            _current_user_id.reset(token)
 
     @pytest.mark.asyncio
     async def test_mcp_search_uses_text_field(self):

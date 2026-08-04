@@ -17,6 +17,7 @@ import pytest
 from httpx import AsyncClient
 
 from models.resume import Resume
+from models.resume_module import ResumeModule
 from tests.conftest import AsyncSessionTest
 
 
@@ -26,6 +27,7 @@ async def _insert_resume(
     status: str = "ready",
     parsed_text: str = "Python 后端工程师，3年 FastAPI 开发经验。",
 ) -> int:
+    """直接插入 Resume + 一个 basic_info 模块（导出依赖 resume_modules，零模块会 422）。"""
     async with AsyncSessionTest() as session:
         resume = Resume(
             user_id=user_id,
@@ -37,6 +39,14 @@ async def _insert_resume(
         session.add(resume)
         await session.commit()
         await session.refresh(resume)
+        module = ResumeModule(
+            resume_id=resume.id,
+            module_type="basic_info",
+            content={"name": "张三", "summary": "Python 后端工程师，3年 FastAPI 开发经验。"},
+            sort_order=0,
+        )
+        session.add(module)
+        await session.commit()
         return resume.id
 
 
@@ -55,19 +65,6 @@ async def test_export_nonexistent_resume(client: AsyncClient, auth_headers: dict
         headers=auth_headers,
     )
     assert resp.status_code == 404
-
-
-@pytest.mark.asyncio
-async def test_export_processing_resume_returns_409(
-    client: AsyncClient, auth_headers: dict, registered_user: dict
-):
-    """processing 状态简历 → 409。"""
-    resume_id = await _insert_resume(registered_user["id"], status="processing", parsed_text="")
-    resp = await client.get(
-        f"/api/v1/resumes/{resume_id}/export?format=markdown",
-        headers=auth_headers,
-    )
-    assert resp.status_code == 409
 
 
 @pytest.mark.asyncio

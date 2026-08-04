@@ -24,9 +24,28 @@ from services.react_agent.tools import (
 # ── 辅助函数 ──────────────────────────────────────────────────
 
 
-def _make_mock_db():
-    """通用 mock db。"""
-    return AsyncMock()
+def _make_mock_db(resume_status: str | None = "ready"):
+    """通用 mock db：execute/get 返回同步 result。
+
+    不能用裸 AsyncMock —— 其 scalar_one_or_none()/get() 是 coroutine，
+    _get_resume / ensure_indexed 访问结果会报 'coroutine' object has no attribute 'status'。
+    """
+    db = MagicMock()
+    resume = None
+    if resume_status is not None:
+        resume = MagicMock()
+        resume.id = 1
+        resume.status = resume_status
+        resume.filename = "test.pdf"
+        resume.file_path = "/uploads/test.pdf"
+        resume.parsed_text = "内容"
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = resume
+    db.execute = AsyncMock(return_value=result)
+    db.get = AsyncMock(return_value=resume)
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+    return db
 
 
 def _make_chunk(text=" chunk text", section="项目经验", score=0.85, chunk_index=0):
@@ -56,6 +75,7 @@ class TestSearchResumeTool:
                   _make_chunk(text="FastAPI项目", section="项目经验", chunk_index=1)]
 
         with patch("services.react_agent.tools.hybrid_search", new_callable=AsyncMock) as mock_search, \
+             patch("services.react_agent.tools.ensure_indexed", new_callable=AsyncMock), \
              patch("services.react_agent.tools.rerank", new_callable=AsyncMock) as mock_rerank:
             mock_search.return_value = chunks
             mock_rerank.return_value = chunks
@@ -71,6 +91,7 @@ class TestSearchResumeTool:
         tool = SearchResumeTool(db=_make_mock_db(), user_id=1)
 
         with patch("services.react_agent.tools.hybrid_search", new_callable=AsyncMock) as mock_search, \
+             patch("services.react_agent.tools.ensure_indexed", new_callable=AsyncMock), \
              patch("services.react_agent.tools.rerank", new_callable=AsyncMock) as mock_rerank:
             mock_search.return_value = []
             mock_rerank.return_value = []
@@ -86,6 +107,7 @@ class TestSearchResumeTool:
         tool = SearchResumeTool(db=_make_mock_db(), user_id=1)
 
         with patch("services.react_agent.tools.hybrid_search", new_callable=AsyncMock) as mock_search, \
+             patch("services.react_agent.tools.ensure_indexed", new_callable=AsyncMock), \
              patch("services.react_agent.tools.rerank", new_callable=AsyncMock) as mock_rerank:
             mock_search.return_value = []
             mock_rerank.return_value = []
@@ -93,7 +115,8 @@ class TestSearchResumeTool:
             await tool._execute(resume_id=42, query="技能")
 
             call_args = mock_search.call_args
-            assert call_args.args[0] == 42 or call_args.kwargs.get("resume_id") == 42
+            # hybrid_search(user_id, resume_id, query, top_k=20) — resume_id 是第 2 个位置参数
+            assert call_args.args[1] == 42 or call_args.kwargs.get("resume_id") == 42
 
     @pytest.mark.asyncio
     async def test_handles_no_results(self):
@@ -101,6 +124,7 @@ class TestSearchResumeTool:
         tool = SearchResumeTool(db=_make_mock_db(), user_id=1)
 
         with patch("services.react_agent.tools.hybrid_search", new_callable=AsyncMock) as mock_search, \
+             patch("services.react_agent.tools.ensure_indexed", new_callable=AsyncMock), \
              patch("services.react_agent.tools.rerank", new_callable=AsyncMock) as mock_rerank:
             mock_search.return_value = []
             mock_rerank.return_value = []
@@ -116,6 +140,7 @@ class TestSearchResumeTool:
         chunks = [_make_chunk(text="内容A", section="工作经历")]
 
         with patch("services.react_agent.tools.hybrid_search", new_callable=AsyncMock) as mock_search, \
+             patch("services.react_agent.tools.ensure_indexed", new_callable=AsyncMock), \
              patch("services.react_agent.tools.rerank", new_callable=AsyncMock) as mock_rerank:
             mock_search.return_value = chunks
             mock_rerank.return_value = chunks

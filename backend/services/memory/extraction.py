@@ -12,6 +12,7 @@ import json
 import logging
 import re
 
+from core.retry import with_retry
 from services.memory.memory_store import recall_memory, save_memory
 from services.rag.pipeline import llm_generate
 
@@ -59,13 +60,17 @@ async def extract_and_save_memories(
     任何失败都只记录、不抛出，保证后台批处理不因单次对话崩溃。
     """
     try:
-        raw = await llm_generate(
+        # with_retry 消费 fallback 兜底（llm_generate 本身无 fallback 参数），
+        # 对齐 rewrite_query 的重试/降级模式；重试耗尽返回 "[]" → _parse_facts 解析为空。
+        raw = await with_retry(
+            llm_generate,
             system=_EXTRACT_SYSTEM,
             user=conversation_text[:4000],
             temperature=0.2,
             max_tokens=300,
             user_id=user_id,
             fallback="[]",
+            max_retries=1,
         )
     except Exception as e:
         logger.warning("记忆提炼 LLM 失败: %s", e)

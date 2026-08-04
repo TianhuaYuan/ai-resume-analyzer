@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.resume import Resume
 from models.resume_module import ResumeModule
-from schemas.resume_module import ResumeStyle
+from schemas.resume_module import ResumeStyle, get_content_items
 from services.resume_builder import _merge_modules_to_text, _MODULE_SECTION_HEADERS
 from services.resume_template import render_resume
 
@@ -168,8 +168,16 @@ def _module_to_markdown(mod: ResumeModule) -> str:
 
     lines = [f"## {title}", ""]
 
-    # 列表型模块（v2: 使用 items）
-    items = content.get("items", [])
+    # 纯字符串 items（兴趣/标签等）—— 直接逗号拼接（须先于通用 dict 列表分支，否则被跳过）
+    if "items" in content and isinstance(content["items"], list) and all(
+        isinstance(i, str) for i in content["items"]
+    ):
+        lines.append(", ".join(content["items"]))
+        lines.append("")
+        return "\n".join(lines)
+
+    # 列表型模块（v2: items；兼容旧格式 entries / skills categories）
+    items = get_content_items(content)
     if isinstance(items, list) and items:
         for item in items:
             if isinstance(item, dict):
@@ -197,14 +205,6 @@ def _module_to_markdown(mod: ResumeModule) -> str:
                 grouped.setdefault(cat, []).append(name)
         for cat_name, skill_names in grouped.items():
             lines.append(f"- **{cat_name}**: {', '.join(skill_names)}")
-        lines.append("")
-        return "\n".join(lines)
-
-    # 兴趣模块
-    if "items" in content and isinstance(content["items"], list) and all(
-        isinstance(i, str) for i in content["items"]
-    ):
-        lines.append(", ".join(content["items"]))
         lines.append("")
         return "\n".join(lines)
 

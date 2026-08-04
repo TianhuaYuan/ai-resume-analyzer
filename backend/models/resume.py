@@ -37,6 +37,9 @@ class Resume(Base):
     # content_hash != indexed_hash → 索引过期（脏标记），懒索引触发重建。
     content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     indexed_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # 解析进度：{stage: "parsing"|"materializing"|"done"|"failed", percent: int, message: str}
+    # processing 期间由后台任务逐步更新，前端轮询/WebSocket 读取显示进度条。
+    parse_progress: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # T6：向量索引版本号（单调递增，独立于编辑器的 document version）。
     # 懒重建不能复用 document version（草稿保存不 bump，会与旧版本 chunk id 冲突）。
     index_version: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

@@ -47,3 +47,34 @@ class FunnelResponse(BaseModel):
 
     events: list[FunnelItem]
     days: int
+
+
+class TrendItem(BaseModel):
+    """D3: 单日趋势（注册 / 活跃 / 事件）。"""
+
+    day: str
+    registrations: int = 0
+    active_users: int = 0
+    events: int = 0
+
+
+class TrendResponse(BaseModel):
+    """趋势统计响应。"""
+
+    days: int
+    items: list[TrendItem]
+
+
+class LLMUsageItem(BaseModel):
+    """D4: 单日 LLM 用量。"""
+
+    date: str
+    total_tokens: int = 0
+    calls: int = 0
+
+
+class LLMUsageResponse(BaseModel):
+    """LLM 用量历史响应。"""
+
+    days: int
+    items: list[LLMUsageItem]

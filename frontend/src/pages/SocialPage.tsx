@@ -187,12 +187,9 @@ function JobDetailModal({ job, loading, onClose }: JobDetailModalProps) {
                   <GraduationCap size={11} weight="duotone" /> {job.degree}
                 </span>
               )}
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-[var(--color-bg-secondary)] text-[var(--color-text-muted)] border border-[var(--color-border)]">
-                来源：{job.source || "公开渠道"}
-              </span>
-              {typeof job.payload?.published_at === "string" && (
+              {job.published_at && (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-[var(--color-bg-secondary)] text-[var(--color-text-muted)] border border-[var(--color-border)]">
-                  <CalendarBlank size={10} weight="duotone" /> 发布于 {formatDate(job.payload.published_at)}
+                  <CalendarBlank size={10} weight="duotone" /> 发布于 {formatDate(job.published_at)}
                 </span>
               )}
             </div>
@@ -209,8 +206,8 @@ function JobDetailModal({ job, loading, onClose }: JobDetailModalProps) {
               <p className="text-[10px] text-[var(--color-text-muted)]">
                 来源公开渠道，投递前请自行核实岗位信息
               </p>
-              {job.payload?.apply_url ? (
-                <a href={job.payload.apply_url} target="_blank" rel="noopener noreferrer"
+              {job.apply_url ? (
+                <a href={job.apply_url} target="_blank" rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-brand text-white text-xs font-medium hover:bg-[#0077ed] hover:scale-[1.02] active:scale-[0.98] transition-all duration-300 cursor-pointer shrink-0">
                   <ArrowSquareOut size={13} weight="bold" /> 前往投递
                 </a>
@@ -376,7 +373,7 @@ export default function SocialPage() {
                 {jobs.map((r) => (
                   <tr key={r.id} className="border-b border-[var(--color-border)] last:border-b-0 hover:bg-[var(--color-bg-secondary)] transition-colors">
                     <td className="px-4 py-3 text-xs text-[var(--color-text-muted)] whitespace-nowrap tabular-nums">
-                      {formatDate(r.payload?.published_at ?? r.created_at)}
+                      {formatDate(r.published_at ?? r.created_at)}
                     </td>
                     <td className="px-4 py-3 text-xs font-semibold text-[var(--color-text)] whitespace-nowrap">{r.company}</td>
                     <td className="px-4 py-3 max-w-[220px]">
@@ -387,8 +384,8 @@ export default function SocialPage() {
                       </button>
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
-                      {r.payload?.apply_url ? (
-                        <a href={r.payload.apply_url} target="_blank" rel="noopener noreferrer"
+                      {r.apply_url ? (
+                        <a href={r.apply_url} target="_blank" rel="noopener noreferrer"
                           className="inline-flex items-center gap-1 text-xs text-brand hover:text-brand-hover hover:underline transition-colors">
                           <Link size={12} /> 点击投递
                         </a>

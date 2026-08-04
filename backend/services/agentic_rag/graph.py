@@ -1,16 +1,11 @@
-"""Agentic RAG 工作流（StateGraph 组装）。
+"""Agentic RAG 工作流（StateGraph 组装，标准模式）。
 
-阶段11 合并：原 `mcp_graph.py` 的节点/边已并入本文件，两种模式现在同处一模块：
-- `create_agentic_rag_graph()`    标准模式（直连：search/rerank/generate 节点）。
-                                  这是稳定导入点（api/qa.py 的 /ask 路由与阶段7 懒导入都依赖它）。
+`create_agentic_rag_graph()`：直连 search/rerank/generate 节点的标准模式，
+是稳定导入点（api/qa.py 的 /ask 路由依赖它）。包含完整节点、条件边、
+Reflexion 循环（≤2 轮）、self-reflection 节点与 degraded 路由。
 
-合并保留：所有节点、条件边、Reflexion 循环（≤2 轮）、阶段4 加的 self-reflection
-节点与 degraded 路由。两图共享 direct_answer_node / output_node /
-_route_after_evaluate（逻辑一致）。
-
-T14：MCP 模式图已退役——`create_mcp_agentic_rag_graph` 不再引用 mcp_nodes，
-改为抛 NotImplementedError。生产代码请改走 mcp_server 的 answer_from_index
-原子工具（mcp_server/tools/answer.py）或 runner.run_answer_from_index。
+注：MCP 版图（原 mcp_graph/mcp_nodes）已在 T14 退役删除，生产走
+mcp_server/tools/answer.py 的 answer_from_index 原子工具。
 """
 
 import json
@@ -37,12 +32,6 @@ logger = logging.getLogger(__name__)
 # 共享常量
 DIRECT_ANSWER_NODE = "direct_answer"
 _DIRECT_ANSWER_REPLY = "你好！我是简历分析助手，请问有什么关于简历的问题我可以帮你解答？"
-
-# MCP 模式专属节点名（与标准模式的 search/rerank/generate 区分，便于路由与调试）
-MCP_SEARCH_NODE = "mcp_search"
-MCP_RERANK_NODE = "mcp_rerank"
-MCP_GENERATE_NODE = "mcp_generate"
-
 
 # ─────────────────────────────────────────────────────────────
 # 共享节点
@@ -129,8 +118,7 @@ def _build_rag_graph(
 ) -> Any:
     """构建 RAG 图的共享逻辑。
 
-    标准模式和 MCP 模式的唯一区别在于 search/rerank/generate 节点和对应的路由函数，
-    其余结构完全相同。此函数消除重复的图构建代码。
+    通过注入 search/rerank/generate 节点函数与路由函数，消除重复的图构建代码。
     """
     if checkpointer is None:
         checkpointer = MemorySaver()
@@ -209,24 +197,6 @@ def _route_after_reflection_standard(state: AgenticRAGState) -> str:
 
 
 # ─────────────────────────────────────────────────────────────
-# MCP 模式路由
-# ─────────────────────────────────────────────────────────────
-def _route_after_route_mcp(state: AgenticRAGState) -> str:
-    """MCP 模式：ROUTE 后进入 MCP_SEARCH 或 DIRECT_ANSWER。"""
-    decision = state.get("route_decision", "search")
-    logger.info("_route_after_route_mcp: %s", decision)
-    if decision == "direct_answer":
-        return DIRECT_ANSWER_NODE
-    return MCP_SEARCH_NODE
-
-
-def _route_after_reflection_mcp(state: AgenticRAGState) -> str:
-    """MCP 模式：反思后回到 MCP_SEARCH 补充检索。"""
-    logger.info("_route_after_reflection_mcp: %d supplement queries", len(state.get("supplement_queries", [])))
-    return MCP_SEARCH_NODE
-
-
-# ─────────────────────────────────────────────────────────────
 # 公共 API
 # ─────────────────────────────────────────────────────────────
 def create_agentic_rag_graph(checkpointer=None):
@@ -249,17 +219,3 @@ def create_agentic_rag_graph(checkpointer=None):
     return compiled
 
 
-def create_mcp_agentic_rag_graph(checkpointer=None):
-    """T14 退役：MCP 模式图已退役，改用 mcp_server answer_from_index 原子工具。
-
-    原实现基于 mcp_nodes（mcp_search/mcp_rerank/mcp_generate 节点级 MCP 调用链），
-    已被 mcp_server/tools/answer.py 的 answer_from_index 取代（检索+反思+生成一次完成）。
-
-    此函数保留签名仅为兼容旧测试与旧 shim（mcp_graph.py）的导入；生产代码请改走
-    runner.run_answer_from_index 或 MCP answer_from_index 工具。
-    """
-    raise NotImplementedError(
-        "create_mcp_agentic_rag_graph is retired (T14): "
-        "use mcp_server answer_from_index atomic tool or "
-        "services.agentic_rag.runner.run_answer_from_index instead"
-    )

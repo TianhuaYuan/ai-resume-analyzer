@@ -311,6 +311,7 @@ export interface BuilderResume {
   created_at: string;
   is_indexed?: boolean;
   is_stale?: boolean;
+  modules_materialized?: boolean;
   modules: ResumeModule[];
 }
 
@@ -419,12 +420,6 @@ export async function fetchPreviewHtml(
     throw new Error((err as { detail?: string }).detail || `预览加载失败 (${resp.status})`);
   }
   return resp.text();
-}
-
-/** 导出简历（PDF/Markdown）— 返回下载 URL */
-export function getExportUrl(id: number, format: "pdf" | "markdown"): string {
-  const token = localStorage.getItem("access_token") || "";
-  return `/api/v1/resumes/${id}/export?format=${format}&t=${token}`;
 }
 
 /** 触发浏览器下载导出文件 */

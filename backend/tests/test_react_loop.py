@@ -150,18 +150,19 @@ class TestTokenAccumulation:
         from services.react_agent.loop import react_loop, MAX_BAD_TOOL_RETRIES
 
         # 构造连续 MAX_BAD_TOOL_RETRIES 次坏调用 + 强制收敛
-        # 连续坏调用走中间轮流式（各 50/10），强制收敛走最终轮非流式（300/100）
+        # 连续坏调用走中间轮流式（各 50/10），强制收敛走最终轮流式（300/100）
         stream_mock = MagicMock(side_effect=[
             _make_stream_response(
                 tool_calls=[_make_tool_call(name="nonexistent")],
                 usage={"prompt_tokens": 50, "completion_tokens": 10},
             )
             for _ in range(MAX_BAD_TOOL_RETRIES)
+        ] + [
+            _make_stream_response(
+                content="强制收敛答案",
+                usage={"prompt_tokens": 300, "completion_tokens": 100},
+            )
         ])
-        final_response = _make_response(
-            content="强制收敛答案",
-            usage={"prompt_tokens": 300, "completion_tokens": 100},
-        )
 
         with patch("services.react_agent.loop.assemble_system_prompt", new_callable=AsyncMock) as mock_sys, \
              patch("services.react_agent.loop.check_quota", new_callable=AsyncMock) as mock_quota, \
@@ -175,7 +176,7 @@ class TestTokenAccumulation:
             mock_quota.return_value = (True, None)
             mock_l1.side_effect = lambda msgs, **kw: msgs
 
-            mock_llm.return_value = final_response
+            mock_llm.return_value = _make_response(content="不应到达")
 
             result = await react_loop(db=AsyncMock(), user_id=1, resume_id=1, question="测试")
 
@@ -386,24 +387,25 @@ class TestBadJsonArgs:
 
 
 class TestConsecutiveBadCallsConvergence:
-    """MAX_BAD_TOOL_RETRIES 次连续坏调用 → 强制跳出循环。"""
+    """A3 per-tool 重试预算：同一工具连续失败 MAX_TOOL_RETRIES 次 → 强制跳出循环。"""
 
     @pytest.mark.asyncio
     async def test_exactly_two_bad_calls_then_forced_convergence(self):
-        """恰好 2 次连续坏调用后跳出循环，强制无工具回答。"""
-        from services.react_agent.loop import react_loop, MAX_BAD_TOOL_RETRIES
+        """同一工具恰好 MAX_TOOL_RETRIES 次连续失败后跳出循环，强制无工具回答。"""
+        from services.react_agent.loop import MAX_TOOL_RETRIES, react_loop
 
-        assert MAX_BAD_TOOL_RETRIES == 2, "测试预期 MAX_BAD_TOOL_RETRIES=2"
+        assert MAX_TOOL_RETRIES == 3, "测试预期 MAX_TOOL_RETRIES=3"
 
-        # 2 轮坏调用走中间轮流式，强制收敛走最终轮非流式（tools=None）
+        # MAX_TOOL_RETRIES 轮坏调用走中间轮流式，强制收敛走最终轮流式（tools=None）
         stream_mock = MagicMock(side_effect=[
             _make_stream_response(
                 tool_calls=[_make_tool_call(name="nonexistent")],
                 content="中间思考",
             )
-            for _ in range(MAX_BAD_TOOL_RETRIES)
+            for _ in range(MAX_TOOL_RETRIES)
+        ] + [
+            _make_stream_response(content="强制收敛答案"),
         ])
-        final_response = _make_response(content="强制收敛答案")
 
         with patch("services.react_agent.loop.assemble_system_prompt", new_callable=AsyncMock) as mock_sys, \
              patch("services.react_agent.loop.check_quota", new_callable=AsyncMock) as mock_quota, \
@@ -417,17 +419,17 @@ class TestConsecutiveBadCallsConvergence:
             mock_quota.return_value = (True, None)
             mock_l1.side_effect = lambda msgs, **kw: msgs
 
-            mock_llm.return_value = final_response
+            mock_llm.return_value = _make_response(content="不应到达")
 
             result = await react_loop(db=AsyncMock(), user_id=1, resume_id=1, question="测试")
 
         assert "强制收敛" in result.answer
-        # 中间轮 2 次坏调用 + 最终轮 1 次强制收敛
-        assert stream_mock.call_count == MAX_BAD_TOOL_RETRIES
-        assert mock_llm.call_count == 1
+        # 中间轮 MAX_TOOL_RETRIES 次坏调用 + 最终轮 1 次强制收敛（均走流式）
+        assert stream_mock.call_count == MAX_TOOL_RETRIES + 1
+        assert mock_llm.call_count == 0  # 最终轮也走流式，非流式 llm_generate_with_tools 不再调用
 
         # 最终轮调 LLM 时 tools=None（强制无工具）
-        last_call = mock_llm.call_args_list[-1]
+        last_call = stream_mock.call_args_list[-1]
         assert last_call.kwargs.get("tools") is None
 
     @pytest.mark.asyncio
@@ -1320,7 +1322,7 @@ class TestDbTraceCapture:
 
 
 class TestBuilderModeWiring:
-    """tool_mode='builder' 时应把 builder 工具 schema 传给 llm_generate_with_tools。"""
+    """tool_mode='builder' 时统一工具集 schema 传给流式 LLM（T17 重构后经 get_tools_for_agent 装配）。"""
 
     @pytest.mark.asyncio
     async def test_builder_mode_passes_builder_schemas_to_llm(self):
@@ -1328,11 +1330,17 @@ class TestBuilderModeWiring:
 
         stream_mock = MagicMock(side_effect=[_make_stream_response(content="答案")])
 
+        # mock builder 工具类：实例 to_openai_schema 返回固定 schema
+        mock_tool_class = MagicMock()
+        mock_tool_class.name = "generate_module"
+        mock_tool_class.return_value.to_openai_schema.return_value = {"dummy": 1}
+
         with patch("services.react_agent.loop.assemble_system_prompt", new_callable=AsyncMock) as mock_sys, \
              patch("services.react_agent.loop.check_quota", new_callable=AsyncMock) as mock_quota, \
              patch("services.react_agent.loop.llm_generate_with_tools", new_callable=AsyncMock) as mock_llm, \
              patch("services.react_agent.loop.llm_generate_with_tools_stream", stream_mock), \
-             patch("services.react_agent.loop.get_builder_schemas", return_value=[{"dummy": 1}]), \
+             patch("services.react_agent.builder_intent.resolve_builder_intent", new_callable=AsyncMock) as mock_intent, \
+             patch("services.react_agent.loop.get_tools_for_agent", return_value=[mock_tool_class]), \
              patch("services.react_agent.loop.get_agent_schemas", return_value=[]), \
              patch("services.react_agent.loop.manage_l1_context") as mock_l1:
 
@@ -1340,13 +1348,14 @@ class TestBuilderModeWiring:
             mock_quota.return_value = (True, None)
             mock_l1.side_effect = lambda msgs, **kw: msgs
             mock_llm.return_value = _make_response(content="不应到达")
+            mock_intent.return_value = None  # 无明确编辑意图 → 回退 ReAct 循环
 
             result = await react_loop(
                 db=AsyncMock(), user_id=1, resume_id=1,
                 question="测试", tool_mode="builder",
             )
 
-        # builder schemas 传给中间轮流式调用
+        # builder 工具 schema 传给中间轮流式调用
         captured_tools = stream_mock.call_args_list[0].kwargs["tools"]
         assert captured_tools == [{"dummy": 1}]
         assert result.answer == "答案"

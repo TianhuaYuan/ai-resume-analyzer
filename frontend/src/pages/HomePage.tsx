@@ -5,7 +5,7 @@
  * 内容页（模板/范文/攻略等）由各自独立页面直接展示，首页不做内容承载。
  */
 
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import LandingNav from "../components/LandingNav";
 import { Sparkle, ArrowRight, Robot, FileText, Target } from "@phosphor-icons/react";
@@ -194,6 +194,21 @@ export default function HomePage() {
           ))}
         </div>
       </section>
+
+      {/* C2: 信任合规页脚 */}
+      <footer className="border-t border-black/5 py-6">
+        <div className="max-w-6xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-[var(--color-text-muted)]">
+          <span>© 2026 AI 简历求职助手</span>
+          <div className="flex items-center gap-5">
+            <Link to="/privacy" className="hover:text-[var(--color-text)] transition-colors">
+              隐私政策
+            </Link>
+            <Link to="/terms" className="hover:text-[var(--color-text)] transition-colors">
+              用户协议
+            </Link>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }

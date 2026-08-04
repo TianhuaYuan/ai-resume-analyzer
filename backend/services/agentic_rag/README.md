@@ -1,6 +1,6 @@
 # services/agentic_rag
 
-LangGraph StateGraph 实现的 Agentic RAG 工作流。两种模式：直连（rag_service.py 直接调用 API）和 MCP（通过 MCP 客户端调用）。各节点函数签名统一为 `async (state: AgenticRAGState) -> dict`。
+LangGraph StateGraph 实现的 Agentic RAG 工作流。标准模式：graph.py 直连检索/生成节点（search/rerank/generate 直连 API）。MCP 调用走 `mcp_server/tools/answer.py` 原子工具（原 mcp_graph/mcp_nodes 已在 T14 退役删除）。各节点函数签名统一为 `async (state: AgenticRAGState) -> dict`。
 
 ## State 结构
 
@@ -44,18 +44,7 @@ Reflexion 循环：
 - 最多 2 轮 Reflexion，超限后强制输出
 - `reflection.py` 有 LLM JSON 解析失败后的正则回退解析
 
-## MCP 模式（mcp_graph.py）
-
-结构相同，但 search/rerank/generate 三个节点替换为 MCP 调用：
-
-```
-mcp_search_node → mcp_rerank_node → mcp_generate_node
-```
-
-MCP 节点通过 `mcp_client/` 发 JSON-RPC 2.0 请求到自身 `/mcp` 端点。错误处理：
-- MCP 调用失败时降级为默认排序（rerank）或模板回答（generate）
-- 无 Reflexion（MCP 模式 evaluate 失败直接重试 search）
-
 ## 入口
 
-外部通过 `services/rag_service.py` 的 `run_agentic_rag()` / `run_mcp_agentic_rag()` 调用，非直接调用 graph。
+外部经 `services/agentic_rag/runner.py` 的 `run_answer_from_index` 调用（聚合检索+反思+生成）；
+直接运行图用 `graph.create_agentic_rag_graph()`。

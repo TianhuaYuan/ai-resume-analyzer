@@ -185,7 +185,7 @@ async def test_delete_resume_clears_chroma_vectors(registered_user: dict):
         async with AsyncSessionTest() as session:
             await delete_resume(session, resume_id, registered_user["id"])
 
-    mock_clear_vectors.assert_awaited_once_with(resume_id)
+    mock_clear_vectors.assert_awaited_once_with(registered_user["id"], resume_id)
 
 
 # ---------------- 文件系统 ----------------

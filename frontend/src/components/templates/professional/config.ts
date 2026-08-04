@@ -1,4 +1,4 @@
-import type { TemplateConfig } from "../../registry";
+import type { TemplateConfig } from "../registry";
 
 /** 专业双栏 — 左栏放基础/技能/语言/社交，右栏主内容（对齐后端 templates/professional.html） */
 export const professionalConfig: TemplateConfig = {

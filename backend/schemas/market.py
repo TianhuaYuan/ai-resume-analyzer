@@ -1,6 +1,6 @@
 """市场数据（公共求职资产）相关 Pydantic schemas。
 
-覆盖：岗位浏览/详情、范文列表/详情、攻略、简历模板画廊、Agent 岗位推荐。
+覆盖：岗位浏览/详情、Agent 岗位推荐。
 """
 
 from datetime import datetime
@@ -16,7 +16,6 @@ class MarketJobItem(BaseModel):
     """岗位列表摘要（不含 content 全文，供浏览/筛选）。"""
 
     id: int
-    source: str
     job_type: str | None
     title: str
     company: str | None
@@ -27,8 +26,9 @@ class MarketJobItem(BaseModel):
     degree: str | None
     deadline: datetime | None
     is_expired: bool
+    apply_url: str | None = None
+    published_at: datetime | None = None
     created_at: datetime
-    payload: dict[str, Any] | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -43,10 +43,9 @@ class MarketJobStatsResponse(BaseModel):
 
 
 class MarketJobDetail(MarketJobItem):
-    """岗位详情（含 content 全文 + 结构化 payload）。"""
+    """岗位详情（含 content 全文）。"""
 
     content: str
-    payload: dict[str, Any] | None = None
 
 
 class MarketJobListResponse(BaseModel):
@@ -57,76 +56,6 @@ class MarketJobListResponse(BaseModel):
     page: int
     limit: int
     total_pages: int
-
-
-class MarketSampleItem(BaseModel):
-    """范文列表摘要（不含 payload / content 原文——合规：范文含个人信息不外露）。"""
-
-    id: int
-    title: str
-    position: str | None = Field(None, description="targetJob 目标岗位")
-    category: str | None = None
-    created_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class MarketSampleDetail(MarketSampleItem):
-    """范文详情（含原文 content + 结构化 payload，供展示/快速套用 / AI 改写）。"""
-
-    content: str = ""
-    payload: dict[str, Any] | None = None
-
-
-class MarketSampleListResponse(BaseModel):
-    items: list[MarketSampleItem]
-    total: int
-    page: int
-    limit: int
-    total_pages: int
-
-
-class MarketGuideItem(BaseModel):
-    """攻略列表摘要（title/summary，正文未抓取时跳原文链接）。"""
-
-    id: int
-    title: str
-    summary: str = ""
-    date: str | None = None
-    url: str | None = None
-    has_fulltext: bool = False
-
-
-class MarketGuideDetail(MarketGuideItem):
-    """攻略详情（content 为正文；未抓取时为摘要）。"""
-
-    content: str = ""
-
-
-class MarketGuideListResponse(BaseModel):
-    items: list[MarketGuideItem]
-    total: int
-    page: int
-    limit: int
-    total_pages: int
-
-
-# ── 简历模板画廊（公开） ─────────────────────────────────────
-
-
-class MarketTemplateInfo(BaseModel):
-    """简历模板摘要（含零数据渲染的预览 HTML）。"""
-
-    id: str
-    name: str
-    description: str = ""
-    tags: list[str] = Field(default_factory=list)
-    layout: str = ""
-    preview_html: str = ""
-
-
-class MarketTemplateListResponse(BaseModel):
-    items: list[MarketTemplateInfo]
 
 
 # ── Agent 岗位推荐 ───────────────────────────────────────────

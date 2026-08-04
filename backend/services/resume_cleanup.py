@@ -18,6 +18,7 @@ from core import cache as embedding_cache
 from core.config import settings
 from core.database import AsyncSessionLocal
 from models.resume import Resume
+from models.user import User
 from services.rag.clients import get_chroma_client
 from services.rag.pipeline import clear_resume_vectors
 
@@ -37,6 +38,8 @@ async def delete_resume_full(db: AsyncSession, resume: Resume) -> None:
     - delete_resume_full: 先删 DB 再清外部（用于确定要删的场景，如用户确认删账户）
 
     外部资源清理失败不抛异常，仅记录 warning，避免阻塞主流程。
+
+    保留待账户删除功能落地时接入；当前 DELETE 端点不替换（保持 P2-4 外部-first 顺序）。
     """
     resume_id = resume.id
     user_id = resume.user_id
@@ -120,6 +123,10 @@ async def orphan_scan() -> dict[str, list[str]]:
         result = await db.execute(select(Resume.id))
         db_resume_ids = {row[0] for row in result.all()}
 
+        # 获取所有用户 ID（knowledge_{user_id} 集合按"用户是否存在"判定孤儿）
+        result = await db.execute(select(User.id))
+        db_user_ids = {row[0] for row in result.all()}
+
     # 1. 扫描磁盘孤儿文件
     if UPLOAD_DIR.exists():
         try:
@@ -139,14 +146,21 @@ async def orphan_scan() -> dict[str, list[str]]:
             coll_name = getattr(coll, "name", coll)
             if not isinstance(coll_name, str):
                 continue
-            # collection 名格式: resume_<id>
+            # 旧遗留命名：resume_<id>（按简历 id 是否存在判定）
             if coll_name.startswith("resume_"):
                 try:
                     resume_id = int(coll_name.split("_", 1)[1])
                     if resume_id not in db_resume_ids:
                         orphans["chromadb"].append(coll_name)
                 except (ValueError, IndexError):
-                    # 不符合命名规范的 collection，也标记为孤儿
+                    orphans["chromadb"].append(coll_name)
+            # 现行命名：knowledge_{user_id}（按用户 id 是否存在判定）
+            elif coll_name.startswith("knowledge_"):
+                try:
+                    uid = int(coll_name.split("_", 1)[1])
+                    if uid not in db_user_ids:
+                        orphans["chromadb"].append(coll_name)
+                except (ValueError, IndexError):
                     orphans["chromadb"].append(coll_name)
     except Exception as e:
         logger.warning("Failed to scan Chroma collections: %s", e)

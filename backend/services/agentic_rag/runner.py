@@ -33,7 +33,7 @@ def _build_initial_state(
 ) -> dict:
     return {
         "question": question,
-        # legacy：mcp_nodes 仍读 resume_id，T14 退役后移除
+        # legacy：兼容字段（标准图/工具保留）
         "resume_id": 0,
         "user_id": user_id,
         "scope": scope,

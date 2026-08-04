@@ -7,7 +7,7 @@ import { useToast } from "../components/Toast";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { ResumeTemplateView } from "../components/templates";
 import { A4PreviewContainer } from "../components/builder/A4PreviewContainer";
-import type { ModuleType, ResumeModule, ResumeStyle } from "../api/builder";
+import type { ResumeModule, ResumeStyle } from "../api/builder";
 
 // 允许 PDF + DOCX，单文件上限 10MB（与 HomePage / Sidebar 校验一致）
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -83,6 +83,9 @@ export default function ResumeManagementPage() {
   const [deleting, setDeleting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // 解析进度：resume_id → {stage, percent, message}（WebSocket parse_progress 驱动）
+  const [parseProgress, setParseProgress] = useState<Record<number, { stage: string; percent: number; message: string }>>({});
+
   const fetchResumes = useCallback(async () => {
     try {
       const data = await listResumes(50);
@@ -111,6 +114,41 @@ export default function ResumeManagementPage() {
     };
   }, [fetchResumes]);
 
+  // 监听解析进度（parsing → materializing → done），驱动卡片进度条
+  useEffect(() => {
+    const handleParseProgress = (e: Event) => {
+      const detail = (e as CustomEvent).detail as {
+        resume_id: number;
+        stage: string;
+        percent: number;
+        message: string;
+      } | null;
+      if (!detail || !detail.resume_id) return;
+      setParseProgress((prev) => ({
+        ...prev,
+        [detail.resume_id]: {
+          stage: detail.stage,
+          percent: detail.percent ?? 0,
+          message: detail.message ?? "",
+        },
+      }));
+      // 终态（done/failed）短暂显示后刷新列表，进度条让位于真实状态徽章
+      if (detail.stage === "done" || detail.stage === "failed") {
+        setTimeout(() => {
+          setParseProgress((prev) => {
+            const next = { ...prev };
+            delete next[detail.resume_id];
+            return next;
+          });
+          fetchResumes();
+        }, 2000);
+      }
+    };
+    window.addEventListener("resume:parse-progress", handleParseProgress as EventListener);
+    return () =>
+      window.removeEventListener("resume:parse-progress", handleParseProgress as EventListener);
+  }, [fetchResumes]);
+
   const handleUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -127,7 +165,10 @@ export default function ResumeManagementPage() {
     try {
       const key = await generateIdempotencyKey(file);
       const result = await uploadResume(file, key);
-      toast.success(`「${result.filename}」上传成功，正在解析...`);
+      // 上传后提醒预计等待时间（解析文本 + AI 生成表单）
+      const estimated = result.estimated_seconds ?? 120;
+      const waitMin = Math.max(1, Math.ceil(estimated / 60));
+      toast.success(`「${result.filename}」上传成功，预计约 ${waitMin} 分钟完成，请稍候...`);
       // 留在管理页，用户可实时看到解析状态变化（processing → ready）
       await fetchResumes();
     } catch (err) {
@@ -183,11 +224,23 @@ export default function ResumeManagementPage() {
   // T17: ready 后按索引新鲜度展示 —— 未建索引 / 索引待重建 / 分块数
   const statusBadge = (r: ResumeItem) => {
     if (r.status === "processing") {
+      // 有 WebSocket 进度 → 显示阶段文案 + 进度条；否则退化为静态"解析中"
+      const prog = parseProgress[r.id] ?? (r.parse_progress as typeof parseProgress[number] | undefined);
+      const percent = prog?.percent ?? 0;
+      const label = prog?.message ?? "正在解析...";
       return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-sky-500/15 text-sky-600 border border-sky-500/30">
-          <Spinner size={10} className="animate-spin" aria-hidden="true" />
-          解析中
-        </span>
+        <div className="inline-flex flex-col gap-1 px-2 py-1 rounded-lg bg-sky-500/15 text-sky-600 border border-sky-500/30 min-w-[96px]">
+          <span className="inline-flex items-center gap-1 text-[10px] font-medium">
+            <Spinner size={10} className="animate-spin" aria-hidden="true" />
+            <span className="truncate">{label}</span>
+          </span>
+          <div className="h-1 w-full bg-sky-500/15 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-sky-500 rounded-full transition-all duration-300"
+              style={{ width: `${percent}%` }}
+            />
+          </div>
+        </div>
       );
     }
     if (r.status === "failed") {
@@ -229,6 +282,19 @@ export default function ResumeManagementPage() {
         已就绪
       </span>
     );
+  };
+
+  // 点击卡片：processing/failed 不跳转（Agent 空档期保持"无简历/无法问答"），仅 ready/draft 可进入
+  const handleCardClick = (r: ResumeItem) => {
+    if (r.status === "processing") {
+      toast.info("简历正在解析中，完成后即可打开，请稍候...");
+      return;
+    }
+    if (r.status === "failed") {
+      toast.error("简历解析失败，请删除后重新上传");
+      return;
+    }
+    navigate("/qa", { state: { resumeId: r.id } });
   };
 
   return (
@@ -352,7 +418,7 @@ export default function ResumeManagementPage() {
                 <div key={r.id} className="group relative">
                   {/* 卡片（可点击） */}
                   <div
-                    onClick={() => navigate("/qa", { state: { resumeId: r.id } })}
+                    onClick={() => handleCardClick(r)}
                     className="cursor-pointer
                       bg-white/80 backdrop-blur-xl border border-[var(--color-border)]
                       rounded-2xl overflow-hidden
@@ -364,7 +430,7 @@ export default function ResumeManagementPage() {
                     onKeyDown={(e) => {
                       if (e.key === "Enter" || e.key === " ") {
                         e.preventDefault();
-                        navigate(`/resumes/${r.id}/edit`);
+                        handleCardClick(r);
                       }
                     }}
                   >

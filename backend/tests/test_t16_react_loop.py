@@ -70,6 +70,8 @@ def _make_mock_tool_class(result="工具执行结果"):
     """构造 mock tool 类。"""
     mock_tool = MagicMock()
     mock_tool.execute = AsyncMock(return_value=result)
+    mock_tool.last_usage = {"prompt_tokens": 0, "completion_tokens": 0}
+    mock_tool.sources = []
     mock_tool_class = MagicMock(return_value=mock_tool)
     return mock_tool_class
 
@@ -209,7 +211,7 @@ class TestDirectAnswer:
             mock_l1.side_effect = lambda msgs, **kw: msgs
             mock_llm.return_value = _make_response(content="不应到达")
 
-            result = await react_loop(db=AsyncMock(), user_id=1, resume_id=1, question="你好")
+            result = await react_loop(db=AsyncMock(), user_id=1, resume_id=1, question="测试问题")
 
         assert result.answer == "直接回答的答案"
         assert mock_llm.call_count == 0  # 直接回答走中间轮流式
@@ -316,11 +318,13 @@ class TestMaxRoundsConvergence:
 
         mock_tool_class = _make_mock_tool_class(result="结果")
 
-        # 每轮都调工具（中间轮流式），MAX_ROUNDS 轮后强制收敛走最终轮（非流式）
+        # 每轮都调工具（中间轮流式），MAX_ROUNDS 轮后强制收敛走最终轮流式
         # 注意：async generator 不可复用，必须每轮生成独立实例（不能用 [g] * 6）
         stream_mock = MagicMock(side_effect=[
             _make_stream_response(tool_calls=[_make_tool_call()], content="中间轮思考")
             for _ in range(6)
+        ] + [
+            _make_stream_response(content="强制收敛的答案")
         ])
 
         with patch("services.react_agent.loop.assemble_system_prompt", new_callable=AsyncMock) as mock_sys, \
@@ -335,14 +339,13 @@ class TestMaxRoundsConvergence:
             mock_quota.return_value = (True, None)
             mock_l1.side_effect = lambda msgs, **kw: msgs
 
-            final_response = _make_response(content="强制收敛的答案")
-            mock_llm.return_value = final_response
+            mock_llm.return_value = _make_response(content="不应到达")
 
             result = await react_loop(db=AsyncMock(), user_id=1, resume_id=1, question="测试")
 
         assert "强制收敛" in result.answer or "收敛" in result.answer or result.answer != ""
-        assert mock_llm.call_count == 1  # 轮次耗尽才走最终轮非流式
-        assert stream_mock.call_count == 6
+        assert mock_llm.call_count == 0  # 轮次耗尽后最终轮也走流式，非流式不再调用
+        assert stream_mock.call_count == 7
 
 
 # ═══════════════════════════════════════════════════════════════

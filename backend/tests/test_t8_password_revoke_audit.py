@@ -7,6 +7,8 @@
 - audit_log 在关键操作后被异步写入
 """
 
+import asyncio
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
@@ -14,6 +16,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.audit_log import AuditLog
 from models.user import User
+
+
+async def _wait_next_second() -> None:
+    """等待越过下一秒边界。
+
+    JWT iat 只有秒级精度，改密撤销用 `iat < password_changed_at` 判定。
+    登录与改密若落在同一秒，iat == password_changed_at → 旧 token 不被判定为失效。
+    等待 ≥1s 保证改密时刻处于登录时刻的严格下一秒，使撤销判定确定。
+    """
+    await asyncio.sleep(1.1)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -29,6 +41,8 @@ class TestPasswordChangeRevoke:
         self, client: AsyncClient, registered_user: dict, auth_headers: dict
     ):
         """改密后，用旧 access_token 访问 /me 应返回 401。"""
+        # 等待越过下一秒边界：保证 access token 的 iat 早于 password_changed_at
+        await _wait_next_second()
         # 1. 改密
         resp = await client.put(
             "/api/v1/auth/password",
@@ -100,6 +114,9 @@ class TestPasswordChangeRevoke:
             },
         )
         refresh_token = resp.json()["refresh_token"]
+
+        # 等待越过下一秒边界：保证 refresh token 的 iat 早于 password_changed_at
+        await _wait_next_second()
 
         # 改密
         resp = await client.put(

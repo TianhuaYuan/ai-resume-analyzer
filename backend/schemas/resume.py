@@ -19,6 +19,8 @@ class ResumeResponse(BaseModel):
     is_stale: bool = False
     # 简历列表卡片预览：modules + style（不传时前端兜底灰色占位）
     modules_data: ResumeModulesData | None = None
+    # 解析进度：{stage, percent, message}（processing 期间逐步更新，供前端进度条）
+    parse_progress: dict | None = None
 
     @model_validator(mode="after")
     def _compute_index_state(self):
@@ -55,6 +57,8 @@ class UploadAsyncResponse(BaseModel):
     id: int
     filename: str
     status: str
+    # 处理完成预计耗时（秒），前端提示"预计等待时间"
+    estimated_seconds: int | None = None
 
 
 class AnalyzeRequest(BaseModel):

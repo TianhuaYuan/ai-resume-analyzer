@@ -103,7 +103,9 @@ async def test_recover_stuck_resumes_does_not_touch_failed():
     user_id = await _create_test_user()
     resume_id = await _insert_resume(user_id=user_id, status="failed")
 
-    await recover_stuck_resumes()
+    # patch 测试 DB（与同文件其他测试一致，避免真实 MySQL 连接在并发时干扰）
+    with patch("services.resume_service.AsyncSessionLocal", AsyncSessionTest):
+        await recover_stuck_resumes()
 
     async with AsyncSessionTest() as session:
         result = await session.execute(select(Resume).where(Resume.id == resume_id))

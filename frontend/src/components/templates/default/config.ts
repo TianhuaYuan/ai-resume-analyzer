@@ -1,4 +1,4 @@
-import type { TemplateConfig } from "../../registry";
+import type { TemplateConfig } from "../registry";
 
 /** 经典单栏 — 头部主题色分隔线（对齐后端 templates/default.html） */
 export const defaultConfig: TemplateConfig = {

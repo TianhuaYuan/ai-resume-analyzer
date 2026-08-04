@@ -9,13 +9,38 @@ P1.1 新增 score 分析类型：
 - 200 score 返回的 analysis 包含量化评分
 """
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import AsyncClient
 
 from models.resume import Resume
 from tests.conftest import AsyncSessionTest
+
+
+class _Msg:
+    def __init__(self, text: str):
+        self.content = text
+
+
+class _Choice:
+    def __init__(self, text: str):
+        self.message = _Msg(text)
+
+
+def _fake_chat_client(content: str):
+    """构造 mock get_chat_client() 的客户端：chat.completions.create 返回指定文本。
+
+    analyze_resume 走 get_chat_client() 而非 llm_generate，patch 目标需对齐：
+    await client.chat.completions.create(model=..., messages=..., temperature=...)
+    response.choices[0].message.content → analysis；usage=None 跳过 token 记账。
+    """
+    client = MagicMock()
+    c = MagicMock()
+    c.choices = [_Choice(content)]
+    c.usage = None
+    client.chat.completions.create = AsyncMock(return_value=c)
+    return client
 
 
 async def _insert_resume(
@@ -61,9 +86,11 @@ async def test_analyze_score_success(
     """score 类型成功 → 200 + 量化评分。"""
     resume_id = await _insert_resume(registered_user["id"])
     with patch(
-        "services.analyze_service.llm_generate",
-        new_callable=AsyncMock,
-        return_value=_MOCK_SCORE_ANALYSIS,
+        "services.analyze_service.get_analysis_cache",
+        AsyncMock(return_value=None),  # 强制走 LLM，避免共享缓存干扰
+    ), patch(
+        "services.analyze_service.get_chat_client",
+        return_value=_fake_chat_client(_MOCK_SCORE_ANALYSIS),
     ):
         resp = await client.post(
             f"/api/v1/resumes/{resume_id}/analyze",
@@ -85,9 +112,11 @@ async def test_analyze_score_returns_scores_field(
     """score 类型应返回 scores 量化字段。"""
     resume_id = await _insert_resume(registered_user["id"])
     with patch(
-        "services.analyze_service.llm_generate",
-        new_callable=AsyncMock,
-        return_value=_MOCK_SCORE_ANALYSIS,
+        "services.analyze_service.get_analysis_cache",
+        AsyncMock(return_value=None),  # 强制走 LLM，避免共享缓存干扰
+    ), patch(
+        "services.analyze_service.get_chat_client",
+        return_value=_fake_chat_client(_MOCK_SCORE_ANALYSIS),
     ):
         resp = await client.post(
             f"/api/v1/resumes/{resume_id}/analyze",
@@ -112,9 +141,11 @@ async def test_analyze_non_score_types_no_scores_field(
     """summary/skills/experience 类型不应返回 scores 字段。"""
     resume_id = await _insert_resume(registered_user["id"])
     with patch(
-        "services.analyze_service.llm_generate",
-        new_callable=AsyncMock,
-        return_value="候选人精通 Python。",
+        "services.analyze_service.get_analysis_cache",
+        AsyncMock(return_value=None),  # 强制走 LLM，避免共享缓存干扰
+    ), patch(
+        "services.analyze_service.get_chat_client",
+        return_value=_fake_chat_client("候选人精通 Python。"),
     ):
         resp = await client.post(
             f"/api/v1/resumes/{resume_id}/analyze",
@@ -296,9 +327,11 @@ async def test_analyze_score_with_fen_format_extracts_scores(
         "### 综合评价: 78分\n定位明确。\n"
     )
     with patch(
-        "services.analyze_service.llm_generate",
-        new_callable=AsyncMock,
-        return_value=fen_analysis,
+        "services.analyze_service.get_analysis_cache",
+        AsyncMock(return_value=None),  # 强制走 LLM，避免共享缓存干扰
+    ), patch(
+        "services.analyze_service.get_chat_client",
+        return_value=_fake_chat_client(fen_analysis),
     ):
         resp = await client.post(
             f"/api/v1/resumes/{resume_id}/analyze",
@@ -325,9 +358,11 @@ async def test_analyze_score_unparseable_omits_scores_field(
         "建议在 DevOps 方向补充经验。"
     )
     with patch(
-        "services.analyze_service.llm_generate",
-        new_callable=AsyncMock,
-        return_value=unparseable,
+        "services.analyze_service.get_analysis_cache",
+        AsyncMock(return_value=None),  # 强制走 LLM，避免共享缓存干扰
+    ), patch(
+        "services.analyze_service.get_chat_client",
+        return_value=_fake_chat_client(unparseable),
     ):
         resp = await client.post(
             f"/api/v1/resumes/{resume_id}/analyze",

@@ -71,7 +71,10 @@ def _parse_scores(analysis: str) -> ScoreDetail | None:
     Task 2.5: 支持多种 LLM 输出格式，按优先级匹配：
     1. Markdown 表格（最常见）
     2. JSON 格式
-    3. 键值对格式
+    3. 键值对 / 分节标题（中英文标签：XX/100、XX分、score: XX、得分: XX，标签与数字可跨行）
+    4. 裸数字序列（无标签，按出现顺序取前 4 个）
+
+    非法分数（>100，如年份/ID）会被过滤，导致有效分数不足 4 个时返回 None。
     """
     if not analysis:
         return None
@@ -91,21 +94,34 @@ def _parse_scores(analysis: str) -> ScoreDetail | None:
         )
         all_scores = [int(m.group(1)) for m in json_pattern.finditer(analysis)]
 
-    # 3. 尝试键值对格式
+    # 3. 尝试键值对 / 分节标题格式（标签后在本行或紧随数行内取第一个数字）
     if not all_scores:
-        kv_pattern = re.compile(
-            r"(?:ATS 匹配率|关键词覆盖率|技能密度|综合评价)[：:]?\s*(\d+)"
+        label_pattern = re.compile(
+            r"(?:ATS\s*匹配率|关键词覆盖率|技能密度|综合评价|"
+            r"ATS\s*score|keyword\s*score|skill\s*score|overall\s*score|"
+            r"ATS\s*得分|关键词\s*得分|技能\s*得分|综合\s*得分)"
         )
-        all_scores = [int(m.group(1)) for m in kv_pattern.finditer(analysis)]
+        for m in label_pattern.finditer(analysis):
+            tail = analysis[m.end():m.end() + 80]
+            num = re.search(r"(\d+)", tail)
+            if num:
+                all_scores.append(int(num.group(1)))
 
-    if len(all_scores) < 4:
+    # 4. 兜底：无标签裸数字序列（如 "85/100\n90/100\n78/100\n82/100"）
+    if not all_scores:
+        bare_pattern = re.compile(r"(?:^|\D)(\d{1,3})(?:/100|分)?")
+        all_scores = [int(m.group(1)) for m in bare_pattern.finditer(analysis)]
+
+    # 过滤非法分数（年份/ID 等 >100 的数字不是分数）
+    valid_scores = [s for s in all_scores if 0 <= s <= 100]
+    if len(valid_scores) < 4:
         return None
 
     return ScoreDetail(
-        ats_match=all_scores[0],
-        keyword_coverage=all_scores[1],
-        skill_density=all_scores[2],
-        overall=all_scores[3],
+        ats_match=valid_scores[0],
+        keyword_coverage=valid_scores[1],
+        skill_density=valid_scores[2],
+        overall=valid_scores[3],
     )
 
 

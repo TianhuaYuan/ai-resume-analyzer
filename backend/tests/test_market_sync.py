@@ -1,4 +1,4 @@
-"""市场数据同步管线测试：幂等 upsert / 变更重索引 / 过期标记 / 归一化 / 四模块加载。"""
+"""市场数据同步管线测试：幂等 upsert / 变更重索引 / 过期标记 / 归一化 / 岗位数据加载。"""
 
 import pytest
 from sqlalchemy import select
@@ -20,20 +20,8 @@ def _job_record(**over):
         "requirements": "熟悉 Python / PyTorch",
         "salaryDisplay": "20-40K",
         "deadline": "2026-12-31 00:00:00",
-    }
-    r.update(over)
-    return r
-
-
-def _fanwen_record(**over):
-    r = {
-        "_source": "fanwen",
-        "id": 123,
-        "title": "嵌入式开发工程师简历范文",
-        "targetJob": "嵌入式开发工程师",
-        "category": "技术",
-        "summary": "三年嵌入式开发经验，熟悉 Linux",
-        "work": "某科技公司实习\n2024-2025",
+        "detailUrl": "https://x.com/job-1",
+        "publishedAt": "2026-08-01T10:00:00Z",
     }
     r.update(over)
     return r
@@ -52,8 +40,9 @@ async def test_sync_creates_assets(db_session):
     mock_index.assert_awaited_once()
     row = (await db_session.execute(select(MarketAsset))).scalar_one()
     assert row.source == mss.SOURCE_UPCV
-    assert row.asset_type == "job"
     assert row.job_type == mss.JOB_TYPE_CAMPUS
+    assert row.apply_url == "https://x.com/job-1"
+    assert row.published_at is not None
     assert row.indexed_hash == row.content_hash
     assert row.index_version == 1
     assert row.is_expired is False
@@ -122,29 +111,10 @@ async def test_deadline_none_not_expired(db_session):
     assert row.is_expired is False
 
 
-@pytest.mark.asyncio
-async def test_fanwen_normalized_to_sample(db_session):
-    """范文归一化为 sample 资产，targetJob → position。"""
-    with patch.object(mss, "index_asset", new=AsyncMock(return_value=5)), \
-         patch.object(mss, "_load_market_records", return_value=[_fanwen_record()]):
-        stats = await mss.sync_market(db_session, file="samples")
-
-    assert stats.created == 1
-    row = (await db_session.execute(select(MarketAsset))).scalar_one()
-    assert row.asset_type == "sample"
-    assert row.job_type is None
-    assert row.position == "嵌入式开发工程师"
-    assert row.external_id == "123"
-    assert row.payload["target_position"] == "嵌入式开发工程师"
-    assert "工作经历" in row.content
-
-
 def test_load_market_records():
-    """四模块分类 JSON 的 records 数组能加载。"""
+    """岗位分类 JSON 的 records 数组能加载。"""
     campus = mss._load_market_records("jobs_campus")
-    guides = mss._load_market_records("guides")
     assert isinstance(campus, list) and len(campus) > 0
-    assert isinstance(guides, list) and len(guides) > 0
 
 
 def test_resolve_job_type_mapping():
@@ -157,84 +127,3 @@ def test_resolve_job_type_mapping():
     assert mss._resolve_job_type({"infoType": "内推"}, mss.SOURCE_CAMPUS) == "social"
     assert mss._resolve_job_type({"infoType": "校招"}, mss.SOURCE_CAMPUS) == "campus"
     assert mss._resolve_job_type({}, mss.SOURCE_REFERRAL) == "social"
-
-
-def test_normalize_guide_no_body():
-    """攻略归一化（无正文）：summary → content，has_fulltext=False。"""
-    n = mss._normalize_guide({
-        "article_id": "5836", "title": "攻略标题", "summary": "攻略摘要",
-        "url": "https://x.com/5836.html", "date": "2026/8/2",
-    })
-    assert n.asset_type == "guide"
-    assert n.external_id == "5836"
-    assert n.content == "攻略摘要"
-    assert n.payload["url"] == "https://x.com/5836.html"
-    assert n.payload["has_fulltext"] is False
-    assert n.payload["summary"] == "攻略摘要"
-
-
-def test_normalize_guide_with_body():
-    """攻略归一化（有正文）：body → content，has_fulltext=True，summary 存 payload。"""
-    n = mss._normalize_guide({
-        "article_id": "5837", "title": "攻略标题", "summary": "短摘要",
-        "body": "这是完整的正文内容，很长很长。",
-        "url": "https://x.com/5837.html", "date": "2026/8/2",
-    })
-    assert n.content == "这是完整的正文内容，很长很长。"
-    assert n.payload["has_fulltext"] is True
-    assert n.payload["summary"] == "短摘要"
-
-
-def test_clean_guide_body_removes_up_promo():
-    """_clean_guide_body 移除含 UP 简历的推广行。"""
-    body = (
-        "这是有用的正文内容。\n"
-        "UP 简历的技术岗范文库\n"
-        "更多有用内容。\n"
-        "如果你需要优化简历，可以参考 UP 简历的国企专用模板。\n"
-        "结尾。"
-    )
-    cleaned = mss._clean_guide_body(body)
-    assert "UP" not in cleaned
-    assert "这是有用的正文内容" in cleaned
-    assert "更多有用内容" in cleaned
-    assert "结尾" in cleaned
-
-
-def test_clean_guide_body_removes_standalone_urls():
-    """_clean_guide_body 移除独立 URL 行。"""
-    body = "正文第一行。\nhttps://example.com/campus\n正文第二行。"
-    cleaned = mss._clean_guide_body(body)
-    assert "https://" not in cleaned
-    assert "正文第一行" in cleaned
-    assert "正文第二行" in cleaned
-
-
-def test_clean_guide_body_collapses_blank_lines():
-    """_clean_guide_body 压缩连续空行。"""
-    body = "第一段。\n\n\n\n\n第二段。"
-    cleaned = mss._clean_guide_body(body)
-    assert "\n\n\n" not in cleaned
-    assert "第一段" in cleaned
-    assert "第二段" in cleaned
-
-
-def test_normalize_guide_cleaned():
-    """攻略归一化时 body 经过清洗（推广+URL 移除）。"""
-    n = mss._normalize_guide({
-        "article_id": "5838", "title": "测试清洗", "summary": "摘要",
-        "body": "正文。\nUP 简历 AI 优化工具\nhttps://x.com\n结尾。",
-        "url": "https://x.com", "date": "2026/8/2",
-    })
-    assert "UP" not in n.content
-    assert "https://" not in n.content
-    assert "正文" in n.content
-    assert "结尾" in n.content
-
-
-def test_load_guides_shape():
-    """guides.json 的 records 数组能加载（_source=guides）。"""
-    records = mss._load_market_records("guides")
-    assert isinstance(records, list) and len(records) > 0
-    assert records[0].get("_source") == "guides"
-    assert "title" in records[0]

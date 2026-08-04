@@ -123,6 +123,8 @@ class TestReadyTransitionHook:
         with patch("services.resume_service.AsyncSessionLocal") as mock_session_cls, \
              patch("services.resume_service.parse_resume") as mock_parse, \
              patch("services.resume_analyze_producer.publish_analyze_task", new_callable=AsyncMock) as mock_publish, \
+             patch("services.resume_builder.materialize_modules_from_text", new_callable=AsyncMock,
+                   return_value=(None, [], True)) as mock_materialize, \
              patch("services.react_agent.memory.build_l3_profile_background", new_callable=AsyncMock) as mock_build_l3:
             mock_db = AsyncMock()
             mock_session_cls.return_value.__aenter__ = AsyncMock(return_value=mock_db)
@@ -142,6 +144,8 @@ class TestReadyTransitionHook:
         with patch("services.resume_service.AsyncSessionLocal") as mock_session_cls, \
              patch("services.resume_service.parse_resume") as mock_parse, \
              patch("services.resume_analyze_producer.publish_analyze_task", new_callable=AsyncMock) as mock_publish, \
+             patch("services.resume_builder.materialize_modules_from_text", new_callable=AsyncMock,
+                   return_value=(None, [], True)) as mock_materialize, \
              patch("services.react_agent.memory.build_l3_profile_background", new_callable=AsyncMock) as mock_build_l3:
             mock_db = AsyncMock()
             mock_session_cls.return_value.__aenter__ = AsyncMock(return_value=mock_db)

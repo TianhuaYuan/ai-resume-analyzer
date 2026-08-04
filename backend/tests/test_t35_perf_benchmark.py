@@ -118,40 +118,35 @@ class TestL1RetrievalBenchmark:
             {"chunk_index": 2, "section": "education"},
         ]
 
-        mock_collection = MagicMock()
-        # collection.get() 用于 BM25 索引构建
-        mock_collection.get.return_value = {
-            "documents": mock_documents,
-            "metadatas": mock_metadatas,
+        # 新版 retrieval 通过 get_vector_store() 访问（query 向量 / get 构建 BM25）
+        mock_store = MagicMock()
+        mock_item = {
+            "text": "张三，Python 工程师，3年开发经验",
+            "metadata": {
+                "chunk_index": 0, "section": "title",
+                "asset_id": resume.id, "asset_type": "resume", "version": 1,
+            },
+            "chunk_index": 0,
+            "score": 0.9,
         }
-        # collection.query() 用于向量检索
-        mock_collection.query.return_value = {
-            "ids": [["0", "1", "2"]],
-            "documents": [mock_documents],
-            "metadatas": [mock_metadatas],
-            "distances": [[0.1, 0.3, 0.5]],
-        }
-        mock_chroma_client = MagicMock()
-        mock_chroma_client.get_collection.return_value = mock_collection
-
-        # with_chroma 原本通过 asyncio.to_thread + 全局锁串行化执行，
-        # 测试中直接同步调用 mock 函数即可（mock 数据无并发风险）
-        async def mock_with_chroma(func, *args, **kwargs):
-            return func(*args, **kwargs)
+        mock_store.query = AsyncMock(return_value=[mock_item])
+        mock_store.get = AsyncMock(return_value=[mock_item])
 
         with patch(
-            "services.rag.retrieval.get_chroma_client",
-            return_value=mock_chroma_client,
-        ), patch(
             "services.rag.retrieval.get_embeddings",
             new_callable=AsyncMock,
             return_value=[[0.1, 0.2, 0.3, 0.4, 0.5]],
         ), patch(
-            "services.rag.retrieval.with_chroma",
-            side_effect=mock_with_chroma,
+            "services.rag.retrieval.get_vector_store",
+            return_value=mock_store,
         ):
             start = time.perf_counter()
-            results = await hybrid_search(resume.id, "Python 经验", top_k=5)
+            results = await hybrid_search(
+                user_id=resume.user_id,
+                resume_id=resume.id,
+                question="Python 经验",
+                top_k=5,
+            )
             elapsed_ms = (time.perf_counter() - start) * 1000
 
         assert len(results) > 0, "检索应返回结果"

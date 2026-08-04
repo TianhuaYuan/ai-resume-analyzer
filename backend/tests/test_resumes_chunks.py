@@ -15,7 +15,7 @@ mock 策略：
 - 归属校验仍走真实 SQLite + Resume 表
 """
 
-from unittest.mock import patch, MagicMock
+from unittest.mock import AsyncMock, patch, MagicMock
 
 import pytest
 from httpx import AsyncClient
@@ -47,37 +47,34 @@ async def _insert_resume(
         return resume.id
 
 
-def _fake_chroma_collection(chunks: list[dict] | None = None):
-    """构造假的 Chroma collection，get() 返回指定 chunks。
+def _fake_vector_store(chunks: list[dict] | None = None):
+    """构造假的 vector_store，get() 返回指定 chunks。
 
-    chunks=None 表示 collection 不存在（get_collection 抛异常）。
-    chunks=[] 表示 collection 存在但为空。
-    chunks=[{...}, ...] 表示正常返回。
+    chunks_service.get_chunks_by_resume 走 get_vector_store().get(name, where=...)：
+      - chunks=None → get() 返回 None，端点视为 collection 不存在（409）
+      - chunks=[] → collection 存在但为空（200 + total=0）
+      - chunks=[{...}, ...] → 正常返回（200 + chunks 列表）
     """
+    store = MagicMock()
     if chunks is None:
-        # 模拟 collection 不存在
-        raise Exception("Collection not found")
-
-    coll = MagicMock()
-    # Chroma collection.get 返回 {"documents": [...], "metadatas": [...], "ids": [...]}
-    documents = [c["text"] for c in chunks]
-    metadatas = [
-        {
-            "resume_id": c.get("resume_id", 1),
-            "chunk_index": c["chunk_index"],
-            "section": c["section"],
-            "start_char": c["start_char"],
-            "end_char": c["end_char"],
-        }
-        for c in chunks
-    ]
-    ids = [str(c["chunk_index"]) for c in chunks]
-    coll.get.return_value = {
-        "documents": documents,
-        "metadatas": metadatas,
-        "ids": ids,
-    }
-    return coll
+        store.get = AsyncMock(return_value=None)
+    else:
+        store.get = AsyncMock(
+            return_value=[
+                {
+                    "metadata": {
+                        "resume_id": c.get("resume_id", 1),
+                        "chunk_index": c["chunk_index"],
+                        "section": c["section"],
+                        "start_char": c["start_char"],
+                        "end_char": c["end_char"],
+                    },
+                    "text": c["text"],
+                }
+                for c in chunks
+            ]
+        )
+    return store
 
 
 # ── 认证 ──────────────────────────────────────────
@@ -142,12 +139,10 @@ async def test_chunks_ready_but_collection_missing_returns_409(
     """status=ready 但 Chroma collection 不存在 → 409（数据不一致）。"""
     resume_id = await _insert_resume(registered_user["id"], status="ready")
 
-    # mock get_chroma_client 让 get_collection 抛异常
-    fake_client = MagicMock()
-    fake_client.get_collection.side_effect = Exception("Collection not found")
+    # mock get_vector_store 让 get() 返回 None（collection 不存在）
     with patch(
-        "services.rag.chunks_service.get_chroma_client",
-        return_value=fake_client,
+        "services.rag.chunks_service.get_vector_store",
+        return_value=_fake_vector_store(chunks=None),
     ):
         resp = await client.get(
             f"/api/v1/resumes/{resume_id}/chunks",
@@ -192,11 +187,9 @@ async def test_chunks_success(client: AsyncClient, auth_headers: dict, registere
         },
     ]
 
-    fake_client = MagicMock()
-    fake_client.get_collection.return_value = _fake_chroma_collection(fake_chunks)
     with patch(
-        "services.rag.chunks_service.get_chroma_client",
-        return_value=fake_client,
+        "services.rag.chunks_service.get_vector_store",
+        return_value=_fake_vector_store(fake_chunks),
     ):
         resp = await client.get(
             f"/api/v1/resumes/{resume_id}/chunks",
@@ -229,11 +222,9 @@ async def test_chunks_empty_collection_returns_200(
     """status=ready 但 Chroma collection 空（无 chunks）→ 200 + total=0。"""
     resume_id = await _insert_resume(registered_user["id"], status="ready", chunk_count=0)
 
-    fake_client = MagicMock()
-    fake_client.get_collection.return_value = _fake_chroma_collection(chunks=[])
     with patch(
-        "services.rag.chunks_service.get_chroma_client",
-        return_value=fake_client,
+        "services.rag.chunks_service.get_vector_store",
+        return_value=_fake_vector_store(chunks=[]),
     ):
         resp = await client.get(
             f"/api/v1/resumes/{resume_id}/chunks",

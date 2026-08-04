@@ -32,6 +32,7 @@ class TestDeleteResumeFull:
         mock_db = AsyncMock()
         mock_resume = MagicMock()
         mock_resume.id = 1
+        mock_resume.user_id = 100
         mock_resume.file_path = "/uploads/abc.pdf"
 
         with patch("services.resume_cleanup.clear_resume_vectors") as mock_clear, \
@@ -53,6 +54,7 @@ class TestDeleteResumeFull:
         mock_db = AsyncMock()
         mock_resume = MagicMock()
         mock_resume.id = 1
+        mock_resume.user_id = 100
         mock_resume.file_path = "/uploads/abc.pdf"
 
         with patch("services.resume_cleanup.clear_resume_vectors") as mock_clear, \
@@ -62,7 +64,7 @@ class TestDeleteResumeFull:
 
             await delete_resume_full(mock_db, mock_resume)
 
-        mock_clear.assert_called_once_with(1)
+        mock_clear.assert_called_once_with(100, 1)
         mock_emb.assert_called_once_with(1)
         mock_remove.assert_called_once_with("/uploads/abc.pdf")
 
@@ -74,6 +76,7 @@ class TestDeleteResumeFull:
         mock_db = AsyncMock()
         mock_resume = MagicMock()
         mock_resume.id = 1
+        mock_resume.user_id = 100
         mock_resume.file_path = "/uploads/abc.pdf"
 
         with patch("services.resume_cleanup.clear_resume_vectors", side_effect=Exception("chroma fail")), \
@@ -230,7 +233,11 @@ class TestOrphanScan:
         mock_result_ids = MagicMock()
         mock_result_ids.all.return_value = [(1,)]
 
-        mock_db.execute.side_effect = [mock_result_paths, mock_result_ids]
+        # 第三次 execute: select(User.id) → 返回用户 id 元组
+        mock_result_users = MagicMock()
+        mock_result_users.all.return_value = [(1,)]
+
+        mock_db.execute.side_effect = [mock_result_paths, mock_result_ids, mock_result_users]
 
         mock_path = MagicMock()
         mock_path.exists.return_value = True
@@ -266,6 +273,52 @@ class TestOrphanScan:
 
         assert "resume_1" in orphans["chromadb"]
         assert "resume_2" in orphans["chromadb"]
+
+    @pytest.mark.asyncio
+    async def test_knowledge_orphan_when_user_missing(self):
+        """knowledge_{user_id} 集合：对应用户不存在 → 判为孤儿。"""
+        from services.resume_cleanup import orphan_scan
+
+        mock_db = AsyncMock()
+        mock_result_empty = MagicMock()
+        mock_result_empty.all.return_value = []  # file_path + Resume.id 均空
+        mock_result_users = MagicMock()
+        mock_result_users.all.return_value = [(2,)]  # 只有 user 2 存在
+        mock_db.execute.side_effect = [mock_result_empty, mock_result_empty, mock_result_users]
+
+        mock_client = MagicMock()
+        mock_client.list_collections.return_value = ["knowledge_999"]
+
+        with patch("services.resume_cleanup.AsyncSessionLocal", return_value=asynccontextmanager_mock(mock_db)), \
+             patch("services.resume_cleanup.get_chroma_client", return_value=mock_client), \
+             patch("os.listdir", return_value=[]):
+
+            orphans = await orphan_scan()
+
+        assert "knowledge_999" in orphans["chromadb"]
+
+    @pytest.mark.asyncio
+    async def test_knowledge_collection_not_orphan_when_user_exists(self):
+        """knowledge_{user_id} 集合：对应用户存在 → 不判为孤儿。"""
+        from services.resume_cleanup import orphan_scan
+
+        mock_db = AsyncMock()
+        mock_result_empty = MagicMock()
+        mock_result_empty.all.return_value = []
+        mock_result_users = MagicMock()
+        mock_result_users.all.return_value = [(1,)]
+        mock_db.execute.side_effect = [mock_result_empty, mock_result_empty, mock_result_users]
+
+        mock_client = MagicMock()
+        mock_client.list_collections.return_value = ["knowledge_1"]
+
+        with patch("services.resume_cleanup.AsyncSessionLocal", return_value=asynccontextmanager_mock(mock_db)), \
+             patch("services.resume_cleanup.get_chroma_client", return_value=mock_client), \
+             patch("os.listdir", return_value=[]):
+
+            orphans = await orphan_scan()
+
+        assert "knowledge_1" not in orphans["chromadb"]
 
 
 # ═══════════════════════════════════════════════════════════

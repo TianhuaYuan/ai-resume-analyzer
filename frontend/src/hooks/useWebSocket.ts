@@ -16,6 +16,9 @@ export interface WSMessage {
   total?: number;
   current_type?: string;
   current_type_label?: string;
+  // 上传简历解析进度（parse_progress 事件）
+  stage?: string;
+  percent?: number;
 }
 
 interface UseWebSocketOptions {

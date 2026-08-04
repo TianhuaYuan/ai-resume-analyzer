@@ -19,7 +19,7 @@ import {
   PencilSimple,
 } from "@phosphor-icons/react";
 import type { ModuleType, ModuleContent } from "../../api/builder";
-import { MODULE_LABELS, getModuleTitle } from "../../api/builder";
+import { getModuleTitle } from "../../api/builder";
 import { isModuleEmpty } from "./ModuleList";
 import {
   FieldRenderer,

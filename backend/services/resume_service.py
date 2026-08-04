@@ -166,17 +166,82 @@ async def retry_resume_processing(
     return resume
 
 
-async def process_resume_background(resume_id: int, file_path: str, user_id: int = 0):
-    """后台任务：解析文件 → 写 parsed_text + content_hash → 更新状态 → 发布分析任务。
+def _progress_payload(stage: str, percent: int, message: str) -> dict:
+    """构造 parse_progress 字段值。"""
+    return {"stage": stage, "percent": percent, "message": message}
+
+
+async def _update_parse_progress(
+    db: AsyncSession, resume_id: int, stage: str, percent: int, message: str
+) -> None:
+    """更新 resume.parse_progress 字段（独立 update + commit）。"""
+    await db.execute(
+        update(Resume)
+        .where(Resume.id == resume_id)
+        .values(parse_progress=_progress_payload(stage, percent, message))
+    )
+    await db.commit()
+
+
+async def _push_parse_progress(
+    user_id: int, resume_id: int, stage: str, percent: int, message: str
+) -> None:
+    """WebSocket 推送解析进度（非阻塞，失败仅 debug 日志）。"""
+    if not user_id:
+        return
+    from core.websocket_manager import ws_manager
+
+    payload = {
+        "type": "parse_progress",
+        "resume_id": resume_id,
+        "stage": stage,
+        "percent": percent,
+        "message": message,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    try:
+        await ws_manager.send_to_user(user_id, payload)
+    except Exception:
+        logger.debug("解析进度推送失败（非阻塞）resume=%d", resume_id, exc_info=True)
+
+
+async def process_resume_background(
+    resume_id: int, file_path: str, user_id: int = 0
+) -> bool:
+    """后台任务：解析文本 → LLM 反解析填 Builder 表单 → 标记 ready → 发布分析任务。
 
     用独立的 DB session，因为原请求 session 已关闭。
+
+    A1：可被 BackgroundTasks / RabbitMQ 消费者 / asyncio.create_task 三种方式调用。
+    返回 bool（成功 True / 失败 False），供消费者决定是否重试入队。
 
     T4 (D3 懒索引)：上传只解析、只写内容，不再分块 + embedding。
     向量索引延迟到首次 RAG 消费时由 ensure_indexed（T6）触发。
     content_hash 用于脏标记：content_hash != indexed_hash（None）→ 未索引，懒触发。
+
+    流水线三阶段（每阶段更新 parse_progress + WebSocket 推送，供前端进度条）：
+      1. parsing(10%→40%)      文本解析（MinerU 优先 / 本地兜底）→ 写 parsed_text/content_hash
+      2. materializing(60%)    LLM 反解析 parsed_text → Builder 模块（materialize_modules_from_text）
+      3. done(100%)            标记 ready → 发布后台分析任务 + L3 画像
+    反解析失败不阻塞主流程（materialize 内部捕获异常返回 False），简历仍 ready 但无模块，
+    前端提示用户可在编辑器粘贴导入。
     """
     async with AsyncSessionLocal() as db:
         try:
+            # ── 阶段 0：状态幂等置回 processing（重试场景 status 可能已是 failed）──
+            await db.execute(
+                update(Resume)
+                .where(Resume.id == resume_id)
+                .values(
+                    status="processing",
+                    parse_progress=_progress_payload("parsing", 10, "正在解析简历文本..."),
+                )
+            )
+            await db.commit()
+
+            # ── 阶段 1：文本解析 ──
+            await _push_parse_progress(user_id, resume_id, "parsing", 10, "正在解析简历文本...")
+
             parsed_text = await parse_resume(file_path)
             content_hash = hashlib.sha256(parsed_text.encode("utf-8")).hexdigest()
             await db.execute(
@@ -186,9 +251,35 @@ async def process_resume_background(resume_id: int, file_path: str, user_id: int
                     parsed_text=parsed_text,
                     content_hash=content_hash,
                     chunk_count=0,
-                    status="ready",
                     updated_at=datetime.now(timezone.utc),
                 )
+            )
+            await db.commit()
+            await _update_parse_progress(db, resume_id, "parsing", 40, "文本解析完成，AI 正在整理简历...")
+            await _push_parse_progress(user_id, resume_id, "parsing", 40, "文本解析完成，AI 正在整理简历...")
+
+            # ── 阶段 2：LLM 反解析 → Builder 表单 ──
+            await _update_parse_progress(db, resume_id, "materializing", 60, "AI 正在将简历解析为可编辑表单...")
+            await _push_parse_progress(user_id, resume_id, "materializing", 60, "AI 正在将简历解析为可编辑表单...")
+            from services.resume_builder import materialize_modules_from_text
+
+            # 归属校验用 resume 记录自身的 user_id，不依赖后台任务调用方传参（避免误 404）
+            owner_result = await db.execute(
+                select(Resume.user_id).where(Resume.id == resume_id)
+            )
+            owner_id = owner_result.scalar_one_or_none() or 0
+            # 返回 (resume, modules, materialized) —— 与 materialize 实际 return 保持一致
+            _, _, materialized = await materialize_modules_from_text(db, owner_id, resume_id)
+            # 反解析失败返回 (空, False)，不抛异常 → 降级仍可用（无模块，前端提示粘贴导入）
+            done_message = "解析完成" if materialized else "解析完成（结构化失败，可粘贴导入）"
+            await _update_parse_progress(db, resume_id, "done", 100, done_message)
+            await _push_parse_progress(user_id, resume_id, "done", 100, done_message)
+
+            # ── 标记 ready ──
+            await db.execute(
+                update(Resume)
+                .where(Resume.id == resume_id)
+                .values(status="ready", updated_at=datetime.now(timezone.utc))
             )
             await db.commit()
 
@@ -214,6 +305,8 @@ async def process_resume_background(resume_id: int, file_path: str, user_id: int
                 except Exception as e:
                     logger.warning("L3 画像构建失败（不影响主流程）: %s", e)
 
+            return True
+
         except Exception:
             # P1-10：logger.exception 保留完整 traceback，便于定位根因
             logger.exception("Background processing failed for resume %d", resume_id)
@@ -223,7 +316,11 @@ async def process_resume_background(resume_id: int, file_path: str, user_id: int
                 await db.execute(
                     update(Resume)
                     .where(Resume.id == resume_id)
-                    .values(status="failed", status_message="处理失败，请重新上传")
+                    .values(
+                        status="failed",
+                        status_message="处理失败，请重新上传",
+                        parse_progress=_progress_payload("failed", 100, "处理失败"),
+                    )
                 )
                 await db.commit()
             except Exception:
@@ -231,6 +328,7 @@ async def process_resume_background(resume_id: int, file_path: str, user_id: int
                 logger.exception(
                     "Failed to mark resume %d as failed (commit error)", resume_id
                 )
+            return False
 
 
 async def get_user_resumes(

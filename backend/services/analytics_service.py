@@ -105,3 +105,57 @@ async def get_funnel(
         {"event_name": r.event_name, "count": r.count, "unique_users": r.unique_users}
         for r in rows
     ]
+
+
+async def get_trends(db: AsyncSession, days: int = 30) -> list[dict]:
+    """D3: 按天趋势统计——注册数 / 活跃用户数 / 事件总数。
+
+    返回形如 [{"day": "2026-08-01", "registrations": 2, "active_users": 5, "events": 30}, ...]，
+    按日期升序，供后台看板的注册/日活/用量趋势图使用。
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+
+    # 事件数与活跃用户（去重）按天
+    event_stmt = (
+        select(
+            func.date(AnalyticsEvent.created_at).label("day"),
+            func.count(AnalyticsEvent.id).label("events"),
+            func.count(func.distinct(AnalyticsEvent.user_id)).label("active_users"),
+        )
+        .where(AnalyticsEvent.created_at >= cutoff)
+        .group_by(func.date(AnalyticsEvent.created_at))
+        .order_by(func.date(AnalyticsEvent.created_at))
+    )
+    event_rows = (await db.execute(event_stmt)).all()
+
+    # 注册数按天（users 表，更准确）
+    from models.user import User
+
+    reg_stmt = (
+        select(
+            func.date(User.created_at).label("day"),
+            func.count(User.id).label("registrations"),
+        )
+        .where(User.created_at >= cutoff)
+        .group_by(func.date(User.created_at))
+        .order_by(func.date(User.created_at))
+    )
+    reg_rows = (await db.execute(reg_stmt)).all()
+
+    # 合并（日期可能不重叠）
+    merged: dict[str, dict] = {}
+    for r in event_rows:
+        merged[str(r.day)] = {
+            "day": str(r.day),
+            "registrations": 0,
+            "active_users": r.active_users,
+            "events": r.events,
+        }
+    for r in reg_rows:
+        entry = merged.setdefault(
+            str(r.day),
+            {"day": str(r.day), "registrations": 0, "active_users": 0, "events": 0},
+        )
+        entry["registrations"] = r.registrations
+
+    return list(merged.values())

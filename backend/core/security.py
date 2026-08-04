@@ -1,5 +1,6 @@
 import logging
 import re
+import unicodedata
 import uuid
 from datetime import datetime, timedelta, timezone
 from urllib.parse import unquote, urlparse
@@ -193,6 +194,9 @@ def _normalize_text(text: str) -> str:
         result = unquote(result)
     except Exception:
         pass
+    # C5: NFKC \u5F52\u4E00\u5316\uFF08\u5904\u7406\u540C\u5F62\u5B57\u653B\u51FB\uFF0C\u5982 Cyrillic '\u0456gnore' \u2192 'ignore'\uFF1B
+    # \u5168\u89D2\u82F1\u6587/\u6570\u5B57 \u2192 \u534A\u89D2\uFF0C\u7834\u574F\u57FA\u4E8E\u5F02\u4F53\u5B57\u7684\u6CE8\u5165\u7ED5\u8FC7\uFF09
+    result = unicodedata.normalize("NFKC", result)
     result = result.replace("\u200b", "").replace("\u200c", "").replace("\u200d", "")
     result = result.replace("\uFEFF", "")
     return result

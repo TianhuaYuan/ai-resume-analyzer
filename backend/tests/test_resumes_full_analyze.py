@@ -10,7 +10,7 @@ TDD 绿：实现端点后所有用例通过。
 - 401 未登录 / 404 简历不存在或非本人 / 409 简历未就绪
 """
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -18,6 +18,31 @@ from httpx import AsyncClient
 
 from models.resume import Resume
 from tests.conftest import AsyncSessionTest
+
+
+class _Msg:
+    def __init__(self, text: str):
+        self.content = text
+
+
+class _Choice:
+    def __init__(self, text: str):
+        self.message = _Msg(text)
+
+
+def _fake_chat_client(content: str):
+    """构造 mock get_chat_client() 的客户端：chat.completions.create 返回指定文本。
+
+    analyze_resume 走 get_chat_client() 而非 llm_generate，patch 目标需对齐：
+    await client.chat.completions.create(model=..., messages=..., temperature=...)
+    response.choices[0].message.content → analysis；usage=None 跳过 token 记账。
+    """
+    client = MagicMock()
+    c = MagicMock()
+    c.choices = [_Choice(content)]
+    c.usage = None
+    client.chat.completions.create = AsyncMock(return_value=c)
+    return client
 
 
 async def _insert_resume(
@@ -95,9 +120,14 @@ async def test_full_analyze_returns_all_four_types(
     resume_id = await _insert_resume(registered_user["id"])
 
     with patch(
-        "services.analyze_service.llm_generate",
-        new_callable=AsyncMock,
-        return_value="分析结果文本",
+        "services.analyze_service.get_full_analysis_cache",
+        AsyncMock(return_value=None),  # 强制走 LLM，避免共享缓存干扰
+    ), patch(
+        "services.analyze_service.get_analysis_cache",
+        AsyncMock(return_value=None),
+    ), patch(
+        "services.analyze_service.get_chat_client",
+        return_value=_fake_chat_client("分析结果文本"),
     ):
         resp = await client.get(
             f"/api/v1/resumes/{resume_id}/full-analyze",
@@ -133,9 +163,14 @@ async def test_full_analyze_score_contains_scores_dict(
         "### 综合评价: 78/100\n综合表现良好\n"
     )
     with patch(
-        "services.analyze_service.llm_generate",
-        new_callable=AsyncMock,
-        return_value=score_text,
+        "services.analyze_service.get_full_analysis_cache",
+        AsyncMock(return_value=None),  # 强制走 LLM，避免共享缓存干扰
+    ), patch(
+        "services.analyze_service.get_analysis_cache",
+        AsyncMock(return_value=None),
+    ), patch(
+        "services.analyze_service.get_chat_client",
+        return_value=_fake_chat_client(score_text),
     ):
         resp = await client.get(
             f"/api/v1/resumes/{resume_id}/full-analyze",
@@ -193,9 +228,8 @@ async def test_full_analyze_uses_cache_when_all_hit(
         "services.analyze_service.get_full_analysis_cache",
         AsyncMock(return_value=fake_full_cache),
     ) as mock_get_cache, patch(
-        "services.analyze_service.llm_generate",
-        new_callable=AsyncMock,
-    ) as mock_llm:
+        "services.analyze_service.get_chat_client",
+    ) as mock_get_chat:
         resp = await client.get(
             f"/api/v1/resumes/{resume_id}/full-analyze",
             headers=auth_headers,
@@ -203,7 +237,7 @@ async def test_full_analyze_uses_cache_when_all_hit(
 
     assert resp.status_code == 200
     assert mock_get_cache.await_count == 1
-    mock_llm.assert_not_called()  # 缓存全命中，不应调用 LLM
+    mock_get_chat.assert_not_called()  # 缓存全命中，不应调用 LLM
 
     data = resp.json()
     assert data["summary"]["analysis"] == "缓存中的总结"
@@ -219,20 +253,22 @@ async def test_full_analyze_falls_back_to_llm_on_cache_miss(
 
     with patch(
         "services.analyze_service.get_full_analysis_cache",
-        AsyncMock(return_value=None),  # 缓存全未命中
+        AsyncMock(return_value=None),  # 完整缓存未命中
     ), patch(
-        "services.analyze_service.llm_generate",
-        new_callable=AsyncMock,
-        return_value="LLM 生成的分析",
-    ) as mock_llm:
+        "services.analyze_service.get_analysis_cache",
+        AsyncMock(return_value=None),  # 单类型缓存也未命中（避免同文件前序测试写入的缓存干扰）
+    ), patch(
+        "services.analyze_service.get_chat_client",
+        return_value=_fake_chat_client("LLM 生成的分析"),
+    ) as mock_get_chat:
         resp = await client.get(
             f"/api/v1/resumes/{resume_id}/full-analyze",
             headers=auth_headers,
         )
 
     assert resp.status_code == 200
-    # 4 种类型都未命中，应调用 4 次 LLM
-    assert mock_llm.await_count == 4
+    # 4 种类型都未命中，应调用 4 次 get_chat_client（每次 analyze_resume 各一次）
+    assert mock_get_chat.call_count == 4
     data = resp.json()
     for analysis_type in ("summary", "skills", "experience", "score"):
         assert data[analysis_type]["analysis"] == "LLM 生成的分析"

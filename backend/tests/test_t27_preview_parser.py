@@ -630,6 +630,41 @@ class TestParseTextToModules:
             with pytest.raises(ValueError, match="空响应"):
                 await parse_text_to_modules("张三的简历文本内容")
 
+    async def test_empty_array_raises(self):
+        """LLM 返回空数组 [] → 重试 → 仍为空 → ValueError（不静默返回空列表）。"""
+        with patch("services.rag.pipeline.llm_generate", new_callable=AsyncMock, return_value="[]"):
+            with pytest.raises(ValueError, match="空数组"):
+                await parse_text_to_modules("张三的简历文本内容")
+
+    async def test_empty_array_retry_success(self):
+        """LLM 先返回空数组 [] → 重试成功。"""
+        good_response = json.dumps([
+            {"module_type": "basic_info", "content": _VALID_BASIC_INFO, "sort_order": 0},
+        ])
+
+        with patch("services.rag.pipeline.llm_generate", new_callable=AsyncMock, side_effect=["[]", good_response]):
+            modules = await parse_text_to_modules("张三的简历文本内容")
+
+        assert len(modules) == 1
+        assert modules[0].module_type.value == "basic_info"
+
+    async def test_trailing_bracket_handled(self):
+        """输出末尾含无关 ]（rfind 误命中）→ 抗截断提取到正确数组。"""
+        # LLM 输出带结尾解释文字且含 ]，旧逻辑 rfind 命中末尾 ] 导致 json.loads 失败；
+        # 抗截断逻辑应从后往前找第一个能完整解析的数组。
+        response = (
+            json.dumps([
+                {"module_type": "basic_info", "content": _VALID_BASIC_INFO, "sort_order": 0},
+            ])
+            + " 以上是解析结果]"
+        )
+
+        with patch("services.rag.pipeline.llm_generate", new_callable=AsyncMock, return_value=response):
+            modules = await parse_text_to_modules("张三的简历文本内容")
+
+        assert len(modules) == 1
+        assert modules[0].module_type.value == "basic_info"
+
     async def test_partial_success_after_retry(self):
         """重试后部分成功（部分合法 + 部分非法）。"""
         # 第二次返回 2 个模块，1 个合法 1 个非法

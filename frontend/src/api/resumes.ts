@@ -21,12 +21,20 @@ export interface ResumeItem {
     modules: Array<{ module_type: string; content: Record<string, unknown>; sort_order: number }>;
     style: Record<string, unknown> | null;
   } | null;
+  // 解析进度：{stage: parsing|materializing|done|failed, percent, message}
+  parse_progress?: {
+    stage: string;
+    percent: number;
+    message: string;
+  } | null;
 }
 
 export interface UploadAsyncResult {
   id: number;
   filename: string;
   status: string;
+  /** 处理完成预计耗时（秒），用于提示"预计等待时间" */
+  estimated_seconds?: number;
 }
 
 export async function listResumes(limit = 20, offset = 0) {

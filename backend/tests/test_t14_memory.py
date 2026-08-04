@@ -25,6 +25,19 @@ from services.react_agent.memory import (
 )
 
 
+def _make_assembly_mock_db():
+    """构造 assemble_system_prompt 需要的 mock db。
+
+    assemble_system_prompt 会 await db.execute 查询「当前简历」并注入 system prompt，
+    裸 MagicMock 不能被 await → 这里让 execute 异步返回一个 ready resume 的 result。
+    """
+    mock_db = MagicMock()
+    mock_result = MagicMock()
+    mock_result.scalar_one_or_none.return_value = MagicMock(id=10, filename="test.pdf", status="ready")
+    mock_db.execute = AsyncMock(return_value=mock_result)
+    return mock_db
+
+
 # ═══════════════════════════════════════════════════════════
 # truncate_tool_result
 # ═══════════════════════════════════════════════════════════
@@ -290,7 +303,7 @@ class TestAssembleSystemPrompt:
     @pytest.mark.asyncio
     async def test_contains_l3_profile(self):
         """system prompt 包含 L3 画像。"""
-        mock_db = MagicMock()
+        mock_db = _make_assembly_mock_db()
 
         with patch("services.react_agent.memory.get_l3_profile", new_callable=AsyncMock) as mock_l3, \
              patch("services.react_agent.memory.get_l2_history", new_callable=AsyncMock) as mock_l2:
@@ -305,7 +318,7 @@ class TestAssembleSystemPrompt:
     @pytest.mark.asyncio
     async def test_contains_l2_history(self):
         """system prompt 包含 L2 历史问答。"""
-        mock_db = MagicMock()
+        mock_db = _make_assembly_mock_db()
 
         with patch("services.react_agent.memory.get_l3_profile", new_callable=AsyncMock) as mock_l3, \
              patch("services.react_agent.memory.get_l2_history", new_callable=AsyncMock) as mock_l2:
@@ -322,7 +335,7 @@ class TestAssembleSystemPrompt:
     @pytest.mark.asyncio
     async def test_contains_instructions(self):
         """system prompt 包含防幻觉/效率指令。"""
-        mock_db = MagicMock()
+        mock_db = _make_assembly_mock_db()
 
         with patch("services.react_agent.memory.get_l3_profile", new_callable=AsyncMock) as mock_l3, \
              patch("services.react_agent.memory.get_l2_history", new_callable=AsyncMock) as mock_l2:
@@ -339,7 +352,7 @@ class TestAssembleSystemPrompt:
     @pytest.mark.asyncio
     async def test_has_section_markers(self):
         """system prompt 有分段标记。"""
-        mock_db = MagicMock()
+        mock_db = _make_assembly_mock_db()
 
         with patch("services.react_agent.memory.get_l3_profile", new_callable=AsyncMock) as mock_l3, \
              patch("services.react_agent.memory.get_l2_history", new_callable=AsyncMock) as mock_l2:
@@ -354,7 +367,7 @@ class TestAssembleSystemPrompt:
     @pytest.mark.asyncio
     async def test_works_without_l3_and_l2(self):
         """无 L3 和 L2 时仍返回有效 prompt。"""
-        mock_db = MagicMock()
+        mock_db = _make_assembly_mock_db()
 
         with patch("services.react_agent.memory.get_l3_profile", new_callable=AsyncMock) as mock_l3, \
              patch("services.react_agent.memory.get_l2_history", new_callable=AsyncMock) as mock_l2:

@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 import hmac
 import json
@@ -91,11 +92,22 @@ async def lifespan(app: FastAPI):
     # 初始化 RabbitMQ 生产者和消费者
     try:
         from core import rabbitmq_client
-        from services.resume_analyze_consumer import process_analyze_task
+
+        async def _dispatch_mq_task(payload: dict) -> None:
+            """A1: 按 payload["task"] 分发给对应任务消费者。"""
+            task_type = payload.get("task")
+            if task_type == "resume_analyze":
+                from services.resume_analyze_consumer import process_analyze_task
+                await process_analyze_task(payload)
+            elif task_type == "resume_parse":
+                from services.resume_parse_consumer import process_parse_task
+                await process_parse_task(payload)
+            else:
+                logger.warning("未知 RabbitMQ 任务类型: %s", task_type)
 
         producer_ok = await rabbitmq_client.init_producer()
         if producer_ok:
-            consumer_ok = await rabbitmq_client.init_consumer(process_analyze_task)
+            consumer_ok = await rabbitmq_client.init_consumer(_dispatch_mq_task)
             if consumer_ok:
                 logger.info("RabbitMQ 生产者+消费者初始化成功")
             else:
@@ -103,7 +115,25 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("RabbitMQ 初始化失败: %s（将降级为同步执行）", e)
 
+    # 启动后台周期任务（stale 清扫 / 记忆整合 / 孤儿扫描；开关 PERIODIC_TASKS_ENABLED 默认关）
+    app.state.periodic_tasks = []
+    try:
+        from services.periodic_tasks import start_periodic_tasks
+
+        app.state.periodic_tasks = await start_periodic_tasks()
+        if app.state.periodic_tasks:
+            logger.info("已启动 %d 个后台周期任务", len(app.state.periodic_tasks))
+    except Exception:
+        logger.warning("后台周期任务启动失败（跳过）", exc_info=True)
+
     yield
+
+    # 关闭后台周期任务
+    periodic_tasks = getattr(app.state, "periodic_tasks", [])
+    for t in periodic_tasks:
+        t.cancel()
+    if periodic_tasks:
+        await asyncio.gather(*periodic_tasks, return_exceptions=True)
 
     # 关闭 RabbitMQ
     try:
@@ -330,14 +360,7 @@ async def security_headers(request: Request, call_next):
     # SEC-017：老 IE 下载嗅探防护 + 禁止跨域 Flash/PDF 策略文件
     response.headers["X-Download-Options"] = "noopen"
     response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
-    # T7 CSP：API 后端最小 CSP，防 XSS + 禁止 iframe 嵌入
-    # token 在 localStorage，主要威胁是 XSS 注入脚本
-    response.headers["Content-Security-Policy"] = (
-        "default-src 'none'; "
-        "frame-ancestors 'none'; "
-        "base-uri 'self'; "
-        "form-action 'self'"
-    )
+    # P2-5：CSP 已迁移到 frontend/nginx.conf，后端不再下发（避免与 nginx 重复/冲突）
     return response
 
 

@@ -3,7 +3,7 @@ from typing import TypedDict
 
 class AgenticRAGState(TypedDict):
     question: str
-    resume_id: int  # legacy：单简历模式（T9 过渡期保留，T14 退役 mcp_nodes 后移除）
+    resume_id: int  # legacy：单简历模式（T9 过渡期保留）
     user_id: int
     # T9 泛化：检索 scope（asset_type → asset_ids）+ 过滤条件（默认 version=latest）
     scope: dict[str, list[int]]

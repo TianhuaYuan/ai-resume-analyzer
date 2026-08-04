@@ -102,7 +102,7 @@ async def get_templates(
 
 @router.post("/market/sync")
 async def sync_market_data(
-    file: str | None = Query(None, description="指定四模块文件（jobs_campus/jobs_social/guides/samples），不传同步全部"),
+    file: str | None = Query(None, description="指定岗位数据文件（jobs_campus/jobs_social），不传同步全部"),
     db: AsyncSession = Depends(get_db),
     _admin: User = Depends(require_admin),
 ):

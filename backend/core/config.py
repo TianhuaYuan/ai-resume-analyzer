@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = "./uploads"
     MAX_UPLOAD_SIZE_MB: int = 10  # 单文件最大 10MB
 
+    # 上传简历处理预估耗时（秒）——前端上传后提示"预计等待时间"。
+    # 文本解析（MinerU/本地）+ LLM 反解析生成表单（reasoning 模型较慢）两段合计。
+    ESTIMATED_PARSE_SECONDS: int = 60
+    ESTIMATED_MATERIALIZE_SECONDS: int = 60
+
     # ── 环境配置 ──
     ENVIRONMENT: str = "development"  # development / staging / production
 
@@ -156,6 +161,18 @@ class Settings(BaseSettings):
     DEFAULT_GENERATE_TEMPERATURE: float = 0.3
     MCP_HTTP_TIMEOUT_TOTAL: int = 30  # MCP 远端 LLM 调用总超时（秒）
     MCP_HTTP_TIMEOUT_CONNECT: int = 10  # MCP 远端 LLM 连接超时（秒）
+
+    # ── 后台周期任务（默认全关；仅 staging/production 的 .env 显式开启） ──
+    # 注意：不能用 ENVIRONMENT 判断（.env.test 是 testing），必须默认 False 的显式开关
+    PERIODIC_TASKS_ENABLED: bool = False
+    STALE_CLEANUP_INTERVAL_MINUTES: int = 30      # cleanup_stale_processing 间隔
+    MEMORY_CONSOLIDATE_INTERVAL_HOURS: int = 6    # consolidate 间隔（低频，重）
+    ORPHAN_SCAN_INTERVAL_HOURS: int = 24          # orphan_scan 间隔（纯诊断日志）
+    MEMORY_CONSOLIDATE_MAX_USERS_PER_RUN: int = 100  # consolidate 每轮封顶用户数
+
+    # ── 记忆提炼触发（默认关；staging/prod 开启） ──
+    MEMORY_EXTRACTION_ENABLED: bool = False
+    MEMORY_EXTRACTION_INTERVAL_SEC: int = 600     # 每用户提炼节流窗口（秒）
 
     model_config = SettingsConfigDict(
         env_file=f".env.{_APP_ENV}",

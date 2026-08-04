@@ -5,6 +5,9 @@
 - 懒索引（ensure_indexed，避免依赖 ChromaDB）
 - _run_agentic_rag（LLM 生成，避免依赖外部 API）
 
+A1 改造：解析任务由 BackgroundTasks 改为异步调度（RabbitMQ / create_task），
+后台处理不再保证同步完成，测试通过 _wait_ready 轮询等待 ready。
+
 验证：
 1. 上传 → 202 + status=processing
 2. 后台处理 → status=ready + parsed_text + chunk_count
@@ -12,6 +15,7 @@
 4. 问答历史 → 保存到 DB
 5. 幂等上传 → 同 key 返回同一 resume
 """
+import asyncio
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -23,6 +27,29 @@ from tests.conftest import AsyncSessionTest
 def _make_resume_bytes() -> bytes:
     """构造一份合法的 txt 简历内容。"""
     return "张三\nPython 工程师\n3年经验\n本科毕业\n熟练 FastAPI 和 LangGraph".encode("utf-8")
+
+
+async def _wait_ready(
+    client: AsyncClient, auth_headers: dict, resume_id: int, max_tries: int = 100
+) -> dict:
+    """轮询简历状态直到 ready（A1 后解析任务异步执行，不能假设同步完成）。
+
+    Returns:
+        ready 时的简历响应数据
+
+    Raises:
+        AssertionError: 超过 max_tries 次仍未 ready
+    """
+    for _ in range(max_tries):
+        resp = await client.get(f"/api/v1/resumes/{resume_id}", headers=auth_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        if data["status"] == "ready":
+            return data
+        await asyncio.sleep(0.05)
+    raise AssertionError(
+        f"简历 {resume_id} 在 {max_tries} 次轮询内未变为 ready，最终状态: {data['status']}"
+    )
 
 
 @pytest.mark.asyncio
@@ -44,6 +71,14 @@ async def test_upload_process_ask_full_pipeline(
              AsyncSessionTest,
          ), \
          patch(
+             "services.resume_analyze_producer.publish_analyze_task",
+             new_callable=AsyncMock,
+         ), \
+         patch(
+             "services.react_agent.memory.build_l3_profile_background",
+             new_callable=AsyncMock,
+         ), \
+         patch(
              "api.qa._run_agentic_rag",
              new_callable=AsyncMock,
              return_value=(fake_answer, fake_sources, []),
@@ -58,12 +93,9 @@ async def test_upload_process_ask_full_pipeline(
         resume_id = resp.json()["id"]
         assert resp.json()["status"] == "processing"
 
-        # 2. 验证后台处理完成（BackgroundTasks 在 ASGITransport 中应已执行）
-        resp = await client.get(f"/api/v1/resumes/{resume_id}", headers=auth_headers)
-        assert resp.status_code == 200
-        resume_data = resp.json()
-        assert resume_data["status"] == "ready", \
-            f"后台任务应将状态改为 ready，实际: {resume_data['status']}"
+        # 2. 验证后台处理完成（A1: 解析任务异步调度，轮询等待 ready）
+        resume_data = await _wait_ready(client, auth_headers, resume_id)
+        assert resume_data["status"] == "ready"
         assert resume_data["parsed_text"] == fake_parsed_text
         assert resume_data["chunk_count"] == 0  # 懒索引：上传后未建索引
 
@@ -102,7 +134,15 @@ async def test_upload_idempotent_key_returns_same_resume(
              "services.resume_service.parse_resume",
              return_value=fake_parsed_text,
          ), \
-         patch("services.resume_service.AsyncSessionLocal", AsyncSessionTest):
+         patch("services.resume_service.AsyncSessionLocal", AsyncSessionTest), \
+         patch(
+             "services.resume_analyze_producer.publish_analyze_task",
+             new_callable=AsyncMock,
+         ), \
+         patch(
+             "services.react_agent.memory.build_l3_profile_background",
+             new_callable=AsyncMock,
+         ):
         # 第一次上传 → 202
         resp1 = await client.post(
             "/api/v1/resumes",
@@ -139,6 +179,14 @@ async def test_upload_then_delete_cleans_file(
              return_value=fake_parsed_text,
          ), \
          patch("services.resume_service.AsyncSessionLocal", AsyncSessionTest), \
+         patch(
+             "services.resume_analyze_producer.publish_analyze_task",
+             new_callable=AsyncMock,
+         ), \
+         patch(
+             "services.react_agent.memory.build_l3_profile_background",
+             new_callable=AsyncMock,
+         ), \
          patch(
              "services.resume_service.clear_resume_vectors",
              new_callable=AsyncMock,
@@ -204,17 +252,26 @@ async def test_upload_process_ask_degraded_mode(
          ), \
          patch("services.resume_service.AsyncSessionLocal", AsyncSessionTest), \
          patch(
+             "services.resume_analyze_producer.publish_analyze_task",
+             new_callable=AsyncMock,
+         ), \
+         patch(
+             "services.react_agent.memory.build_l3_profile_background",
+             new_callable=AsyncMock,
+         ), \
+         patch(
              "api.qa._run_agentic_rag",
              new_callable=AsyncMock,
              return_value=(fake_answer, fake_sources, fake_tool_errors),
          ):
-        # 上传 + 等后台处理
+        # 上传 + 等后台处理（A1: 异步调度，轮询等待 ready）
         resp = await client.post(
             "/api/v1/resumes",
             files={"file": ("resume.txt", _make_resume_bytes(), "text/plain")},
             headers=auth_headers,
         )
         resume_id = resp.json()["id"]
+        await _wait_ready(client, auth_headers, resume_id)
 
         # 提问
         resp = await client.post(

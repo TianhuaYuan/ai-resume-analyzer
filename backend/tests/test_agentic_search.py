@@ -42,6 +42,7 @@ def _make_state(**overrides):
     state = {
         "question": "候选人有哪些技术栈",
         "resume_id": 1,
+        "user_id": 1,
         "rewritten_query": "候选人的专业技能和技术栈",
         "route_decision": "search",
         "chunks": [],
@@ -60,19 +61,20 @@ class TestSearchNode:
     async def test_returns_chunks_and_increments_round(self):
         """search_node 应返回 chunks 并递增 search_round"""
         state = _make_state()
-        with patch("services.agentic_rag.search.hybrid_search", new_callable=AsyncMock) as mock:
+        with patch("services.agentic_rag.search.hybrid_search_corpus", new_callable=AsyncMock) as mock:
             mock.return_value = SAMPLE_CHUNKS
             result = await search_node(state)
 
         assert result["chunks"] == SAMPLE_CHUNKS
         assert result["search_round"] == 1
-        mock.assert_called_once_with(1, "候选人的专业技能和技术栈", top_k=20)
+        # search_node 调 hybrid_search_corpus(user_id, scope, query, top_k)
+        mock.assert_called_once_with(1, {"resume": [1]}, "候选人的专业技能和技术栈", top_k=20)
 
     @pytest.mark.asyncio
     async def test_increments_from_existing_round(self):
         """search_round 从已有值递增，不是重置"""
         state = _make_state(search_round=2)
-        with patch("services.agentic_rag.search.hybrid_search", new_callable=AsyncMock) as mock:
+        with patch("services.agentic_rag.search.hybrid_search_corpus", new_callable=AsyncMock) as mock:
             mock.return_value = SAMPLE_CHUNKS
             result = await search_node(state)
 
@@ -82,7 +84,7 @@ class TestSearchNode:
     async def test_trace_contains_search_info(self):
         """trace 应包含 search 节点的耗时和元数据"""
         state = _make_state()
-        with patch("services.agentic_rag.search.hybrid_search", new_callable=AsyncMock) as mock:
+        with patch("services.agentic_rag.search.hybrid_search_corpus", new_callable=AsyncMock) as mock:
             mock.return_value = SAMPLE_CHUNKS
             result = await search_node(state)
 
@@ -97,7 +99,7 @@ class TestSearchNode:
     async def test_preserves_existing_trace(self):
         """应保留 state 中已有的 trace 数据"""
         state = _make_state(trace={"rewrite": {"elapsed_ms": 100}})
-        with patch("services.agentic_rag.search.hybrid_search", new_callable=AsyncMock) as mock:
+        with patch("services.agentic_rag.search.hybrid_search_corpus", new_callable=AsyncMock) as mock:
             mock.return_value = SAMPLE_CHUNKS
             result = await search_node(state)
 
@@ -108,7 +110,7 @@ class TestSearchNode:
     async def test_empty_results(self):
         """检索无结果时应返回空列表"""
         state = _make_state()
-        with patch("services.agentic_rag.search.hybrid_search", new_callable=AsyncMock) as mock:
+        with patch("services.agentic_rag.search.hybrid_search_corpus", new_callable=AsyncMock) as mock:
             mock.return_value = []
             result = await search_node(state)
 
@@ -190,7 +192,7 @@ class TestSearchRerankPipeline:
 
         with (
             patch(
-                "services.agentic_rag.search.hybrid_search", new_callable=AsyncMock
+                "services.agentic_rag.search.hybrid_search_corpus", new_callable=AsyncMock
             ) as mock_search,
             patch("services.agentic_rag.search.rerank", new_callable=AsyncMock) as mock_rerank,
         ):

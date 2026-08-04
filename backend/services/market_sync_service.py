@@ -19,7 +19,6 @@
 import hashlib
 import json
 import logging
-import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -33,7 +32,6 @@ from models.market_asset import MarketAsset
 from services.rag.clients import market_collection_name
 from services.rag.indexer import index_asset
 from services.rag.retrieval import clear_market_bm25
-from services.sample_module_service import build_sample_payload
 
 logger = logging.getLogger(__name__)
 
@@ -46,22 +44,16 @@ SOURCE_CAMPUS = "campus"              # campus_recruitment.json（校招公告�
 SOURCE_REFERRAL = "referral"          # referral_recruitment.json（内推）
 SOURCE_UPCV = "upcv"                  # upcv_jobs.json（upcv 真实 JD）
 SOURCE_ALLJOBS = "alljobs"            # all_jobs.json（nowcoder 多平台岗位）
-SOURCE_SAMPLE = "sample"              # fanwen_all.json（简历范文）
-SOURCE_GUIDE = "guide"                # all_articles.json（求职攻略）
 SOURCE_UPCV_RECRUITMENTS = "upcv_recruitments"  # upcv 校招项目
 
-# 四模块分类 JSON（backend/data/ 真源，爬虫重爬后由整理脚本重新生成）
+# 岗位分类 JSON（backend/data/ 真源，爬虫重爬后由整理脚本重新生成）
 MARKET_FILES: dict[str, str] = {
     "jobs_campus": "jobs_campus.json",  # 校招岗位（campus公告/upcv岗位/校招项目/all_jobs校招）
     "jobs_social": "jobs_social.json",  # 社招岗位（all_jobs社招实习/内推）
-    "guides": "guides.json",            # 攻略（仅入 MySQL，不向量化）
-    "samples": "samples.json",          # 范文模板（仅入 MySQL，不向量化）
 }
 
 # 资产类型（RAG metadata）
 ASSET_TYPE_JOB = "job"
-ASSET_TYPE_SAMPLE = "sample"
-ASSET_TYPE_GUIDE = "guide"
 
 # job_type 标准化枚举
 JOB_TYPE_CAMPUS = "campus"
@@ -73,7 +65,6 @@ JOB_TYPE_INTERN = "intern"
 class NormalizedAsset:
     source: str
     external_id: str
-    asset_type: str
     title: str
     content: str
     job_type: str | None = None
@@ -84,7 +75,8 @@ class NormalizedAsset:
     salary: str | None = None
     degree: str | None = None
     deadline: datetime | None = None
-    payload: dict | None = None
+    apply_url: str | None = None
+    published_at: datetime | None = None
 
 
 @dataclass
@@ -113,7 +105,7 @@ class MarketSyncStats:
 
 
 def _load_market_records(name: str) -> list[dict]:
-    """读四模块分类 JSON 的 records 数组。"""
+    """读岗位分类 JSON 的 records 数组。"""
     fpath = _DATA_DIR / MARKET_FILES[name]
     if not fpath.exists():
         logger.warning("market data file not found: %s", fpath)
@@ -153,6 +145,13 @@ def _resolve_expired(deadline: datetime | None, now: datetime | None = None) -> 
         return False
     now = now or datetime.now(timezone.utc)
     return deadline < now
+
+
+def _same_dt(a: datetime | None, b: datetime | None) -> bool:
+    """忽略 tzinfo 比较 datetime（SQLite/MySQL DATETIME 读回为 naive，写时为 aware）。"""
+    if a is None or b is None:
+        return a is b
+    return a.replace(tzinfo=None) == b.replace(tzinfo=None)
 
 
 def _compute_hash(text: str) -> str:
@@ -226,7 +225,6 @@ def _normalize_upcv_jobs(r: dict) -> NormalizedAsset:
     return NormalizedAsset(
         source=SOURCE_UPCV,
         external_id=str(r.get("id") or ""),
-        asset_type=ASSET_TYPE_JOB,
         title=title,
         content=content,
         job_type=_resolve_job_type(r, SOURCE_UPCV),
@@ -237,7 +235,8 @@ def _normalize_upcv_jobs(r: dict) -> NormalizedAsset:
         salary=r.get("salaryDisplay") or "",
         degree=degree.get("label", "") if isinstance(degree, dict) else "",
         deadline=_resolve_deadline(r),
-        payload={"work_mode": r.get("workMode"), "apply_url": r.get("detailUrl") or r.get("applyUrl")},
+        apply_url=r.get("detailUrl") or r.get("applyUrl"),
+        published_at=_parse_dt(r.get("publishedAt")),
     )
 
 
@@ -262,7 +261,6 @@ def _normalize_upcv_recruitments(r: dict) -> NormalizedAsset:
     return NormalizedAsset(
         source=SOURCE_UPCV_RECRUITMENTS,
         external_id=str(r.get("id") or ""),
-        asset_type=ASSET_TYPE_JOB,
         title=title,
         content=content,
         job_type=JOB_TYPE_CAMPUS,
@@ -270,11 +268,8 @@ def _normalize_upcv_recruitments(r: dict) -> NormalizedAsset:
         position="",
         city=_fmt_labels(r.get("cities")),
         deadline=_resolve_deadline(r),
-        payload={
-            "entry_type": r.get("entryType"),
-            "batch": f"{r.get('batchYear')}届{r.get('batchType')}" if r.get("batchYear") else None,
-            "apply_url": r.get("recruitUrl"),
-        },
+        apply_url=r.get("recruitUrl"),
+        published_at=_parse_dt(r.get("createTime") or r.get("recordTime")),
     )
 
 
@@ -302,7 +297,6 @@ def _normalize_all_jobs(r: dict) -> NormalizedAsset:
     return NormalizedAsset(
         source=SOURCE_ALLJOBS,
         external_id=external[:100],
-        asset_type=ASSET_TYPE_JOB,
         title=title,
         content=content,
         job_type=_resolve_job_type(r, SOURCE_ALLJOBS),
@@ -313,7 +307,7 @@ def _normalize_all_jobs(r: dict) -> NormalizedAsset:
         salary=r.get("salary") or "",
         degree=r.get("education") or "",
         deadline=_resolve_deadline(r),
-        payload={"platform": r.get("platform"), "apply_url": r.get("url")},
+        apply_url=r.get("url"),
     )
 
 
@@ -329,7 +323,6 @@ def _normalize_campus(r: dict) -> NormalizedAsset:
     return NormalizedAsset(
         source=SOURCE_CAMPUS,
         external_id=str(r.get("id") or ""),
-        asset_type=ASSET_TYPE_JOB,
         title=title,
         content=content,
         job_type=_resolve_job_type(r, SOURCE_CAMPUS),
@@ -340,7 +333,8 @@ def _normalize_campus(r: dict) -> NormalizedAsset:
         salary="",
         degree="",
         deadline=_resolve_deadline(r),
-        payload={"referral_code": r.get("referralCode"), "apply_url": r.get("referralMethod")},
+        apply_url=r.get("referralMethod"),
+        published_at=_parse_dt(r.get("recordTime")),
     )
 
 
@@ -356,7 +350,6 @@ def _normalize_referral(r: dict) -> NormalizedAsset:
     return NormalizedAsset(
         source=SOURCE_REFERRAL,
         external_id=str(r.get("id") or ""),
-        asset_type=ASSET_TYPE_JOB,
         title=title,
         content=content,
         job_type=JOB_TYPE_SOCIAL,
@@ -367,100 +360,8 @@ def _normalize_referral(r: dict) -> NormalizedAsset:
         salary="",
         degree="",
         deadline=_resolve_deadline(r),
-        payload={"referral_code": r.get("referralCode"), "apply_url": r.get("referralMethod")},
-    )
-
-
-def _normalize_fanwen(r: dict) -> NormalizedAsset:
-    title = r.get("title") or f"范文{r.get('id')}"
-    sections = []
-    for key, label in (("summary", "个人总结"), ("work", "工作经历"),
-                       ("projects", "项目经历"), ("education", "教育背景"),
-                       ("skills", "技能")):
-        v = r.get(key)
-        if v:
-            sections.append(f"## {label}\n{v}")
-    content = "\n\n".join(sections)
-    # 同步时一次性生成结构化 style+modules（与 get_sample 惰性生成结果一致），
-    # 供范文页"快速套用结构"使用；build_sample_payload 内部降级，不会抛异常。
-    payload = build_sample_payload(
-        content,
-        {"target_position": r.get("targetJob"), "category": r.get("category")},
-    )
-    return NormalizedAsset(
-        source=SOURCE_SAMPLE,
-        external_id=str(r.get("id") or ""),
-        asset_type=ASSET_TYPE_SAMPLE,
-        title=title,
-        content=content,
-        position=r.get("targetJob") or "",
-        payload=payload,
-    )
-
-
-_RE_URL = re.compile(r"^https?://\S+$", re.IGNORECASE)
-_RE_UP_PROMO = re.compile(
-    r"[，,。；;！!？?\s]*"  # 前导标点/空白
-    r"(?:可以|欢迎|建议|如果需要|不妨)?\s*"
-    r"(?:参考|看看|去|访问|关注)?\s*"
-    r"UP\s*简历\S*"
-    r"[，,。；;！!？?\s]*",  # 尾部标点/空白
-    re.IGNORECASE,
-)
-
-
-def _clean_guide_body(body: str) -> str:
-    """清洗攻略正文：移除站内推广文案和独立链接。
-
-    清洗规则：
-    1. 独立 URL 行 → 删除
-    2. 整行仅含 "UP 简历" 推广 → 删除该行
-    3. 行内嵌入 "UP 简历" 片段 → 剥离片段，保留其余内容
-    4. 连续空行压缩为单行
-    """
-    cleaned_lines = []
-    for line in body.split("\n"):
-        stripped = line.strip()
-        # 独立 URL 行
-        if _RE_URL.match(stripped):
-            continue
-        # 整行仅含 UP 简历推广（去掉推广后无实质内容）
-        if _RE_UP_PROMO.sub("", stripped).strip() == "":
-            continue
-        # 行内嵌入 UP 简历片段 → 剥离
-        line = _RE_UP_PROMO.sub("", line)
-        cleaned_lines.append(line)
-    # 压缩连续空行
-    result = "\n".join(cleaned_lines)
-    result = re.sub(r"\n{3,}", "\n\n", result)
-    return result.strip()
-
-
-def _normalize_guide(r: dict) -> NormalizedAsset:
-    """求职攻略归一化。正文未抓取前 content 用摘要；正文抓取后替换为全文。
-
-    guides.json 字段：body（全文）、summary（摘要）、url、date。
-    has_fulltext 判断 body 是否存在；content 存全文或摘要。
-    正文经过 _clean_guide_body 清洗（移除推广文案和站内链接）。
-    """
-    title = r.get("title") or f"攻略{r.get('article_id')}"
-    summary = r.get("summary") or ""
-    body = _clean_guide_body(r.get("body") or "")
-    has_fulltext = bool(body)
-    content = body if has_fulltext else (summary or title)
-    external = r.get("article_id") or _compute_hash(r.get("url") or title)
-    return NormalizedAsset(
-        source=SOURCE_GUIDE,
-        external_id=str(external)[:100],
-        asset_type=ASSET_TYPE_GUIDE,
-        title=title,
-        content=content,
-        payload={
-            "url": r.get("url"),
-            "date": r.get("date") or r.get("datetime_iso"),
-            "has_fulltext": has_fulltext,
-            "summary": summary,
-        },
+        apply_url=r.get("referralMethod"),
+        published_at=_parse_dt(r.get("recordTime")),
     )
 
 
@@ -474,7 +375,7 @@ def _build_job_content(*, title, company, city, salary, degree, body) -> str:
 # 各 String 列长度上限（MySQL 严格模式 Data too long 保护）
 _FIELD_LIMITS = {
     "title": 255, "company": 255, "position": 255, "city": 255,
-    "industry": 255, "salary": 100, "degree": 100,
+    "industry": 255, "salary": 100, "degree": 100, "apply_url": 2000,
 }
 
 
@@ -504,12 +405,12 @@ async def _upsert_asset(db: AsyncSession, n: NormalizedAsset, stats: MarketSyncS
 
     if row is None:
         row = MarketAsset(
-            source=n.source, external_id=n.external_id, asset_type=n.asset_type,
+            source=n.source, external_id=n.external_id,
             job_type=n.job_type, title=n.title, company=n.company,
             position=n.position, city=n.city, industry=n.industry,
             salary=n.salary, degree=n.degree, deadline=n.deadline,
-            is_expired=is_expired, payload=n.payload, content=n.content,
-            content_hash=content_hash, is_published=True,
+            is_expired=is_expired, apply_url=n.apply_url, published_at=n.published_at,
+            content=n.content, content_hash=content_hash,
         )
         db.add(row)
         await db.flush()
@@ -520,14 +421,14 @@ async def _upsert_asset(db: AsyncSession, n: NormalizedAsset, stats: MarketSyncS
         row.content_hash != content_hash
         or row.is_expired != is_expired
         or row.job_type != n.job_type
-        or row.payload != n.payload
+        or row.apply_url != n.apply_url
+        or not _same_dt(row.published_at, n.published_at)
     )
     if not dirty:
         stats.unchanged += 1
         return row, False
 
     row.source = n.source
-    row.asset_type = n.asset_type
     row.job_type = n.job_type
     row.title = n.title
     row.company = n.company
@@ -538,7 +439,8 @@ async def _upsert_asset(db: AsyncSession, n: NormalizedAsset, stats: MarketSyncS
     row.degree = n.degree
     row.deadline = n.deadline
     row.is_expired = is_expired
-    row.payload = n.payload
+    row.apply_url = n.apply_url
+    row.published_at = n.published_at
     row.content = n.content
     row.content_hash = content_hash
     await db.flush()
@@ -549,13 +451,13 @@ async def _upsert_asset(db: AsyncSession, n: NormalizedAsset, stats: MarketSyncS
 async def _index_asset(db: AsyncSession, row: MarketAsset, stats: MarketSyncStats) -> None:
     """对一条资产做 eager 向量索引（写 market_public 公共集合）。"""
     collection = market_collection_name()
-    lock_id = await acquire_index_lock(0, row.asset_type, row.id)
+    lock_id = await acquire_index_lock(0, ASSET_TYPE_JOB, row.id)
     try:
         chunk_count = await index_asset(
             collection=collection,
             user_id=None,  # 公共资产：metadata 不写 user_id
             asset_id=row.id,
-            asset_type=row.asset_type,
+            asset_type=ASSET_TYPE_JOB,
             text=row.content,
             version=row.index_version + 1,
             content_hash=row.content_hash,
@@ -563,7 +465,6 @@ async def _index_asset(db: AsyncSession, row: MarketAsset, stats: MarketSyncStat
         await clear_market_bm25(collection, row.id)
         row.indexed_hash = row.content_hash
         row.index_version += 1
-        row.version += 1
         await db.commit()
         if chunk_count:
             stats.indexed += 1
@@ -572,18 +473,16 @@ async def _index_asset(db: AsyncSession, row: MarketAsset, stats: MarketSyncStat
             row.source, row.id, chunk_count,
         )
     finally:
-        await release_index_lock(0, row.asset_type, row.id, lock_id)
+        await release_index_lock(0, ASSET_TYPE_JOB, row.id, lock_id)
 
 
-# 四 JSON 记录里的 _source 标签 → 归一化器
+# 各 JSON 记录里的 _source 标签 → 归一化器
 _NORMALIZERS: dict[str, callable] = {
     "campus_recruitment": _normalize_campus,
     "upcv_jobs": _normalize_upcv_jobs,
     "upcv_recruitments": _normalize_upcv_recruitments,
     "all_jobs": _normalize_all_jobs,
     "referral": _normalize_referral,
-    "fanwen": _normalize_fanwen,
-    "guides": _normalize_guide,
 }
 
 
@@ -593,10 +492,10 @@ async def sync_market(
     file: str | None = None,
     limit_per_source: int | None = None,
 ) -> MarketSyncStats:
-    """同步市场数据。file=None 同步四模块全部 JSON，否则只同步指定文件。
+    """同步市场数据。file=None 同步全部岗位 JSON，否则只同步指定文件。
 
     Args:
-        file: 指定四模块文件（jobs_campus/jobs_social/guides/samples），None 全部
+        file: 指定岗位数据文件（jobs_campus/jobs_social），None 全部
         limit_per_source: 每条记录最多同步条数（测试/抽样用），None 全量
     """
     stats = MarketSyncStats()

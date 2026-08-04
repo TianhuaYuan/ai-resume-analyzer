@@ -63,13 +63,6 @@ async def publish_analyze_task(
     except Exception as e:
         logger.exception("同步分析执行失败 resume_id=%d: %s", resume_id, e)
         return False
-    try:
-        from services.resume_analyze_consumer import process_analyze_task
-        await process_analyze_task(payload)
-        return True
-    except Exception as e:
-        logger.exception("同步分析执行失败 resume_id=%d: %s", resume_id, e)
-        return False
 
 
 def _now_ms() -> int:

@@ -2,7 +2,7 @@
 
 测试范围：
 - Tool 基类：db/user_id 注入 + args pydantic 校验 + 注入检测 + 归属校验 + schema 生成
-- TOOL_REGISTRY：2 类 18 工具 + 名称唯一 + /ask/agent 取 13 个（qa）
+- TOOL_REGISTRY：3 类 18 工具（qa13 + builder5 + unified18）+ 名称唯一 + /ask/agent 取 unified(18)
 """
 
 import json
@@ -73,16 +73,20 @@ class TestToolBase:
 
     @pytest.mark.asyncio
     async def test_args_validation_invalid_missing_field(self):
-        """缺必填字段时抛 ValidationError。"""
+        """缺必填字段时抛 ToolRetryError（A3 契约化：结构化错误回灌）。"""
+        from services.react_agent.tools.base import ToolRetryError
+
         tool = FakeTool()
-        with pytest.raises(ValidationError):
+        with pytest.raises(ToolRetryError):
             await tool.execute(resume_id=1)  # 缺 query
 
     @pytest.mark.asyncio
     async def test_args_validation_invalid_wrong_type(self):
-        """类型错误时抛 ValidationError。"""
+        """类型错误时抛 ToolRetryError（A3 契约化）。"""
+        from services.react_agent.tools.base import ToolRetryError
+
         tool = FakeTool()
-        with pytest.raises(ValidationError):
+        with pytest.raises(ToolRetryError):
             await tool.execute(resume_id="not_an_int", query="test")
 
     @pytest.mark.asyncio
@@ -117,17 +121,18 @@ class TestToolBase:
 
     @pytest.mark.asyncio
     async def test_ownership_check_invalid_resume(self):
-        """resume_id 不属于当前用户时返回错误提示。"""
+        """resume_id 不属于当前用户时抛 ToolFailed（A3 契约化：终端失败不累计坏调用）。"""
+        from services.react_agent.tools.base import ToolFailed
+
         mock_db = MagicMock(spec=AsyncSession)
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = None  # resume not found
         mock_db.execute = AsyncMock(return_value=mock_result)
 
         tool = FakeTool(db=mock_db, user_id=42)
-        result = await tool.execute(resume_id=999, query="教育背景")
-        assert "999" in result
-        assert "无权" in result or "不存在" in result
-        assert "executed:" not in result
+        with pytest.raises(ToolFailed) as exc_info:
+            await tool.execute(resume_id=999, query="教育背景")
+        assert "999" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_ownership_skipped_when_no_db(self):
@@ -164,10 +169,9 @@ class TestToolBase:
 class TestToolRegistry:
     """工具注册表结构。"""
 
-    def test_registry_has_2_categories(self):
-        """注册表包含 qa/builder 两个分类。"""
-        assert "qa" in TOOL_REGISTRY
-        assert "builder" in TOOL_REGISTRY
+    def test_registry_has_3_categories(self):
+        """注册表包含 qa/builder/unified 三个分类（v2 合并）。"""
+        assert set(TOOL_REGISTRY.keys()) == {"qa", "builder", "unified"}
 
     def test_qa_has_13_tools(self):
         """qa 分类有 13 个工具。"""
@@ -178,17 +182,17 @@ class TestToolRegistry:
         assert len(TOOL_REGISTRY["builder"]) == 5
 
     def test_all_tool_names_unique(self):
-        """所有 18 个工具名称唯一。"""
-        all_names = []
-        for tools in TOOL_REGISTRY.values():
-            for tool_class in tools:
-                all_names.append(tool_class.name)
+        """所有 18 个工具名称唯一（以 qa + builder 为准；unified 是它们的拼接）。"""
+        all_names = [tc.name for tc in TOOL_REGISTRY["qa"] + TOOL_REGISTRY["builder"]]
         assert len(all_names) == len(set(all_names)), f"重复的工具名: {all_names}"
+        # v2 合并：unified = qa + builder（同一批类，不新增工具）
+        assert TOOL_REGISTRY["unified"] == TOOL_REGISTRY["qa"] + TOOL_REGISTRY["builder"]
 
     def test_all_tools_have_required_attributes(self):
         """每个工具有 name/description/args_model/category。"""
-        for category, tools in TOOL_REGISTRY.items():
-            for tool_class in tools:
+        # unified 是 qa+builder 的拼接（category 仍是 qa/builder），只校验源分类
+        for category in ("qa", "builder"):
+            for tool_class in TOOL_REGISTRY[category]:
                 assert hasattr(tool_class, "name"), f"{category} 工具缺 name"
                 assert hasattr(tool_class, "description"), f"{category} 工具缺 description"
                 assert hasattr(tool_class, "args_model"), f"{category} 工具缺 args_model"
@@ -223,16 +227,17 @@ class TestToolRegistry:
 class TestToolQueryFunctions:
     """工具查询函数。"""
 
-    def test_get_tools_for_agent_returns_13(self):
-        """/ask/agent 取 qa(13) 个工具。"""
+    def test_get_tools_for_agent_returns_unified_18(self):
+        """/ask/agent 取 unified(18) 个工具（qa + builder 合并）。"""
         tools = get_tools_for_agent()
-        assert len(tools) == 13
+        assert len(tools) == 18
 
-    def test_get_tools_for_agent_excludes_builder(self):
-        """agent 工具集不含 builder 工具。"""
+    def test_get_tools_for_agent_includes_qa_and_builder(self):
+        """agent 工具集 = unified，同时包含 qa 和 builder 工具。"""
         tools = get_tools_for_agent()
-        for t in tools:
-            assert t.category != "builder"
+        names = {t.name for t in tools}
+        assert "search_resume" in names      # qa 工具
+        assert "generate_module" in names    # builder 工具并入 unified
 
     def test_get_tool_by_name_found(self):
         """按名查找工具存在。"""
@@ -245,10 +250,10 @@ class TestToolQueryFunctions:
         tool = get_tool_by_name("nonexistent_tool")
         assert tool is None
 
-    def test_get_agent_schemas_returns_13_schemas(self):
-        """agent schema 列表有 13 个条目。"""
+    def test_get_agent_schemas_returns_18_schemas(self):
+        """agent schema 列表有 18 个条目（unified）。"""
         schemas = get_agent_schemas()
-        assert len(schemas) == 13
+        assert len(schemas) == 18
         for s in schemas:
             assert s["type"] == "function"
             assert "name" in s["function"]
@@ -260,4 +265,4 @@ class TestToolQueryFunctions:
         names = {s["function"]["name"] for s in schemas}
         assert "search_resume" in names
         assert "recommend_jobs" in names
-        assert "generate_module" not in names  # builder 工具不在 agent 集合
+        assert "generate_module" in names  # v2：builder 工具并入 unified agent 集合

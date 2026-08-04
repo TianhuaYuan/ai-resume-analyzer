@@ -35,7 +35,10 @@ logger = logging.getLogger(__name__)
 _MAX_RETRIES: int = 1
 
 # LLM 输出最大 token 数（简历反解析需要足够空间输出完整 JSON）
-_MAX_TOKENS: int = 4000
+# 诊断实测确认：reasoning 模型（deepseek-v4-flash / mimo-v2.5）
+# 会先消耗大量 token 思考再输出 content，4000 会被推理吃光导致 content 为空；
+# 16000 实测可完整输出（推理 + JSON 约 7500 tokens），真实简历稳定反解析。
+_MAX_TOKENS: int = 16000
 
 
 # ═══════════════════════════════════════════════════════════
@@ -112,14 +115,39 @@ _SYSTEM_PROMPT = """你是一个专业的简历解析助手。你的任务是将
 - 简历中不存在的模块不要输出
 - sort_order 按模块在简历中出现的顺序从 0 递增
 - 日期格式统一为 "YYYY-MM"
-- 如果某个字段在简历中没有提到，不要编造，直接省略"""
+- 如果某个字段在简历中没有提到，不要编造，直接省略
+
+【长文本字段优化（A2，借鉴 SmartResume 索引指针机制）】
+输入文本每行带 [行号] 前缀（如 "[3] 负责xx系统的开发"）。
+对于长文本字段（description / achievements 的元素 / summary / content），
+可以省略完整原文，只引用原文行号区间，格式：{"lines": [开始行, 结束行]}。
+例如某工作描述对应原文第 10-12 行，输出 "description": {"lines": [10, 12]}。
+规则：
+- 只在字段值确实与原文行内容一致时使用引用；需要改写/提炼时仍输出字符串
+- 引用必须真实指向原文行号，禁止编造行号
+- 其余字段（日期/公司/技能名等短字段）一律输出字符串，不要用 lines"""
+
+
+def _index_lines(text: str) -> tuple[str, list[str]]:
+    """给简历文本每行加 [行号] 前缀（A2 索引指针机制）。
+
+    Args:
+        text: 简历纯文本
+
+    Returns:
+        (带行号文本, 原文行列表) —— 行号从 1 开始，
+        后处理用原文行列表把 LLM 的 {"lines": [a, b]} 引用切片还原
+    """
+    lines = text.split("\n")
+    indexed = "\n".join(f"[{i + 1}] {line}" for i, line in enumerate(lines))
+    return indexed, lines
 
 
 def _build_user_prompt(text: str, error_feedback: str | None = None) -> str:
     """构建用户 prompt。
 
     Args:
-        text: 简历纯文本
+        text: 简历纯文本（A2 起为带 [行号] 前缀的索引文本）
         error_feedback: 上次校验的错误反馈（重试时传入）
     """
     prompt = f"请将以下简历文本解析为结构化 JSON 模块列表：\n\n---\n{text}\n---"
@@ -128,6 +156,33 @@ def _build_user_prompt(text: str, error_feedback: str | None = None) -> str:
         prompt += f"\n\n上次解析存在以下错误，请修正后重新输出：\n{error_feedback}"
 
     return prompt
+
+
+def _resolve_line_refs(obj, lines: list[str]):
+    """解析 LLM 输出中的 {"lines": [a, b]} 引用，切片替换为原文（A2）。
+
+    指针引用出现在字段值位置（如 content 的 description），
+    递归遍历返回**替换后的新对象**（不修改原对象）：
+    - dict 恰好为 {"lines": [a, b]} 且行号合法 → 替换为原文切片字符串
+    - 其他 dict / list / 标量 → 递归保留
+    引用无效（越界/格式错）→ 原样保留 {"lines": [...]}，
+    由上层 pydantic 校验失败回灌重试兜底。
+
+    Args:
+        obj: LLM 输出的模块原始字典
+        lines: 原文行列表（_index_lines 返回值，行号从 1 起）
+    """
+    if isinstance(obj, dict):
+        if set(obj.keys()) == {"lines"} and isinstance(obj.get("lines"), list):
+            ref = obj["lines"]
+            if len(ref) == 2 and isinstance(ref[0], int) and isinstance(ref[1], int):
+                a, b = ref
+                if 1 <= a <= b <= len(lines):
+                    return "\n".join(lines[a - 1 : b])
+        return {k: _resolve_line_refs(v, lines) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_resolve_line_refs(item, lines) for item in obj]
+    return obj
 
 
 def _build_error_feedback(errors: list[str]) -> str:
@@ -162,19 +217,193 @@ def _extract_json_from_response(response: str) -> list[dict]:
     if code_block_match:
         text = code_block_match.group(1).strip()
 
-    # 尝试找到 JSON 数组的起始和结束位置
+    # 找到 JSON 数组的起始位置
     start = text.find("[")
-    end = text.rfind("]")
-    if start == -1 or end == -1 or end <= start:
+    if start == -1:
         raise ValueError("LLM 响应中未找到 JSON 数组")
 
-    json_str = text[start : end + 1]
-    parsed = json.loads(json_str)
+    # 从后往前找第一个能完整解析的 "]"（抗截断）：
+    # 输出被 max_tokens 截断时，rfind("]") 可能命中嵌套数组（如 tech_stack 内）的 "]",
+    # 导致 json.loads 失败。逐个候选位置尝试，取最靠后且能完整解析的 JSON 数组。
+    search_end = len(text) - 1
+    while search_end > start:
+        end = text.rfind("]", 0, search_end + 1)
+        if end == -1 or end <= start:
+            break
+        json_str = text[start : end + 1]
+        try:
+            parsed = json.loads(json_str)
+        except json.JSONDecodeError:
+            search_end = end - 1
+            continue
+        if isinstance(parsed, list):
+            return parsed
+        # 解析成功但不是数组 → 继续往前找
+        search_end = end - 1
 
-    if not isinstance(parsed, list):
-        raise ValueError(f"期望 JSON 数组，实际得到 {type(parsed).__name__}")
+    # 所有候选位置都失败：若 text[start:] 是非法 JSON，触发 JSONDecodeError
+    # （与旧逻辑异常类型一致，保持测试契约）；否则抛 ValueError。
+    _ = json.loads(text[start:])  # noqa: B018 — 仅用于触发异常
+    raise ValueError("LLM 响应中未找到 JSON 数组")
 
-    return parsed
+
+# ═══════════════════════════════════════════════════════════
+# A2 深化：规范化流水线（借鉴 alibaba/SmartResume data_processor.py）
+# ═══════════════════════════════════════════════════════════
+
+# 日期格式：YYYY年M月 / YYYY.M / YYYY-MM → YYYY-MM
+_DATE_PATTERN = re.compile(r"^(\d{4})\s*[年.\-/]\s*(\d{1,2})\s*月?$")
+
+# OCR 常见混淆纠错（SmartResume _clean_email 机制）
+_EMAIL_TYPO_FIXES = [
+    (re.compile(r"\.c0m(\s|$|\")"), ".com\\1"),
+    (re.compile(r"gmai1\.", re.IGNORECASE), "gmail."),
+    (re.compile(r"qq\.c0m"), "qq.com"),
+]
+
+
+def _normalize_date(value: str) -> str:
+    """日期规范化：'2024年9月' → '2024-09'（SmartResume _normalize_date 机制）。
+
+    无法识别的格式原样返回（避免破坏 pydantic 校验 → 触发回灌重试）。
+    """
+    if not isinstance(value, str):
+        return value
+    match = _DATE_PATTERN.match(value.strip())
+    if match:
+        return f"{int(match.group(1)):04d}-{int(match.group(2)):02d}"
+    return value.strip()
+
+
+def _normalize_email(value: str) -> str:
+    """邮箱 OCR 混淆纠错（c0m→com 等）。"""
+    if not isinstance(value, str):
+        return value
+    result = value.strip()
+    for pattern, repl in _EMAIL_TYPO_FIXES:
+        result = pattern.sub(repl, result)
+    return result
+
+
+def _normalize_text_field(value, field_key: str):
+    """按字段类型规范化单个值（日期/邮箱），其余原样。"""
+    if not isinstance(value, str):
+        return value
+    if "date" in field_key or field_key in ("start_date", "end_date"):
+        return _normalize_date(value)
+    if "email" in field_key or field_key == "email":
+        return _normalize_email(value)
+    return value
+
+
+def _normalize_modules(raw_modules: list[dict]) -> list[dict]:
+    """规范化 LLM 输出（A2 深化，借鉴 SmartResume 规范化阶段）。
+
+    在 pydantic 校验前原地规范化 content 中的日期（"2024年9月" → "2024-09"）
+    与邮箱（OCR 混淆纠错），避免非标准格式污染后续评分/JD 匹配。
+
+    Args:
+        raw_modules: LLM 输出的原始模块字典列表（原地修改）
+
+    Returns:
+        同一列表（便于链式调用）
+    """
+    for module in raw_modules:
+        content = module.get("content")
+        if not isinstance(content, dict):
+            continue
+        # 顶层字段 + items 列表里的条目
+        targets: list[dict] = [content]
+        for value in content.values():
+            if isinstance(value, list):
+                targets.extend(item for item in value if isinstance(item, dict))
+
+        for target in targets:
+            for key, value in list(target.items()):
+                if isinstance(value, str):
+                    target[key] = _normalize_text_field(value, key)
+                elif isinstance(value, list) and key in ("achievements", "tech_stack"):
+                    # 列表内字符串元素规范化（如日期出现在 achievements 描述里）
+                    target[key] = [
+                        _normalize_text_field(item, key) if isinstance(item, str) else item
+                        for item in value
+                    ]
+    return raw_modules
+
+
+def verify_fields_in_original_text(
+    modules: list[dict], original_lines: list[str]
+) -> list[dict]:
+    """A2 深化：字段级溯源验证（借鉴 SmartResume _validate_fields_in_text）。
+
+    对关键短字段（姓名/手机/公司/岗位/学校/专业）做规范化包含检查——
+    必须在原文中出现（substring 匹配），否则标记 provenance="missing"。
+
+    不做删除（避免破坏 schema 校验），返回报告供诊断/日志使用；
+    完整接入 E1 可溯源诊断展示。
+
+    Args:
+        modules: 规范化后的原始模块字典列表（读取用）
+        original_lines: 原文行列表
+
+    Returns:
+        report: [{module_type, field, value, provenance: "verified"|"missing"}]
+    """
+    import unicodedata
+
+    def _norm(s: str) -> str:
+        """NFKC + 去空白/标点，用于宽松包含匹配。"""
+        return re.sub(r"[\s，。、,.;;：:（）()\[\]【】\"'“”\-–—_]+", "", unicodedata.normalize("NFKC", s))
+
+    corpus = _norm("\n".join(original_lines))
+
+    # 需要验证的字段映射：module_type → (key 路径, 取值函数)
+    def _verify_text(value) -> bool:
+        if not value or not isinstance(value, str):
+            return False
+        return _norm(value) in corpus
+
+    report: list[dict] = []
+    for module in modules:
+        module_type = module.get("module_type")
+        content = module.get("content")
+        if not isinstance(content, dict):
+            continue
+
+        checks: list[tuple[str, str]] = []
+        if module_type == "basic_info":
+            checks = [("name", content.get("name", "")), ("phone", content.get("phone", ""))]
+        elif module_type == "work_experience":
+            for item in content.get("items", []) or []:
+                if isinstance(item, dict):
+                    checks.extend(
+                        [
+                            ("company", item.get("company", "")),
+                            ("position", item.get("position", "")),
+                        ]
+                    )
+        elif module_type == "education":
+            for item in content.get("items", []) or []:
+                if isinstance(item, dict):
+                    checks.extend(
+                        [
+                            ("school", item.get("school", "")),
+                            ("major", item.get("major", "")),
+                        ]
+                    )
+
+        for field, value in checks:
+            if not value:
+                continue
+            report.append(
+                {
+                    "module_type": module_type,
+                    "field": field,
+                    "value": value,
+                    "provenance": "verified" if _verify_text(value) else "missing",
+                }
+            )
+    return report
 
 
 # ═══════════════════════════════════════════════════════════
@@ -281,12 +510,15 @@ async def parse_text_to_modules(
 
     from services.rag.pipeline import llm_generate
 
+    # A2: 行号索引（SmartResume 索引指针机制）——LLM 可引用行号而非重写长文本
+    indexed_text, original_lines = _index_lines(text)
+
     errors_history: list[str] = []
 
     for attempt in range(_MAX_RETRIES + 1):
         # 构建 prompt（重试时带错误反馈）
         error_feedback = _build_error_feedback(errors_history) if errors_history else None
-        user_prompt = _build_user_prompt(text, error_feedback)
+        user_prompt = _build_user_prompt(indexed_text, error_feedback)
 
         # 调 LLM
         try:
@@ -311,6 +543,18 @@ async def parse_text_to_modules(
         # 解析 JSON
         try:
             raw_modules = _extract_json_from_response(response)
+            # A2 深化: 规范化（日期/邮箱）→ 指针引用切片 → 校验
+            raw_modules = _normalize_modules(raw_modules)
+            raw_modules = _resolve_line_refs(raw_modules, original_lines)
+            # A2 深化: 字段级溯源验证（缺失字段记日志，供 E1 诊断展示）
+            provenance_report = verify_fields_in_original_text(raw_modules, original_lines)
+            missing = [r for r in provenance_report if r["provenance"] == "missing"]
+            if missing:
+                logger.warning(
+                    "解析字段未在原文中找到（%d 个）: %s",
+                    len(missing),
+                    [f"{r['module_type']}.{r['field']}" for r in missing],
+                )
         except (json.JSONDecodeError, ValueError) as e:
             errors_history.append(f"JSON 解析失败: {e}")
             if attempt < _MAX_RETRIES:
@@ -322,6 +566,16 @@ async def parse_text_to_modules(
         validated, errors = _validate_parsed_modules(raw_modules)
 
         if not errors:
+            if not validated:
+                # LLM 返回空数组 [] → 不是合法结果，视为失败回灌重试，
+                # 避免上层（materialize / parse-to-modules）把"失败"误当"成功空结果"。
+                errors_history.append("LLM 返回空数组，未解析出任何模块")
+                if attempt < _MAX_RETRIES:
+                    logger.warning(
+                        "Empty module list from LLM, retrying (attempt %d)", attempt + 1
+                    )
+                    continue
+                raise ValueError("未解析出任何模块（LLM 返回空数组）")
             # 全部校验通过
             logger.info(
                 "parse_text_to_modules succeeded: attempt=%d, modules=%d",

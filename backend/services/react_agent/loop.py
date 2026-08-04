@@ -35,6 +35,7 @@ from services.react_agent.tools import (
     get_tool_by_name,
     get_tools_for_agent,
 )
+from services.react_agent.tools.base import ToolFailed, ToolRetryError
 from services.token_quota import check_quota
 
 logger = logging.getLogger(__name__)
@@ -42,6 +43,9 @@ logger = logging.getLogger(__name__)
 # ── 常量 ──────────────────────────────────────────────────────
 MAX_ROUNDS = settings.REACT_MAX_TOOL_ROUNDS  # Spec A#6: 6 轮工具上限（config 可调）
 MAX_BAD_TOOL_RETRIES = 2
+# A3 契约化：per-tool 重试预算（借鉴 pydantic-ai _check_max_retries）——
+# 同一工具连续失败超限即终止本轮，成功一次即清零
+MAX_TOOL_RETRIES = 3
 AGENT_CONCURRENCY_LIMIT = 5
 
 # 中间轮用 JUDGE_MODEL（flash 快），最终轮用 CHAT_MODEL
@@ -233,7 +237,8 @@ async def react_loop(
             )
 
     # 5. ReAct 循环
-    bad_call_count = 0
+    # A3: per-tool 重试预算（同一工具连续失败计数，成功清零）替代全局连续计数
+    tool_retries: dict[str, int] = {}
     rounds = 0
     _llm_round_ms = 0.0
     _tool_exec_ms = 0.0
@@ -360,17 +365,25 @@ async def react_loop(
         # 工具执行完毕后推送累计 usage（含工具内部 LLM 消耗），让前端实时更新 token 计数
         await _emit({"type": "usage", "usage": dict(total_usage), "total": dict(total_usage)})
 
-        # 坏调用计数与强制收敛
+        # A3: per-tool 重试预算——同一工具连续失败超限即终止本轮（避免烧 token 反复重试同一错误）
+        # 借鉴 pydantic-ai：retries[tool_name] 记账 + _check_max_retries 超限终止
         if all_bad:
-            bad_call_count += 1
-            if bad_call_count >= MAX_BAD_TOOL_RETRIES:
-                logger.warning(
-                    "连续 %d 次坏 tool_call，强制收敛: user=%d, resume=%d",
-                    bad_call_count, user_id, resume_id,
-                )
+            exceeded = False
+            for tc in response.tool_calls:
+                tool_retries[tc.name] = tool_retries.get(tc.name, 0) + 1
+                if tool_retries[tc.name] >= MAX_TOOL_RETRIES:
+                    exceeded = True
+                    logger.warning(
+                        "工具 %s 连续失败 %d 次，终止本轮重试: user=%d, resume=%d",
+                        tc.name, tool_retries[tc.name], user_id, resume_id,
+                    )
+            if exceeded:
                 break
         else:
-            bad_call_count = 0
+            # 有工具成功 → 成功工具计数清零（失败工具保留计数继续累计）
+            for tc, (_result, is_error, _sources, _usage) in zip(response.tool_calls, results):
+                if not is_error:
+                    tool_retries[tc.name] = 0
 
     # 6. 强制收敛：无工具调用，用 CHAT_MODEL（流式：推理过程实时推给前端）
     messages = manage_l1_context(messages)
@@ -552,16 +565,28 @@ async def _execute_tool_call(
     except json.JSONDecodeError:
         return f"参数 JSON 解析失败: {tc.arguments}", True, [], {"prompt_tokens": 0, "completion_tokens": 0}
 
-    # 2. 查找工具
+    # 2. 查找工具（A3: 未知工具附可用列表，模型几乎必然自愈——借鉴 pydantic-ai _resolve_tool）
     tool_class = get_tool_by_name(tc.name)
     if tool_class is None:
-        return f"工具 '{tc.name}' 不存在", True, [], {"prompt_tokens": 0, "completion_tokens": 0}
+        available = ", ".join(sorted(t.name for t in get_tools_for_agent()))
+        return (
+            f"工具 '{tc.name}' 不存在。可用工具: {available}。请从列表中选择正确的工具。",
+            True, [], {"prompt_tokens": 0, "completion_tokens": 0},
+        )
 
     # 3. 实例化并执行（注入 emit 供工具内部 LLM 流式推送）
     tool = tool_class(db=db, user_id=user_id, emit=emit)
     try:
         result = await tool.execute(**args)
         return result, False, getattr(tool, "sources", []), getattr(tool, "last_usage", {"prompt_tokens": 0, "completion_tokens": 0})
+    except ToolRetryError as e:
+        # A3 契约化：可重试错误（参数格式等）→ 结构化错误文本回灌，累计坏调用
+        logger.warning("工具可重试失败: %s, args=%s, error=%s", tc.name, tc.arguments, e)
+        return f"[参数或状态错误] {e}", True, [], {"prompt_tokens": 0, "completion_tokens": 0}
+    except ToolFailed as e:
+        # A3 契约化：终端失败（业务确定性失败）→ 不累计坏调用，LLM 应换路径
+        logger.info("工具终端失败（不重试）: %s, error=%s", tc.name, e)
+        return f"⛔ {e}", False, [], {"prompt_tokens": 0, "completion_tokens": 0}
     except Exception as e:
         logger.warning("工具执行失败: %s, args=%s, error=%s", tc.name, tc.arguments, e)
         return f"工具执行失败: {e}", True, [], {"prompt_tokens": 0, "completion_tokens": 0}

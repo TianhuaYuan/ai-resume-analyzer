@@ -247,69 +247,68 @@ async def test_rewrite_query_tool_fallback():
 
 
 @pytest.mark.asyncio
-async def test_search_invalid_resume_id():
-    """search_knowledge_base：无效 resume_id → 错误。"""
+async def test_search_ownership_denied():
+    """search_knowledge_base：scope 越权 → 错误（T13 泛化后走 assert_user_owns_assets）。"""
+    from fastapi import HTTPException
     from mcp_server.tools.search import search_knowledge_base
 
     token = _current_user_id.set(1)
     try:
-        result = await search_knowledge_base(query="test", resume_id="abc")
-        data = json.loads(result[0].text)
-        assert "error" in data
-        assert "Invalid resume_id" in data["error"]
-    finally:
-        _current_user_id.reset(token)
-
-
-@pytest.mark.asyncio
-async def test_search_resume_not_found():
-    """search_knowledge_base：简历不存在 → 错误。"""
-    from mcp_server.tools.search import search_knowledge_base
-
-    token = _current_user_id.set(1)
-    try:
-        mock_db = AsyncMock()
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = None
-        mock_db.execute.return_value = mock_result
-
-        mock_cm = AsyncMock()
-        mock_cm.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_cm.__aexit__ = AsyncMock(return_value=False)
-
-        with patch("mcp_server.tools.search.AsyncSessionLocal", return_value=mock_cm):
-            result = await search_knowledge_base(query="test", resume_id="999")
+        with patch(
+            "mcp_server.tools.search.assert_user_owns_assets",
+            new_callable=AsyncMock,
+            side_effect=HTTPException(status_code=403, detail="ownership denied"),
+        ):
+            result = await search_knowledge_base(query="test", resume_id="abc")
             data = json.loads(result[0].text)
             assert "error" in data
-            assert "not found" in data["error"]
+            assert "ownership denied" in data["error"]
     finally:
         _current_user_id.reset(token)
 
 
 @pytest.mark.asyncio
-async def test_search_resume_not_ready():
-    """search_knowledge_base：简历未就绪 → 错误。"""
+async def test_search_empty_results():
+    """search_knowledge_base：检索无结果 → No matching content found。"""
     from mcp_server.tools.search import search_knowledge_base
 
     token = _current_user_id.set(1)
     try:
-        mock_resume = MagicMock()
-        mock_resume.status = "processing"
+        with patch(
+            "mcp_server.tools.search.assert_user_owns_assets",
+            new_callable=AsyncMock,
+            return_value={"resume": [1]},
+        ), patch(
+            "services.rag.retrieval.hybrid_search_corpus",
+            new_callable=AsyncMock,
+            return_value=[],
+        ):
+            result = await search_knowledge_base(query="test", resume_id="999")
+            data = json.loads(result[0].text)
+            assert "No matching content found" in data.get("message", "")
+    finally:
+        _current_user_id.reset(token)
 
-        mock_db = AsyncMock()
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = mock_resume
-        mock_db.execute.return_value = mock_result
 
-        mock_cm = AsyncMock()
-        mock_cm.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_cm.__aexit__ = AsyncMock(return_value=False)
+@pytest.mark.asyncio
+async def test_search_error_graceful():
+    """search_knowledge_base：检索异常 → Search failed（不抛）。"""
+    from mcp_server.tools.search import search_knowledge_base
 
-        with patch("mcp_server.tools.search.AsyncSessionLocal", return_value=mock_cm):
+    token = _current_user_id.set(1)
+    try:
+        with patch(
+            "mcp_server.tools.search.assert_user_owns_assets",
+            new_callable=AsyncMock,
+            return_value={"resume": [1]},
+        ), patch(
+            "services.rag.retrieval.hybrid_search_corpus",
+            new_callable=AsyncMock,
+            side_effect=Exception("search backend down"),
+        ):
             result = await search_knowledge_base(query="test", resume_id="1")
             data = json.loads(result[0].text)
             assert "error" in data
-            assert "not ready" in data["error"]
     finally:
         _current_user_id.reset(token)
 

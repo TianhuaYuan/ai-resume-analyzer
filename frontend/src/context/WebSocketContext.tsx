@@ -87,6 +87,20 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
           );
           break;
 
+        case "parse_progress":
+          // 上传简历解析进度（parsing → materializing → done），驱动卡片进度条
+          window.dispatchEvent(
+            new CustomEvent("resume:parse-progress", {
+              detail: {
+                resume_id: msg.resume_id,
+                stage: msg.stage,
+                percent: msg.percent,
+                message: msg.message,
+              },
+            })
+          );
+          break;
+
         default:
           break;
       }

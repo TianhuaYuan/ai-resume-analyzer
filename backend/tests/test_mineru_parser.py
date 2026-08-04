@@ -41,8 +41,9 @@ async def test_enabled_requires_token_and_setting():
         client = MinerUClient(token="abc")
         assert not client.enabled
 
-    with patch("services.mineru_parser.settings.MINERU_ENABLED", True):
-        # 开关打开但无 token
+    with patch("services.mineru_parser.settings.MINERU_ENABLED", True), \
+         patch("services.mineru_parser.settings.MINERU_TOKEN", ""):
+        # 开关打开但无 token（显式 token 为空，且环境 MINERU_TOKEN 也为空）
         client = MinerUClient(token="")
         assert not client.enabled
 

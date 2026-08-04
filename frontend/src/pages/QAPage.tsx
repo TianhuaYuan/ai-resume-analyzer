@@ -45,13 +45,10 @@ import {
   type ResumeModule,
   type ResumeStyle,
   type ModuleType,
-  type ModuleContent,
   type ResumeModuleInput,
 } from "../api/builder";
 import { A4PreviewPanel } from "../components/builder/A4PreviewPanel";
 import { ModuleCardEditor } from "../components/builder/ModuleCardEditor";
-import type { AIAction } from "../components/builder/ModuleCard";
-import { MODULE_ORDER } from "../components/builder/ModuleList";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { CompareSelectDialog } from "../components/CompareSelectDialog";
 import MarkdownRenderer from "../components/MarkdownRenderer";
@@ -192,8 +189,8 @@ function EmptyState({
           const isPrimary = !!card.primary;
           // 无简历时禁用需要简历的卡片，但"创建简历"卡片始终可点击
           const isCreateCard = card.label === "创建简历";
-          const needsResume = card.question && !card.navigate && !isCreateCard;
-          const disabled = asking || (needsResume && !hasResume);
+          const needsResume = Boolean(card.question) && !card.navigate && !isCreateCard;
+          const disabled = asking || Boolean(needsResume && !hasResume);
           return (
             <button
               key={card.label}
@@ -429,16 +426,14 @@ export default function QAPage() {
   const [showPreview, setShowPreview] = useState(false);
   const [previewModules, setPreviewModules] = useState<ResumeModule[]>([]);
   const [previewStyle, setPreviewStyle] = useState<ResumeStyle | null>(null);
-  // v2: 左侧面板切换（agent=聊天 / module=模块编辑）
-  const [leftPanel, setLeftPanel] = useState<"agent" | "module">("agent");
   const [editingModule, setEditingModule] = useState<string | null>(null);
   const [expandedType, setExpandedType] = useState<ModuleType | null>(null);
   const [previewKey, setPreviewKey] = useState(0);
   // v2: BuilderPage 迁移 — 编辑锁 + 保存 + 版本
   const [version, setVersion] = useState(0);
   const [saving, setSaving] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
-  const [lastSaveMode, setLastSaveMode] = useState<"draft" | "complete" | null>(null);
+  const [, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [, setLastSaveMode] = useState<"draft" | "complete" | null>(null);
   const [showVersionHistory, setShowVersionHistory] = useState(false);
   const [showPasteDialog, setShowPasteDialog] = useState(false);
   const [showAtsDialog, setShowAtsDialog] = useState(false);

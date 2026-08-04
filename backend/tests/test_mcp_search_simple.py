@@ -13,29 +13,36 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 def test_search_returns_text_field():
     """search_knowledge_base 返回结果必须包含 'text' 字段。"""
-    from unittest.mock import patch, MagicMock, AsyncMock
+    from unittest.mock import patch, AsyncMock
 
     mock_chunks = [
         {"text": "测试简历内容", "chunk_index": 0, "section": "工作经历", "score": 0.9}
     ]
 
-    mock_resume = MagicMock()
-    mock_resume.status = "ready"
-    mock_result = MagicMock()
-    mock_result.scalar_one_or_none.return_value = mock_resume
-    mock_session = AsyncMock()
-    mock_session.__aenter__.return_value.execute.return_value = mock_result
+    from mcp_server.tools.search import search_knowledge_base
+    from mcp_server.server import _current_user_id
+    import asyncio
+
+    async def _run():
+        token = _current_user_id.set(1)
+        try:
+            return await search_knowledge_base(query="测试", resume_id="1", top_k=1)
+        finally:
+            _current_user_id.reset(token)
 
     with (
-        patch("mcp_server.tools.search.AsyncSessionLocal", return_value=mock_session),
-        patch("services.rag.retrieval.hybrid_search", return_value=mock_chunks),
-        patch("services.rag.retrieval.rerank", return_value=mock_chunks),
+        patch(
+            "mcp_server.tools.search.assert_user_owns_assets",
+            new_callable=AsyncMock,
+            return_value={"resume": [1]},
+        ),
+        patch(
+            "services.rag.retrieval.hybrid_search_corpus",
+            new_callable=AsyncMock,
+            return_value=mock_chunks,
+        ),
     ):
-        from mcp_server.tools.search import search_knowledge_base
-        from mcp_server.server import _current_user_id
-        _current_user_id.set(1)
-        import asyncio
-        result = asyncio.run(search_knowledge_base(query="测试", resume_id="1", top_k=1))
+        result = asyncio.run(_run())
 
     assert len(result) == 1
     data = json.loads(result[0].text)

@@ -64,7 +64,7 @@ class TestParseReflectionResponse:
 
     def test_valid_json(self):
         raw = '{"reflection": "答案不完整", "missing_info": ["FastAPI经验"], "supplement_queries": ["FastAPI项目经验"]}'
-        reflection, missing, queries = _parse_reflection_response(raw)
+        reflection, missing, queries, _ = _parse_reflection_response(raw)
         assert reflection == "答案不完整"
         assert missing == ["FastAPI经验"]
         assert queries == ["FastAPI项目经验"]
@@ -72,12 +72,12 @@ class TestParseReflectionResponse:
     def test_multiple_items(self):
         """多个缺失信息和查询。"""
         raw = '{"reflection": "多个缺失", "missing_info": ["技能1", "技能2", "技能3"], "supplement_queries": ["查询1", "查询2"]}'
-        reflection, missing, queries = _parse_reflection_response(raw)
+        reflection, missing, queries, _ = _parse_reflection_response(raw)
         assert len(missing) == 3
         assert len(queries) == 2
 
     def test_empty_string(self):
-        reflection, missing, queries = _parse_reflection_response("")
+        reflection, missing, queries, _ = _parse_reflection_response("")
         assert reflection == "解析失败，无法分析"
         assert missing == ["无法识别缺失信息"]
         assert queries == []
@@ -85,14 +85,14 @@ class TestParseReflectionResponse:
     def test_invalid_json_fallback(self):
         """非 JSON 格式应降级提取。"""
         raw = 'some text "reflection": "测试反思" "missing_info": ["缺失1"] "supplement_queries": ["查询1"] other text'
-        reflection, missing, queries = _parse_reflection_response(raw)
+        reflection, missing, queries, _ = _parse_reflection_response(raw)
         assert reflection == "测试反思"
         assert "缺失1" in missing
         assert "查询1" in queries
 
     def test_malformed_json(self):
         """损坏的 JSON 应降级。"""
-        reflection, missing, queries = _parse_reflection_response("{broken json")
+        reflection, missing, queries, _ = _parse_reflection_response("{broken json")
         assert reflection == "解析失败，无法分析"
         assert isinstance(missing, list)
         assert isinstance(queries, list)
@@ -103,13 +103,13 @@ class TestParseReflectionResponse:
 
         queries = [f"查询{i}" for i in range(10)]
         raw = json.dumps({"reflection": "test", "missing_info": [], "supplement_queries": queries})
-        _, _, result_queries = _parse_reflection_response(raw)
+        _, _, result_queries, _ = _parse_reflection_response(raw)
         assert len(result_queries) == _MAX_SUPPLEMENT_QUERIES
 
     def test_float_values(self):
         """浮点数应正确处理。"""
         raw = '{"reflection": 123, "missing_info": [], "supplement_queries": []}'
-        reflection, _, _ = _parse_reflection_response(raw)
+        reflection, _, _, _ = _parse_reflection_response(raw)
         assert reflection == "123"
 
 

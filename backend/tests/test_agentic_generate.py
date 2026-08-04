@@ -265,7 +265,7 @@ class TestGenerateNode:
         state = _make_state(question="他", rewritten_query="候选人的技能")
         with (
             patch(
-                "services.agentic_rag.generate.build_prompt",
+                "services.agentic_rag.generate._build_generate_prompt",
                 return_value={"system": "s", "user": "u"},
             ) as mock_build,
             patch(
@@ -276,7 +276,7 @@ class TestGenerateNode:
         ):
             await generate_node(state)
 
-        # build_prompt 应收到 rewritten_query
+        # _build_generate_prompt 应收到 rewritten_query
         mock_build.assert_called_once()
         call_args = mock_build.call_args
         assert call_args[0][1] == "候选人的技能"  # 第二个参数是 query

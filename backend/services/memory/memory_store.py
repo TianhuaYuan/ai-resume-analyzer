@@ -27,6 +27,7 @@ MEM_IMPORTANCE = "importance"
 MEM_CREATED_AT = "created_at"
 MEM_LAST_ACCESSED = "last_accessed_at"
 MEM_TTL = "ttl"
+MEM_EXPIRED = "expired"  # A3: 失效标记（true=过期/被推翻，默认召回隐藏）
 
 # 默认记忆层级：L4 全部归 episodic（原始情节），L3 画像为压缩后的 semantic
 DEFAULT_TIER = "episodic"
@@ -96,8 +97,12 @@ async def recall_memory(
     query: str,
     top_k: int = 5,
     threshold: float = DEFAULT_RECALL_THRESHOLD,
+    show_expired: bool = False,
 ) -> list[dict]:
     """按语义召回用户记忆片段（按用户隔离 + 分数阈值过滤）。
+
+    A3 失效不删除（借鉴 mem0 expiration 隐藏 + graphiti invalid_at 保留历史）：
+    默认过滤 expired 标记的记忆；show_expired=True 可见全部（审计/回溯）。
 
     Returns:
         ``[{memory_id, text, score, metadata}, ...]``，按相似度降序。
@@ -107,15 +112,32 @@ async def recall_memory(
     out: list[dict] = []
     for item in items:
         if item["score"] >= threshold:
+            meta = item["metadata"] or {}
+            if not show_expired and meta.get(MEM_EXPIRED) is True:
+                continue  # 失效记忆默认隐藏（保留历史，不删除）
             out.append(
                 {
                     "memory_id": item["id"],
                     "text": item["text"],
                     "score": item["score"],
-                    "metadata": item["metadata"],
+                    "metadata": meta,
                 }
             )
     return out
+
+
+async def expire_memory(user_id: int, memory_id: str) -> None:
+    """A3: 标记记忆失效（失效不删除，保留历史回溯——对齐 graphiti invalid_at）。
+
+    与 delete_memory 的区别：expired 仅隐藏于默认召回，数据保留；
+    同内容重新保存（save_memory hash 覆盖）会自动复活。
+    """
+    await get_vector_store().update_metadata(
+        _collection(user_id),
+        ids=[memory_id],
+        metadatas=[{MEM_EXPIRED: True}],
+    )
+    logger.info("L4 记忆标记失效: user=%d id=%s", user_id, memory_id)
 
 
 async def delete_memory(user_id: int, memory_id: str) -> None:

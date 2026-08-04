@@ -173,3 +173,17 @@ async def release_index_lock(
     return await _release_lock_key(
         f"{INDEX_LOCK_PREFIX}{user_id}:{asset_type}:{asset_id}", lock_id
     )
+
+
+# ─────────────────────────────────────────────────────────────
+# 周期任务分布式锁（防止多实例重复执行同一周期任务）
+# ─────────────────────────────────────────────────────────────
+
+async def acquire_periodic_lock(name: str, ttl_seconds: int) -> Optional[str]:
+    """获取周期任务分布式锁。Redis 不可用时降级返回假锁 ID（单实例放行）。"""
+    return await _acquire_lock_key(f"periodic:{name}", ttl_seconds)
+
+
+async def release_periodic_lock(name: str, lock_id: str) -> bool:
+    """释放周期任务分布式锁。"""
+    return await _release_lock_key(f"periodic:{name}", lock_id)

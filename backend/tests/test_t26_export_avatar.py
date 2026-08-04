@@ -8,6 +8,7 @@
 """
 
 import io
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -245,7 +246,8 @@ class TestExportPdf:
         # Mock WeasyPrint
         mock_html_class = MagicMock()
         mock_instance = MagicMock()
-        mock_instance.write_pdf.return_value = b"%PDF-1.4 fake pdf content"
+        # 代码从 pdf_buffer.getvalue() 读结果，mock 需真实写入 buffer
+        mock_instance.write_pdf.side_effect = lambda buf: buf.write(b"%PDF-1.4 fake pdf content")
         mock_html_class.return_value = mock_instance
 
         with patch("services.resume_export._get_weasyprint", return_value=mock_html_class):

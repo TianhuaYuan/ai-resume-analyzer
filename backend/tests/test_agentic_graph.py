@@ -216,7 +216,7 @@ class TestGraphEndToEnd:
         # mock rewrite 返回原问题，route 返回 direct_answer
         with (
             patch(
-                "services.agentic_rag.rewrite.with_retry",
+                "services.agentic_rag.rewrite.rewrite_query",
                 new_callable=AsyncMock,
                 return_value="你好",
             ),
@@ -263,7 +263,7 @@ class TestGraphEndToEnd:
 
         with (
             patch(
-                "services.agentic_rag.rewrite.with_retry",
+                "services.agentic_rag.rewrite.rewrite_query",
                 new_callable=AsyncMock,
                 return_value="工作经历",
             ),
@@ -273,7 +273,7 @@ class TestGraphEndToEnd:
                 return_value="search",
             ),
             patch(
-                "services.agentic_rag.search.hybrid_search",
+                "services.agentic_rag.search.hybrid_search_corpus",
                 new_callable=AsyncMock,
                 return_value=mock_chunks,
             ),
@@ -283,7 +283,7 @@ class TestGraphEndToEnd:
                 return_value=mock_reranked,
             ),
             patch(
-                "services.agentic_rag.generate.build_prompt",
+                "services.agentic_rag.generate._build_generate_prompt",
                 return_value={"system": "sys", "user": "usr"},
             ),
             patch("services.agentic_rag.generate.reject_if_low_score", return_value=False),
@@ -305,6 +305,7 @@ class TestGraphEndToEnd:
                 {
                     "question": "工作经历是什么？",
                     "resume_id": 1,
+                    "user_id": 1,
                     "rewritten_query": "",
                     "route_decision": "",
                     "chunks": [],
@@ -328,7 +329,7 @@ class TestGraphEndToEnd:
                 config={"configurable": {"thread_id": "test-search-pass"}},
             )
 
-        assert result["route_decision"] == "search"
+        assert result["route_decision"] == "fast"  # 短问题走 T10 fast，图内仍路由到 search 节点
         assert result["search_round"] >= 1
         assert result["final_answer"] == mock_answer
         assert len(result["final_sources"]) > 0
@@ -346,10 +347,10 @@ class TestGraphEndToEnd:
         mock_answer = "答案内容"
         mock_reflection = '{"reflection": "缺少项目经验", "missing_info": ["项目经历"], "supplement_queries": ["项目开发经验"]}'
 
-        # with_retry 调用序列：rewrite, generate, eval(低分), reflection, generate(第2轮), eval(高分)
+        # with_retry 调用序列：generate round1, eval(低分), generate round2, eval(高分)
         with (
             patch(
-                "services.agentic_rag.rewrite.with_retry",
+                "services.agentic_rag.rewrite.rewrite_query",
                 new_callable=AsyncMock,
                 return_value="查询",
             ),
@@ -359,7 +360,7 @@ class TestGraphEndToEnd:
                 return_value="search",
             ),
             patch(
-                "services.agentic_rag.search.hybrid_search",
+                "services.agentic_rag.search.hybrid_search_corpus",
                 new_callable=AsyncMock,
                 return_value=mock_chunks,
             ),
@@ -369,7 +370,7 @@ class TestGraphEndToEnd:
                 return_value=mock_reranked,
             ),
             patch(
-                "services.agentic_rag.generate.build_prompt",
+                "services.agentic_rag.generate._build_generate_prompt",
                 return_value={"system": "sys", "user": "usr"},
             ),
             patch("services.agentic_rag.generate.reject_if_low_score", return_value=False),
@@ -384,16 +385,21 @@ class TestGraphEndToEnd:
                 side_effect=[
                     mock_answer,  # generate round 1
                     '{"completeness": 3, "accuracy": 5, "source_credibility": 3, "feedback": "不够详细"}',  # eval round 1 → should_retry
-                    mock_reflection,  # reflection
                     mock_answer,  # generate round 2
                     '{"completeness": 8, "accuracy": 8, "source_credibility": 7, "feedback": "回答准确"}',  # eval round 2 → pass
                 ],
+            ),
+            patch(
+                "services.agentic_rag.reflection.with_retry",
+                new_callable=AsyncMock,
+                return_value=mock_reflection,
             ),
         ):
             result = await graph.ainvoke(
                 {
                     "question": "工作经历？",
                     "resume_id": 1,
+                    "user_id": 1,
                     "rewritten_query": "",
                     "route_decision": "",
                     "chunks": [],
@@ -430,7 +436,7 @@ class TestGraphEndToEnd:
 
         with (
             patch(
-                "services.agentic_rag.rewrite.with_retry",
+                "services.agentic_rag.rewrite.rewrite_query",
                 new_callable=AsyncMock,
                 return_value="你好",
             ),

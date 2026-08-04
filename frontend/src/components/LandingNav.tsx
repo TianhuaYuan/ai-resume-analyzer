@@ -28,13 +28,9 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { key: "ai", label: "AI简历", route: "/qa", requireAuth: true },
-  { key: "templates", label: "简历模板", route: "/templates" },
-  { key: "examples", label: "简历范文", route: "/examples" },
-  { key: "tips", label: "求职攻略", route: "/tips" },
   { key: "campus", label: "校招信息", route: "/campus" },
   { key: "social", label: "社招信息", route: "/social" },
   { key: "feedback", label: "用户反馈", route: "/feedback" },
-  { key: "updates", label: "产品更新", route: "/product-updates" },
 ];
 
 // ── 顶部导航 ──

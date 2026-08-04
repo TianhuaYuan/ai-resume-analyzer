@@ -39,13 +39,11 @@ function formatDate(dateStr: string | null | undefined): string {
   });
 }
 
-/** 由 job_type / source 推导批次标签（校招=campus、内推=referral） */
+/** 由 job_type 推导批次标签（校招=campus、实习=intern，其余=社招） */
 function deriveTag(job: MarketJob): string {
   if (job.job_type === "campus") return "校招";
-  if (job.source === "referral") return "内推";
   if (job.job_type === "intern") return "实习";
-  if (job.job_type) return String(job.job_type);
-  return "校招";
+  return "社招";
 }
 
 // ── 行业 → 适合人群映射 ──
@@ -115,6 +113,22 @@ export default function CampusDetailPage() {
   const [allItems, setAllItems] = useState<MarketJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [creatingResume, setCreatingResume] = useState(false);
+
+  // D1: 断链 CTA 修复——真实创建简历并进入编辑器（复用简历管理页的创建 API）
+  const handleCreateResume = async () => {
+    if (creatingResume) return;
+    setCreatingResume(true);
+    try {
+      const { createBuilderResume } = await import("../api/builder");
+      const resume = await createBuilderResume({ filename: "未命名简历" });
+      navigate(`/resumes/${resume.id}/edit`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "创建简历失败，请稍后再试");
+    } finally {
+      setCreatingResume(false);
+    }
+  };
 
   // 获取当前岗位详情
   useEffect(() => {
@@ -317,19 +331,19 @@ export default function CampusDetailPage() {
                 </span>
               </div>
 
-              {/* 投递方式（链接可点击 + 内推码） */}
+              {/* 投递方式（链接可点击） */}
               <div className="mb-2">
                 <h2 className="text-sm font-bold text-gray-800 mb-3 pb-2 border-b border-gray-100">
                   投递方式
                 </h2>
-                {record.payload?.apply_url ? (
+                {record.apply_url ? (
                   <a
-                    href={record.payload.apply_url}
+                    href={record.apply_url}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-sm text-brand hover:underline break-all"
                   >
-                    {record.payload.apply_url}
+                    {record.apply_url}
                   </a>
                 ) : (
                   <span className="text-sm text-gray-400">暂无投递方式</span>
@@ -440,15 +454,16 @@ export default function CampusDetailPage() {
               </div>
             </div>
 
-            {/* CTA 按钮 */}
+            {/* CTA 按钮（D1: 修复断链——/resumes/new 路由不存在，改为真实创建流程） */}
             <div className="space-y-3">
               <button
-                onClick={() => navigate("/resumes/new")}
+                onClick={handleCreateResume}
+                disabled={creatingResume}
                 className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-brand text-white text-sm font-semibold
                   hover:bg-[#0077ed] hover:scale-[1.02] active:scale-[0.98]
-                  transition-all duration-300 cursor-pointer"
+                  transition-all duration-300 cursor-pointer disabled:opacity-60 disabled:cursor-wait"
               >
-                创建简历并投递
+                {creatingResume ? "正在创建..." : "创建简历并投递"}
               </button>
               <button
                 onClick={() => navigate("/qa")}

@@ -173,45 +173,44 @@ class TestRouteNode:
         mock_classify.assert_not_called()  # 跳过 LLM
 
     @pytest.mark.asyncio
-    async def test_professional_question_routes_to_search(self):
-        """专业问题 → LLM 返回 search。"""
-        state = _make_state("他的工作经历是什么")
-        state["rewritten_query"] = "该候选人的工作经历有哪些"
+    async def test_long_professional_question_routes_to_deep(self):
+        """长专业问题（>20 字）→ T10 路由 deep（多路检索 + reflexion）。"""
+        state = _make_state("请详细介绍该候选人的工作经历、项目经验和技能特长")
+        state["rewritten_query"] = "请详细介绍该候选人的工作经历、项目经验和技能特长"
         with patch(
             "services.agentic_rag.rewrite._classify_route",
             new_callable=AsyncMock,
-            return_value="search",
-        ):
+        ) as mock_classify:
             result = await route_node(state)
-
-        assert result["route_decision"] == "search"
+        assert result["route_decision"] == "deep"
+        mock_classify.assert_not_called()  # route_node 为启发式路由，不调 LLM 分类
 
     @pytest.mark.asyncio
-    async def test_chitchat_routes_to_direct_answer(self):
-        """闲聊 → LLM 返回 direct_answer。"""
+    async def test_short_question_routes_to_fast(self):
+        """短问题（≤20 字，非问候）→ T10 路由 fast（单路快路径）。"""
         state = _make_state("今天天气怎么样")
         state["rewritten_query"] = "今天天气怎么样"
         with patch(
             "services.agentic_rag.rewrite._classify_route",
             new_callable=AsyncMock,
-            return_value="direct_answer",
-        ):
+        ) as mock_classify:
             result = await route_node(state)
-
-        assert result["route_decision"] == "direct_answer"
+        assert result["route_decision"] == "fast"
+        mock_classify.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_route_node_invalid_llm_value_defaults_search(self):
-        """route_node 经 _classify_route 收到非法 LLM 输出 → 最终 route_decision=search。"""
-        state = _make_state("模糊问题")
-        state["rewritten_query"] = "模糊问题"
+    async def test_route_node_ignores_llm_classifier(self):
+        """route_node 为启发式路由，不再调用 _classify_route（LLM 分类已停用）。"""
+        state = _make_state("请详细介绍该候选人的工作经历、项目经验和技能特长")
+        state["rewritten_query"] = "请详细介绍该候选人的工作经历、项目经验和技能特长"
         with patch(
-            "services.agentic_rag.rewrite.llm_generate",
+            "services.agentic_rag.rewrite._classify_route",
             new_callable=AsyncMock,
-            return_value="不知道",
-        ):
+            return_value="direct_answer",  # 即使 LLM 分类器返回 direct_answer 也被忽略
+        ) as mock_classify:
             result = await route_node(state)
-        assert result["route_decision"] == "search"
+        assert result["route_decision"] == "deep"
+        mock_classify.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_classify_route_invalid_value_defaults_search(self):
@@ -240,16 +239,14 @@ class TestRouteNode:
 
     @pytest.mark.asyncio
     async def test_uses_rewritten_query_over_original(self):
-        """route_node 优先使用 rewritten_query 而非 question。"""
-        state = _make_state("他")  # 原问题含指代
-        state["rewritten_query"] = "候选人的教育背景"  # 改写后明确
-        with patch.object(settings, "JUDGE_ENABLED", True), \
-             patch(
+        """route_node 用 rewritten_query 判定路由：原问题短 → 改写后变长 → deep。"""
+        state = _make_state("他")  # 原问题短，含指代
+        state["rewritten_query"] = "请详细介绍该候选人的工作经历、项目经验和技能特长"  # 改写后变长
+        with patch(
             "services.agentic_rag.rewrite._classify_route",
             new_callable=AsyncMock,
-            return_value="search",
-        ) as mock_cls:
-            await route_node(state)
+        ):
+            result = await route_node(state)
 
-        # 传入 _classify_route 的应该是改写后的查询
-        mock_cls.assert_called_once_with("候选人的教育背景", model=settings.JUDGE_MODEL)
+        # 长度判定应基于改写后的查询（>20 字 → deep），而非原问题
+        assert result["route_decision"] == "deep"

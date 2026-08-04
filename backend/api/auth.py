@@ -328,6 +328,24 @@ async def get_me(current_user: User = Depends(get_current_user)):
     return resp
 
 
+@router.get("/export-data")
+async def export_user_data_endpoint(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """C3: 导出当前用户全量私有数据（JSON）。
+
+    信任合规——用户有权带走自己的数据。返回账户/简历(含模块)/问答历史/
+    求职跟踪/知识资产/意见反馈等按 user_id 归属的全部数据。
+
+    错误码：
+    - 401 未登录
+    """
+    from services.data_export_service import export_user_data
+
+    return await export_user_data(db, current_user.id)
+
+
 @router.delete("/account", status_code=204)
 async def delete_account(
     request: Request,

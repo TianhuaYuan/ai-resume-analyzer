@@ -18,24 +18,12 @@ from unittest.mock import patch
 
 
 class TestCspHeaders:
-    """CSP 安全头补充。"""
+    """CSP 安全头 — P2-5 已迁移到 nginx（frontend/nginx.conf），后端不再下发。"""
 
-    def test_csp_header_present(self, client):
-        """任意 API 响应应包含 Content-Security-Policy 头。"""
+    def test_csp_migrated_to_nginx(self, client):
+        """后端 API 响应不应再下发 Content-Security-Policy 头（由 nginx 提供）。"""
         resp = client.get("/")
-        assert "content-security-policy" in resp.headers
-
-    def test_csp_default_src_none(self, client):
-        """CSP 应包含 default-src 'none'（API 不加载外部资源）。"""
-        resp = client.get("/")
-        csp = resp.headers.get("content-security-policy", "")
-        assert "default-src 'none'" in csp
-
-    def test_csp_frame_ancestors_none(self, client):
-        """CSP 应包含 frame-ancestors 'none'（禁止被嵌入 iframe）。"""
-        resp = client.get("/")
-        csp = resp.headers.get("content-security-policy", "")
-        assert "frame-ancestors 'none'" in csp
+        assert "content-security-policy" not in resp.headers
 
 
 # ═══════════════════════════════════════════════════════════

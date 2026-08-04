@@ -5,7 +5,7 @@ MCP 集成测试：验证 MCP Server / Client / Transport 的端到端集成。
   - MCP Server 启动与连接
   - Tool 调用（search, rerank, generate）经 HTTP 传输
   - Resource 读取（resume_list, qa_history）经 HTTP 传输
-  - Agent（mcp_nodes）通过 MCP Client 调用工具
+  - Agent 通过 MCP Client 调用工具
   - 降级场景（MCP 连接失败时的 graceful fallback）
 
 运行: python -m pytest tests/test_mcp_integration.py -v
@@ -179,16 +179,20 @@ async def test_rewrite_query_tool_integration():
 
 @pytest.mark.asyncio
 async def test_search_knowledge_base_tool_integration():
-    """search_knowledge_base 工具：参数校验 + 归属检查集成。"""
+    """search_knowledge_base 工具：越权归属检查集成（T13 泛化后走 assert_user_owns_assets）。"""
+    from fastapi import HTTPException
     from mcp_server.tools.search import search_knowledge_base
 
     token = _current_user_id.set(1)
     try:
-        # 无效 resume_id
-        result = await search_knowledge_base(query="test", resume_id="abc")
-        data = json.loads(result[0].text)
-        assert "error" in data
-        assert "Invalid resume_id" in data["error"]
+        with patch(
+            "mcp_server.tools.search.assert_user_owns_assets",
+            new_callable=AsyncMock,
+            side_effect=HTTPException(status_code=403, detail="ownership denied"),
+        ):
+            result = await search_knowledge_base(query="test", resume_id="abc")
+            data = json.loads(result[0].text)
+            assert "error" in data
     finally:
         _current_user_id.reset(token)
 
@@ -535,114 +539,6 @@ async def test_mcp_client_connection_failure_graceful():
         await client.call_tool("test_tool", {})
 
 
-@pytest.mark.asyncio
-async def test_mcp_search_node_graceful_on_client_error():
-    """mcp_search_node：MCP Client 异常 → 返回空 chunks（graceful）。"""
-    from services.agentic_rag.mcp_nodes import mcp_search_node
-    from services.agentic_rag.state import AgenticRAGState
-    from mcp_client.client import MCPClientError
-
-    with patch(
-        "services.agentic_rag.mcp_nodes.mcp_search",
-        new_callable=AsyncMock,
-        side_effect=MCPClientError("Connection refused"),
-    ):
-        state: AgenticRAGState = {
-            "question": "工作经历？",
-            "resume_id": 1,
-            "rewritten_query": "工作经历",
-            "route_decision": "search",
-            "chunks": [],
-            "search_round": 0,
-            "answer": "",
-            "sources": [],
-            "eval_score": 0.0,
-            "eval_feedback": "",
-            "should_retry": False,
-            "final_answer": "",
-            "final_sources": [],
-            "trace": {},
-        }
-        # mcp_search 捕获了 MCPClientError，返回空列表，节点应正常处理
-        with patch(
-            "services.agentic_rag.mcp_nodes.mcp_search",
-            new_callable=AsyncMock,
-            return_value=[],
-        ):
-            result = await mcp_search_node(state)
-
-        assert result["chunks"] == []
-        assert result["search_round"] == 1
-
-
-@pytest.mark.asyncio
-async def test_mcp_generate_node_graceful_on_client_error():
-    """mcp_generate_node：MCP Client 异常 → 返回降级答案。"""
-    from services.agentic_rag.mcp_nodes import mcp_generate_node
-    from services.agentic_rag.state import AgenticRAGState
-
-    with patch(
-        "services.agentic_rag.mcp_nodes.mcp_generate",
-        new_callable=AsyncMock,
-        return_value={"answer": "服务暂时不可用，请稍后重试。", "sources": [], "rejected": True},
-    ):
-        state: AgenticRAGState = {
-            "question": "工作经历？",
-            "resume_id": 1,
-            "rewritten_query": "工作经历",
-            "route_decision": "search",
-            "chunks": [{"text": "内容", "rerank_score": 0.9}],
-            "search_round": 1,
-            "answer": "",
-            "sources": [],
-            "eval_score": 0.0,
-            "eval_feedback": "",
-            "should_retry": False,
-            "final_answer": "",
-            "final_sources": [],
-            "trace": {},
-        }
-        result = await mcp_generate_node(state)
-
-    assert result["trace"]["generate"]["rejected"] is True
-
-
-@pytest.mark.asyncio
-async def test_mcp_rerank_node_graceful_on_error():
-    """mcp_rerank_node：MCP 错误 → 降级保持原始顺序。"""
-    from services.agentic_rag.mcp_nodes import mcp_rerank_node
-    from services.agentic_rag.state import AgenticRAGState
-
-    with patch(
-        "services.agentic_rag.mcp_nodes.mcp_rerank",
-        new_callable=AsyncMock,
-        return_value={"error": "Rerank failed"},
-    ):
-        state: AgenticRAGState = {
-            "question": "工作经历？",
-            "resume_id": 1,
-            "rewritten_query": "工作经历",
-            "route_decision": "search",
-            "chunks": [
-                {"text": "a", "section": "A"},
-                {"text": "b", "section": "B"},
-                {"text": "c", "section": "C"},
-            ],
-            "search_round": 1,
-            "answer": "",
-            "sources": [],
-            "eval_score": 0.0,
-            "eval_feedback": "",
-            "should_retry": False,
-            "final_answer": "",
-            "final_sources": [],
-            "trace": {},
-        }
-        result = await mcp_rerank_node(state)
-
-    # 降级：保持原始顺序，截断到 top_k
-    assert len(result["chunks"]) <= 5
-    assert all("rerank_score" in c for c in result["chunks"])
 
 
 @pytest.mark.asyncio
@@ -690,129 +586,6 @@ async def test_mcp_tools_generate_client_error_fallback():
     assert "不可用" in result["answer"]
 
 
-# ── MCP Graph 与 Server 集成 ─────────────────────────────────
-
-
-@pytest.mark.asyncio
-async def test_mcp_graph_end_to_end_search_path():
-    """MCP Graph 端到端：search → rerank → generate → evaluate → output。"""
-    from services.agentic_rag.mcp_graph import create_mcp_agentic_rag_graph
-
-    graph = create_mcp_agentic_rag_graph()
-
-    mock_search = [
-        {"text": "工作经历", "chunk_index": 0, "section": "工作经历", "score": 0.9},
-    ]
-    mock_rerank = [
-        {"text": "工作经历", "chunk_index": 0, "section": "工作经历", "rerank_score": 0.95},
-    ]
-    mock_generate = {
-        "answer": "候选人有3年工作经验。",
-        "sources": [
-            {"chunk_index": 0, "text": "工作经历", "section": "工作经历", "rerank_score": 0.95}
-        ],
-        "rejected": False,
-    }
-
-    with (
-        patch(
-            "services.agentic_rag.rewrite.with_retry",
-            new_callable=AsyncMock,
-            return_value="工作经历",
-        ),
-        patch(
-            "services.agentic_rag.rewrite._classify_route",
-            new_callable=AsyncMock,
-            return_value="search",
-        ),
-        patch(
-            "services.agentic_rag.mcp_nodes.mcp_search",
-            new_callable=AsyncMock,
-            return_value=mock_search,
-        ),
-        patch(
-            "services.agentic_rag.mcp_nodes.mcp_rerank",
-            new_callable=AsyncMock,
-            return_value=mock_rerank,
-        ),
-        patch(
-            "services.agentic_rag.mcp_nodes.mcp_generate",
-            new_callable=AsyncMock,
-            return_value=mock_generate,
-        ),
-        patch(
-            "services.agentic_rag.generate.with_retry",
-            new_callable=AsyncMock,
-            return_value='{"completeness": 8, "accuracy": 8, "source_credibility": 8, "feedback": "准确"}',
-        ),
-    ):
-        result = await graph.ainvoke(
-            {
-                "question": "工作经历是什么？",
-                "resume_id": 1,
-                "rewritten_query": "",
-                "route_decision": "",
-                "chunks": [],
-                "search_round": 0,
-                "answer": "",
-                "sources": [],
-                "eval_score": 0.0,
-                "eval_feedback": "",
-                "should_retry": False,
-                "final_answer": "",
-                "final_sources": [],
-                "trace": {},
-            },
-            config={"configurable": {"thread_id": "test-integration-e2e"}},
-        )
-
-    assert result["route_decision"] == "search"
-    assert result["final_answer"] == "候选人有3年工作经验。"
-    assert len(result["final_sources"]) > 0
-    assert result["trace"]["search"]["method"] == "mcp"
-    assert result["trace"]["generate"]["method"] == "mcp"
-
-
-@pytest.mark.asyncio
-async def test_mcp_graph_end_to_end_direct_path():
-    """MCP Graph 端到端：问候 → direct_answer → output。"""
-    from services.agentic_rag.mcp_graph import create_mcp_agentic_rag_graph
-
-    graph = create_mcp_agentic_rag_graph()
-
-    with (
-        patch(
-            "services.agentic_rag.rewrite.with_retry", new_callable=AsyncMock, return_value="你好"
-        ),
-        patch(
-            "services.agentic_rag.rewrite._classify_route",
-            new_callable=AsyncMock,
-            return_value="direct_answer",
-        ),
-    ):
-        result = await graph.ainvoke(
-            {
-                "question": "你好",
-                "resume_id": 1,
-                "rewritten_query": "",
-                "route_decision": "",
-                "chunks": [],
-                "search_round": 0,
-                "answer": "",
-                "sources": [],
-                "eval_score": 0.0,
-                "eval_feedback": "",
-                "should_retry": False,
-                "final_answer": "",
-                "final_sources": [],
-                "trace": {},
-            },
-            config={"configurable": {"thread_id": "test-integration-direct"}},
-        )
-
-    assert result["route_decision"] == "direct_answer"
-    assert result["final_answer"] != ""
-    assert "direct_answer" in result["trace"]
 
 
 # ── HTTP 端点级集成测试 ──────────────────────────────────────
@@ -972,24 +745,20 @@ class TestMCPHTTPEndpoint:
 
     @pytest.mark.asyncio
     async def test_mcp_asgi_search_ownership_check(self):
-        """MCP Tool：search_knowledge_base 归属校验。"""
-        from unittest.mock import AsyncMock, MagicMock, patch
+        """MCP Tool：search_knowledge_base 归属校验（越权 → 错误）。"""
+        from fastapi import HTTPException
+        from unittest.mock import AsyncMock, patch
 
         from mcp_server.server import _current_user_id
         from mcp_server.tools.search import search_knowledge_base
 
-        mock_db = AsyncMock()
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = None
-        mock_db.execute.return_value = mock_result
-
-        mock_cm = AsyncMock()
-        mock_cm.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_cm.__aexit__ = AsyncMock(return_value=False)
-
         token = _current_user_id.set(1)
         try:
-            with patch("mcp_server.tools.search.AsyncSessionLocal", return_value=mock_cm):
+            with patch(
+                "mcp_server.tools.search.assert_user_owns_assets",
+                new_callable=AsyncMock,
+                side_effect=HTTPException(status_code=403, detail="ownership denied"),
+            ):
                 result = await search_knowledge_base(query="test", resume_id="99999")
                 data = json.loads(result[0].text)
                 assert "error" in data

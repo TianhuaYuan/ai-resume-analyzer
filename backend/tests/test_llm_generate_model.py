@@ -28,9 +28,9 @@ class TestLlmGenerateModelParam:
         mock_completion.choices = [mock_choice]
         mock_client.chat.completions.create = AsyncMock(return_value=mock_completion)
 
-        pipeline_mod.get_chat_client = lambda: mock_client
-
-        result = await pipeline_mod.llm_generate("system prompt", "user message")
+        # 必须用 patch.object 恢复，直接赋值会污染后续所有 llm_generate 调用
+        with patch.object(pipeline_mod, "get_chat_client", return_value=mock_client):
+            result = await pipeline_mod.llm_generate("system prompt", "user message")
 
         assert result == "default model response"
         mock_client.chat.completions.create.assert_called_once()
@@ -51,11 +51,11 @@ class TestLlmGenerateModelParam:
         mock_completion.choices = [mock_choice]
         mock_client.chat.completions.create = AsyncMock(return_value=mock_completion)
 
-        pipeline_mod.get_chat_client = lambda: mock_client
-
-        result = await pipeline_mod.llm_generate(
-            "system prompt", "user message", model="deepseek-v4-flash"
-        )
+        # 必须用 patch.object 恢复，直接赋值会污染后续所有 llm_generate 调用
+        with patch.object(pipeline_mod, "get_chat_client", return_value=mock_client):
+            result = await pipeline_mod.llm_generate(
+                "system prompt", "user message", model="deepseek-v4-flash"
+            )
 
         assert result == "custom model response"
         mock_client.chat.completions.create.assert_called_once()
@@ -235,46 +235,28 @@ class TestRouteNodeUsesJudgeModel:
 
     @pytest.mark.asyncio
     async def test_route_node_passes_judge_model(self):
-        """route_node 调用 _classify_route 时应传入 JUDGE_MODEL"""
+        """_classify_route 调用 llm_generate 时应传入 JUDGE_MODEL
+
+        route_node 已改为启发式路由（T10），不再调用 _classify_route；
+        此处直接验证 LLM 路由分类器仍透传 JUDGE_MODEL。
+        """
         from services.agentic_rag import rewrite as rewrite_mod
-        from services.agentic_rag.state import AgenticRAGState
 
         mock_llm = AsyncMock(return_value="search")
 
-        state: AgenticRAGState = {
-            "question": "tell me about Python skills",
-            "resume_id": 1,
-            "rewritten_query": "tell me about Python skills",
-            "route_decision": "search",
-            "chunks": [],
-            "search_round": 0,
-            "answer": "",
-            "sources": [],
-            "eval_score": 0.0,
-            "eval_feedback": "",
-            "should_retry": False,
-            "completeness_score": 0.0,
-            "accuracy_score": 0.0,
-            "source_credibility_score": 0.0,
-            "eval_forced": False,
-            "reflection_result": "",
-            "missing_info": [],
-            "supplement_queries": [],
-            "reflection_round": 0,
-            "final_answer": "",
-            "final_sources": [],
-            "trace": {},
-            "tool_errors": [],
-        }
-
         with patch.object(settings, "JUDGE_ENABLED", True), \
              patch.object(rewrite_mod, "llm_generate", mock_llm):
-            result = await rewrite_mod.route_node(state)
+            # _classify_route 的 model 参数由调用方决定（route_node 传 JUDGE_MODEL），
+            # 此处显式传入以验证「透传」语义。
+            result = await rewrite_mod._classify_route(
+                "tell me about Python skills", model=settings.JUDGE_MODEL
+            )
 
+        assert result == "search"
         mock_llm.assert_called_once()
         args, kwargs = mock_llm.call_args
         assert "model" in kwargs, (
-            f"route_node 未传 model 参数，实际 kwargs keys={list(kwargs.keys())}"
+            f"_classify_route 未传 model 参数，实际 kwargs keys={list(kwargs.keys())}"
         )
         assert kwargs["model"] == settings.JUDGE_MODEL, (
             f"期望 model={settings.JUDGE_MODEL!r}, 实际 model={kwargs.get('model')!r}"

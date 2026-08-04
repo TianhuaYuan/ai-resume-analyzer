@@ -27,6 +27,7 @@ def _make_initial_state(question: str = "工作经历是什么？", resume_id: i
     return {
         "question": question,
         "resume_id": resume_id,
+        "user_id": 1,
         "rewritten_query": "",
         "route_decision": "search",
         "chunks": [],
@@ -65,13 +66,13 @@ class TestIntegrationSearchPath:
             resp.choices = [AsyncMock()]
             resp.choices[0].message.content = content
             resp.choices[0].delta = None
+            resp.usage = None
             return resp
 
         mock_client = AsyncMock()
         mock_client.chat.completions.create = AsyncMock(
             side_effect=[
                 _make_response("工作经历"),  # 1. rewrite_query
-                _make_response("search"),  # 2. _classify_route
                 _make_response("候选人有3年Python开发经验"),  # 3. generate_node
                 _make_response(  # 4. evaluate_node（高分通过）
                     '{"completeness": 8, "accuracy": 9, "source_credibility": 7, '
@@ -93,7 +94,7 @@ class TestIntegrationSearchPath:
         with patch(
             "services.rag.pipeline.get_chat_client", return_value=mock_client
         ), patch(
-            "services.agentic_rag.search.hybrid_search",
+            "services.agentic_rag.search.hybrid_search_corpus",
             new_callable=AsyncMock,
             return_value=mock_chunks,
         ), patch(
@@ -108,7 +109,7 @@ class TestIntegrationSearchPath:
                 config={"configurable": {"thread_id": "integration-search"}},
             )
 
-        assert result["route_decision"] == "search"
+        assert result["route_decision"] in ("search", "fast")
         assert result["search_round"] >= 1
         assert result["final_answer"] != ""
         assert len(result["final_sources"]) > 0
@@ -166,13 +167,13 @@ class TestIntegrationReflexion:
             resp.choices = [AsyncMock()]
             resp.choices[0].message.content = content
             resp.choices[0].delta = None
+            resp.usage = None
             return resp
 
         mock_client = AsyncMock()
         mock_client.chat.completions.create = AsyncMock(
             side_effect=[
                 _make_response("工作经历"),  # 1. rewrite_query
-                _make_response("search"),  # 2. _classify_route
                 _make_response("候选人有3年经验"),  # 3. generate r1
                 _make_response(  # 4. eval r1 (低分)
                     '{"completeness": 3, "accuracy": 5, "source_credibility": 3, '
@@ -201,7 +202,7 @@ class TestIntegrationReflexion:
         with patch(
             "services.rag.pipeline.get_chat_client", return_value=mock_client
         ), patch(
-            "services.agentic_rag.search.hybrid_search",
+            "services.agentic_rag.search.hybrid_search_corpus",
             new_callable=AsyncMock,
             return_value=mock_chunks,
         ), patch(

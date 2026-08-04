@@ -68,9 +68,9 @@ function exportProgressCSV(records: MarketJob[], tracks: Record<string, CampusTr
     .map((r) => {
       const t = tracks[String(r.id)];
       return [
-        formatDate(r.payload?.published_at ?? r.created_at),
+        formatDate(r.published_at ?? r.created_at),
         r.company ?? "",
-        r.payload?.apply_url ?? "",
+        r.apply_url ?? "",
         statusLabelMap[t.status] ?? t.status,
         t.notes ?? "",
         r.city ?? "",
@@ -355,7 +355,7 @@ export default function CampusPage() {
                   return (
                     <tr key={r.id} className="border-b border-[var(--color-border)] last:border-b-0 hover:bg-[var(--color-bg-secondary)] transition-colors">
                       <td className="px-4 py-3 text-xs text-[var(--color-text-muted)] whitespace-nowrap tabular-nums">
-                        {formatDate(r.payload?.published_at ?? r.created_at)}
+                        {formatDate(r.published_at ?? r.created_at)}
                       </td>
                       <td className="px-4 py-3 text-xs font-semibold text-[var(--color-text)] whitespace-nowrap">{r.company}</td>
                       {!isProgress && (
@@ -364,8 +364,8 @@ export default function CampusPage() {
                         </td>
                       )}
                       <td className="px-4 py-3 whitespace-nowrap">
-                        {r.payload?.apply_url ? (
-                          <a href={r.payload.apply_url} target="_blank" rel="noopener noreferrer"
+                        {r.apply_url ? (
+                          <a href={r.apply_url} target="_blank" rel="noopener noreferrer"
                             className="inline-flex items-center gap-1 text-xs text-brand hover:text-brand-hover hover:underline transition-colors">
                             <Link size={12} /> 点击投递
                           </a>

@@ -17,8 +17,12 @@ from schemas.analytics import (
     AnalyticsEventRequest,
     AnalyticsEventResponse,
     FunnelResponse,
+    LLMUsageItem,
+    LLMUsageResponse,
+    TrendItem,
+    TrendResponse,
 )
-from services.analytics_service import get_funnel, list_events, record_event
+from services.analytics_service import get_funnel, get_trends, list_events, record_event
 
 # prefix 用 /track 而非 /analytics：路径含 "analytics" 会被浏览器广告拦截扩展
 # （如 uBlock/AdGuard）整条拦截 → net::ERR_BLOCKED_BY_CLIENT，产品埋点丢失。
@@ -75,3 +79,26 @@ async def get_funnel_endpoint(
     """管理员查看漏斗数据：各事件的总次数与去重用户数。"""
     events = await get_funnel(db, days=days)
     return FunnelResponse(events=events, days=days)
+
+
+@router.get("/trends", response_model=TrendResponse)
+async def get_trends_endpoint(
+    days: int = Query(30, ge=1, le=365, description="统计最近 N 天"),
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    """D3: 管理员查看按天趋势（注册/日活/事件数），供后台看板图表。"""
+    items = await get_trends(db, days=days)
+    return TrendResponse(days=days, items=[TrendItem(**it) for it in items])
+
+
+@router.get("/llm-usage", response_model=LLMUsageResponse)
+async def get_llm_usage_endpoint(
+    days: int = Query(7, ge=1, le=90, description="统计最近 N 天"),
+    _admin: User = Depends(require_admin),
+):
+    """D4: 管理员查看 LLM 用量历史（按天聚合，跨全部用户，来自 Redis 记账）。"""
+    from services.rag.usage import get_usage_summary
+
+    items = await get_usage_summary(days=days)
+    return LLMUsageResponse(days=days, items=[LLMUsageItem(**it) for it in items])

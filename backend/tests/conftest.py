@@ -116,6 +116,17 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
 
 
 @pytest.fixture
+async def test_user(client, registered_user, db_session: AsyncSession):
+    """与 auth_headers 同一用户（registered_user）的 ORM 对象。
+
+    保证依赖 test_user 建的数据与 auth_headers 的归属一致（避免 404）。
+    """
+    from models.user import User
+
+    return await db_session.get(User, registered_user["id"])
+
+
+@pytest.fixture
 async def client() -> AsyncGenerator[AsyncClient, None]:
     """异步 HTTP 测试客户端。"""
     transport = ASGITransport(app=app)

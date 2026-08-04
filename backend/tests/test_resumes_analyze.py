@@ -11,13 +11,38 @@ TDD 红：端点尚未实现，所有路由调用应返回 404。
 TDD 绿：实现端点后所有用例通过。
 """
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import AsyncClient
 
 from models.resume import Resume
 from tests.conftest import AsyncSessionTest
+
+
+class _Msg:
+    def __init__(self, text: str):
+        self.content = text
+
+
+class _Choice:
+    def __init__(self, text: str):
+        self.message = _Msg(text)
+
+
+def _fake_chat_client(content: str):
+    """构造 mock get_chat_client() 的客户端：chat.completions.create 返回指定文本。
+
+    analyze_resume 走 get_chat_client() 而非 llm_generate，patch 目标需对齐：
+    await client.chat.completions.create(model=..., messages=..., temperature=...)
+    response.choices[0].message.content → analysis；usage=None 跳过 token 记账。
+    """
+    client = MagicMock()
+    c = MagicMock()
+    c.choices = [_Choice(content)]
+    c.usage = None
+    client.chat.completions.create = AsyncMock(return_value=c)
+    return client
 
 
 async def _insert_resume(
@@ -126,9 +151,11 @@ async def test_analyze_summary_success(
     """summary 类型成功 → 200 + 分析内容。"""
     resume_id = await _insert_resume(registered_user["id"])
     with patch(
-        "services.analyze_service.llm_generate",
-        new_callable=AsyncMock,
-        return_value="候选人精通 Python 与 FastAPI，有 3 年后端开发经验。",
+        "services.analyze_service.get_analysis_cache",
+        AsyncMock(return_value=None),  # 强制走 LLM，避免共享缓存干扰
+    ), patch(
+        "services.analyze_service.get_chat_client",
+        return_value=_fake_chat_client("候选人精通 Python 与 FastAPI，有 3 年后端开发经验。"),
     ):
         resp = await client.post(
             f"/api/v1/resumes/{resume_id}/analyze",
@@ -149,9 +176,11 @@ async def test_analyze_skills_success(
     """skills 类型成功 → 200。"""
     resume_id = await _insert_resume(registered_user["id"])
     with patch(
-        "services.analyze_service.llm_generate",
-        new_callable=AsyncMock,
-        return_value="编程语言: Python\n框架: FastAPI, LangChain",
+        "services.analyze_service.get_analysis_cache",
+        AsyncMock(return_value=None),  # 强制走 LLM，避免共享缓存干扰
+    ), patch(
+        "services.analyze_service.get_chat_client",
+        return_value=_fake_chat_client("编程语言: Python\n框架: FastAPI, LangChain"),
     ):
         resp = await client.post(
             f"/api/v1/resumes/{resume_id}/analyze",
@@ -172,9 +201,11 @@ async def test_analyze_experience_success(
     """experience 类型成功 → 200。"""
     resume_id = await _insert_resume(registered_user["id"])
     with patch(
-        "services.analyze_service.llm_generate",
-        new_callable=AsyncMock,
-        return_value="工作经历:\n- A 公司 后端工程师 2022-2024",
+        "services.analyze_service.get_analysis_cache",
+        AsyncMock(return_value=None),  # 强制走 LLM，避免共享缓存干扰
+    ), patch(
+        "services.analyze_service.get_chat_client",
+        return_value=_fake_chat_client("工作经历:\n- A 公司 后端工程师 2022-2024"),
     ):
         resp = await client.post(
             f"/api/v1/resumes/{resume_id}/analyze",

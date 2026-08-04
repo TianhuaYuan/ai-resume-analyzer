@@ -35,6 +35,7 @@ class TestStateToolErrorsField:
         state = {
             "question": "q",
             "resume_id": 1,
+            "user_id": 1,
             "rewritten_query": "q",
             "route_decision": "search",
             "chunks": [],
@@ -42,7 +43,7 @@ class TestStateToolErrorsField:
             "trace": {},
         }
         # nodes 使用 state.get("tool_errors", [])，不应因缺字段而 KeyError
-        with patch("services.agentic_rag.search.hybrid_search", new_callable=AsyncMock) as m:
+        with patch("services.agentic_rag.search.hybrid_search_corpus", new_callable=AsyncMock) as m:
             m.return_value = []
             result = await search_node(state)
         assert result["tool_errors"] == []
@@ -72,6 +73,7 @@ def _base_search_state(**overrides):
     state = {
         "question": "候选人技术栈",
         "resume_id": 1,
+        "user_id": 1,
         "rewritten_query": "候选人的技术栈",
         "route_decision": "search",
         "chunks": [],
@@ -88,7 +90,7 @@ class TestSearchNodeToolErrors:
         """主查询检索抛异常 → tool_errors 被填充，且不向上抛出。"""
         state = _base_search_state()
         with patch(
-            "services.agentic_rag.search.hybrid_search",
+            "services.agentic_rag.search.hybrid_search_corpus",
             new_callable=AsyncMock,
             side_effect=RuntimeError("vector DB timeout"),
         ):
@@ -96,7 +98,7 @@ class TestSearchNodeToolErrors:
 
         assert len(result["tool_errors"]) == 1
         err = result["tool_errors"][0]
-        assert err["tool"] == "hybrid_search"
+        assert err["tool"] == "hybrid_search_corpus"
         assert "vector DB timeout" in err["error"]
         assert result["chunks"] == []  # 无结果，但不会让整条链路崩
 
@@ -106,13 +108,13 @@ class TestSearchNodeToolErrors:
         state = _base_search_state(supplement_queries=["补充查询A", "补充查询B"])
         main_chunks = SAMPLE_CHUNKS
 
-        def _fake_hybrid(resume_id, q, top_k):
+        def _fake_hybrid(user_id, scope, q, top_k):
             if q == "候选人的技术栈":
                 return main_chunks
             raise RuntimeError("rerank service 503")  # 补充查询失败
 
         with patch(
-            "services.agentic_rag.search.hybrid_search",
+            "services.agentic_rag.search.hybrid_search_corpus",
             side_effect=_fake_hybrid,
         ):
             result = await search_node(state)
@@ -121,14 +123,14 @@ class TestSearchNodeToolErrors:
         assert len(result["chunks"]) == 2
         # 两个补充查询失败都被记录
         assert len(result["tool_errors"]) == 2
-        assert all(e["tool"] == "hybrid_search" for e in result["tool_errors"])
+        assert all(e["tool"] == "hybrid_search_corpus" for e in result["tool_errors"])
 
     @pytest.mark.asyncio
     async def test_success_path_has_no_tool_errors(self):
         """正常检索成功 → tool_errors 应为空，行为不变。"""
         state = _base_search_state()
         with patch(
-            "services.agentic_rag.search.hybrid_search",
+            "services.agentic_rag.search.hybrid_search_corpus",
             new_callable=AsyncMock,
             return_value=SAMPLE_CHUNKS,
         ):
