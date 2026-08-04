@@ -12,6 +12,11 @@ from models.knowledge_asset import KnowledgeAsset
 from models.campus_track import CampusTrack
 from models.feedback_like import FeedbackLike
 from models.market_asset import MarketAsset
+from models.resume_entity import (
+    ResumeEntity,
+    ResumeEntityFact,
+    ResumeEpisode,
+)
 
 __all__ = [
     "Base",
@@ -28,4 +33,7 @@ __all__ = [
     "CampusTrack",
     "FeedbackLike",
     "MarketAsset",
+    "ResumeEntity",
+    "ResumeEntityFact",
+    "ResumeEpisode",
 ]

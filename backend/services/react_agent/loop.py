@@ -42,7 +42,6 @@ logger = logging.getLogger(__name__)
 
 # ── 常量 ──────────────────────────────────────────────────────
 MAX_ROUNDS = settings.REACT_MAX_TOOL_ROUNDS  # Spec A#6: 6 轮工具上限（config 可调）
-MAX_BAD_TOOL_RETRIES = 2
 # A3 契约化：per-tool 重试预算（借鉴 pydantic-ai _check_max_retries）——
 # 同一工具连续失败超限即终止本轮，成功一次即清零
 MAX_TOOL_RETRIES = 3

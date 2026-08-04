@@ -382,21 +382,27 @@ async def assemble_system_prompt(
         sections.append("\n".join(history_parts))
 
     # L4 长期语义记忆（T15）：按当前问题语义召回，注入 system prompt（跨会话一致性）。
+    # A3 实体增强：recall_with_entity_boost 在语义召回基础上，命中实体时把该实体有效事实
+    # （resume_entity_facts，invalid_at IS NULL）RRF 融合进候选（借鉴 mem0 entity boost）。
     # 性能护栏（T17 修复）：仅 QA 模式召回，编辑器 builder 流程不用「回忆偏好」；
     # 且查询 embedding 未缓存时跳过——避免每个交互一次 embedding API 往返（这是 agent 交互的隐性开销）。
     if query and not builder:
         try:
             from core import cache as embedding_cache
-            from services.memory.memory_store import recall_memory
+            from services.memory.entity_link import recall_with_entity_boost
 
             if await embedding_cache.get_embedding(query) is None:
                 logger.debug("L4 召回跳过：查询 embedding 未缓存（避免 API 往返）")
             else:
-                memories = await recall_memory(user_id=user_id, query=query, top_k=3)
+                memories = await recall_with_entity_boost(
+                    db=db, user_id=user_id, resume_id=resume_id, query=query, top_k=3
+                )
                 if memories:
                     mem_parts = ["\n# 长期记忆（L4 语义记忆，来自历史会话）"]
                     for mem in memories:
-                        mem_parts.append(f"- [{mem['score']:.2f}] {mem['text']}")
+                        src = mem.get("metadata", {}).get("source")
+                        tag = "实体" if src == "entity_fact" else "语义"
+                        mem_parts.append(f"- [{tag}:{mem['score']:.2f}] {mem['text']}")
                     sections.append("\n".join(mem_parts))
         except Exception as e:
             logger.warning("L4 记忆召回失败（不影响主流程）: %s", e)
@@ -427,26 +433,36 @@ _L3_ANALYSIS_TYPES = ("summary", "skills")
 
 
 async def build_l3_profile_background(resume_id: int, user_id: int) -> None:
-    """后台构建 L3 紧凑画像（summary + skills）。
+    """后台构建 L3 紧凑画像（summary + skills）+ A3 实体链接提取。
 
     在 resume 状态变为 ready 时触发，不阻塞热路径。
     只调 2 种分析类型，不调全量 4 种（experience/score 留给工具按需调）。
 
     错误不外抛——L3 画像缺失时 Agent 仍可工作（只是缺少长期画像注入）。
 
+    A3 实体链接：画像文本（summary + skills）直接传给 extract_entities_from_profile
+    （ADD-only 提取实体/事实 → 三表 + L4 记忆双向关联），失败不影响画像构建。
+
     双路径共享点：
     - 上传路径：process_resume_background → ready → 调本函数
     - Builder 路径：T24 保存并完成 → ready → 调本函数
     """
     async with AsyncSessionLocal() as db:
+        summary_text = ""
+        skills_text = ""
         for analysis_type in _L3_ANALYSIS_TYPES:
             try:
-                await analyze_resume(
+                result = await analyze_resume(
                     db=db,
                     user_id=user_id,
                     resume_id=resume_id,
                     analysis_type=analysis_type,
                 )
+                analysis = (result or {}).get("analysis") or ""
+                if analysis_type == "summary":
+                    summary_text = analysis
+                else:
+                    skills_text = analysis
                 logger.info(
                     "L3 画像构建完成: resume_id=%d, type=%s",
                     resume_id, analysis_type,
@@ -456,3 +472,20 @@ async def build_l3_profile_background(resume_id: int, user_id: int) -> None:
                     "L3 画像构建失败（不影响主流程）: resume_id=%d, type=%s: %s",
                     resume_id, analysis_type, e,
                 )
+
+        # A3 实体链接：L3 画像 ADD-only 提取（失败不影响主流程）
+        try:
+            from services.memory.entity_link import extract_entities_from_profile
+
+            await extract_entities_from_profile(
+                db=db,
+                user_id=user_id,
+                resume_id=resume_id,
+                summary=summary_text,
+                skills=skills_text,
+            )
+        except Exception as e:
+            logger.warning(
+                "L3 实体提取失败（不影响主流程）: resume_id=%d: %s",
+                resume_id, e,
+            )

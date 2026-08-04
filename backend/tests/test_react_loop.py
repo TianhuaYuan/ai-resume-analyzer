@@ -4,7 +4,7 @@
 1. token 入账：多轮 LLM 调用的 usage 累加正确
 2. event_callback：事件实时推送到回调
 3. 坏 JSON 参数：tool_arguments 非法 JSON → 错误回灌
-4. 连续 2 次坏调用强制收敛：MAX_BAD_TOOL_RETRIES=2 → 跳出循环
+4. 连续坏调用强制收敛：MAX_TOOL_RETRIES=3（per-tool 预算）→ 跳出循环
 5. history 参数：历史消息正确注入
 6. Semaphore 并发：不阻塞单次执行
 """
@@ -147,16 +147,16 @@ class TestTokenAccumulation:
     @pytest.mark.asyncio
     async def test_usage_includes_forced_convergence_round(self):
         """强制收敛轮的 usage 也累加。"""
-        from services.react_agent.loop import react_loop, MAX_BAD_TOOL_RETRIES
+        from services.react_agent.loop import react_loop, MAX_TOOL_RETRIES
 
-        # 构造连续 MAX_BAD_TOOL_RETRIES 次坏调用 + 强制收敛
+        # 构造连续 MAX_TOOL_RETRIES 次坏调用 + 强制收敛
         # 连续坏调用走中间轮流式（各 50/10），强制收敛走最终轮流式（300/100）
         stream_mock = MagicMock(side_effect=[
             _make_stream_response(
                 tool_calls=[_make_tool_call(name="nonexistent")],
                 usage={"prompt_tokens": 50, "completion_tokens": 10},
             )
-            for _ in range(MAX_BAD_TOOL_RETRIES)
+            for _ in range(MAX_TOOL_RETRIES)
         ] + [
             _make_stream_response(
                 content="强制收敛答案",
@@ -180,9 +180,9 @@ class TestTokenAccumulation:
 
             result = await react_loop(db=AsyncMock(), user_id=1, resume_id=1, question="测试")
 
-        # MAX_BAD_TOOL_RETRIES 轮坏调用 * (50+10) + 1 轮强制收敛 * (300+100)
-        expected_prompt = MAX_BAD_TOOL_RETRIES * 50 + 300
-        expected_completion = MAX_BAD_TOOL_RETRIES * 10 + 100
+        # MAX_TOOL_RETRIES 轮坏调用 * (50+10) + 1 轮强制收敛 * (300+100)
+        expected_prompt = MAX_TOOL_RETRIES * 50 + 300
+        expected_completion = MAX_TOOL_RETRIES * 10 + 100
         assert result.usage["prompt_tokens"] == expected_prompt
         assert result.usage["completion_tokens"] == expected_completion
 
@@ -435,7 +435,7 @@ class TestConsecutiveBadCallsConvergence:
     @pytest.mark.asyncio
     async def test_good_call_resets_bad_counter(self):
         """一次正常工具调用重置坏调用计数器。"""
-        from services.react_agent.loop import react_loop, MAX_BAD_TOOL_RETRIES
+        from services.react_agent.loop import react_loop
 
         mock_tool_class = MagicMock()
         mock_tool_class.return_value.execute = AsyncMock(return_value="正常结果")
