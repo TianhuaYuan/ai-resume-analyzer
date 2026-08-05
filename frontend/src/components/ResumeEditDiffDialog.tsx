@@ -238,7 +238,9 @@ function DiffCard({
         <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${config.bg} ${config.color} font-medium`}>
           {config.label}
         </span>
-        {entry.source !== "fact" && (
+        {/* 可信度联动：AI 推断/补充内容（source≠fact）才显示徽标；
+            还原为原文后内容已是原文（保存后 source 重建为 fact），徽标同步消失 */}
+        {entry.source !== "fact" && !reverted && (
           <span
             className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-600 font-medium"
             title="该模块含 AI 推断/补充内容，请核对是否属实后再使用"
@@ -473,9 +475,12 @@ export default function ResumeEditDiffDialog({
     const added = diffs.filter((d) => d.status === "added").length;
     const removed = diffs.filter((d) => d.status === "removed").length;
     const modified = diffs.filter((d) => d.status === "modified").length;
-    const inferred = diffs.filter((d) => d.source !== "fact").length;
+    // 可信度联动：还原为原文的模块不再计入「含 AI 推断」
+    const inferred = diffs.filter(
+      (d) => d.source !== "fact" && !revertedTypes.has(d.moduleType),
+    ).length;
     return { added, removed, modified, inferred, total: diffs.length };
-  }, [diffs]);
+  }, [diffs, revertedTypes]);
 
   const handleToggleRevert = useCallback((moduleType: ModuleType) => {
     setRevertedTypes((prev) => {

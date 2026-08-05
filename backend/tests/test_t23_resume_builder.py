@@ -4,8 +4,12 @@
 - POST /api/v1/resumes/builder    新建 builder 简历 + 模块
 - PUT  /api/v1/resumes/{id}?mode=draft  草稿更新（last-write-wins）
 - GET  /api/v1/resumes/{id}/builder     获取简历 + 模块列表
+- POST /api/v1/resumes/{id}/translate   多语言自动翻译副本
 - 归属校验 + 参数校验 + 状态校验 + version 不 bump
 """
+
+import json
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import AsyncClient
@@ -302,6 +306,170 @@ class TestCreateBuilderResume:
         # 从副本查 family：同族
         resp2 = await client.get(f"/api/v1/resumes/{copy_id}/family", headers=auth_headers)
         assert [i["id"] for i in resp2.json()] == [src_id, copy_id]
+
+    @pytest.mark.asyncio
+    @patch("services.rag.pipeline.llm_generate", new_callable=AsyncMock)
+    async def test_translate_resume_modules(
+        self, mock_llm, client: AsyncClient, registered_user: dict, auth_headers: dict
+    ):
+        """G 多语言自动翻译：copy 副本 → translate → 模块内容翻译 + source=inferred，原稿不变。"""
+        created = await client.post(
+            "/api/v1/resumes/builder",
+            json={"filename": "我的简历"},
+            headers=auth_headers,
+        )
+        src_id = created.json()["id"]
+        # 产品流程：copy 出英文副本 → 对副本翻译
+        copied = await client.post(
+            f"/api/v1/resumes/{src_id}/copy?language=en", headers=auth_headers
+        )
+        assert copied.status_code == 201
+        copy_id = copied.json()["id"]
+
+        # mock LLM 返回翻译后的 4 模块 JSON（保持预置模块结构，只改字符串值）
+        mock_llm.return_value = json.dumps(
+            [
+                {"module_type": "basic_info", "content": {"name": "Zhang San"}, "sort_order": 0},
+                {"module_type": "education", "content": {"items": []}, "sort_order": 1},
+                {"module_type": "work_experience", "content": {"items": []}, "sort_order": 2},
+                {"module_type": "skills", "content": {"items": []}, "sort_order": 3},
+            ]
+        )
+        resp = await client.post(
+            f"/api/v1/resumes/{copy_id}/translate",
+            json={"target_lang": "en"},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["modules"]) == 4
+        # 内容被翻译（source 透传 = inferred，AI 生成需核对）
+        basic = next(m for m in data["modules"] if m["module_type"] == "basic_info")
+        assert basic["content"]["name"] == "Zhang San"
+        assert basic["source"] == "inferred"
+        assert all(m["source"] == "inferred" for m in data["modules"])
+        # 语言标注保留（copy?language= 设置的 en）
+        assert data["language"] == "en"
+
+        # 原稿不变（翻译只作用于副本）
+        src = await client.get(f"/api/v1/resumes/{src_id}/builder", headers=auth_headers)
+        assert src.json()["modules"][0]["content"]["name"] == "未命名"
+
+    @pytest.mark.asyncio
+    @patch("services.rag.pipeline.llm_generate", new_callable=AsyncMock)
+    async def test_translate_preserves_parsed_text(
+        self, mock_llm, client: AsyncClient, registered_user: dict, auth_headers: dict, db_session: AsyncSession
+    ):
+        """翻译仅更新模块草稿，不合并 parsed_text / content_hash（等 complete 统一处理）。"""
+        created = await client.post(
+            "/api/v1/resumes/builder",
+            json={"filename": "我的简历"},
+            headers=auth_headers,
+        )
+        src_id = created.json()["id"]
+        mock_llm.return_value = json.dumps(
+            [
+                {"module_type": "basic_info", "content": {"name": "Zhang San"}, "sort_order": 0},
+                {"module_type": "education", "content": {"items": []}, "sort_order": 1},
+                {"module_type": "work_experience", "content": {"items": []}, "sort_order": 2},
+                {"module_type": "skills", "content": {"items": []}, "sort_order": 3},
+            ]
+        )
+        resp = await client.post(
+            f"/api/v1/resumes/{src_id}/translate",
+            json={"target_lang": "en"},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200
+
+        # draft 阶段 parsed_text 保持为空、content_hash 不置（不触发索引）
+        row = await db_session.execute(
+            select(Resume).where(Resume.id == src_id)
+        )
+        resume = row.scalar_one()
+        assert resume.parsed_text == ""
+        assert resume.content_hash is None
+
+    @pytest.mark.asyncio
+    async def test_translate_empty_resume_400(
+        self, client: AsyncClient, registered_user: dict, auth_headers: dict
+    ):
+        """空简历翻译 → 400（无内容可翻译）。"""
+        created = await client.post(
+            "/api/v1/resumes/builder",
+            json={"filename": "空简历"},
+            headers=auth_headers,
+        )
+        empty_id = created.json()["id"]
+        # 清空模块（POST builder 传 modules=[] 会触发默认预置，需 PUT 覆盖为空）
+        cleared = await client.put(
+            f"/api/v1/resumes/{empty_id}?mode=draft",
+            json={"modules": []},
+            headers=auth_headers,
+        )
+        assert cleared.status_code == 200
+        assert cleared.json()["modules"] == []
+
+        resp = await client.post(
+            f"/api/v1/resumes/{empty_id}/translate",
+            json={"target_lang": "en"},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_translate_other_user_404(
+        self, client: AsyncClient, registered_user: dict, auth_headers: dict
+    ):
+        """非本人翻译他人简历 → 404（越权隔离）。"""
+        created = await client.post(
+            "/api/v1/resumes/builder",
+            json={"filename": "私有简历"},
+            headers=auth_headers,
+        )
+        src_id = created.json()["id"]
+        other = {"username": "othertl", "email": "othertl@example.com", "password": "Test1234!", "password_confirm": "Test1234!"}
+        await client.post("/api/v1/auth/send-code", json={"email": other["email"]})
+        from services.verification_service import _CODE_KEY_PREFIX, _in_memory_codes
+
+        code = _in_memory_codes.get(f"{_CODE_KEY_PREFIX}{other['email']}")["code"]
+        await client.post("/api/v1/auth/register", json={**other, "verification_code": code})
+        login = await client.post("/api/v1/auth/login", json={"email": other["email"], "password": other["password"]})
+        other_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+        resp = await client.post(
+            f"/api/v1/resumes/{src_id}/translate",
+            json={"target_lang": "en"},
+            headers=other_headers,
+        )
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_builder_response_echoes_module_source(
+        self, client: AsyncClient, registered_user: dict, auth_headers: dict, db_session: AsyncSession
+    ):
+        """G 可信度：GET /builder 响应透传模块 source（diff 弹窗「AI 推断内容」徽标的数据源）。"""
+        created = await client.post(
+            "/api/v1/resumes/builder",
+            json={"filename": "我的简历"},
+            headers=auth_headers,
+        )
+        src_id = created.json()["id"]
+        # 直接改库：将首个模块 source 标为 inferred
+        mod_row = await db_session.execute(
+            select(ResumeModule).where(ResumeModule.resume_id == src_id).limit(1)
+        )
+        mod = mod_row.scalar_one()
+        mod.source = "inferred"
+        await db_session.commit()
+
+        resp = await client.get(f"/api/v1/resumes/{src_id}/builder", headers=auth_headers)
+        assert resp.status_code == 200
+        modules = resp.json()["modules"]
+        inferred = [m for m in modules if m["source"] == "inferred"]
+        assert len(inferred) == 1
+        assert inferred[0]["module_type"] == mod.module_type
+        # 其余模块默认 fact
+        assert all(m["source"] == "fact" for m in modules if m["source"] != "inferred")
 
     @pytest.mark.asyncio
     async def test_create_with_style(

@@ -15,6 +15,7 @@
 """
 
 import hashlib
+import json
 import logging
 from datetime import datetime, timezone
 
@@ -324,6 +325,206 @@ async def copy_resume_as_new(
         new_resume.id,
     )
     return new_resume, new_modules
+
+
+# ═══════════════════════════════════════════════════════════
+# 多语言翻译（新建语言版本后自动翻译副本）
+# ═══════════════════════════════════════════════════════════
+
+# 目标语言代码 → 语言名（prompt 用，与 react_agent TranslateTool 对齐）
+_LANG_NAME_MAP: dict[str, str] = {
+    "zh": "Chinese（中文）",
+    "en": "English（英文）",
+    "ja": "Japanese（日文）",
+    "ko": "Korean（韩文）",
+    "fr": "French（法文）",
+    "de": "German（德文）",
+}
+
+
+def _parse_translated_modules(raw: str) -> list[dict]:
+    """解析 LLM 输出的 JSON 数组，容忍 markdown 代码块围栏与前后缀文字。
+
+    Raises:
+        ValueError: 无法解析出有效 JSON 数组
+    """
+    text = raw.strip()
+    # 剥离 ```json ... ``` / ``` ... ``` 围栏
+    if text.startswith("```"):
+        first = text.find("```")
+        last = text.rfind("```")
+        if last > first + 3:
+            text = text[first + 3 : last]
+        # 去掉围栏后可能残留的语言标记（如 json）
+        text = text.strip()
+        if text.startswith("json"):
+            text = text[4:].strip()
+    # 收紧到第一个 [ 与最后一个 ]（容忍 LLM 在前后加说明文字）
+    start = text.find("[")
+    end = text.rfind("]")
+    if start >= 0 and end > start:
+        text = text[start : end + 1]
+    data = json.loads(text)
+    if not isinstance(data, list):
+        raise ValueError("翻译结果不是 JSON 数组")
+    return data
+
+
+async def translate_resume_modules(
+    db: AsyncSession,
+    user_id: int,
+    resume_id: int,
+    target_lang: str,
+) -> tuple[Resume, list[ResumeModule]]:
+    """将简历全部模块内容翻译为目标语言，落库为草稿。
+
+    多语言版本新建后自动翻译用（BuilderPage「新建英文版」等）：复制副本 → 翻译副本，
+    用户跳转后直接得到目标语言版本。内容来源标注 inferred（AI 生成，需用户核对），
+    与 G 可信度控制链路一致。
+
+    规则：
+    - 只更新 ResumeModule（删旧插新），不合并 parsed_text / content_hash——
+      draft 阶段等「保存并完成」时统一从模块合并，避免翻译中间态污染检索内容
+    - LLM 漏掉的模块用原文兜底（source=fact），保证不丢模块
+    - 逐模块 validate_module_content 校验（结构不变，只翻译字符串值）
+
+    Raises:
+        HTTPException 404 简历不存在/无权访问；400 简历无模块；500 LLM 翻译或校验失败
+    """
+    from services.rag.pipeline import llm_generate
+    from utils.privacy import sanitize_for_ai
+
+    resume, modules = await get_resume_with_modules(db, user_id, resume_id)
+    if not modules:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="简历为空，无法翻译。请先在「编辑」页填写内容。",
+        )
+
+    lang_name = _LANG_NAME_MAP.get(target_lang, target_lang)
+    modules_json = json.dumps(
+        [
+            {
+                "module_type": m.module_type,
+                "content": (
+                    sanitize_for_ai(m.content)
+                    if isinstance(m.content, dict)
+                    else m.content
+                ),
+                "sort_order": m.sort_order,
+            }
+            for m in modules
+        ],
+        ensure_ascii=False,
+    )
+
+    system = (
+        f"你是专业简历翻译。请将用户提供的简历模块内容翻译为 {lang_name}。\n"
+        "要求：\n"
+        "1. 只翻译字符串值，保持 content 结构与字段一一对应，不增删字段、不增删 entries/categories/items\n"
+        "2. 专业术语、专有名词（公司/学校/项目名、技术栈）保留原文或按惯例译出\n"
+        "3. 遵守字段长度上限（basic_info.summary≤500、work_experience.description≤2000 等），翻译后不得超原上限\n"
+        "4. 输出纯 JSON 数组，每项格式："
+        '{"module_type": "...", "content": {...}, "sort_order": 0}\n'
+        "5. 只输出 JSON，不要任何解释、前后缀或 markdown 代码块标记\n"
+    )
+    user = (
+        f"目标语言：{lang_name}\n"
+        f"当前简历模块：\n{modules_json}\n\n"
+        f"请将全部模块内容翻译为 {lang_name}，输出 JSON 数组。"
+    )
+
+    try:
+        raw = await llm_generate(
+            system=system,
+            user=user,
+            temperature=0.2,
+            max_tokens=8000,
+            user_id=user_id,
+        )
+        translated = _parse_translated_modules(raw)
+    except Exception as e:
+        logger.exception("Translate resume failed: resume=%d lang=%s", resume_id, target_lang)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"翻译失败：{e}",
+        ) from e
+
+    # 逐模块校验（只认有效模块，LLM 漏掉的用原文兜底）
+    validated: list[dict] = []
+    errors: list[str] = []
+    for idx, item in enumerate(translated):
+        if not isinstance(item, dict):
+            errors.append(f"模块 {idx}: 不是对象")
+            continue
+        mt_str = item.get("module_type", "")
+        content = item.get("content")
+        sort_order = item.get("sort_order", idx)
+        try:
+            mt = ModuleType(mt_str)
+            validate_module_content(mt, content)
+        except (ValueError, ValidationError) as e:
+            errors.append(f"模块 {idx} ({mt_str}): {e}")
+            continue
+        validated.append(
+            {
+                "module_type": mt_str,
+                "content": content,
+                "sort_order": sort_order if isinstance(sort_order, int) and sort_order >= 0 else idx,
+                "source": "inferred",  # AI 翻译生成，需用户核对
+            }
+        )
+
+    if not validated:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="翻译结果校验失败：" + "; ".join(errors[:5]),
+        )
+
+    # LLM 漏掉的模块 → 原文兜底（不丢模块）
+    out_types = {v["module_type"] for v in validated}
+    for src_mod in modules:
+        if src_mod.module_type not in out_types:
+            validated.append(
+                {
+                    "module_type": src_mod.module_type,
+                    "content": src_mod.content,
+                    "sort_order": src_mod.sort_order,
+                    "source": "fact",  # 原文，非 AI 生成
+                }
+            )
+
+    # 删旧插新（source 标注；不合并 parsed_text，等 complete 统一处理）
+    for old_mod in modules:
+        await db.delete(old_mod)
+    await db.flush()
+
+    new_modules: list[ResumeModule] = []
+    for v in sorted(validated, key=lambda x: x["sort_order"]):
+        module = ResumeModule(
+            resume_id=resume_id,
+            module_type=v["module_type"],
+            content=v["content"],
+            sort_order=v["sort_order"],
+            source=v["source"],
+        )
+        db.add(module)
+        new_modules.append(module)
+
+    resume.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(resume)
+    for m in new_modules:
+        await db.refresh(m)
+
+    logger.info(
+        "Translated resume: user=%d, resume=%d, lang=%s, modules=%d",
+        user_id,
+        resume_id,
+        target_lang,
+        len(new_modules),
+    )
+    return resume, new_modules
 
 
 # ═══════════════════════════════════════════════════════════

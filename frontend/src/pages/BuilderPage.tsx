@@ -38,6 +38,7 @@ import {
   acquireEditLock,
   renewEditLock,
   releaseEditLock,
+  translateResume,
 } from "../api/builder";
 import VersionHistoryDialog from "../components/VersionHistoryDialog";
 import PasteResumeDialog from "../components/builder/PasteResumeDialog";
@@ -175,15 +176,17 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
   const [showLangMenu, setShowLangMenu] = useState(false);
   const [langBusy, setLangBusy] = useState(false);
 
-  // 新建语言版本：copyResume → 跳转新副本
+  // 新建语言版本：copyResume → 自动翻译副本 → 跳转新副本
   const handleCreateLangVersion = useCallback(
     async (language: string) => {
       if (langBusy) return;
       setLangBusy(true);
       try {
         const res = (await copyResume(resumeId, language)) as { id?: number };
-        if (res?.id) navigate(`/resumes/${res.id}/edit`);
-        else window.location.reload();
+        if (!res?.id) throw new Error("创建语言版本失败");
+        // 自动翻译副本为目标语言（LLM 调用，翻译中按钮禁用；失败保留未翻译副本）
+        await translateResume(res.id, language);
+        navigate(`/resumes/${res.id}/edit`);
       } catch (err) {
         setError(err instanceof Error ? err.message : "创建语言版本失败");
         setLangBusy(false);
@@ -743,7 +746,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
                         disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
                     >
                       <Plus size={12} weight="bold" aria-hidden="true" />
-                      新建{langLabel(lang)}版
+                      {langBusy ? "翻译中..." : `新建${langLabel(lang)}版`}
                     </button>
                   ))}
                 </div>

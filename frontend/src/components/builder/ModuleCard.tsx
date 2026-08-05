@@ -202,11 +202,14 @@ function ModuleInlineForm({
   moduleType,
   content,
   onChange,
+  onFieldEdit,
 }: {
   resumeId: number;
   moduleType: ModuleType;
   content: ModuleContent;
   onChange: (content: ModuleContent) => void;
+  /** 静默纠错字段级接线：textarea 字段编辑时回传字段标签，非长文本字段回传 null */
+  onFieldEdit: (label: string | null) => void;
 }) {
   const label = getModuleTitle(content, moduleType);
   const entryFields = ENTRY_FIELD_CONFIGS[moduleType];
@@ -237,6 +240,8 @@ function ModuleInlineForm({
                   field={field}
                   value={getString(content, field.key)}
                   onChange={(v) => {
+                    // 静默纠错字段级接线：textarea（如 summary）聚焦该字段检查
+                    onFieldEdit(field.type === "textarea" ? field.label : null);
                     if (field.type === "number") {
                       onChange({ ...content, [field.key]: v === "" ? "" : Number(v) });
                     } else {
@@ -263,6 +268,7 @@ function ModuleInlineForm({
         onChange={onChange}
         fields={entryFields}
         moduleLabel={label}
+        onFieldEdit={onFieldEdit}
       />
     );
   }
@@ -288,6 +294,7 @@ function ModuleInlineForm({
         contentRequired
         resumeId={resumeId}
         moduleType={moduleType}
+        onFieldEdit={onFieldEdit}
       />
     );
   }
@@ -330,12 +337,19 @@ function ModuleCardImpl({
   const [showIssues, setShowIssues] = useState(false);
   const hasIssues = checkIssues.length > 0;
 
+  // 最近编辑字段（仅写 ref 不触发重渲染）：textarea 字段聚焦检查，null = 模块级
+  const recentFieldRef = useRef<string | null>(null);
+  const handleFieldEdit = useCallback((label: string | null) => {
+    recentFieldRef.current = label;
+  }, []);
+
   // 稳定回调：依赖 moduleType + schedule（稳定引用）+ 父级稳定引用
   const handleInternalChange = useCallback(
     (newContent: ModuleContent) => {
       onChange(moduleType, newContent);
-      // 编辑停顿后静默检查（schedule 内部防抖 2.5s）
-      schedule(getModuleText(moduleType, newContent));
+      // 编辑停顿后静默检查（schedule 内部防抖 2.5s）；
+      // 最近编辑的是长文本字段则聚焦该字段（传 check_field），否则模块级检查
+      schedule(getModuleText(moduleType, newContent), recentFieldRef.current ?? undefined);
     },
     [moduleType, onChange, schedule],
   );
@@ -565,6 +579,7 @@ function ModuleCardImpl({
             moduleType={moduleType}
             content={content}
             onChange={handleInternalChange}
+            onFieldEdit={handleFieldEdit}
           />
 
           {/* 静默纠错问题列表（点击卡片头角标展开/收起） */}

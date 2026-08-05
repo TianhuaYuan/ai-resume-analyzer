@@ -14,7 +14,7 @@ from fastapi import (
     status,
 )
 from fastapi.responses import PlainTextResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -232,6 +232,8 @@ def _to_builder_response(
                 content=m.content,
                 sort_order=m.sort_order,
                 created_at=m.created_at,
+                # G 可信度控制：透传 source，前端 diff 弹窗据此显示「AI 推断内容」徽标
+                source=m.source,
             )
             for m in sorted_modules
         ],
@@ -431,6 +433,35 @@ async def get_resume_family(
         }
         for r in result.scalars().all()
     ]
+
+
+class ResumeTranslateRequest(BaseModel):
+    """简历模块翻译请求。"""
+
+    target_lang: str = Field("en", max_length=20, description="目标语言（zh/en/ja/ko/fr/de）")
+
+
+@router.post("/{resume_id}/translate", response_model=BuilderResumeResponse)
+async def translate_resume(
+    resume_id: int,
+    body: ResumeTranslateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """将简历全部模块翻译为目标语言（多语言版本新建后自动翻译）。
+
+    BuilderPage「新建英文版」等：POST /copy?language=en 创建副本后，对副本调用本端点
+    自动翻译内容，用户跳转即得目标语言版本。翻译内容来源标注 inferred（AI 生成需核对），
+    仅更新模块草稿，不合并 parsed_text（等「保存并完成」统一处理）。
+
+    错误码：401 / 404 简历不存在或非本人 / 400 简历无模块 / 500 LLM 翻译或校验失败
+    """
+    from services.resume_builder import translate_resume_modules
+
+    resume, modules = await translate_resume_modules(
+        db, current_user.id, resume_id, body.target_lang
+    )
+    return _to_builder_response(resume, modules)
 
 
 @router.get("/{resume_id}/builder", response_model=BuilderResumeResponse)

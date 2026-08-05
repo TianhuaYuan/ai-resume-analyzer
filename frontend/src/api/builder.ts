@@ -527,6 +527,16 @@ export async function aiRewrite(
   }) as Promise<{ rewritten_text: string; original_text: string }>;
 }
 
+/** 翻译简历全部模块为目标语言（多语言版本新建后自动翻译）。返回最新 BuilderResume */
+export async function translateResume(
+  resumeId: number,
+  targetLang: string,
+): Promise<BuilderResume> {
+  return api.post(`/api/v1/resumes/${resumeId}/translate`, {
+    target_lang: targetLang,
+  }) as Promise<BuilderResume>;
+}
+
 // ── 编辑锁 API ────────────────────────────────────────────────
 
 /** 获取编辑锁 */

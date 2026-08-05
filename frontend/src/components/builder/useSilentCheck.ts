@@ -40,7 +40,7 @@ export function useSilentCheck(resumeId: number, moduleType: string, checkField?
   const lastRunRef = useRef(0);
 
   const runCheck = useCallback(
-    (text: string) => {
+    (text: string, field?: string) => {
       const now = Date.now();
       // 限流：距上次发起 < 20s 直接跳过（保留上次结果，不更新 state）
       if (now - lastRunRef.current < THROTTLE_MS) return;
@@ -50,7 +50,8 @@ export function useSilentCheck(resumeId: number, moduleType: string, checkField?
       setState("checking");
       setError("");
 
-      aiCheck(resumeId, text, moduleType, checkField)
+      // 动态字段优先，缺省用 hook 级 checkField（模块级检查）
+      aiCheck(resumeId, text, moduleType, field ?? checkField)
         .then((res) => {
           if (reqIdRef.current !== myReqId) return;
           setIssues(res.issues);
@@ -65,12 +66,16 @@ export function useSilentCheck(resumeId: number, moduleType: string, checkField?
     [resumeId, moduleType, checkField],
   );
 
-  /** 编辑停顿后触发（防抖） */
+  /**
+   * 编辑停顿后触发（防抖）。
+   * @param field 可选：最近编辑的字段标签（如「工作描述」），透传后端 check_field
+   *              让 LLM 聚焦该字段检查；缺省 = 模块级检查。
+   */
   const schedule = useCallback(
-    (text: string) => {
+    (text: string, field?: string) => {
       if (!text || text.trim().length < MIN_TEXT_LENGTH) return;
       if (debounceRef.current) clearTimeout(debounceRef.current);
-      debounceRef.current = setTimeout(() => runCheck(text), DEBOUNCE_MS);
+      debounceRef.current = setTimeout(() => runCheck(text, field), DEBOUNCE_MS);
     },
     [runCheck],
   );

@@ -298,6 +298,11 @@ interface EntriesEditorProps {
   resumeId?: number;
   /** 模块类型（条目级 AI 透传后端） */
   moduleType?: ModuleType;
+  /**
+   * 最近编辑字段通知（静默纠错字段级接线）：
+   * 编辑长文本字段（textarea）时回传字段标签（如「工作描述」），非长文本字段回传 null。
+   */
+  onFieldEdit?: (label: string | null) => void;
 }
 
 export function EntriesEditor({
@@ -307,6 +312,7 @@ export function EntriesEditor({
   moduleLabel,
   resumeId,
   moduleType,
+  onFieldEdit,
 }: EntriesEditorProps) {
   const entries = getEntries(content);
   // 条目级 AI 是否对该模块生效
@@ -348,19 +354,22 @@ export function EntriesEditor({
     (index: number, key: string, value: string) => {
       const newEntries = [...entries];
       const entry = { ...newEntries[index] };
+      const fieldConfig = fields.find((f) => f.key === key);
 
-      if (fields.find((f) => f.key === key)?.type === "number") {
+      if (fieldConfig?.type === "number") {
         entry[key] = value === "" ? "" : Number(value);
-      } else if (fields.find((f) => f.key === key)?.type === "list") {
+      } else if (fieldConfig?.type === "list") {
         entry[key] = splitList(value);
       } else {
         entry[key] = value;
       }
 
       newEntries[index] = entry;
+      // 静默纠错字段级接线：长文本字段（textarea）回传字段标签，聚焦该字段检查
+      onFieldEdit?.(fieldConfig?.type === "textarea" ? fieldConfig.label : null);
       onChange({ ...content, entries: newEntries });
     },
-    [content, entries, onChange, fields],
+    [content, entries, onChange, fields, onFieldEdit],
   );
 
   return (
@@ -682,6 +691,8 @@ interface TextContentFormProps {
   /** 内容字段级 AI（other/custom 优化既有内容） */
   resumeId?: number;
   moduleType?: ModuleType;
+  /** 静默纠错字段级接线：编辑内容（textarea）时回传「内容」，编辑标题回传 null */
+  onFieldEdit?: (label: string | null) => void;
 }
 
 export function TextContentForm({
@@ -691,6 +702,7 @@ export function TextContentForm({
   contentRequired,
   resumeId,
   moduleType,
+  onFieldEdit,
 }: TextContentFormProps) {
   return (
     <div className="space-y-3">
@@ -702,7 +714,10 @@ export function TextContentForm({
         <input
           type="text"
           value={getString(content, "title")}
-          onChange={(e) => onChange({ ...content, title: e.target.value })}
+          onChange={(e) => {
+            onFieldEdit?.(null);
+            onChange({ ...content, title: e.target.value });
+          }}
           placeholder="请输入标题"
           className={INPUT_CLASS}
         />
@@ -726,7 +741,10 @@ export function TextContentForm({
         </div>
         <RichTextEditor
           value={getString(content, "content")}
-          onChange={(v) => onChange({ ...content, content: v })}
+          onChange={(v) => {
+            onFieldEdit?.("内容");
+            onChange({ ...content, content: v });
+          }}
           placeholder="请输入内容"
           rows={8}
           minHeight="160px"
