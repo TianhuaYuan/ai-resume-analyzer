@@ -29,6 +29,7 @@ from models.user import User
 from schemas.resume import (
     AnalyzeRequest,
     AnalyzeResponse,
+    AtsAuditResponse,
     AnalysisStatusResponse,
     BackgroundAnalyzeResponse,
     ChunkItem,
@@ -1032,6 +1033,15 @@ async def parse_to_modules(
 # 内联 AI 端点（UP 简历对齐：一键优化 / 智能检查 / 智能改写）
 # ═══════════════════════════════════════════════════════════
 
+# 字段隔离约束：条目级 AI 只操作传入的单一字段文本，
+# 不得把同模块其它字段（姓名/联系方式/日期等）改写进去，也不得虚构字段外信息。
+# optimize / rewrite 两处 system_prompt 复用，避免文案漂移。
+_AI_FIELD_ISOLATION_PROMPT = (
+    "3. 只对用户提供的这段文本进行操作，文本之外的任何信息（姓名、电话、邮箱、"
+    "公司、学校、日期等其他字段内容）一律不得修改、增删或虚构；不得新增原文没有的数据\n"
+    "4. 若指令涉及文本中没有的信息，以文本为准，不自行补全\n"
+)
+
 
 class AIOptimizeRequest(BaseModel):
     """一键优化请求。"""
@@ -1092,9 +1102,9 @@ async def ai_optimize(
         "使其更专业、更有吸引力。要求：\n"
         "1. 使用更强的动词（如'深耕'代替'专注于'，'主导'代替'参与'）\n"
         "2. 结构更清晰，适当使用分段或要点\n"
-        "3. 保留原文的核心信息和技术栈，不编造数据\n"
-        "4. 语言更精炼，去除冗余表述\n"
-        "5. 直接输出优化后的文本，不要加任何解释或前缀\n"
+        + _AI_FIELD_ISOLATION_PROMPT
+        + "5. 语言更精炼，去除冗余表述\n"
+        "6. 直接输出优化后的文本，不要加任何解释或前缀\n"
     )
 
     try:
@@ -1215,7 +1225,8 @@ async def ai_rewrite(
         "要求：\n"
         "1. 严格遵循用户的改写指令\n"
         "2. 保留原文的核心事实和技术栈，不编造数据\n"
-        "3. 直接输出改写后的文本，不要加任何解释或前缀\n"
+        + _AI_FIELD_ISOLATION_PROMPT
+        + "5. 直接输出改写后的文本，不要加任何解释或前缀\n"
     )
 
     try:
@@ -1258,6 +1269,35 @@ async def compare_resumes(
         db, current_user.id, body.resume_ids, body.dimensions
     )
     return CompareResponse(**result)
+
+
+@router.post("/{resume_id}/ats-audit", response_model=AtsAuditResponse)
+async def ats_audit(
+    resume_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """ATS 可读性模拟审计（P0-A）。
+
+    模拟 ATS 解析简历，检出乱码段/空白段/特殊符号/图片文字/表格等问题，
+    返回结构化问题清单 + 得分。纯本地规则引擎，零 LLM。
+
+    双路径：
+    - HTML 直读（始终执行，零 GTK 依赖）
+    - PDF 回读（WeasyPrint 可用时追加，最接近真实 ATS）
+
+    WeasyPrint 缺失时不抛 503，降级为 HTML 路径 + warnings。
+
+    错误码：
+    - 401 未登录
+    - 404 简历不存在或非本人
+    - 409 简历未就绪（status != ready/draft）
+    - 422 零模块
+    """
+    from services.ats_audit_service import audit_resume
+
+    result = await audit_resume(db, current_user.id, resume_id)
+    return result
 
 
 # ═══════════════════════════════════════════════════════════════

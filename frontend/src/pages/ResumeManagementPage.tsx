@@ -756,7 +756,11 @@ export default function ResumeManagementPage() {
 
             {jdResult && (
               <>
-                <JDMatchReport result={jdResult} />
+                <JDMatchReport
+                  result={jdResult}
+                  resumeName={jdTarget.filename}
+                  jdSnippet={jdText.slice(0, 200)}
+                />
                 <button
                   onClick={() => {
                     setJdResult(null);

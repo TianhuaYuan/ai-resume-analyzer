@@ -177,6 +177,19 @@ export interface AgentStep {
   /** 工具参数（tool_call）、结果摘要（tool_result）、错误文本（tool_error）或推理内容（agent_thought） */
   detail?: string;
   id?: string;
+  // P1-C: 结构化扩展（全可选，向后兼容）
+  /** tool_call 时的参数 dict（从 event.args 解析） */
+  args?: Record<string, unknown>;
+  /** tool_call 时的参数原始文本 */
+  argsText?: string;
+  /** tool_result 时的完整结果文本（来自 event.detail，非 summary） */
+  result?: string;
+  /** 当前步骤状态 */
+  status?: "running" | "done" | "error";
+  /** tool_call 收到时的 Date.now() 时间戳 */
+  startedAt?: number;
+  /** tool_result 收到时计算的耗时毫秒 */
+  durationMs?: number;
 }
 
 /** 结构化引用来源（Spec A#10: search_resume 来源聚合） */

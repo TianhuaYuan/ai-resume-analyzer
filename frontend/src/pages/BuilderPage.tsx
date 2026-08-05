@@ -18,14 +18,12 @@ import {
   FloppyDisk,
   Check,
   PaintBrush,
-  ChatCircleDots,
   Warning,
   ArrowsClockwise,
   ArrowCounterClockwise,
   ArrowClockwise,
   GitBranch,
   ClipboardText,
-  Funnel,
   GridFour,
   GlobeSimple,
   CaretDown,
@@ -42,7 +40,6 @@ import {
 } from "../api/builder";
 import VersionHistoryDialog from "../components/VersionHistoryDialog";
 import PasteResumeDialog from "../components/builder/PasteResumeDialog";
-import AtsOptimizeDialog from "../components/builder/AtsOptimizeDialog";
 import type {
   BuilderResume,
   ResumeModule,
@@ -51,17 +48,15 @@ import type {
   ModuleContent,
   ResumeModuleInput,
 } from "../api/builder";
-import { MODULE_LABELS } from "../components/builder/ModuleList";
 import { ModuleCardEditor } from "../components/builder/ModuleCardEditor";
-import type { AIAction } from "../components/builder/ModuleCard";
 import { A4PreviewPanel } from "../components/builder/A4PreviewPanel";
 import { StylePanel } from "../components/builder/StylePanel";
-import { BuilderAIChat } from "../components/builder/BuilderAIChat";
 import { TemplateSheet } from "../components/builder/TemplateSheet";
 import { getTemplateConfigs } from "../components/templates/registry";
+import AtsAuditReport from "../components/AtsAuditReport";
 import { trackEvent } from "../api/analytics";
-import { copyResume, getResumeFamily } from "../api/resumes";
-import type { ResumeFamilyItem } from "../api/resumes";
+import { copyResume, getResumeFamily, auditResume } from "../api/resumes";
+import type { ResumeFamilyItem, AtsAuditResult } from "../api/resumes";
 import { useNavigate } from "react-router-dom";
 import { useHistory } from "../hooks/useHistory";
 
@@ -141,7 +136,6 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
   // UI 状态
   const [expandedType, setExpandedType] = useState<ModuleType | null>(null);
   const [showStylePanel, setShowStylePanel] = useState(false);
-  const [showAIChat, setShowAIChat] = useState(false);
   const [showTemplateSheet, setShowTemplateSheet] = useState(false);
   const [previewCollapsed, setPreviewCollapsed] = useState(false);
   const [previewKey, setPreviewKey] = useState(0);
@@ -158,17 +152,16 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
   // T18: 版本历史弹窗
   const [showVersionHistory, setShowVersionHistory] = useState(false);
 
+  // P0-A: ATS 审计弹窗
+  const [showAtsAudit, setShowAtsAudit] = useState(false);
+  const [atsAuditResult, setAtsAuditResult] = useState<AtsAuditResult | null>(null);
+  const [atsAuditLoading, setAtsAuditLoading] = useState(false);
+
   // 粘贴简历文本弹窗
   const [showPasteDialog, setShowPasteDialog] = useState(false);
-  // ATS 优化弹窗
-  const [showAtsDialog, setShowAtsDialog] = useState(false);
 
   // 上传简历懒物化标记：false = LLM 反解析失败，需提示用户粘贴导入
   const [materialized, setMaterialized] = useState(true);
-
-  // AI 触发
-  const [aiQuestion, setAiQuestion] = useState("");
-  const [aiTrigger, setAiTrigger] = useState(0);
 
   // ── 多语言版本管理（G） ─────────────────────────────────────
   const navigate = useNavigate();
@@ -472,36 +465,23 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
     setExpandedType((cur) => (cur === type ? null : type));
   }, []);
 
-  // ── AI 生成 ─────────────────────────────────────────────────
+  // ── P0-A: ATS 审计 ─────────────────────────────────────────
 
-  const handleAIGenerate = useCallback(
-    (type: ModuleType, action?: AIAction, customPrompt?: string) => {
-      setShowAIChat(true);
-      const label = MODULE_LABELS[type];
-      let question: string;
-      switch (action) {
-        case "polish":
-          question = `请帮我润色${label}模块的内容，使其更专业、更简洁`;
-          break;
-        case "expand":
-          question = `请帮我扩展${label}模块的内容，增加更多细节和成果描述`;
-          break;
-        case "translate":
-          question = `请帮我把${label}模块的内容翻译成英文`;
-          break;
-        case "custom":
-          question = customPrompt
-            ? `针对${label}模块：${customPrompt}`
-            : `请帮我生成${label}模块的内容`;
-          break;
-        default:
-          question = `请帮我生成${label}模块的内容`;
-      }
-      setAiQuestion(question);
-      setAiTrigger((t) => t + 1);
-    },
-    [],
-  );
+  const handleAtsAudit = useCallback(async () => {
+    if (!resume) return;
+    setAtsAuditLoading(true);
+    setAtsAuditResult(null);
+    setShowAtsAudit(true);
+    try {
+      const result = await auditResume(resume.id);
+      setAtsAuditResult(result);
+    } catch (err) {
+      setAtsAuditResult(null);
+      // 错误由弹窗内显示
+    } finally {
+      setAtsAuditLoading(false);
+    }
+  }, [resume]);
 
   // ── 手动保存草稿 ────────────────────────────────────────────
 
@@ -560,7 +540,6 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
     setPreviewCollapsed((v) => !v);
   }, []);
   const handleCloseStylePanel = useCallback(() => setShowStylePanel(false), []);
-  const handleCloseAIChat = useCallback(() => setShowAIChat(false), []);
 
   // ── 模板切换（借鉴 Magic Resume setTemplate：覆盖主题色/间距与模板对齐） ──
   const handleSetTemplate = useCallback((templateId: string) => {
@@ -596,17 +575,6 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
       }
     },
     [resumeId, setModules],
-  );
-
-  // ── ATS 优化回调 ──
-  const handleAtsOptimize = useCallback(
-    (company: string, position: string) => {
-      setShowAIChat(true);
-      const question = `请根据 ${company} 公司的「${position}」岗位要求，对我的简历进行 ATS（Applicant Tracking System）机筛优化。请从以下方面优化：\n1. 关键词匹配：补充 JD 中的核心关键词（技术栈、职责描述等）\n2. 格式规范：确保内容简洁、无特殊字符、使用标准行业术语\n3. 内容优先级：将最匹配 JD 的经历放在前面\n4. 量化成果：补充具体数据和成果描述\n5. 排版建议：确保 ATS 友好的文本格式`;
-      setAiQuestion(question);
-      setAiTrigger((t) => t + 1);
-    },
-    [],
   );
 
   // ── 渲染：加载中 ────────────────────────────────────────────
@@ -852,17 +820,6 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
             粘贴导入
           </button>
 
-          {/* 过机筛优化 */}
-          <button
-            onClick={() => setShowAtsDialog(true)}
-            className="btn-tool"
-            aria-label="过机筛优化"
-            title="过机筛优化 AI"
-          >
-            <Funnel size={13} weight="regular" aria-hidden="true" />
-            过机筛优化
-          </button>
-
           {/* 分隔线 */}
           <div className="w-px h-5 bg-[var(--color-border)] mx-0.5" />
 
@@ -931,17 +888,6 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
             样式
           </button>
 
-          {/* AI 助手切换 */}
-          <button
-            onClick={() => setShowAIChat((v) => !v)}
-            className={`btn-tool ${showAIChat ? "btn-tool-active" : ""}`}
-            aria-label="AI 助手"
-            aria-pressed={showAIChat}
-          >
-            <ChatCircleDots size={12} weight={showAIChat ? "fill" : "regular"} aria-hidden="true" />
-            AI
-          </button>
-
           {/* T18: 版本历史 */}
           <button
             onClick={() => setShowVersionHistory(true)}
@@ -951,6 +897,16 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
           >
             <GitBranch size={12} weight="regular" aria-hidden="true" />
             版本
+          </button>
+
+          {/* P0-A: ATS 审计 */}
+          <button
+            onClick={handleAtsAudit}
+            className="btn-tool"
+            aria-label="ATS 审计"
+            title="模拟 ATS 解析，检测简历可读性问题"
+          >
+            🔍 ATS
           </button>
         </div>
       </div>
@@ -999,7 +955,6 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
             onReorder={handleReorder}
             onAdd={handleAddModule}
             onRemove={handleRemoveModule}
-            onAIGenerate={handleAIGenerate}
           />
         </div>
 
@@ -1035,16 +990,6 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
           onSelect={handleSetTemplate}
         />
 
-        {/* 浮动覆盖层：AI 聊天面板 */}
-        <BuilderAIChat
-          resumeId={resumeId}
-          show={showAIChat}
-          onToggle={handleCloseAIChat}
-          externalQuestion={aiQuestion}
-          externalTrigger={aiTrigger}
-          onAgentDone={refreshModules}
-        />
-
         {/* T18: 版本历史弹窗 */}
         <VersionHistoryDialog
           resumeId={resumeId}
@@ -1060,12 +1005,38 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
           onParsed={handlePasteParsed}
         />
 
-        {/* 过机筛优化弹窗 */}
-        <AtsOptimizeDialog
-          open={showAtsDialog}
-          onClose={() => setShowAtsDialog(false)}
-          onOptimize={handleAtsOptimize}
-        />
+        {/* P0-A: ATS 审计弹窗 */}
+        {showAtsAudit && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+            <div className="bg-[var(--color-bg)] rounded-xl shadow-2xl w-full max-w-lg max-h-[80vh] overflow-y-auto p-6">
+              {atsAuditLoading ? (
+                <div className="text-center py-12">
+                  <div className="animate-spin w-8 h-8 border-2 border-[var(--color-accent)] border-t-transparent rounded-full mx-auto mb-4" />
+                  <div className="text-sm text-[var(--color-text-secondary)]">
+                    正在执行 ATS 审计...
+                  </div>
+                </div>
+              ) : atsAuditResult ? (
+                <AtsAuditReport
+                  result={atsAuditResult}
+                  onClose={() => setShowAtsAudit(false)}
+                />
+              ) : (
+                <div className="text-center py-12">
+                  <div className="text-sm text-red-400">
+                    ATS 审计失败，请稍后重试
+                  </div>
+                  <button
+                    onClick={() => setShowAtsAudit(false)}
+                    className="mt-4 px-4 py-2 rounded-lg bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] text-sm hover:bg-[var(--color-bg-tertiary)]"
+                  >
+                    关闭
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

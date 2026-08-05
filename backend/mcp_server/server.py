@@ -23,6 +23,8 @@ mcp = FastMCP(
         "- search_knowledge_base：在简历知识库中搜索相关信息\n"
         "- analyze_resume：分析简历内容，提取关键信息\n"
         "- rewrite_query：改写用户查询以提高检索效果\n"
+        "- ats_audit：审计简历的 ATS 可读性问题（乱码、特殊符号等）\n"
+        "- match_job_description：将简历与职位描述进行匹配分析\n"
         "每个工具都需要 resume_id 参数来指定要操作的简历。"
     ),
 )
@@ -31,6 +33,7 @@ mcp = FastMCP(
 def _register_handlers() -> None:
     from mcp_server.tools import search, analyze, rewrite, rerank, generate  # noqa: F401
     from mcp_server.tools import answer, get_asset  # noqa: F401  # T13 新增原子工具
+    from mcp_server.tools import ats, jd_match  # noqa: F401  # P2-D 内扩 MCP 工具
     from mcp_server.resources import resumes, history  # noqa: F401
 
     logger.info("MCP tools and resources registered")

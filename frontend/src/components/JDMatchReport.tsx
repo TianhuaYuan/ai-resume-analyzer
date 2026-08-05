@@ -4,16 +4,49 @@
  * - 总分 hero + band 档位徽章（scoreBandKey 与 ScoreCard 同源）
  * - matched / missing 关键词 chips 分色（Magic-Resume KeywordChips 对照）
  * - gaps 低成本改进项列表（Magic-Resume fit-report.gaps 对照）
+ * - 导出差距清单（一键复制 + CareerCoach 学习路径引导）
  */
-import { CheckCircle, WarningCircle, TrendUp } from "@phosphor-icons/react";
+import { useState } from "react";
+import { CheckCircle, WarningCircle, TrendUp, Export } from "@phosphor-icons/react";
 import type { MatchJDResult } from "../api/resumes";
+import { formatGapList, type GapExportContext } from "../lib/gapExport";
 import { BAND_META, scoreBandKey } from "./ScoreCard";
 
-export default function JDMatchReport({ result }: { result: MatchJDResult }) {
+interface JDMatchReportProps {
+  result: MatchJDResult;
+  /** 简历名称，用于导出清单的头部信息 */
+  resumeName?: string;
+  /** JD 文本片段，用于导出清单的头部信息 */
+  jdSnippet?: string;
+}
+
+export default function JDMatchReport({ result, resumeName, jdSnippet }: JDMatchReportProps) {
   const scores = result.scores;
   const matched = result.matched_keywords ?? [];
   const missing = result.missing_keywords ?? [];
   const gaps = result.gaps ?? [];
+
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyGapList = async () => {
+    const ctx: GapExportContext = { resumeName, jdSnippet };
+    const text = formatGapList(result, ctx);
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // 降级 execCommand
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.left = "-9999px";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   return (
     <div className="space-y-4">
@@ -107,6 +140,31 @@ export default function JDMatchReport({ result }: { result: MatchJDResult }) {
               </li>
             ))}
           </ul>
+
+          {/* 导出差距清单 + CareerCoach 引导 */}
+          <div className="mt-3 pt-3 border-t border-[var(--color-border)]">
+            <button
+              onClick={() => void handleCopyGapList()}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium
+                text-[var(--color-text-secondary)] bg-[var(--color-bg-secondary)]
+                hover:bg-[#E5E5EA] active:scale-[0.98] transition-all cursor-pointer"
+            >
+              <Export size={12} weight="bold" aria-hidden="true" />
+              {copied ? "已复制" : "导出差距清单"}
+            </button>
+            <p className="mt-2 text-[11px] text-[var(--color-text-muted)] leading-relaxed">
+              下载{" "}
+              <a
+                href="https://github.com/AI-Engineer-Coder/career-coach-agent"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline underline-offset-2 hover:text-[var(--color-text-secondary)] transition-colors"
+              >
+                CareerCoach 桌面版
+              </a>{" "}
+              自动生成学习路径
+            </p>
+          </div>
         </div>
       )}
     </div>

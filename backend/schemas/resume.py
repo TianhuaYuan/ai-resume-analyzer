@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from enum import Enum
 from typing import Literal
 from pydantic import BaseModel, Field, model_validator
 
@@ -230,3 +231,39 @@ class BackgroundAnalyzeResponse(BaseModel):
     status: str
     resume_id: int
     message: str
+
+
+# ── ATS 可读性审计（P0-A）─────────────────────────────────
+
+
+class AtsIssueType(str, Enum):
+    """ATS 问题类型。"""
+
+    garbled = "garbled"
+    blank = "blank"
+    special_symbol = "special_symbol"
+    image_text = "image_text"
+    table = "table"
+
+
+class AtsAuditIssue(BaseModel):
+    """单个 ATS 问题。"""
+
+    section: str
+    issue_type: AtsIssueType
+    severity: str  # "high" | "medium" | "low"
+    message: str
+    suggestion: str
+    context: str | None = None
+
+
+class AtsAuditResponse(BaseModel):
+    """ATS 可读性审计响应。"""
+
+    resume_id: int
+    ats_score: int
+    issue_count: int
+    issues: list[AtsAuditIssue]
+    method: str  # "html" | "pdf" | "pdf+html"
+    pdf_available: bool
+    warnings: list[str] = []

@@ -34,7 +34,7 @@ import {
   type QuotaResponse,
   type ConversationItem,
 } from "../api/qa";
-import { listResumes, uploadResume, type ResumeItem } from "../api/resumes";
+import { listResumes, uploadResume, auditResume, type ResumeItem, type AtsAuditResult } from "../api/resumes";
 import {
   getBuilderResume,
   saveDraft,
@@ -57,11 +57,13 @@ import AgentProcessPanel from "../components/AgentProcessPanel";
 // E1: 简历诊断结构化卡片（四维评分 + 诊断结论 + 可溯源来源）
 import DiagnosisCard, { isDiagnosisMessage } from "../components/DiagnosisCard";
 import type { DiagnosisSource } from "../components/DiagnosisCard";
+// P1-C: 工具卡片通用分发（JDMatchReport 等）
+import AgentCardRouter from "../components/AgentCardRouter";
 import ResumeEditDiffDialog from "../components/ResumeEditDiffDialog";
+import AtsAuditReport from "../components/AtsAuditReport";
 import ChatInput from "../components/ChatInput";
 import VersionHistoryDialog from "../components/VersionHistoryDialog";
 import PasteResumeDialog from "../components/builder/PasteResumeDialog";
-import AtsOptimizeDialog from "../components/builder/AtsOptimizeDialog";
 import { StylePanel } from "../components/builder/StylePanel";
 
 interface ChatMessage {
@@ -287,6 +289,9 @@ const MessageBubble = memo(function MessageBubble({ msg, deleting, onDelete, onF
             ) : !msg.streaming && isDiagnosisMessage(msg) ? (
               /* E1: 简历诊断回答 → 结构化卡片（评分提取失败自动回退纯 markdown） */
               <DiagnosisCard answer={msg.answer} sources={msg.sources} />
+            ) : !msg.streaming && msg.agent_steps && msg.agent_steps.length > 0 ? (
+              /* P1-C: 有 Agent 步骤时 → 卡片通用分发（JDMatchReport 等，无匹配则 markdown） */
+              <AgentCardRouter steps={msg.agent_steps} answer={msg.answer} streaming={msg.streaming} />
             ) : (
               <MarkdownRenderer>
                 {msg.answer}
@@ -452,8 +457,12 @@ export default function QAPage() {
   const [, setLastSaveMode] = useState<"draft" | "complete" | null>(null);
   const [showVersionHistory, setShowVersionHistory] = useState(false);
   const [showPasteDialog, setShowPasteDialog] = useState(false);
-  const [showAtsDialog, setShowAtsDialog] = useState(false);
   const [showStylePanel, setShowStylePanel] = useState(false);
+
+  // P0-A: ATS 审计弹窗
+  const [showAtsAudit, setShowAtsAudit] = useState(false);
+  const [atsAuditResult, setAtsAuditResult] = useState<AtsAuditResult | null>(null);
+  const [atsAuditLoading, setAtsAuditLoading] = useState(false);
   const lockTokenRef = useRef<string | null>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const modulesRef = useRef(previewModules);
@@ -616,6 +625,8 @@ export default function QAPage() {
   // flush 后自动滚动到底部，实现实时滚动体验。
   const pendingStepsRef = useRef<AgentStep[]>([]);
   const rafRef = useRef<number | null>(null);
+  // P1-C: 记录每个 tool_call 的开始时间，用于计算 durationMs
+  const stepStartRef = useRef<Map<string, number>>(new Map());
 
   const applyPendingSteps = useCallback(
     (targetId: string) => {
@@ -780,6 +791,22 @@ export default function QAPage() {
     return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current); };
   }, [previewModules, previewStyle, resume, doSaveDraft]);
 
+  // P0-A: ATS 审计
+  const handleAtsAudit = useCallback(async () => {
+    if (!resume) return;
+    setAtsAuditLoading(true);
+    setAtsAuditResult(null);
+    setShowAtsAudit(true);
+    try {
+      const result = await auditResume(resume.id);
+      setAtsAuditResult(result);
+    } catch {
+      setAtsAuditResult(null);
+    } finally {
+      setAtsAuditLoading(false);
+    }
+  }, [resume]);
+
   // v2: 手动保存草稿
   const handleSaveDraft = useCallback(async () => {
     if (!resume) return;
@@ -838,12 +865,6 @@ export default function QAPage() {
     }));
     setPreviewModules(newModules);
   }, [resumeId]);
-
-  // v2: ATS 优化回调
-  const handleAtsOptimize = useCallback((company: string, position: string) => {
-    const question = `请根据 ${company} 公司的「${position}」岗位要求，对我的简历进行 ATS 机筛优化。请从以下方面优化：\n1. 关键词匹配\n2. 格式规范\n3. 内容优先级\n4. 量化成果\n5. 排版建议`;
-    sendQuestion(question);
-  }, []);
 
   // 加载 token 限额
   useEffect(() => {
@@ -1003,19 +1024,38 @@ export default function QAPage() {
             appendThought(event.content ?? "");
             scheduleStreamingFlush(tempId);
           } else if (event.type === "tool_call") {
+            // P1-C: 记录开始时间 + 填充结构化字段
+            const stepId = event.id ?? `tc-${Date.now()}`;
+            if (event.id) stepStartRef.current.set(event.id, Date.now());
+            let parsedArgs: Record<string, unknown> | undefined;
+            if (event.args) {
+              try { parsedArgs = JSON.parse(event.args); } catch { /* not JSON */ }
+            }
             pendingStepsRef.current.push({
               type: "tool_call" as const,
               name: event.tool_name ?? "",
               detail: event.args,
-              id: event.id,
+              id: stepId,
+              args: parsedArgs,
+              argsText: event.args,
+              status: "running",
+              startedAt: Date.now(),
             });
             scheduleStreamingFlush(tempId);
           } else if (event.type === "tool_result") {
+            // P1-C: 计算 durationMs + 填充 result 字段
+            const durationMs = event.id
+              ? (Date.now() - (stepStartRef.current.get(event.id) ?? Date.now()))
+              : undefined;
+            if (event.id) stepStartRef.current.delete(event.id);
             pendingStepsRef.current.push({
               type: "tool_result" as const,
               name: event.tool_name ?? "",
               detail: event.summary,
               id: event.id,
+              result: event.detail,
+              status: "done",
+              durationMs: durationMs != null && durationMs > 0 ? durationMs : undefined,
             });
             scheduleStreamingFlush(tempId);
 
@@ -1046,13 +1086,53 @@ export default function QAPage() {
               }, 500);
             }
           } else if (event.type === "tool_error") {
+            // P1-C: 计算 durationMs + status=error
+            const errorDurationMs = event.id
+              ? (Date.now() - (stepStartRef.current.get(event.id) ?? Date.now()))
+              : undefined;
+            if (event.id) stepStartRef.current.delete(event.id);
             pendingStepsRef.current.push({
               type: "tool_error" as const,
               name: event.tool_name ?? "",
               detail: event.error,
               id: event.id,
+              status: "error",
+              durationMs: errorDurationMs != null && errorDurationMs > 0 ? errorDurationMs : undefined,
             });
             scheduleStreamingFlush(tempId);
+          } else if (event.type === "tool_stream") {
+            // P1-C: 工具内部 LLM 流式 token → copy-on-write 追加到最后一个同工具 tool_stream step
+            // 从 BuilderAIChat 移植：高频事件直接 setChat，避免 pending buffer 无法合并
+            setChat((prev) =>
+              prev.map((m) => {
+                if (m.id !== tempId) return m;
+                const steps = m.agent_steps ?? [];
+                const lastStep = steps[steps.length - 1];
+                if (
+                  lastStep &&
+                  lastStep.type === "tool_stream" &&
+                  lastStep.name === event.tool_name
+                ) {
+                  const updatedSteps = [...steps];
+                  updatedSteps[updatedSteps.length - 1] = {
+                    ...lastStep,
+                    detail: (lastStep.detail ?? "") + (event.content ?? ""),
+                  };
+                  return { ...m, agent_steps: updatedSteps };
+                }
+                return {
+                  ...m,
+                  agent_steps: [
+                    ...steps,
+                    {
+                      type: "tool_stream" as const,
+                      name: event.tool_name ?? "",
+                      detail: event.content ?? "",
+                    },
+                  ],
+                };
+              }),
+            );
           } else if (event.type === "usage") {
             // 实时更新 token 消耗（每轮 LLM 调用后推送）
             if (event.total) {
@@ -1541,14 +1621,6 @@ export default function QAPage() {
                 📋 粘贴导入
               </button>
               <button
-                onClick={() => setShowAtsDialog(true)}
-                className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full
-                  text-xs font-medium border border-[var(--color-border)] text-[var(--color-text-secondary)]
-                  hover:bg-[var(--color-bg-secondary)] transition-all cursor-pointer"
-              >
-                🔍 过机检测
-              </button>
-              <button
                 onClick={() => setShowStylePanel(true)}
                 className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full
                   text-xs font-medium border border-[var(--color-border)] text-[var(--color-text-secondary)]
@@ -1564,6 +1636,15 @@ export default function QAPage() {
                 title="查看检索索引版本历史"
               >
                 📑 版本历史
+              </button>
+              <button
+                onClick={handleAtsAudit}
+                className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full
+                  text-xs font-medium border border-[var(--color-border)] text-[var(--color-text-secondary)]
+                  hover:bg-[var(--color-bg-secondary)] transition-all cursor-pointer"
+                title="模拟 ATS 解析，检测简历可读性问题"
+              >
+                🔍 ATS
               </button>
               <button
                 onClick={handleSaveDraft}
@@ -1696,34 +1777,6 @@ export default function QAPage() {
                   }}
                   onRemove={(type) => {
                     setPreviewModules((prev) => prev.filter((m) => m.module_type !== type));
-                  }}
-                  onAIGenerate={(type, action, customPrompt) => {
-                    const label = type;
-                    let question = "";
-                    let actionLabel = "优化";
-                    switch (action) {
-                      case "polish":
-                        question = `请帮我润色${label}模块的内容`;
-                        actionLabel = "润色";
-                        break;
-                      case "expand":
-                        question = `请帮我扩展${label}模块的内容`;
-                        actionLabel = "扩展";
-                        break;
-                      case "translate":
-                        question = `请帮我翻译${label}模块的内容为英文`;
-                        actionLabel = "翻译";
-                        break;
-                      default:
-                        question = customPrompt || `请帮我优化${label}模块的内容`;
-                    }
-                    setEditingModule(null);
-                    // v2: 走 builder 意图直达，跳过 ReAct 决定轮，1 次工具调用完成
-                    sendQuestion(question, {
-                      toolMode: "builder",
-                      moduleType: type,
-                      action: actionLabel,
-                    });
                   }}
                 />
               </div>
@@ -1944,14 +1997,39 @@ export default function QAPage() {
         />
       )}
 
-      {/* ── v2: ATS 优化弹窗 ── */}
-      {showAtsDialog && (
-        <AtsOptimizeDialog
-          open={showAtsDialog}
-          onClose={() => setShowAtsDialog(false)}
-          onOptimize={handleAtsOptimize}
-        />
+      {/* ── P0-A: ATS 审计弹窗 ── */}
+      {showAtsAudit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-[var(--color-bg)] rounded-xl shadow-2xl w-full max-w-lg max-h-[80vh] overflow-y-auto p-6">
+            {atsAuditLoading ? (
+              <div className="text-center py-12">
+                <div className="animate-spin w-8 h-8 border-2 border-[var(--color-accent)] border-t-transparent rounded-full mx-auto mb-4" />
+                <div className="text-sm text-[var(--color-text-secondary)]">
+                  正在执行 ATS 审计...
+                </div>
+              </div>
+            ) : atsAuditResult ? (
+              <AtsAuditReport
+                result={atsAuditResult}
+                onClose={() => setShowAtsAudit(false)}
+              />
+            ) : (
+              <div className="text-center py-12">
+                <div className="text-sm text-red-400">
+                  ATS 审计失败，请稍后重试
+                </div>
+                <button
+                  onClick={() => setShowAtsAudit(false)}
+                  className="mt-4 px-4 py-2 rounded-lg bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] text-sm hover:bg-[var(--color-bg-tertiary)]"
+                >
+                  关闭
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       )}
+
 
       {/* ── v2: 样式面板（浮动覆盖在左侧） ── */}
       {showStylePanel && (

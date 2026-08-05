@@ -15,6 +15,7 @@ import {
   Brain,
   CaretRight,
   CaretDown,
+  Spinner,
 } from "@phosphor-icons/react";
 import type { AgentStep } from "../api/qa";
 
@@ -24,17 +25,27 @@ interface AgentProcessPanelProps {
   streaming: boolean;
 }
 
-/** 工具名中文映射 */
+/** 工具名中文映射 — 对齐 19 个真实工具名 */
 const TOOL_LABELS: Record<string, string> = {
   search_resume: "检索简历",
   jd_match: "JD 匹配",
   diagnose_resume: "简历诊断",
-  compare_resume: "简历对比",
-  rewrite_section: "改写段落",
-  translate_resume: "翻译简历",
-  interview_q: "面试题生成",
-  greeting_letter: "求职信",
-  reply_question: "回复问题",
+  compare_resumes: "对比分析",
+  rewrite_star: "STAR 改写",
+  translate: "翻译",
+  interview_coach: "面试教练",
+  cover_letter: "求职信",
+  answer_from_index: "知识库问答",
+  search_assets: "资产检索",
+  get_resume_content: "读取简历",
+  save_memory: "保存记忆",
+  recall_memory: "召回记忆",
+  recommend_jobs: "岗位推荐",
+  generate_module: "生成模块",
+  check_module: "检查模块",
+  modify_module: "修改模块",
+  rewrite_resume: "重写简历",
+  ask_info: "追问信息",
 };
 
 function getToolLabel(name: string): string {
@@ -75,6 +86,13 @@ function mergeThoughtSteps(raw: AgentStep[]): AgentStep[] {
   return merged;
 }
 
+/** 格式化耗时（毫秒 → 可读） */
+function formatDurationMs(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const s = ms / 1000;
+  return s < 10 ? `${s.toFixed(1)}s` : `${Math.round(s)}s`;
+}
+
 /** 单步渲染（memo：step 引用未变时跳过重渲染） */
 const StepItem = memo(function StepItem({
   step,
@@ -85,9 +103,14 @@ const StepItem = memo(function StepItem({
   index: number;
   streaming: boolean;
 }) {
-  // 所有步骤默认展开：流式期间实时展示思考内容和工具调用，结束后也保持展开供用户阅读
   const [expanded, setExpanded] = useState(true);
+  const [showArgs, setShowArgs] = useState(false);
+  const [showResult, setShowResult] = useState(false);
+
   const hasDetail = step.detail && step.detail.length > 0;
+  const hasArgs = step.args != null || (step.argsText != null && step.argsText.length > 0);
+  const hasResult = step.result != null && step.result.length > 0;
+  const hasDuration = step.durationMs != null && step.durationMs > 0;
 
   const config = {
     tool_call: {
@@ -130,10 +153,11 @@ const StepItem = memo(function StepItem({
   }[step.type];
 
   const Icon = config.icon;
-  // 流式期间：思考内容始终展开不截断；工具调用/结果也展开
-  // 流式结束后：思考保持展开（用户可折叠），工具步骤保持展开（用户可折叠）
-  // 流式结束后点击标题行可整体折叠面板
-  const showToggle = hasDetail && !streaming;
+  const isRunning = streaming && step.status === "running";
+  const showToggle = (hasDetail || hasArgs || hasResult) && !streaming;
+
+  // 状态图标：running 时旋转，done 时勾，error 时叉
+  const StatusIcon = isRunning ? Spinner : step.status === "error" ? WarningCircle : null;
 
   return (
     <div className="flex gap-2.5">
@@ -142,7 +166,11 @@ const StepItem = memo(function StepItem({
         <div
           className={`w-5 h-5 rounded-full ${config.bg} ${config.border} border flex items-center justify-center`}
         >
-          <Icon size={11} weight="fill" className={config.color} aria-hidden="true" />
+          {isRunning ? (
+            <Spinner size={11} weight="bold" className={`${config.color} animate-spin`} aria-hidden="true" />
+          ) : (
+            <Icon size={11} weight="fill" className={config.color} aria-hidden="true" />
+          )}
         </div>
         {index > 0 && (
           <div className="w-px flex-1 bg-[var(--color-border)] mt-0.5" />
@@ -152,30 +180,104 @@ const StepItem = memo(function StepItem({
       {/* 内容 */}
       <div className="flex-1 min-w-0 pb-2">
         <button
-          onClick={() => hasDetail && setExpanded((v) => !v)}
-          disabled={!hasDetail}
+          onClick={() => (hasDetail || hasArgs || hasResult) && setExpanded((v) => !v)}
+          disabled={!hasDetail && !hasArgs && !hasResult}
           className={`text-xs font-medium ${config.color} ${
-            hasDetail
+            hasDetail || hasArgs || hasResult
               ? "cursor-pointer hover:opacity-80 transition-opacity"
               : "cursor-default"
           }`}
         >
           {config.label}
+          {hasDuration && (
+            <span className="ml-1.5 px-1.5 py-0 rounded text-[10px] font-normal tabular-nums bg-[var(--color-bg-secondary)] text-[var(--color-text-muted)] border border-[var(--color-border)]">
+              {formatDurationMs(step.durationMs!)}
+            </span>
+          )}
+          {StatusIcon && (
+            <StatusIcon
+              size={10}
+              weight="fill"
+              className={`ml-1 inline-block ${isRunning ? "animate-spin text-brand" : "text-red-500"}`}
+              aria-hidden="true"
+            />
+          )}
           {showToggle && (
             <span className="ml-1 text-[var(--color-text-muted)]">
               {expanded ? "▲" : "▼"}
             </span>
           )}
         </button>
-        {expanded && hasDetail && (
-          <div
-            className={`mt-1 p-2 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[11px] text-[var(--color-text-secondary)] leading-relaxed whitespace-pre-wrap break-words ${
-              streaming
-                ? "" // 流式期间不限高，内容完全展开实时可见
-                : "max-h-40 overflow-y-auto" // 结束后限制高度，可内部滚动
-            }`}
-          >
-            {step.detail}
+
+        {expanded && (
+          <div className="mt-1 space-y-1">
+            {/* 参数展示（tool_call 时） */}
+            {hasArgs && showArgs && (
+              <div className="p-2 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[11px] text-[var(--color-text-secondary)]">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-medium text-[var(--color-text-muted)]">参数</span>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowArgs(false); }}
+                    className="text-[10px] text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] cursor-pointer"
+                  >
+                    收起
+                  </button>
+                </div>
+                <pre className="whitespace-pre-wrap break-words overflow-x-auto max-h-32 overflow-y-auto">
+                  {step.argsText ?? JSON.stringify(step.args, null, 2)}
+                </pre>
+              </div>
+            )}
+            {/* 结果展示（tool_result 时） */}
+            {hasResult && showResult && (
+              <div className="p-2 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[11px] text-[var(--color-text-secondary)]">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-medium text-[var(--color-text-muted)]">结果</span>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowResult(false); }}
+                    className="text-[10px] text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] cursor-pointer"
+                  >
+                    收起
+                  </button>
+                </div>
+                <pre className="whitespace-pre-wrap break-words overflow-x-auto max-h-32 overflow-y-auto">
+                  {step.result}
+                </pre>
+              </div>
+            )}
+            {/* detail 展示（原有逻辑） */}
+            {hasDetail && (
+              <div
+                className={`p-2 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[11px] text-[var(--color-text-secondary)] leading-relaxed whitespace-pre-wrap break-words ${
+                  streaming
+                    ? ""
+                    : "max-h-40 overflow-y-auto"
+                }`}
+              >
+                {step.detail}
+              </div>
+            )}
+            {/* 操作按钮：有 args/result 时显示展开/折叠按钮 */}
+            {!streaming && (hasArgs || hasResult) && (
+              <div className="flex gap-1.5">
+                {hasArgs && !showArgs && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowArgs(true); setExpanded(true); }}
+                    className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] cursor-pointer"
+                  >
+                    查看参数
+                  </button>
+                )}
+                {hasResult && !showResult && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowResult(true); setExpanded(true); }}
+                    className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] cursor-pointer"
+                  >
+                    查看结果
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>

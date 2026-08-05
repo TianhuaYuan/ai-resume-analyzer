@@ -11,6 +11,7 @@ v2 统一 Agent 编辑器：合并 qa(13) + builder(5) → unified(18)。
   unified (18): qa + builder 全部工具（/ask/agent 统一使用）
 """
 
+import json as _json_std
 import logging
 from typing import Literal
 
@@ -386,7 +387,18 @@ class JDMatchTool(Tool):
                 resume_id=resume_id,
                 jd_text=jd_text,
             )
-            return result.get("analysis", "分析结果为空")
+            analysis = result.get("analysis", "分析结果为空")
+            # P1-C: 追加结构化 JSON 块供前端提取渲染 JDMatchReport 卡片
+            # LLM 读 analysis 正常总结；前端从 event.detail 提取 <match_result> 块
+            structured = {
+                "analysis": analysis,
+                "scores": result.get("scores"),
+                "matched_keywords": result.get("matched_keywords", []),
+                "missing_keywords": result.get("missing_keywords", []),
+                "gaps": result.get("gaps", []),
+            }
+            structured_block = "\n\n<match_result>" + _json_std.dumps(structured, ensure_ascii=False) + "</match_result>"
+            return analysis + structured_block
         except HTTPException as e:
             return f"⚠️ {e.detail}"
         except Exception as e:

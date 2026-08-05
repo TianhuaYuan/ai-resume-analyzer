@@ -265,3 +265,28 @@ export async function triggerBackgroundAnalysis(
 ): Promise<BackgroundAnalyzeResult> {
   return api.post(`/api/v1/resumes/${id}/analyze-background`) as Promise<BackgroundAnalyzeResult>;
 }
+
+// ── P0-A: ATS 可读性审计 ──────────────────────────────────
+
+export interface AtsAuditIssue {
+  section: string;
+  issue_type: string;
+  severity: string; // "high" | "medium" | "low"
+  message: string;
+  suggestion: string;
+  context?: string | null;
+}
+
+export interface AtsAuditResult {
+  resume_id: number;
+  ats_score: number;
+  issue_count: number;
+  issues: AtsAuditIssue[];
+  method: string; // "html" | "pdf" | "pdf+html"
+  pdf_available: boolean;
+  warnings: string[];
+}
+
+export async function auditResume(id: number): Promise<AtsAuditResult> {
+  return api.post(`/api/v1/resumes/${id}/ats-audit`) as Promise<AtsAuditResult>;
+}
