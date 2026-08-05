@@ -1,9 +1,12 @@
 /**
  * T31: 简历模板列表 — 前端静态配置。
  *
- * 与后端 templates/*.html 对齐（11 套）。模板系统支持新增模板时同步在此登记。
+ * 与后端 templates/*.html 对齐（18 套）。模板由 scripts/generate-templates/generate.mjs
+ * 从 tokens.json 生成，元信息集中在 generatedTemplateOptions.ts，此处只做透传。
  * 渲染由后端 TemplateRegistry 完成，此处仅提供模板选择器的展示元信息。
  */
+
+import { GENERATED_TEMPLATE_OPTIONS } from "./generatedTemplateOptions";
 
 export interface TemplateOption {
   id: string;
@@ -11,64 +14,8 @@ export interface TemplateOption {
   description: string;
 }
 
-/** 11 套模板（与后端 templates/*.html 对齐） */
-export const TEMPLATE_OPTIONS: TemplateOption[] = [
-  {
-    id: "default",
-    name: "经典",
-    description: "适合大多数场景，布局清晰，配色专业",
-  },
-  {
-    id: "minimal",
-    name: "极简",
-    description: "极简风格，留白多，适合设计/创意类岗位",
-  },
-  {
-    id: "business",
-    name: "商务",
-    description: "商务风格，强调结构感，适合金融/管理类岗位",
-  },
-  {
-    id: "professional",
-    name: "专业",
-    description: "双栏专业布局，深色侧栏突出基本信息与技能，适合求职主投",
-  },
-  {
-    id: "elegant",
-    name: "简约优雅",
-    description: "干净留白 + 细线分隔 + 宋体排版，百搭求职风",
-  },
-  {
-    id: "steady",
-    name: "稳重大气",
-    description: "深色头带 + 正式结构，适合国企/银行/管理类岗位",
-  },
-  {
-    id: "vibrant",
-    name: "活泼明朗",
-    description: "亮色渐变 + 圆角卡片 + 胶囊技能标签，适合设计/创意岗位",
-  },
-  {
-    id: "timeline",
-    name: "时间轴",
-    description: "左侧时间线 + 节点圆点，经历按时间流呈现，突出职业发展轨迹",
-  },
-  {
-    id: "twocolumn",
-    name: "双栏清爽",
-    description: "浅色侧栏放技能/语言 + 主内容区，布局清晰，适合技术类岗位",
-  },
-  {
-    id: "card",
-    name: "卡片现代",
-    description: "深色头部 + 圆角卡片模块 + 彩色边框，现代简约，适合技术/产品岗",
-  },
-  {
-    id: "editorial",
-    name: "编辑杂志",
-    description: "大字号 + 粗分隔线 + 杂志排版，作品集感，适合设计/创意岗位",
-  },
-];
+/** 18 套模板（与后端 templates/*.html 对齐，由生成器产出） */
+export const TEMPLATE_OPTIONS: TemplateOption[] = [...GENERATED_TEMPLATE_OPTIONS];
 
 /** 字体选项 */
 export const FONT_OPTIONS = [

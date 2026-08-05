@@ -70,7 +70,8 @@ async def test_stream_success_emits_token_then_done(client: AsyncClient, auth_he
     # done 事件应带 qa_id（save_qa 返回 id=42）
     done_event = next(e for e in events if e["type"] == "done")
     assert done_event.get("qa_id") == 42
-    assert "源1" in done_event.get("sources", [])
+    # sources 是 dict 列表（{text, section, ...}），断言含目标来源
+    assert any(s.get("text") == "源1" for s in done_event.get("sources", []))
 
 
 @pytest.mark.asyncio

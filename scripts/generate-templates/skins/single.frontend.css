@@ -1,0 +1,38 @@
+/* ── single 布局：单栏，根 padding = var(--margin)(分页测量依赖) ── */
+.resume-template.__ID__-template {
+  padding: var(--margin);
+  background: __BG__;
+  color: __TEXT__;
+}
+.resume-template.__ID__-template .resume-container { width: 100%; }
+
+.resume-template.__ID__-template .basic-header {
+  padding-bottom: 16px;
+  margin-bottom: var(--section-spacing);
+}
+.resume-template.__ID__-template .basic-name {
+  color: __TEXT__;
+  font-size: calc(var(--font-size) * __NAME_SIZE__);
+  letter-spacing: 1px;
+}
+.resume-template.__ID__-template .basic-job-title {
+  font-weight: __ACCENT_WEIGHT__;
+  margin-top: 4px;
+}
+
+.resume-template.__ID__-template .module-title {
+  font-size: calc(var(--font-size) * __SECTION_TITLE_SIZE__);
+  color: __TEXT__;
+}
+.resume-template.__ID__-template .module-content { padding-left: 2px; }
+
+/* 头部主标题/条目标题统一用 __TEXT__ */
+.resume-template.__ID__-template .edu-school,
+.resume-template.__ID__-template .work-company,
+.resume-template.__ID__-template .proj-name,
+.resume-template.__ID__-template .club-name,
+.resume-template.__ID__-template .skill-name,
+.resume-template.__ID__-template .fallback-key,
+.resume-template.__ID__-template .other-title,
+.resume-template.__ID__-template .custom-title,
+.resume-template.__ID__-template .pub-title { color: __TEXT__; }

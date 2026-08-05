@@ -1,0 +1,54 @@
+/* ── banner 布局：顶部彩色头带 + 下方单栏正文。根 padding = var(--margin) ── */
+.resume-template.__ID__-template {
+  padding: var(--margin);
+  background: __BG__;
+  color: __TEXT__;
+}
+.resume-template.__ID__-template .__ID__-banner {
+  background: var(--accent-color);
+  color: #ffffff;
+  border-radius: 8px;
+  padding: 20px 24px;
+  margin-bottom: var(--section-spacing);
+}
+.resume-template.__ID__-template .__ID__-banner .basic-header { margin: 0; padding: 0; }
+.resume-template.__ID__-template .__ID__-banner .basic-name {
+  color: #ffffff;
+  font-size: calc(var(--font-size) * __NAME_SIZE__);
+  letter-spacing: 2px;
+}
+.resume-template.__ID__-template .__ID__-banner .basic-job-title {
+  color: rgba(255, 255, 255, 0.92);
+  font-weight: __ACCENT_WEIGHT__;
+  margin-top: 2px;
+}
+.resume-template.__ID__-template .__ID__-banner .basic-contact,
+.resume-template.__ID__-template .__ID__-banner .basic-links,
+.resume-template.__ID__-template .__ID__-banner .basic-custom-fields {
+  color: rgba(255, 255, 255, 0.85);
+  margin-top: 4px;
+}
+.resume-template.__ID__-template .__ID__-banner .basic-links a { color: #ffffff; text-decoration: underline; }
+.resume-template.__ID__-template .__ID__-banner .basic-summary {
+  color: rgba(255, 255, 255, 0.9);
+  margin-top: 8px;
+  text-align: left;
+}
+.resume-template.__ID__-template .__ID__-banner .basic-avatar {
+  border: 2px solid rgba(255, 255, 255, 0.6);
+}
+
+.resume-template.__ID__-template .__ID__-body { width: 100%; }
+.resume-template.__ID__-template .__ID__-body .module-title {
+  font-size: calc(var(--font-size) * __SECTION_TITLE_SIZE__);
+  color: __TEXT__;
+}
+.resume-template.__ID__-template .__ID__-body .edu-school,
+.resume-template.__ID__-template .__ID__-body .work-company,
+.resume-template.__ID__-template .__ID__-body .proj-name,
+.resume-template.__ID__-template .__ID__-body .club-name,
+.resume-template.__ID__-template .__ID__-body .skill-name,
+.resume-template.__ID__-template .__ID__-body .fallback-key,
+.resume-template.__ID__-template .__ID__-body .other-title,
+.resume-template.__ID__-template .__ID__-body .custom-title,
+.resume-template.__ID__-template .__ID__-body .pub-title { color: __TEXT__; }

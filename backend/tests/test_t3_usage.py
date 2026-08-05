@@ -223,7 +223,11 @@ class TestMatchJdRecordsUsage:
         mock_client = AsyncMock()
         mock_completion = MagicMock()
         mock_choice = MagicMock()
-        mock_choice.message.content = "匹配分析结果"
+        # JSON-first 结构化匹配：返回合法 JSON → 只走一次 LLM 调用（不触发 markdown 降级）
+        mock_choice.message.content = (
+            '{"score": 85, "matched": ["Python"], "missing": ["Redis"], '
+            '"gaps": ["学习 Redis"], "reason": "高度匹配"}'
+        )
         mock_completion.choices = [mock_choice]
         mock_usage = MagicMock()
         mock_usage.prompt_tokens = 200

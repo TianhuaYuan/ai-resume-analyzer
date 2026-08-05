@@ -181,14 +181,15 @@ export const SOCIAL_LINK_FIELDS: FieldConfig[] = [
 // ── 通用输入样式 ──────────────────────────────────────────────
 
 export const INPUT_CLASS =
-  "w-full px-3 py-2 rounded-xl text-sm text-[var(--color-text)] " +
+  "w-full px-3 py-2 rounded-lg text-sm text-[var(--color-text)] " +
   "bg-[#F2F2F7] border border-transparent " +
   "placeholder:text-[var(--color-text-muted)] " +
+  "hover:border-black/10 hover:bg-[#EDEDF0] " +
   "focus:outline-none focus:bg-white focus:border-brand/40 " +
-  "focus:ring-4 focus:ring-brand/15 transition-all duration-150";
+  "focus:ring-3 focus:ring-brand/15 transition-all duration-150";
 
 export const LABEL_CLASS =
-  "block text-xs font-medium text-[var(--color-text-muted)] mb-1";
+  "block text-xs font-medium text-[var(--color-text-secondary)] mb-1";
 
 // ── 单字段渲染组件 ────────────────────────────────────────────
 
@@ -207,16 +208,6 @@ export function FieldRenderer({ field, value, onChange, aiMenu }: FieldRendererP
         {field.label}
         {field.required && <span className="ml-0.5 text-red-400">*</span>}
       </label>
-      {/* 字段级 AI（仅 textarea 长文本生效，如 basic_info.summary） */}
-      {aiMenu && field.type === "textarea" && (
-        <FieldAIMenu
-          resumeId={aiMenu.resumeId}
-          moduleType={aiMenu.moduleType}
-          text={value}
-          disabled={!value}
-          onApplyText={onChange}
-        />
-      )}
     </div>
   );
 
@@ -231,6 +222,18 @@ export function FieldRenderer({ field, value, onChange, aiMenu }: FieldRendererP
           rows={3}
           minHeight="80px"
         />
+        {/* 字段级 AI 三功能（改写/检查/优化）：仅长文本字段下方显示，作用于本字段单条文本 */}
+        {aiMenu && (
+          <div className="mt-1.5 flex justify-end">
+            <FieldAIMenu
+              resumeId={aiMenu.resumeId}
+              moduleType={aiMenu.moduleType}
+              text={value}
+              disabled={!value}
+              onApplyText={onChange}
+            />
+          </div>
+        )}
       </div>
     );
   }
@@ -377,10 +380,10 @@ export function EntriesEditor({
       {entries.map((entry, index) => (
         <div
           key={index}
-          className={`p-3 rounded-xl border space-y-3 transition-all ${
+          className={`group p-3 rounded-lg border space-y-3 transition-all duration-150 ${
             entry.hidden
               ? "bg-amber-50/50 border-amber-200/50 opacity-60"
-              : "bg-[var(--color-bg-secondary)] border-[var(--color-border)]"
+              : "bg-[var(--color-bg-secondary)] border-[var(--color-border)] hover:border-black/20 hover:bg-white"
           }`}
         >
           {/* 条目头部：序号 + 排序/删除按钮 */}
@@ -389,24 +392,12 @@ export function EntriesEditor({
               {moduleLabel} #{index + 1}
             </span>
             <div className="flex items-center gap-1">
-              {/* 条目级 AI（按需显示：模块支持 + 该条 description 非空） */}
-              {entryAIEnabled && (
-                <FieldAIMenu
-                  resumeId={resumeId!}
-                  moduleType={moduleType!}
-                  text={getString(entry, "description")}
-                  disabled={!getString(entry, "description")}
-                  onApplyText={(newText) =>
-                    onChange(updateEntryField(content, index, "description", newText))
-                  }
-                />
-              )}
               <button
                 onClick={() => handleMoveUp(index)}
                 disabled={index === 0}
-                className="p-1 rounded text-[var(--color-text-muted)]
+                className="p-1 rounded text-[var(--color-text-muted)] opacity-40 group-hover:opacity-100
                   hover:text-brand hover:bg-brand/10
-                  disabled:opacity-30 disabled:cursor-not-allowed
+                  disabled:opacity-20 disabled:cursor-not-allowed
                   transition-all cursor-pointer"
                 aria-label="上移"
               >
@@ -415,9 +406,9 @@ export function EntriesEditor({
               <button
                 onClick={() => handleMoveDown(index)}
                 disabled={index === entries.length - 1}
-                className="p-1 rounded text-[var(--color-text-muted)]
+                className="p-1 rounded text-[var(--color-text-muted)] opacity-40 group-hover:opacity-100
                   hover:text-brand hover:bg-brand/10
-                  disabled:opacity-30 disabled:cursor-not-allowed
+                  disabled:opacity-20 disabled:cursor-not-allowed
                   transition-all cursor-pointer"
                 aria-label="下移"
               >
@@ -425,7 +416,7 @@ export function EntriesEditor({
               </button>
               <button
                 onClick={() => handleRemove(index)}
-                className="p-1 rounded text-[var(--color-text-muted)]
+                className="p-1 rounded text-[var(--color-text-muted)] opacity-40 group-hover:opacity-100
                   hover:text-red-400 hover:bg-red-500/10
                   transition-all cursor-pointer"
                 aria-label="删除条目"
@@ -442,7 +433,7 @@ export function EntriesEditor({
                 className={`p-1 rounded transition-all cursor-pointer ${
                   entry.hidden
                     ? "text-amber-400 bg-amber-500/10"
-                    : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-border)]"
+                    : "text-[var(--color-text-muted)] opacity-40 group-hover:opacity-100 hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-border)]"
                 }`}
                 title={entry.hidden ? "显示条目" : "隐藏条目"}
                 aria-label={entry.hidden ? "显示条目" : "隐藏条目"}
@@ -478,6 +469,11 @@ export function EntriesEditor({
                         : getString(entry, field.key)
                     }
                     onChange={(v) => handleFieldChange(index, field.key, v)}
+                    aiMenu={
+                      entryAIEnabled && field.type === "textarea"
+                        ? { resumeId: resumeId!, moduleType: moduleType! }
+                        : null
+                    }
                   />
                 </div>
               );
@@ -570,21 +566,29 @@ export function SkillsForm({ content, onChange }: SkillsFormProps) {
                 placeholder="技能名称"
                 className={`flex-1 ${INPUT_CLASS}`}
               />
-              {/* 熟练度 1-5 */}
-              <div className="flex items-center gap-0.5" title={`熟练度 ${item.level || 3}/5`}>
-                {[1, 2, 3, 4, 5].map((v) => (
-                  <button
-                    key={v}
-                    onClick={() => handleSkillChange(i, "level", v)}
-                    className={`w-4 h-4 rounded-full text-[10px] transition-all cursor-pointer ${
-                      v <= (item.level || 3)
-                        ? "bg-brand text-white"
-                        : "bg-[var(--color-border)] text-[var(--color-text-muted)]"
-                    }`}
-                  >
-                    {v}
-                  </button>
-                ))}
+              {/* 熟练度滑块 0-5（参考 Reactive Resume Slider：离散步进 + 数值反馈） */}
+              <div
+                className="flex items-center gap-1.5 shrink-0"
+                title={`熟练度 ${item.level || 0}/5`}
+              >
+                <input
+                  type="range"
+                  min={0}
+                  max={5}
+                  step={1}
+                  value={item.level ?? 0}
+                  onChange={(e) => handleSkillChange(i, "level", Number(e.target.value))}
+                  className="skill-range w-16"
+                  style={
+                    {
+                      "--skill-range-bg": `linear-gradient(to right, var(--color-brand) ${((item.level ?? 0) / 5) * 100}%, rgba(0, 0, 0, 0.08) ${((item.level ?? 0) / 5) * 100}%)`,
+                    } as React.CSSProperties
+                  }
+                  aria-label={`${item.name || "技能"}熟练度`}
+                />
+                <span className="w-7 text-[10px] tabular-nums text-[var(--color-text-muted)] text-right">
+                  {item.level ? `${item.level}/5` : "隐藏"}
+                </span>
               </div>
               {/* 分类标签 */}
               <input
@@ -723,22 +727,10 @@ export function TextContentForm({
         />
       </div>
       <div>
-        <div className="flex items-center justify-between mb-1">
-          <label className={`${LABEL_CLASS} mb-0`}>
-            内容
-            <span className="ml-0.5 text-red-400">*</span>
-          </label>
-          {/* 内容字段级 AI（other/custom 优化既有内容） */}
-          {resumeId && moduleType && (
-            <FieldAIMenu
-              resumeId={resumeId}
-              moduleType={moduleType}
-              text={getString(content, "content")}
-              disabled={!getString(content, "content")}
-              onApplyText={(t) => onChange({ ...content, content: t })}
-            />
-          )}
-        </div>
+        <label className={`${LABEL_CLASS} mb-1`}>
+          内容
+          <span className="ml-0.5 text-red-400">*</span>
+        </label>
         <RichTextEditor
           value={getString(content, "content")}
           onChange={(v) => {
@@ -749,6 +741,18 @@ export function TextContentForm({
           rows={8}
           minHeight="160px"
         />
+        {/* 内容字段级 AI 三功能（other/custom 改写/检查/优化） */}
+        {resumeId && moduleType && (
+          <div className="mt-1.5 flex justify-end">
+            <FieldAIMenu
+              resumeId={resumeId}
+              moduleType={moduleType}
+              text={getString(content, "content")}
+              disabled={!getString(content, "content")}
+              onApplyText={(t) => onChange({ ...content, content: t })}
+            />
+          </div>
+        )}
       </div>
     </div>
   );

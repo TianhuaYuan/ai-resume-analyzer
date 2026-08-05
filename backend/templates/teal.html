@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{filename}}</title>
+<style>
+  @page { size: var(--page-size); margin: 0; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: var(--font-family), "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: var(--font-size);
+    line-height: var(--line-height);
+    color: #1f2937;
+    background: #ffffff;
+  }
+
+  /* ── 两栏：彩色侧栏 + 主内容 ── */
+  .resume-layout { display: flex; min-height: 100vh; }
+  .sidebar {
+    width: 30%;
+    flex-shrink: 0;
+    background: #0d9488;
+    color: #f0fdfa;
+    padding: 34px 22px;
+  }
+  .main { flex: 1; padding: var(--margin); }
+
+  /* ── 侧栏 ── */
+  .sidebar .module { margin-bottom: 20px; }
+  .module-basic_info .module-title { display: none; }
+  .sidebar .module-title {
+    color: #f0fdfa;
+    font-size: calc(var(--font-size) * 1.02);
+    font-weight: 700;
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+    padding-bottom: 5px;
+    border-bottom: 2px solid rgba(255, 255, 255, 0.25);
+    display: block;
+  }
+  .sidebar .module-title::after { display: none; }
+  .sidebar .module-content { padding-left: 0; }
+  .sidebar .basic-name { color: #f0fdfa; font-size: calc(var(--font-size) * 1.7); letter-spacing: 2px; margin-bottom: 4px; }
+  .sidebar .basic-job-title { color: var(--accent-color); font-weight: 600; margin-bottom: 8px; }
+  .sidebar .basic-contact, .sidebar .basic-summary, .sidebar .basic-links,
+  .sidebar .interests, .sidebar .social-link, .sidebar .lang-item,
+  .sidebar .cert-item, .sidebar .honor-item, .sidebar .rec-item, .sidebar .fallback-row {
+    color: #f0fdfa;
+    font-size: calc(var(--font-size) * 0.92);
+    line-height: 1.9;
+  }
+  .sidebar .basic-contact span { display: block; }
+  .sidebar .basic-summary { margin-top: 6px; }
+  .sidebar .basic-header { margin-bottom: 6px; padding-bottom: 6px; }
+  .sidebar .basic-links a { color: var(--accent-color); }
+  .sidebar .skill-cat { display: block; margin-bottom: 9px; }
+  .sidebar .skill-name { color: #f0fdfa; font-weight: 600; display: block; margin-bottom: 4px; min-width: 0; }
+  .sidebar .skill-item {
+    display: inline-block;
+    color: #f0fdfa;
+    background: rgba(255, 255, 255, 0.14);
+    border: none;
+    border-radius: 999px;
+    padding: 1px 9px;
+    margin: 2px 4px 2px 0;
+    font-size: calc(var(--font-size) * 0.85);
+  }
+
+  /* ── 主内容 ── */
+  .main .module { margin-bottom: var(--section-spacing); break-inside: avoid; }
+  .main .module-title {
+    font-size: calc(var(--font-size) * 1.08);
+    color: #1f2937;
+    font-weight: 700;
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .main .module-title::after { content: ""; flex: 1; height: 2px; background: var(--accent-color); opacity: 0.35; }
+  .main .module-content { padding-left: 2px; }
+  .edu-item, .work-item, .proj-item, .club-item { margin-bottom: calc(var(--section-spacing) * 1.1); break-inside: avoid; }
+  .edu-header, .work-header, .proj-header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+  .edu-school, .work-company, .proj-name, .club-name { font-weight: 600; color: #1f2937; }
+  .edu-date, .work-date, .proj-date, .club-date { color: #6b7280; font-size: calc(var(--font-size) * 0.88); white-space: nowrap; }
+  .edu-info, .work-position, .proj-role, .club-role { color: var(--accent-color); font-weight: 500; font-size: calc(var(--font-size) * 0.95); margin-top: 2px; }
+  .work-desc, .proj-desc, .edu-desc, .club-desc { color: #6b7280; margin-top: 4px; text-align: justify; }
+  .work-achievements { padding-left: 20px; margin-top: 4px; color: #6b7280; }
+  .work-achievements li { margin-bottom: 2px; }
+  .skill-cat { margin-bottom: 6px; display: flex; flex-wrap: wrap; align-items: baseline; }
+  .skill-name { font-weight: 600; color: #1f2937; min-width: 88px; }
+  .skill-item { display:inline-block; background:rgba(15,23,42,0.06); border:none; color:var(--accent-color); border-radius:999px; padding:2px 12px; margin:2px 6px 2px 0; font-size:calc(var(--font-size) * 0.92); }
+  .proj-tech { color: #6b7280; font-size: calc(var(--font-size) * 0.9); margin-top: 3px; }
+  .lang-item, .cert-item, .honor-item, .rec-item { margin-bottom: 5px; color: #6b7280; }
+  .honor-date, .rec-contact { color: #6b7280; font-size: calc(var(--font-size) * 0.9); }
+  .interests, .social-link, .fallback-row { color: #6b7280; }
+  .fallback-key { font-weight: 600; color: #1f2937; }
+  .other-title, .custom-title { font-weight: 600; color: #1f2937; margin-bottom: 3px; }
+  .other-content, .custom-content { color: #6b7280; }
+  .pub-title { font-weight: 600; color: #1f2937; }
+  .pub-authors { color: #6b7280; font-size: calc(var(--font-size) * 0.95); }
+  .pub-info { color: #6b7280; font-size: calc(var(--font-size) * 0.88); }
+
+  .skill-item { display:inline-block; background:rgba(15,23,42,0.06); border:none; color:var(--accent-color); border-radius:999px; padding:2px 12px; margin:2px 6px 2px 0; font-size:calc(var(--font-size) * 0.92); }
+</style>
+</head>
+<body>
+<div class="resume-layout">
+  <div class="sidebar">
+    {{sidebar}}
+  </div>
+  <div class="main">
+    {{modules}}
+  </div>
+</div>
+</body>
+</html>

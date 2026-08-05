@@ -11,7 +11,6 @@
 import { memo, useState, useMemo } from "react";
 import {
   DotsSixVertical,
-  Sparkle,
   Plus,
   TrashSimple,
   CaretDown,
@@ -103,8 +102,6 @@ interface ModuleListProps {
   selectedType: ModuleType | null;
   /** 选中模块回调 */
   onSelect: (type: ModuleType) => void;
-  /** AI 生成回调 */
-  onAIGenerate: (type: ModuleType) => void;
   /** 拖拽排序完成回调（新顺序的模块类型数组） */
   onReorder: (ordered: ModuleType[]) => void;
   /** 添加模块回调 */
@@ -117,7 +114,6 @@ function ModuleListImpl({
   modules,
   selectedType,
   onSelect,
-  onAIGenerate,
   onReorder,
   onAdd,
   onRemove,
@@ -261,23 +257,6 @@ function ModuleListImpl({
                     aria-label="已填写"
                   />
                 )}
-
-                {/* AI 生成按钮 */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onAIGenerate(type);
-                  }}
-                  className="shrink-0 p-1 rounded text-[var(--color-text-muted)]
-                    hover:text-brand hover:bg-brand/10
-                    opacity-0 group-hover:opacity-100
-                    active:scale-90 motion-reduce:active:scale-100
-                    transition-all cursor-pointer"
-                  aria-label={`AI 生成${MODULE_LABELS[type]}`}
-                  title="AI 生成"
-                >
-                  <Sparkle size={12} weight="fill" aria-hidden="true" />
-                </button>
 
                 {/* 删除按钮 */}
                 <button

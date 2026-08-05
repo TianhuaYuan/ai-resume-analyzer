@@ -14,9 +14,11 @@
  */
 
 import { useCallback, useState } from "react";
-import { Sparkle, Check, X, PaperPlaneTilt, PencilSimple, MagicWand } from "@phosphor-icons/react";
+import { Sparkle, Check, X, PaperPlaneTilt, PencilSimple, MagicWand, Eyeglasses } from "@phosphor-icons/react";
 import { useInlineAI } from "./useInlineAI";
 import { REWRITE_PRESETS } from "./rewritePresets";
+import { CheckIssueList } from "./CheckIssueList";
+import type { AICheckIssue } from "../../api/builder";
 
 interface FieldAIMenuProps {
   resumeId: number;
@@ -37,11 +39,14 @@ export function FieldAIMenu({
   disabled = false,
   onApplyText,
 }: FieldAIMenuProps) {
-  const { loading, error, optimize, rewrite } = useInlineAI(resumeId, moduleType);
+  const { loading, error, optimize, check, rewrite } = useInlineAI(resumeId, moduleType);
   const [open, setOpen] = useState(false);
   const [rewriteOpen, setRewriteOpen] = useState(false);
   const [instruction, setInstruction] = useState("");
   const [result, setResult] = useState("");
+  const [issues, setIssues] = useState<AICheckIssue[]>([]);
+  /** 是否执行过检查（区分「未检查」与「检查后无问题」两个空态） */
+  const [checked, setChecked] = useState(false);
 
   const toggleOpen = useCallback(() => {
     if (open) {
@@ -49,21 +54,37 @@ export function FieldAIMenu({
       setRewriteOpen(false);
       setInstruction("");
       setResult("");
+      setIssues([]);
+      setChecked(false);
     }
     setOpen(!open);
   }, [open]);
 
   /** 优化：立即请求 */
   const handleOptimize = useCallback(async () => {
+    setIssues([]);
+    setChecked(false);
     const res = await optimize(text);
     if (res) setResult(res.optimized_text);
   }, [optimize, text]);
+
+  /** 检查：立即请求，结果展示问题列表 */
+  const handleCheck = useCallback(async () => {
+    setResult("");
+    const res = await check(text);
+    if (res) {
+      setIssues(res.issues);
+      setChecked(true);
+    }
+  }, [check, text]);
 
   /** 改写：带指令请求 */
   const handleRewrite = useCallback(
     async (inst?: string) => {
       const finalInst = (inst ?? instruction).trim();
       if (!finalInst) return;
+      setIssues([]);
+      setChecked(false);
       const res = await rewrite(text, finalInst);
       if (res) {
         setResult(res.rewritten_text);
@@ -101,7 +122,7 @@ export function FieldAIMenu({
       {/* 展开菜单（inline，参与文档流） */}
       {open && (
         <div className="mt-2 p-2.5 rounded-xl bg-[var(--color-bg-secondary)] border border-[var(--color-border)] space-y-2">
-          {/* 操作按钮：优化 / 改写 */}
+          {/* 操作按钮：优化 / 检查 / 改写 */}
           <div className="flex items-center gap-1.5 flex-wrap">
             <button
               onClick={handleOptimize}
@@ -113,6 +134,17 @@ export function FieldAIMenu({
             >
               <MagicWand size={10} weight="bold" aria-hidden="true" />
               优化
+            </button>
+            <button
+              onClick={handleCheck}
+              disabled={loading}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium
+                bg-emerald-500/10 text-emerald-600 border border-emerald-500/30 hover:brightness-110
+                disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer"
+              aria-label="检查此条内容"
+            >
+              <Eyeglasses size={10} weight="bold" aria-hidden="true" />
+              检查
             </button>
             <button
               onClick={() => setRewriteOpen((v) => !v)}
@@ -128,6 +160,13 @@ export function FieldAIMenu({
               改写
             </button>
           </div>
+
+          {/* 检查结果（问题列表；checked 区分「未检查」与「检查后无问题」） */}
+          {!loading && checked && (
+            <div className="pt-0.5">
+              <CheckIssueList issues={issues} />
+            </div>
+          )}
 
           {/* 改写输入区 */}
           {rewriteOpen && (

@@ -1,20 +1,20 @@
 import type { TemplateConfig } from "../registry";
 
-/** 经典单栏 — 头部主题色分隔线（对齐后端 templates/default.html） */
+/** 经典蓝 — 单栏百搭：左侧强调头 + 蓝色分割，通用性强（默认模板 + 兜底） */
 export const defaultConfig: TemplateConfig = {
   id: "default",
-  name: "经典",
-  description: "经典单栏，头部主题色分隔线，通用性强",
+  name: "经典蓝",
+  description: "单栏百搭：左侧强调头 + 蓝色分割，通用性强（默认模板 + 兜底）",
   colorScheme: {
     primary: "#2563eb",
     secondary: "#64748b",
     background: "#ffffff",
-    text: "#2d3748",
+    text: "#1f2937",
   },
   spacing: {
     sectionGap: 16,
-    itemGap: 12,
-    contentPadding: 32,
+    itemGap: 8,
+    contentPadding: 28,
   },
   basic: {
     layout: "left",

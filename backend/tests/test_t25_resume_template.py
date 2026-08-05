@@ -77,13 +77,14 @@ def _full_modules():
 class TestTemplateRegistry:
     """模板注册表。"""
 
-    def test_list_names_contains_3_templates(self):
-        """注册表包含 default/minimal/business 3 套模板。"""
+    def test_list_names_contains_templates(self):
+        """注册表包含全部新生成模板。"""
         names = TemplateRegistry.list_names()
         assert "default" in names
-        assert "minimal" in names
-        assert "business" in names
-        assert len(names) >= 3
+        assert "azurill" in names
+        assert "serif" in names
+        assert "compact-cn" in names
+        assert len(names) >= 18
 
     def test_get_default_template(self):
         """获取 default 模板。"""
@@ -91,26 +92,35 @@ class TestTemplateRegistry:
         assert "<html" in html
         assert "{{modules}}" in html
 
-    def test_get_minimal_template(self):
-        """获取 minimal 模板。"""
-        html = TemplateRegistry.get("minimal")
+    def test_get_sidebar_template(self):
+        """获取侧栏模板（含 {{sidebar}} 分流）。"""
+        html = TemplateRegistry.get("azurill")
         assert "<html" in html
         assert "{{modules}}" in html
+        assert "{{sidebar}}" in html
 
-    def test_get_business_template(self):
-        """获取 business 模板。"""
-        html = TemplateRegistry.get("business")
+    def test_get_banner_template(self):
+        """获取头带模板（含 {{basic_header}}）。"""
+        html = TemplateRegistry.get("executive")
         assert "<html" in html
-        assert "{{modules}}" in html
+        assert "{{basic_header}}" in html
 
-    def test_get_unknown_template_raises(self):
-        """获取不存在的模板 → ValueError。"""
-        with pytest.raises(ValueError, match="未知模板"):
-            TemplateRegistry.get("nonexistent")
+    def test_get_unknown_template_falls_back_to_default(self):
+        """未知 template_id（存量旧模板下线后）→ 兜底返回 default，不抛异常。"""
+        fallback = TemplateRegistry.get("minimal")
+        default = TemplateRegistry.get("default")
+        assert fallback == default
+        assert "<html" in fallback
+
+    def test_render_unknown_template_falls_back(self):
+        """存量简历用已下线旧模板 id 渲染 → 落到默认模板，不 500。"""
+        html = render_resume_from_dict(_full_modules(), ResumeStyle(template_id="professional"))
+        assert "<html" in html
+        assert "张三" in html
 
     def test_templates_contain_css_vars(self):
         """模板 CSS 中包含 var() 引用。"""
-        for name in ["default", "minimal", "business"]:
+        for name in ["default", "azurill", "serif", "ditto"]:
             html = TemplateRegistry.get(name)
             assert "var(--font-family)" in html
             assert "var(--font-size)" in html
@@ -389,18 +399,31 @@ class TestRenderResume:
         assert "var(--font-family)" not in html
         assert "var(--accent-color)" not in html
 
-    def test_render_with_minimal_template(self):
-        """使用 minimal 模板渲染。"""
-        html = render_resume_from_dict(_full_modules(), ResumeStyle(template_id="minimal"))
+    def test_render_with_sidebar_template(self):
+        """使用侧栏模板（azurill）渲染，侧栏模块进 {{sidebar}}。"""
+        html = render_resume_from_dict(_full_modules(), ResumeStyle(template_id="azurill"))
         assert "<html" in html
         assert "张三" in html
         assert "var(" not in html
+        # 侧栏类模块（技能）出现在 sidebar 容器内
+        assert 'class="sidebar"' in html
+        assert "专业技能" in html
 
-    def test_render_with_business_template(self):
-        """使用 business 模板渲染。"""
-        html = render_resume_from_dict(_full_modules(), ResumeStyle(template_id="business"))
+    def test_render_all_templates_integrity(self):
+        """遍历全部模板渲染 → 无占位符残留 / 无 var() 残留 / 无 grid。"""
+        for name in TemplateRegistry.list_names():
+            html = render_resume_from_dict(_full_modules(), ResumeStyle(template_id=name))
+            assert "<html" in html, name
+            assert "{{" not in html, f"{name} 残留 {{ 占位符"
+            assert "var(" not in html, f"{name} 残留 var()"
+            assert "display:grid" not in html, f"{name} 含 grid"
+
+    def test_render_with_banner_template(self):
+        """使用头带模板（executive）渲染，basic_info 进 {{basic_header}}。"""
+        html = render_resume_from_dict(_full_modules(), ResumeStyle(template_id="executive"))
         assert "<html" in html
         assert "张三" in html
+        assert 'class="banner"' in html
         assert "var(" not in html
 
     def test_render_with_custom_style(self):
@@ -463,10 +486,11 @@ class TestRenderResume:
         assert "社交链接" in html
         assert "<title>" in html
 
-    def test_render_unknown_template_raises(self):
-        """未知模板 → ValueError。"""
-        with pytest.raises(ValueError, match="未知模板"):
-            render_resume_from_dict(_full_modules(), ResumeStyle(template_id="nonexistent"))
+    def test_render_unknown_template_falls_back(self):
+        """未知模板 → 兜底默认模板渲染，不抛异常。"""
+        html = render_resume_from_dict(_full_modules(), ResumeStyle(template_id="nonexistent"))
+        assert "<html" in html
+        assert "张三" in html
 
     def test_render_modules_sorted(self):
         """模块按 sort_order 排序。"""

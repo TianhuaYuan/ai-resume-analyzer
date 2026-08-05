@@ -255,13 +255,15 @@ class TestAdminStats:
 
 
 class TestAdminTemplates:
-    async def test_templates_returns_three(self, client: AsyncClient, admin_headers: dict):
+    async def test_templates_returns_all(self, client: AsyncClient, admin_headers: dict):
         r = await client.get("/api/v1/admin/templates", headers=admin_headers)
         assert r.status_code == 200
         data = r.json()
-        assert len(data["templates"]) == 3
+        assert len(data["templates"]) == 18
         ids = {t["id"] for t in data["templates"]}
-        assert ids == {"default", "minimal", "business"}
+        assert "default" in ids
+        assert "azurill" in ids
+        assert "compact-cn" in ids
         # 每项字段齐全
         for t in data["templates"]:
             assert set(t.keys()) == {"id", "name", "description"}

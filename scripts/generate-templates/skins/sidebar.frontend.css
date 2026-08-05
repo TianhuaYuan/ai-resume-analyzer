@@ -1,0 +1,99 @@
+/* ── sidebar 布局：彩色侧栏 + 主栏。多栏模板 → 单页渲染(全出血) ── */
+.resume-template.__ID__-template {
+  background: __BG__;
+  color: __TEXT__;
+}
+.resume-template.__ID__-template .__ID__-layout {
+  display: flex;
+  min-height: 100%;
+}
+.resume-template.__ID__-template .__ID__-sidebar {
+  width: __SIDEBAR_WIDTH__;
+  flex-shrink: 0;
+  background: __SIDEBAR_BG__;
+  color: __SIDEBAR_TEXT__;
+  padding: calc(var(--margin) * 0.75) calc(var(--margin) * 0.5);
+}
+.resume-template.__ID__-template .__ID__-main {
+  flex: 1;
+  min-width: 0;
+  padding: var(--margin);
+}
+
+/* ── 侧栏内部 ── */
+.resume-template.__ID__-template .__ID__-sidebar .module { margin-bottom: 20px; }
+.resume-template.__ID__-template .__ID__-sidebar .module-title {
+  color: __SIDEBAR_TEXT__;
+  font-size: calc(var(--font-size) * 1.02);
+  font-weight: 700;
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+  padding-bottom: 5px;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.25);
+}
+.resume-template.__ID__-template .__ID__-sidebar .module-title::after { display: none; }
+.resume-template.__ID__-template .__ID__-sidebar .module-content { padding-left: 0; }
+.resume-template.__ID__-template .__ID__-sidebar .basic-name {
+  color: __SIDEBAR_TEXT__;
+  font-size: calc(var(--font-size) * __NAME_SIZE__);
+  letter-spacing: 2px;
+  margin-bottom: 4px;
+}
+.resume-template.__ID__-template .__ID__-sidebar .basic-job-title {
+  color: var(--accent-color);
+  font-weight: __ACCENT_WEIGHT__;
+  margin-bottom: 8px;
+}
+.resume-template.__ID__-template .__ID__-sidebar .basic-contact,
+.resume-template.__ID__-template .__ID__-sidebar .basic-summary,
+.resume-template.__ID__-template .__ID__-sidebar .basic-links,
+.resume-template.__ID__-template .__ID__-sidebar .interests,
+.resume-template.__ID__-template .__ID__-sidebar .social-links,
+.resume-template.__ID__-template .__ID__-sidebar .lang-item,
+.resume-template.__ID__-template .__ID__-sidebar .cert-item,
+.resume-template.__ID__-template .__ID__-sidebar .honor-item,
+.resume-template.__ID__-template .__ID__-sidebar .rec-item,
+.resume-template.__ID__-template .__ID__-sidebar .fallback-row {
+  color: __SIDEBAR_TEXT__;
+  opacity: 0.92;
+  font-size: calc(var(--font-size) * 0.92);
+  line-height: 1.8;
+}
+.resume-template.__ID__-template .__ID__-sidebar .basic-contact span { display: block; }
+.resume-template.__ID__-template .__ID__-sidebar .basic-header { margin-bottom: 6px; padding-bottom: 6px; }
+.resume-template.__ID__-template .__ID__-sidebar .basic-links a { color: var(--accent-color); }
+.resume-template.__ID__-template .__ID__-sidebar .skill-cat { display: block; margin-bottom: 9px; }
+.resume-template.__ID__-template .__ID__-sidebar .skill-name {
+  color: __SIDEBAR_TEXT__;
+  font-weight: 600;
+  display: block;
+  margin-bottom: 4px;
+  opacity: 0.85;
+  min-width: 0;
+}
+.resume-template.__ID__-template .__ID__-sidebar .skill-item {
+  display: inline-block;
+  color: __SIDEBAR_TEXT__;
+  background: rgba(255, 255, 255, 0.14);
+  border: none;
+  border-radius: 999px;
+  padding: 1px 9px;
+  margin: 2px 4px 2px 0;
+  font-size: calc(var(--font-size) * 0.85);
+}
+
+/* ── 主栏 ── */
+.resume-template.__ID__-template .__ID__-main .module { margin-bottom: var(--section-spacing); }
+.resume-template.__ID__-template .__ID__-main .module-title {
+  font-size: calc(var(--font-size) * __SECTION_TITLE_SIZE__);
+  color: __TEXT__;
+}
+.resume-template.__ID__-template .__ID__-main .edu-school,
+.resume-template.__ID__-template .__ID__-main .work-company,
+.resume-template.__ID__-template .__ID__-main .proj-name,
+.resume-template.__ID__-template .__ID__-main .club-name,
+.resume-template.__ID__-template .__ID__-main .skill-name,
+.resume-template.__ID__-template .__ID__-main .fallback-key,
+.resume-template.__ID__-template .__ID__-main .other-title,
+.resume-template.__ID__-template .__ID__-main .custom-title,
+.resume-template.__ID__-template .__ID__-main .pub-title { color: __TEXT__; }

@@ -8,6 +8,7 @@ from models.resume import Resume
 from models.user import User
 from services import market_match_service
 from services.react_agent.tools import RecommendJobsTool
+from services.react_agent.tools.base import ToolFailed
 
 
 async def _seed_user(db_session, user_id: int = 1):
@@ -64,13 +65,13 @@ async def test_recommend_fills_sources(db_session):
 
 @pytest.mark.asyncio
 async def test_recommend_rejects_foreign_resume(db_session):
-    """简历非本人 → 归属校验拒绝，返回提示而非执行推荐。"""
+    """简历非本人 → 归属校验抛 ToolFailed（base.py 契约），不执行推荐。"""
     tool = _build_tool(db_session, user_id=1)
     with patch.object(market_match_service, "recommend_jobs",
                       new=AsyncMock(return_value=_fake_items())) as mock_rec:
-        result = await tool.execute(resume_id=999)
+        with pytest.raises(ToolFailed, match="不存在或无权访问"):
+            await tool.execute(resume_id=999)
 
-    assert "不存在或无权访问" in result
     mock_rec.assert_not_awaited()
 
 

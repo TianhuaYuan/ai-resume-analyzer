@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{filename}}</title>
+<style>
+  @page { size: var(--page-size); margin: 0; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: var(--font-family), "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: var(--font-size);
+    line-height: var(--line-height);
+    color: #0f172a;
+    background: #ffffff;
+    padding: var(--margin);
+  }
+
+  /* ── 顶部头带 ── */
+  .banner {
+    background: var(--accent-color);
+    color: #ffffff;
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin-bottom: var(--section-spacing);
+  }
+  .banner:empty { display: none; }
+  .banner .basic-header { margin: 0; padding: 0; }
+  .banner .basic-name { color: #ffffff; font-size: calc(var(--font-size) * 1.9); letter-spacing: 2px; }
+  .banner .basic-job-title { color: rgba(255, 255, 255, 0.92); font-weight: 600; margin-top: 2px; }
+  .banner .basic-contact, .banner .basic-links, .banner .basic-custom-fields {
+    color: rgba(255, 255, 255, 0.85);
+    margin-top: 4px;
+  }
+  .banner .basic-links a { color: #ffffff; }
+  .banner .basic-summary { color: rgba(255, 255, 255, 0.9); margin-top: 8px; }
+  .banner .basic-avatar { border: 2px solid rgba(255, 255, 255, 0.6); }
+
+  /* ── 正文 ── */
+  .body { width: 100%; }
+  .module { margin-bottom: var(--section-spacing); padding-bottom: 8px; break-inside: avoid; }
+  .module-title {
+    font-size: calc(var(--font-size) * 1.12);
+    color: #0f172a;
+    font-weight: 700;
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .module-title::after { content: ""; flex: 1; height: 2px; background: var(--accent-color); opacity: 0.35; }
+  .module-content { padding-left: 2px; }
+  .edu-item, .work-item, .proj-item, .club-item { margin-bottom: calc(var(--section-spacing) * 1.1); break-inside: avoid; }
+  .edu-header, .work-header, .proj-header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+  .edu-school, .work-company, .proj-name, .club-name { font-weight: 600; color: #0f172a; font-size: calc(var(--font-size) * 1.02); }
+  .edu-date, .work-date, .proj-date, .club-date { color: #475569; font-size: calc(var(--font-size) * 0.88); white-space: nowrap; }
+  .edu-info, .work-position, .proj-role, .club-role { color: var(--accent-color); font-size: calc(var(--font-size) * 0.95); font-weight: 500; margin-top: 2px; }
+  .work-desc, .proj-desc, .edu-desc, .club-desc { color: #475569; margin-top: 3px; text-align: justify; }
+  .work-achievements { padding-left: 22px; margin-top: 4px; color: #475569; }
+  .work-achievements li { margin-bottom: 2px; }
+  .skill-cat { margin-bottom: 6px; display: flex; flex-wrap: wrap; align-items: baseline; }
+  .skill-name { font-weight: 600; color: #0f172a; min-width: 88px; }
+  .skill-item { display:inline-block; background:rgba(15,23,42,0.05); border:1px solid rgba(15,23,42,0.12); color:var(--accent-color); border-radius:4px; padding:1px 8px; margin:2px 4px 2px 0; font-size:calc(var(--font-size) * 0.92); }
+  .proj-tech { color: #475569; font-size: calc(var(--font-size) * 0.9); margin-top: 3px; }
+  .lang-item, .cert-item, .honor-item, .rec-item { margin-bottom: 4px; color: #475569; }
+  .honor-date, .rec-contact { color: #475569; font-size: calc(var(--font-size) * 0.9); }
+  .interests, .social-link, .fallback-row { color: #475569; }
+  .fallback-row { margin-bottom: 3px; }
+  .fallback-key { font-weight: 600; color: #0f172a; }
+  .other-title, .custom-title { font-weight: 600; color: #0f172a; margin-bottom: 3px; }
+  .other-content, .custom-content { color: #475569; }
+  .pub-title { font-weight: 600; color: #0f172a; }
+  .pub-authors { color: #475569; font-size: calc(var(--font-size) * 0.95); }
+  .pub-info { color: #475569; font-size: calc(var(--font-size) * 0.88); }
+
+  .skill-item { display:inline-block; background:rgba(15,23,42,0.05); border:1px solid rgba(15,23,42,0.12); color:var(--accent-color); border-radius:4px; padding:1px 8px; margin:2px 4px 2px 0; font-size:calc(var(--font-size) * 0.92); }
+/* 主栏时间轴 */
+.body .module-education .module-content, .body .module-work_experience .module-content, .body .module-project_experience .module-content, .body .module-club_activities .module-content { position:relative; padding-left:20px; }
+.body .module-education .module-content::before, .body .module-work_experience .module-content::before, .body .module-project_experience .module-content::before, .body .module-club_activities .module-content::before { content:""; position:absolute; left:7px; top:4px; bottom:4px; width:1px; background:var(--accent-color); opacity:0.35; }
+.body .module-education .edu-item, .body .module-work_experience .work-item, .body .module-project_experience .proj-item, .body .module-club_activities .club-item { position:relative; }
+.body .module-education .edu-item::before, .body .module-work_experience .work-item::before, .body .module-project_experience .proj-item::before, .body .module-club_activities .club-item::before { content:""; position:absolute; left:-17px; top:6px; width:9px; height:9px; border-radius:50%; background:#ffffff; border:2px solid var(--accent-color); }
+</style>
+</head>
+<body>
+<div class="banner">
+{{basic_header}}
+</div>
+<div class="body">
+{{modules}}
+</div>
+</body>
+</html>

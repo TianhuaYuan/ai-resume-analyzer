@@ -115,13 +115,20 @@ class TemplateRegistry:
     def get(cls, name: str) -> str:
         """获取模板 HTML 内容。
 
+        未知 template_id（存量简历的旧模板下线后）兜底返回默认模板，
+        使渲染层不 500 —— 存量简历数据不动，只靠渲染层兜底。
+
         Raises:
-            ValueError: 模板不存在
+            ValueError: 默认模板自身缺失（极端情况）
         """
         cls._ensure_loaded()
         if name not in cls._templates:
-            available = ", ".join(cls._templates.keys()) or "(无可用模板)"
-            raise ValueError(f"未知模板: {name}，可用模板: {available}")
+            fallback = cls._templates.get("default")
+            if fallback is None:
+                available = ", ".join(cls._templates.keys()) or "(无可用模板)"
+                raise ValueError(f"默认模板缺失，可用模板: {available}")
+            logger.warning("未知模板 %s，回退默认模板", name)
+            return fallback
         return cls._templates[name]
 
     @classmethod

@@ -162,6 +162,50 @@ body {
 .font-display { font-family: var(--font-display); }
 .font-mono-label { font-family: var(--font-mono); }
 
+/* 技能熟练度滑块（SkillsForm 用）—— 4px 轨道 + brand 渐变填充 + 白拇指加大热区 */
+.skill-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 18px;
+  background: transparent;
+  cursor: pointer;
+}
+.skill-range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--skill-range-bg, rgba(0, 0, 0, 0.08));
+}
+.skill-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+  border-radius: 999px;
+  background: #fff;
+  border: 1px solid var(--color-brand);
+  box-shadow: 0 0 0 1px var(--color-brand);
+  transition: box-shadow 0.15s ease;
+}
+.skill-range:hover::-webkit-slider-thumb,
+.skill-range:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px var(--color-brand-soft);
+  outline: none;
+}
+.skill-range::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--skill-range-bg, rgba(0, 0, 0, 0.08));
+}
+.skill-range::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: #fff;
+  border: 1px solid var(--color-brand);
+}
+.skill-range:focus-visible { outline: none; }
+
 /* 标题字间距微缩 */
 .display-tight { letter-spacing: -0.02em; }
 

@@ -271,19 +271,78 @@ function SectionProjectExperience({ content, itemRange }: ListSectionProps) {
 }
 
 function SectionSkills({ content, itemRange }: ListSectionProps) {
-  const cats = sliceRows(
-    dictList(content.categories).filter((c) => strList(c.items).length > 0),
-    itemRange,
-  );
-  if (!cats.length) return null;
+  // show_levels：编辑端技能滑块存 items: [{name, level, category}]，渲染进度条
+  const showLevels = Boolean(content.show_levels);
+
+  // 优先新格式 items（含 level/category），fallback 旧格式 categories
+  const newItems = dictList(content.items);
+  const hasNew = newItems.length > 0;
+
+  // 统一成「分类 → [{name, level}]」结构
+  const grouped: Array<{ name: string; skills: Array<{ name: string; level?: number }> }> = [];
+  if (hasNew) {
+    const byCat = new Map<string, Array<{ name: string; level?: number }>>();
+    for (const item of newItems) {
+      const name = str(item.name);
+      if (!name) continue;
+      const cat = str(item.category) || "其他";
+      const level = typeof item.level === "number" ? item.level : undefined;
+      const list = byCat.get(cat) ?? [];
+      list.push({ name, level });
+      byCat.set(cat, list);
+    }
+    for (const [catName, skills] of byCat) grouped.push({ name: catName, skills });
+  } else {
+    const cats = dictList(content.categories).filter((c) => strList(c.items).length > 0);
+    for (const cat of cats) {
+      grouped.push({
+        name: str(cat.name),
+        skills: strList(cat.items).map((name) => ({ name })),
+      });
+    }
+  }
+
+  const rows = sliceRows(grouped, itemRange);
+  if (!rows.length) return null;
+
   return (
     <>
-      {cats.map(([cat, i]) => (
+      {rows.map(([cat, i]) => (
         <div key={i} className="skill-cat" data-resume-item-index={i}>
           <span className="skill-name">{str(cat.name)}</span>{" "}
-          {strList(cat.items).map((item, j) => (
-            <span key={j} className="skill-item">{item}</span>
-          ))}
+          {cat.skills.map((skill, j) => {
+            const level = showLevels && typeof skill.level === "number" ? skill.level : null;
+            const pct = level != null ? `${Math.min(100, Math.max(0, (level / 5) * 100))}%` : null;
+            return (
+              <span key={j} className="skill-item">
+                {skill.name}
+                {pct != null && (
+                  <span
+                    className="skill-level-bar"
+                    style={{
+                      display: "inline-flex",
+                      width: "2.6em",
+                      height: "4px",
+                      marginLeft: "4px",
+                      borderRadius: "999px",
+                      background: "rgba(0,0,0,0.08)",
+                      overflow: "hidden",
+                      verticalAlign: "middle",
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: pct,
+                        height: "100%",
+                        borderRadius: "999px",
+                        background: "var(--accent-color)",
+                      }}
+                    />
+                  </span>
+                )}
+              </span>
+            );
+          })}
         </div>
       ))}
     </>

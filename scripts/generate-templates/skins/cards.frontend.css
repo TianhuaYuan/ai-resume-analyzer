@@ -1,0 +1,38 @@
+/* ── cards 布局：浅色页底 + 白色卡片模块。根 padding = var(--margin) ── */
+.resume-template.__ID__-template {
+  padding: var(--margin);
+  background: __BG__;
+  color: __TEXT__;
+}
+.resume-template.__ID__-template .resume-container { width: 100%; }
+
+/* 每个 .module 呈现为独立卡片 */
+.resume-template.__ID__-template .module {
+  background: #ffffff;
+  border: 1px solid __BORDER__;
+  border-radius: 10px;
+  padding: 16px 20px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+}
+.resume-template.__ID__-template .module-title {
+  font-size: calc(var(--font-size) * __SECTION_TITLE_SIZE__);
+  color: __TEXT__;
+}
+
+.resume-template.__ID__-template .basic-header { margin-bottom: 4px; padding-bottom: 8px; }
+.resume-template.__ID__-template .basic-name {
+  color: __TEXT__;
+  font-size: calc(var(--font-size) * __NAME_SIZE__);
+  letter-spacing: 1px;
+}
+.resume-template.__ID__-template .basic-job-title { font-weight: __ACCENT_WEIGHT__; }
+
+.resume-template.__ID__-template .edu-school,
+.resume-template.__ID__-template .work-company,
+.resume-template.__ID__-template .proj-name,
+.resume-template.__ID__-template .club-name,
+.resume-template.__ID__-template .skill-name,
+.resume-template.__ID__-template .fallback-key,
+.resume-template.__ID__-template .other-title,
+.resume-template.__ID__-template .custom-title,
+.resume-template.__ID__-template .pub-title { color: __TEXT__; }

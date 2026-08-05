@@ -12,11 +12,26 @@
 import { memo, useRef, useEffect, useState, useCallback, useMemo } from "react";
 import {
   DotsSixVertical,
-  Sparkle,
   TrashSimple,
   CaretDown,
   Check,
+  User,
+  GraduationCap,
+  Briefcase,
+  FolderOpen,
+  Wrench,
+  Globe,
+  Trophy,
+  Certificate,
+  Palette,
+  UsersThree,
+  Article,
+  ChatCircleText,
+  ShareNetwork,
+  DotsThree,
+  PlusSquare,
 } from "@phosphor-icons/react";
+import type { Icon } from "@phosphor-icons/react";
 import type { ModuleType, ModuleContent } from "../../api/builder";
 import { getModuleTitle } from "../../api/builder";
 import { isModuleEmpty } from "./ModuleList";
@@ -39,9 +54,26 @@ import { CheckIssueList } from "./CheckIssueList";
 import { useSilentCheck } from "./useSilentCheck";
 import { AvatarUpload } from "./AvatarUpload";
 
-// ── AI 动作类型 ────────────────────────────────────────────────
+// ── 模块图标映射（参考 Magic FormSection 图标 tile） ──────────
 
-export type AIAction = "generate" | "polish" | "expand" | "translate" | "custom";
+/** 各模块类型的 Phosphor 图标（美化头部用） */
+const MODULE_ICONS: Record<ModuleType, Icon> = {
+  basic_info: User,
+  education: GraduationCap,
+  work_experience: Briefcase,
+  project_experience: FolderOpen,
+  skills: Wrench,
+  language: Globe,
+  honors: Trophy,
+  certificates: Certificate,
+  interests: Palette,
+  club_activities: UsersThree,
+  publications: Article,
+  recommendation: ChatCircleText,
+  social_links: ShareNetwork,
+  other: DotsThree,
+  custom: PlusSquare,
+};
 
 // ── Props ──────────────────────────────────────────────────────
 
@@ -64,8 +96,6 @@ interface ModuleCardProps {
   onToggleExpand: (type: ModuleType) => void;
   /** 内容变更回调（稳定引用，传 moduleType + content） */
   onChange: (type: ModuleType, content: ModuleContent) => void;
-  /** AI 生成回调（稳定引用，传 moduleType + action） */
-  onAIGenerate: (type: ModuleType, action?: AIAction, customPrompt?: string) => void;
   /** 删除模块回调（稳定引用，传 moduleType） */
   onRemove: (type: ModuleType) => void;
   /** 拖拽开始（稳定引用，传 index） */
@@ -314,7 +344,6 @@ function ModuleCardImpl({
   index,
   onToggleExpand,
   onChange,
-  onAIGenerate,
   onRemove,
   onDragStart,
   onDragOver,
@@ -426,6 +455,20 @@ function ModuleCardImpl({
           <DotsSixVertical size={14} weight="bold" aria-hidden="true" />
         </span>
 
+        {/* 图标 tile（参考 Magic FormSection：展开 brand 底色 / 折叠次级灰） */}
+        <span
+          className={`shrink-0 flex h-7 w-7 items-center justify-center rounded-lg transition-colors duration-150
+            ${expanded
+              ? "bg-brand/10 text-brand"
+              : "bg-[var(--color-bg-secondary)] text-[var(--color-text-muted)] group-hover:text-[var(--color-text-secondary)]"}`}
+          aria-hidden="true"
+        >
+          {(() => {
+            const MIcon = MODULE_ICONS[moduleType];
+            return MIcon ? <MIcon size={14} weight={expanded ? "duotone" : "regular"} /> : null;
+          })()}
+        </span>
+
         {/* 模块名称（双击编辑标题） */}
         {editingTitle ? (
           <input
@@ -454,9 +497,9 @@ function ModuleCardImpl({
           />
         ) : (
           <span
-            className={`flex-1 text-sm truncate ${
+            className={`flex-1 text-sm font-semibold tracking-tight truncate ${
               expanded
-                ? "text-brand font-medium"
+                ? "text-brand"
                 : "text-[var(--color-text-secondary)]"
             }`}
             onDoubleClick={(e) => {
@@ -511,23 +554,6 @@ function ModuleCardImpl({
             {hasIssues ? checkIssues.length : <Check size={10} weight="bold" aria-hidden="true" />}
           </button>
         )}
-
-        {/* AI 生成按钮 */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onAIGenerate(moduleType, "generate");
-          }}
-          className="shrink-0 p-1 rounded text-[var(--color-text-muted)]
-            hover:text-brand hover:bg-brand/10
-            opacity-0 group-hover:opacity-100
-            active:scale-90 motion-reduce:active:scale-100
-            transition-all cursor-pointer"
-          aria-label={`AI 生成${label}`}
-          title="AI 生成"
-        >
-          <Sparkle size={12} weight="fill" aria-hidden="true" />
-        </button>
 
         {/* 删除按钮 */}
         <button

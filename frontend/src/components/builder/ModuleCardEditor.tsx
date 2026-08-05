@@ -14,7 +14,6 @@ import { Plus, CaretDown, MagnifyingGlass } from "@phosphor-icons/react";
 import type { ModuleType, ResumeModule, ModuleContent } from "../../api/builder";
 import { MODULE_ORDER, MODULE_LABELS } from "./ModuleList";
 import { ModuleCard } from "./ModuleCard";
-import type { AIAction } from "./ModuleCard";
 
 // ── Props ──────────────────────────────────────────────────────
 
@@ -35,8 +34,6 @@ interface ModuleCardEditorProps {
   onAdd: (type: ModuleType) => void;
   /** 删除模块回调 */
   onRemove: (type: ModuleType) => void;
-  /** AI 生成回调（action 指定具体操作类型，customPrompt 用于自定义提示词） */
-  onAIGenerate: (type: ModuleType, action?: AIAction, customPrompt?: string) => void;
 }
 
 // ── 主组件 ──────────────────────────────────────────────────────
@@ -50,7 +47,6 @@ function ModuleCardEditorImpl({
   onReorder,
   onAdd,
   onRemove,
-  onAIGenerate,
 }: ModuleCardEditorProps) {
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -297,7 +293,6 @@ function ModuleCardEditorImpl({
                     index={index}
                     onToggleExpand={onToggleExpand}
                     onChange={onChange}
-                    onAIGenerate={onAIGenerate}
                     onRemove={onRemove}
                     onDragStart={handleDragStart}
                     onDragOver={handleDragOver}

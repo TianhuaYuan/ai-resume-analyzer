@@ -13,12 +13,27 @@ from models.resume import Resume
 from models.user import User
 from models.user_feedback import UserFeedback
 
-# 3 套内置模板（与 backend/templates/*.html 对齐）
+# 18 套内置模板（与 backend/templates/*.html 对齐，由 generate-templates 生成）
 # id = 文件名（template_id），name/description 为管理员后台展示用
 _TEMPLATES: list[dict[str, str]] = [
-    {"id": "default", "name": "经典", "description": "经典模板"},
-    {"id": "minimal", "name": "极简", "description": "极简模板"},
-    {"id": "business", "name": "商务", "description": "商务模板"},
+    {"id": "default", "name": "经典蓝", "description": "单栏百搭，通用性强（默认模板 + 兜底）"},
+    {"id": "azurill", "name": "深蓝侧栏", "description": "深蓝侧栏 + 主栏时间轴，现代专业"},
+    {"id": "teal", "name": "青绿侧栏", "description": "青绿侧栏，技术岗清新风"},
+    {"id": "gengar", "name": "暗夜紫", "description": "深色侧栏 + 暗底主栏，紫强调"},
+    {"id": "slate", "name": "深板岩侧栏", "description": "深灰侧栏 + 蓝色强调，沉稳技术风"},
+    {"id": "orange", "name": "活力橙双栏", "description": "橙色侧栏双栏，活泼自信"},
+    {"id": "chikorita", "name": "清新绿侧栏", "description": "清新绿侧栏，自然亲和"},
+    {"id": "golden-elegant", "name": "琥珀深侧栏", "description": "琥珀强调 + 深灰侧栏，优雅高端"},
+    {"id": "executive", "name": "深蓝头带", "description": "深蓝头带 + 职业时间轴，商务正式"},
+    {"id": "ditto", "name": "卡片现代", "description": "浅灰底 + 白卡片模块，现代轻盈"},
+    {"id": "timeline-pro", "name": "青绿时间轴", "description": "单栏时间轴 + 节点圆点，突出职业轨迹"},
+    {"id": "serif", "name": "衬线留白", "description": "衬线字体 + 大留白，Premium 质感"},
+    {"id": "skills-first", "name": "技能聚焦", "description": "勃艮第强调 + 技能胶囊，成果导向"},
+    {"id": "classic", "name": "经典衬线", "description": "衬线经典排版，学术/正式岗位首选"},
+    {"id": "red-accent", "name": "红色强调", "description": "红色强调线 + 干净单栏，醒目现代"},
+    {"id": "product-ops", "name": "产品运营青绿", "description": "青绿聚焦 + 简洁单栏，产品/运营岗"},
+    {"id": "cn-formal", "name": "中文正装", "description": "中文正式单栏，适合国企/事业单位"},
+    {"id": "compact-cn", "name": "中文紧凑", "description": "中文紧凑单栏，一页纸信息密度高"},
 ]
 
 
