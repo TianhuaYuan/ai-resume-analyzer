@@ -540,14 +540,13 @@ ai-resume-analyzer/
 │   ├── tests/                  # 500+ 测试
 │   ├── alembic/                # 数据库迁移
 │   ├── scripts/                # 独立迁移/诊断脚本
-│   └── data/                   # 市场数据（jobs_campus / jobs_social）
 │
 ├── frontend/                   # React 19 + TypeScript + Tailwind
 │   └── src/
 │       ├── api/                # API 封装 + JWT 管理
 │       ├── context/            # AuthContext 状态管理
 │       ├── components/         # AgentProcessPanel / builder/* / templates/*
-│       └── pages/              # Home / QA / ResumeManagement / Builder / Campus / Social / Feedback / Admin
+│       └── pages/              # Home / QA / ResumeManagement / Builder / Feedback / Admin
 │
 ├── scripts/perf_e2e.py         # 端到端性能测试脚本
 ├── monitoring/                 # Prometheus + Grafana

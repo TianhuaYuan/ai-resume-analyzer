@@ -177,6 +177,11 @@ class Settings(BaseSettings):
     MEMORY_CONSOLIDATE_INTERVAL_HOURS: int = 6  # consolidate 间隔（低频，重）
     ORPHAN_SCAN_INTERVAL_HOURS: int = 24  # orphan_scan 间隔（纯诊断日志）
     MEMORY_CONSOLIDATE_MAX_USERS_PER_RUN: int = 100  # consolidate 每轮封顶用户数
+    ORPHAN_AUTO_CLEANUP_ENABLED: bool = False  # 孤儿自动删除开关（默认关闭，需显式开启）
+
+    # ── 过期简历清理配置 ──
+    EXPIRED_RESUME_CLEANUP_ENABLED: bool = False  # 过期简历自动清理开关
+    EXPIRED_RESUME_CLEANUP_INTERVAL_HOURS: int = 24  # 过期简历清理间隔（默认每天一次）
 
     # ── 记忆提炼触发（默认关；staging/prod 开启） ──
     MEMORY_EXTRACTION_ENABLED: bool = False

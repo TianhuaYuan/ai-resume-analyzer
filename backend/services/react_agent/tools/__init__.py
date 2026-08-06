@@ -1,14 +1,15 @@
-"""工具注册表 — unified 18 工具（v2 合并 qa + builder）。
+"""工具注册表 — unified 19 工具（v2 合并 qa + builder，M2 加 search_jobs_live）。
 
 T11 创建骨架 + 注册表；T12/T13/T28 填充 _execute 实现。
-v2 统一 Agent 编辑器：合并 qa(13) + builder(5) → unified(18)。
+v2 统一 Agent 编辑器：合并 qa(14) + builder(5) → unified(19)。
+M1 移除 recommend_jobs（静态爬虫岗位管线）；M2 以 search_jobs_live（实时搜索）替代。
 
 分类：
-  qa (13):      search_resume / jd_match / diagnose_resume / compare_resumes
-                rewrite_star / translate / interview_coach 等
+  qa (14):      search_resume / jd_match / diagnose_resume / compare_resumes
+                rewrite_star / translate / interview_coach / search_jobs_live 等
   builder (5):  generate_module / check_module / modify_module
                 rewrite_resume / ask_info
-  unified (18): qa + builder 全部工具（/ask/agent 统一使用）
+  unified (19): qa + builder 全部工具（/ask/agent 统一使用）
 """
 
 import json as _json_std
@@ -25,6 +26,7 @@ logger = logging.getLogger(__name__)
 from services.analyze_service import analyze_resume
 from services.match_jd_service import match_jd
 from services.react_agent.tools.base import Tool
+from services.react_agent.tools.search_jobs_live import SearchJobsLiveTool
 from utils.privacy import sanitize_for_ai
 from services.rag.asset_source import ASSET_TYPE_RESUME
 from services.rag.clients import knowledge_collection_name
@@ -690,70 +692,6 @@ class CoverLetterTool(Tool):
             )
         user = f"{jd_part}简历内容：\n{input_context}"
         return await llm_generate(system=system, user=user, user_id=self.user_id)
-
-
-class RecommendJobsArgs(BaseModel):
-    resume_id: int = Field(..., description="简历 ID（自动归属校验）")
-    top_k: int = Field(5, ge=1, le=10, description="返回岗位数")
-    job_type: str | None = Field(None, description="限定校招/社招/实习：campus/social/intern")
-
-
-class RecommendJobsTool(Tool):
-    """岗位匹配推荐：向量预筛（market_public 公共集合）+ LLM 精排评分。"""
-
-    name = "recommend_jobs"
-    description = (
-        "根据简历内容推荐匹配的校招/社招/实习岗位（向量预筛 + LLM 精排），返回匹配分、匹配点与差距"
-    )
-    args_model = RecommendJobsArgs
-    category = "qa"
-
-    async def _execute(self, **kwargs) -> str:
-        resume_id = kwargs["resume_id"]
-        top_k = kwargs.get("top_k", 5)
-        job_type = kwargs.get("job_type")
-
-        from services.market_match_service import recommend_jobs
-
-        try:
-            items = await recommend_jobs(
-                self.db,
-                user_id=self.user_id,
-                resume_id=resume_id,
-                top_k=top_k,
-                job_type=job_type,
-            )
-        except HTTPException as e:
-            return f"⚠️ {e.detail}"
-        except Exception as e:
-            return f"⚠️ 岗位推荐失败: {e}"
-
-        if not items:
-            return "没有找到匹配的岗位，试试放宽筛选条件。"
-
-        self.sources = [
-            {
-                "asset_id": it["id"],
-                "title": it["title"],
-                "company": it["company"],
-                "score": it["score"],
-                "job_type": it["job_type"],
-            }
-            for it in items
-        ]
-
-        _JT = {"campus": "校招", "social": "社招", "intern": "实习"}
-        lines = [f"为你推荐 {len(items)} 个匹配岗位：\n"]
-        for i, it in enumerate(items, 1):
-            jt = _JT.get(it["job_type"], it["job_type"] or "")
-            lines.append(
-                f"{i}. {it['company'] or ''} {it['title']}（{jt}）匹配分 {it['score']}/100"
-            )
-            if it.get("matched"):
-                lines.append(f"   匹配点: {'、'.join(it['matched'][:3])}")
-            if it.get("gaps"):
-                lines.append(f"   差距: {'、'.join(it['gaps'][:3])}")
-        return "\n".join(lines)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -1658,7 +1596,7 @@ TOOL_REGISTRY: dict[str, list[type[Tool]]] = {
         TranslateTool,
         InterviewCoachTool,
         CoverLetterTool,
-        RecommendJobsTool,
+        SearchJobsLiveTool,
     ],
     "builder": [
         GenerateModuleTool,

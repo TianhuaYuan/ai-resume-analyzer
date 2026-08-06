@@ -204,8 +204,8 @@ class TestToolRegistry:
             "search_resume", "get_resume_content", "search_assets",
             "answer_from_index", "save_memory", "recall_memory",
             "jd_match", "diagnose_resume", "compare_resumes",
-            "rewrite_star", "translate", "interview_coach", "recommend_jobs",
-            "cover_letter",
+            "rewrite_star", "translate", "interview_coach",
+            "cover_letter", "search_jobs_live",
         }
         actual = {t.name for t in TOOL_REGISTRY["qa"]}
         assert actual == expected, f"qa 工具名不匹配: {actual ^ expected}"
@@ -265,5 +265,4 @@ class TestToolQueryFunctions:
         schemas = get_agent_schemas()
         names = {s["function"]["name"] for s in schemas}
         assert "search_resume" in names
-        assert "recommend_jobs" in names
         assert "generate_module" in names  # v2：builder 工具并入 unified agent 集合

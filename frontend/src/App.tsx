@@ -20,13 +20,9 @@ const ResumeManagementPage = lazy(() => import("./pages/ResumeManagementPage"));
 const AssetsPage = lazy(() => import("./pages/AssetsPage"));
 const AICapabilitiesPage = lazy(() => import("./pages/AICapabilitiesPage"));
 const InterviewPage = lazy(() => import("./pages/InterviewPage"));
-const CampusReviewPage = lazy(() => import("./pages/CampusReviewPage"));
 const BuilderPage = lazy(() =>
   import("./pages/BuilderPage").then((m) => ({ default: m.BuilderPage })),
 );
-const CampusPage = lazy(() => import("./pages/CampusPage"));
-const CampusDetailPage = lazy(() => import("./pages/CampusDetailPage"));
-const SocialPage = lazy(() => import("./pages/SocialPage"));
 const FeedbackPage = lazy(() => import("./pages/FeedbackPage"));
 const AdminPage = lazy(() => import("./pages/AdminPage"));
 
@@ -165,17 +161,6 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       />
-      {/* 求职复盘看板页 */}
-      <Route
-        path="/campus/review"
-        element={
-          <ProtectedRoute>
-            <AppLayout>
-              <CampusReviewPage />
-            </AppLayout>
-          </ProtectedRoute>
-        }
-      />
       {/* 简历编辑器 */}
       <Route
         path="/resumes/:id/edit"
@@ -189,26 +174,6 @@ function AppRoutes() {
       />
       {/* 兼容旧路由 /resumes/:id → 重定向到编辑器 */}
       <Route path="/resumes/:id" element={<ResumeRedirect />} />
-      {/* 校招页（公开，未登录可浏览） */}
-      <Route
-        path="/campus"
-        element={
-          <AppLayout>
-            <CampusPage />
-          </AppLayout>
-        }
-      />
-      {/* 校招详情页（公开，站内阅读） */}
-      <Route path="/campus/:id" element={<CampusDetailPage />} />
-      {/* 社招页（公开，未登录可浏览） */}
-      <Route
-        path="/social"
-        element={
-          <AppLayout>
-            <SocialPage />
-          </AppLayout>
-        }
-      />
       {/* 用户反馈页（公开） */}
       <Route
         path="/feedback"

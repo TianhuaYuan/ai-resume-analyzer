@@ -87,21 +87,75 @@ async def consolidate_all_memories() -> None:
 
 
 async def run_orphan_scan_log() -> None:
-    """执行孤儿扫描并输出诊断日志（只报告，不删除）。"""
-    try:
-        from services.resume_cleanup import orphan_scan
+    """执行孤儿扫描并输出诊断日志。如果配置开启自动清理则执行清理。"""
+    from core.config import settings
 
-        orphans = await orphan_scan()
-        if orphans.get("files") or orphans.get("chromadb"):
-            logger.warning(
-                "孤儿扫描: files=%d chromadb=%d | files=%s chromadb=%s",
-                len(orphans.get("files", [])), len(orphans.get("chromadb", [])),
-                orphans.get("files"), orphans.get("chromadb"),
-            )
+    try:
+        if settings.ORPHAN_AUTO_CLEANUP_ENABLED:
+            # 自动清理模式
+            logger.info("孤儿自动清理已开启")
+            from services.resume_cleanup import auto_cleanup_orphans
+
+            result = await auto_cleanup_orphans(dry_run=False)
+            total_deleted = result["disk_deleted"] + result["chroma_deleted"]
+            total_failed = result["disk_failed"] + result["chroma_failed"]
+
+            if total_deleted > 0:
+                logger.info(
+                    "孤儿自动清理完成: 删除 %d 项 (磁盘 %d, Chroma %d), 失败 %d",
+                    total_deleted,
+                    result["disk_deleted"],
+                    result["chroma_deleted"],
+                    total_failed,
+                )
+            elif total_failed > 0:
+                logger.warning(
+                    "孤儿自动清理完成但有错误: 删除 %d, 失败 %d",
+                    total_deleted,
+                    total_failed,
+                )
+            else:
+                logger.info("孤儿扫描完成: 无孤儿文件/collection")
+
+            if result["errors"]:
+                for error in result["errors"]:
+                    logger.error("清理错误: %s", error)
         else:
-            logger.info("孤儿扫描: 无孤儿文件/collection")
+            # 仅扫描报告模式
+            from services.resume_cleanup import orphan_scan
+
+            orphans = await orphan_scan()
+            if orphans.get("files") or orphans.get("chromadb"):
+                logger.warning(
+                    "孤儿扫描: files=%d chromadb=%d | files=%s chromadb=%s. "
+                    "设置 ORPHAN_AUTO_CLEANUP_ENABLED=true 可自动清理",
+                    len(orphans.get("files", [])), len(orphans.get("chromadb", [])),
+                    orphans.get("files"), orphans.get("chromadb"),
+                )
+            else:
+                logger.info("孤儿扫描完成: 无孤儿文件/collection")
     except Exception:
         logger.exception("孤儿扫描失败")
+
+
+async def cleanup_expired_resumes_task() -> None:
+    """清理已过期的简历。"""
+    from core.config import settings
+
+    if not settings.EXPIRED_RESUME_CLEANUP_ENABLED:
+        logger.debug("过期简历清理未启用，跳过")
+        return
+
+    try:
+        from services.resume_cleanup import cleanup_expired_resumes
+
+        cleaned = await cleanup_expired_resumes()
+        if cleaned > 0:
+            logger.info("过期简历清理完成: 清理 %d 份简历", cleaned)
+        else:
+            logger.debug("过期简历清理完成: 无需清理")
+    except Exception:
+        logger.exception("过期简历清理失败")
 
 
 async def start_periodic_tasks() -> list[asyncio.Task]:
@@ -134,6 +188,14 @@ async def start_periodic_tasks() -> list[asyncio.Task]:
                 settings.ORPHAN_SCAN_INTERVAL_HOURS * 3600,
                 1800,
                 run_orphan_scan_log,
+            )
+        ),
+        asyncio.create_task(
+            _loop(
+                "expired_resume_cleanup",
+                settings.EXPIRED_RESUME_CLEANUP_INTERVAL_HOURS * 3600,
+                3600,
+                cleanup_expired_resumes_task,
             )
         ),
     ]

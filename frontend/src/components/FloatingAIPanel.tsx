@@ -40,13 +40,6 @@ const RESUME_EDIT_ACTIONS: QuickAction[] = [
   { icon: <Translate size={18} weight="duotone" />, label: "改写薄弱部分", question: "帮我改写简历中表达薄弱的部分" },
 ];
 
-// /campus：校招岗位
-const CAMPUS_ACTIONS: QuickAction[] = [
-  { icon: <Target size={18} weight="duotone" />, label: "这个校招适合我吗", question: "这个校招岗位适合我吗？" },
-  { icon: <FileText size={18} weight="duotone" />, label: "帮我准备简历", question: "帮我针对这个校招岗位准备简历" },
-  { icon: <Microphone size={18} weight="duotone" />, label: "面试怎么准备", question: "这个校招岗位的面试我该怎么准备？" },
-];
-
 // /qa（Agent 聊天页）：不展示悬浮面板（Agent 页已有完整对话界面）
 // （移除 AGENT_TAGS，Agent 页不再渲染 FAB）
 
@@ -83,7 +76,6 @@ function QuickActionButton({
  *  - /                  Agent 聊天页：不展开完整面板，仅显示快捷标签
  *  - /resumes           简历管理：4 个快捷操作 + "更多AI用法"
  *  - /resumes/:id/edit  简历编辑：3 个快捷操作
- *  - /campus            校招岗位：3 个上下文问题
  *  - 其他               通用 AI 问候 + 输入框
  *
  * 集成：在 AppLayout 中渲染 <FloatingAIPanel /> 即可全局生效；登录为全局弹窗
@@ -101,7 +93,6 @@ export default function FloatingAIPanel({ isAgentPage }: FloatingAIPanelProps) {
   const isAgent = isAgentPage ?? pathname === "/qa";
   const isResumesList = pathname === "/resumes";
   const isResumeEdit = /^\/resumes\/[^/]+\/edit$/.test(pathname);
-  const isCampus = pathname === "/campus";
 
   // 点击快捷操作：导航到 Agent 页并传递问题
   const handleQuickAction = useCallback(
@@ -135,13 +126,11 @@ export default function FloatingAIPanel({ isAgentPage }: FloatingAIPanelProps) {
     ? "简历管理"
     : isResumeEdit
       ? "简历编辑"
-      : isCampus
-        ? "校招岗位"
-        : "通用助手";
+      : "通用助手";
 
   const renderBody = (): ReactNode => {
     // 其他路由：通用 AI 问候 + 输入框
-    if (!isResumesList && !isResumeEdit && !isCampus) {
+    if (!isResumesList && !isResumeEdit) {
       return (
         <div className="flex flex-col gap-3 p-2">
           <div className="flex items-start gap-2">
@@ -176,9 +165,7 @@ export default function FloatingAIPanel({ isAgentPage }: FloatingAIPanelProps) {
 
     const actions = isResumesList
       ? RESUMES_ACTIONS
-      : isResumeEdit
-        ? RESUME_EDIT_ACTIONS
-        : CAMPUS_ACTIONS;
+      : RESUME_EDIT_ACTIONS;
 
     return (
       <div className="flex flex-col p-1">

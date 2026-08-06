@@ -40,7 +40,7 @@ const TOOL_LABELS: Record<string, string> = {
   get_resume_content: "读取简历",
   save_memory: "保存记忆",
   recall_memory: "召回记忆",
-  recommend_jobs: "岗位推荐",
+  search_jobs_live: "实时岗位搜索",
   generate_module: "生成模块",
   check_module: "检查模块",
   modify_module: "修改模块",

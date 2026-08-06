@@ -28,8 +28,6 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { key: "ai", label: "AI简历", route: "/qa", requireAuth: true },
-  { key: "campus", label: "校招信息", route: "/campus" },
-  { key: "social", label: "社招信息", route: "/social" },
   { key: "feedback", label: "用户反馈", route: "/feedback" },
 ];
 

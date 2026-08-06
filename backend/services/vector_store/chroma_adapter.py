@@ -157,3 +157,10 @@ class ChromaAdapter:
                 pass
 
         await with_chroma(_sync)
+
+        # 删除 collection 后立即清理可能产生的孤儿 HNSW 目录
+        try:
+            from services.rag.clients import cleanup_orphan_segments
+            await with_chroma(cleanup_orphan_segments)
+        except Exception as e:
+            logger.warning("Failed to cleanup orphan segments after delete_collection: %s", e)

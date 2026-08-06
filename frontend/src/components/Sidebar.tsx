@@ -4,8 +4,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   ChatCircleDots,
   FileText,
-  Briefcase,
-  Buildings,
   ChatCircle,
   Books,
   Plus,
@@ -23,7 +21,6 @@ import {
   Sun,
   Sparkle,
   Microphone,
-  ChartBar,
   UserMinus,
 } from "@phosphor-icons/react";
 import { useAuth } from "../context/AuthContext";
@@ -54,9 +51,6 @@ const NAV_ITEMS: NavItem[] = [
   { path: "/assets", label: "知识资产", icon: Books, match: "exact" },
   { path: "/capabilities", label: "AI 能力", icon: Sparkle, match: "exact" },
   { path: "/interviews", label: "面试复盘", icon: Microphone, match: "exact" },
-  { path: "/campus", label: "校招", icon: Briefcase, match: "exact" },
-  { path: "/campus/review", label: "求职复盘", icon: ChartBar, match: "exact" },
-  { path: "/social", label: "社招", icon: Buildings, match: "exact" },
   { path: "/feedback", label: "用户反馈", icon: ChatCircle, match: "exact" },
 ];
 

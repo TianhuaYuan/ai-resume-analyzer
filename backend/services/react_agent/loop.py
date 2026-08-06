@@ -51,6 +51,20 @@ AGENT_CONCURRENCY_LIMIT = 5
 MIDDLE_MODEL = "judge"
 FINAL_MODEL = None  # None → 默认 CHAT_MODEL
 
+# ── M3 OpenManus 借鉴：next_step_prompt + is_stuck 防卡死 ──
+# next_step_prompt：每轮 LLM 调用前注入引导，收敛重复工具调用 / 引导直接回答
+NEXT_STEP_PROMPT = (
+    "如果你已经获得足够的信息可以直接回答用户的问题，请直接给出最终回答，"
+    "不要再调用工具。如需继续调用工具，请优先尝试新的搜索词或工具参数。"
+)
+# is_stuck：监测到重复 tool_call 后注入的换策略提示（不终止循环）
+STUCK_PROMPT = (
+    "检测到你最近几轮在重复执行相同的工具调用，可能陷入了循环。"
+    "请停止重复当前操作，换一种完全不同的策略或参数，或者直接基于已有信息回答用户。"
+)
+STUCK_WINDOW = 3  # 回溯窗口：最近 N 轮
+STUCK_THRESHOLD = 2  # 签名重复 ≥2 次判为 stuck
+
 
 @dataclass
 class ReactLoopResult:
@@ -247,6 +261,9 @@ async def react_loop(
     rounds = 0
     _llm_round_ms = 0.0
     _tool_exec_ms = 0.0
+    # M3 is_stuck：最近几轮 tool_call 签名 + 当前 stuck 标志（上一轮检测，本轮注入）
+    recent_round_signatures: list[tuple[str, ...]] = []
+    stuck = False
 
     while rounds < MAX_ROUNDS:
         rounds += 1
@@ -285,6 +302,14 @@ async def react_loop(
 
         # L1 上下文管理（逐出旧轮次，截断工具结果）
         messages = manage_l1_context(messages)
+
+        # M3 next_step_prompt：第 2 轮起每轮 LLM 调用前注入引导（收敛/换策略）。
+        # stuck 时注入换策略提示覆盖默认引导；注入后重置标志（下一轮重新检测）。
+        if rounds > 1:
+            hint = STUCK_PROMPT + "\n" + NEXT_STEP_PROMPT if stuck else NEXT_STEP_PROMPT
+            messages.append({"role": "user", "content": hint})
+            if stuck:
+                stuck = False
 
         # 调用 LLM（中间轮用 JUDGE_MODEL = flash，流式：推理过程实时推给前端）
         _llm_round_start = time.perf_counter()
@@ -426,6 +451,20 @@ async def react_loop(
                 if not is_error:
                     tool_retries[tc.name] = 0
 
+        # M3 is_stuck：最近 STUCK_WINDOW 轮内 tool_call 签名重复 ≥STUCK_THRESHOLD → 判 stuck。
+        # 不终止循环，仅下一轮注入换策略提示（配合 A3 per-tool 重试预算双保险）。
+        round_sig = _tool_round_signature(response.tool_calls)
+        recent_round_signatures.append(round_sig)
+        if len(recent_round_signatures) > STUCK_WINDOW:
+            recent_round_signatures.pop(0)
+        if recent_round_signatures.count(round_sig) >= STUCK_THRESHOLD:
+            stuck = True
+            logger.warning(
+                "ReAct 检测到重复 tool_call（stuck），下一轮注入换策略提示: %s user=%d",
+                round_sig,
+                user_id,
+            )
+
     # 6. 强制收敛：无工具调用，用 CHAT_MODEL（流式：推理过程实时推给前端）
     messages = manage_l1_context(messages)
     response = await _stream_final_round(
@@ -449,6 +488,14 @@ async def react_loop(
 
 
 # ── 辅助函数 ──────────────────────────────────────────────────
+
+
+def _tool_round_signature(tool_calls: list) -> tuple[str, ...]:
+    """本轮 tool_call 的签名（工具名 + 参数原文），用于 M3 is_stuck 重复检测。
+
+    完全相同工具 + 完全相同参数 → 相同签名；参数变化（如换搜索词）→ 签名不同。
+    """
+    return tuple(sorted(f"{tc.name}:{tc.arguments}" for tc in (tool_calls or [])))
 
 
 def _accumulate_usage(total: dict, response) -> None:

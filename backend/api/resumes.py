@@ -870,8 +870,16 @@ async def upload_avatar(
     # 校验归属
     resume, modules = await get_resume_with_modules(db, current_user.id, resume_id)
 
-    # 保存头像
-    avatar_url = await save_avatar(file, resume_id)
+    # 获取旧头像URL（用于删除旧文件）
+    old_avatar_url = None
+    for mod in modules:
+        if mod.module_type == "basic_info":
+            content = mod.content or {}
+            old_avatar_url = content.get("avatar")
+            break
+
+    # 保存头像（会自动删除旧头像文件）
+    avatar_url = await save_avatar(file, resume_id, old_avatar_url)
 
     # 更新 basic_info 模块的 avatar 字段
     basic_info_module = None

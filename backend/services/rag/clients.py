@@ -107,18 +107,14 @@ def knowledge_collection_name(user_id: int) -> str:
     return f"knowledge_{user_id}"
 
 
-def market_collection_name() -> str:
-    """公共市场资产集合名（所有用户共享一份）。
+def cleanup_orphan_segments() -> int:
+    """清理 ChromaDB delete_collection 在 Windows 上留下的孤儿 HNSW 目录。
 
-    与每用户 knowledge_{user_id} 并行：市场数据（JD/范文/攻略）是公共资产，
-    只建一份向量索引，任何用户都可检索；检索时 collection 参数显式传入，
-    与个人集合隔离，互不污染。
+    可在运行期调用，用于清理 delete_collection 后产生的孤儿文件。
+
+    Returns:
+        清理的孤儿目录数量
     """
-    return "market_public"
-
-
-def _cleanup_orphan_segments() -> int:
-    """清理 ChromaDB delete_collection 在 Windows 上留下的孤儿 HNSW 目录"""
     persist_dir = settings.CHROMA_PERSIST_DIR
     if not os.path.isdir(persist_dir):
         return 0
@@ -151,3 +147,7 @@ def _cleanup_orphan_segments() -> int:
         logger.info("Removed orphan ChromaDB segment: %s", d)
 
     return len(orphans)
+
+
+# 保留旧函数名作为别名（兼容启动期调用）
+_cleanup_orphan_segments = cleanup_orphan_segments

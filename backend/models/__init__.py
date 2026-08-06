@@ -9,16 +9,13 @@ from models.user_feedback import UserFeedback
 from models.qa_conversation import QAConversation
 from models.analytics_event import AnalyticsEvent
 from models.knowledge_asset import KnowledgeAsset
-from models.campus_track import CampusTrack
 from models.feedback_like import FeedbackLike
-from models.market_asset import MarketAsset
 from models.resume_entity import (
     ResumeEntity,
     ResumeEntityFact,
     ResumeEpisode,
 )
 from models.resume_status_event import ResumeStatusEvent
-from models.campus_track_event import CampusTrackEvent
 from models.interview_session import InterviewSession
 
 __all__ = [
@@ -33,13 +30,10 @@ __all__ = [
     "UserFeedback",
     "AnalyticsEvent",
     "KnowledgeAsset",
-    "CampusTrack",
     "FeedbackLike",
-    "MarketAsset",
     "ResumeEntity",
     "ResumeEntityFact",
     "ResumeEpisode",
     "ResumeStatusEvent",
-    "CampusTrackEvent",
     "InterviewSession",
 ]

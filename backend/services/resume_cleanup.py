@@ -188,3 +188,157 @@ async def orphan_scan() -> dict[str, list[str]]:
         )
 
     return orphans
+
+
+async def auto_cleanup_orphans(dry_run: bool = False) -> dict:
+    """自动清理孤儿文件和 ChromaDB 集合。
+
+    Args:
+        dry_run: True 时只报告不删除（默认 False）
+
+    Returns:
+        清理结果报告
+    """
+    orphans = await orphan_scan()
+
+    report = {
+        "disk_deleted": 0,
+        "disk_failed": 0,
+        "chroma_deleted": 0,
+        "chroma_failed": 0,
+        "errors": [],
+    }
+
+    # 1. 清理磁盘孤儿文件
+    for filename in orphans["files"]:
+        if dry_run:
+            report["disk_deleted"] += 1
+            continue
+        file_path = UPLOAD_DIR / filename
+        try:
+            os.remove(file_path)
+            report["disk_deleted"] += 1
+            logger.info("Auto-deleted orphan file: %s", filename)
+        except Exception as e:
+            report["disk_failed"] += 1
+            report["errors"].append(f"Failed to delete {filename}: {e}")
+            logger.warning("Failed to auto-delete orphan file %s: %s", filename, e)
+
+    # 2. 清理 ChromaDB 孤儿集合
+    for collection_name in orphans["chromadb"]:
+        if dry_run:
+            report["chroma_deleted"] += 1
+            continue
+        try:
+            from services.rag.clients import with_chroma
+
+            def _delete(name=collection_name):
+                client = get_chroma_client()
+                client.delete_collection(name)
+
+            await with_chroma(_delete)
+            report["chroma_deleted"] += 1
+            logger.info("Auto-deleted orphan Chroma collection: %s", collection_name)
+        except Exception as e:
+            report["chroma_failed"] += 1
+            report["errors"].append(f"Failed to delete Chroma collection {collection_name}: {e}")
+            logger.warning("Failed to auto-delete Chroma collection %s: %s", collection_name, e)
+
+    return report
+
+
+# ── 过期简历清理 ──
+
+
+async def cleanup_expired_resumes() -> int:
+    """清理已过期的简历。
+
+    清理逻辑：
+    1. 查找 expires_at < now() 且 status != 'expired' 的简历
+    2. 对每个过期简历：清理外部资源 → 标记为 expired
+
+    Returns:
+        清理的简历数量
+    """
+    now = datetime.now(timezone.utc)
+
+    async with AsyncSessionLocal() as db:
+        # 查找已过期但未标记为 expired 的简历
+        result = await db.execute(
+            select(Resume.id, Resume.file_path, Resume.user_id).where(
+                Resume.expires_at < now,
+                Resume.status != "expired",
+            )
+        )
+        expired_resumes = result.all()
+
+        if not expired_resumes:
+            return 0
+
+        logger.info("Found %d expired resumes to cleanup", len(expired_resumes))
+
+        cleaned_count = 0
+        for resume_id, file_path, user_id in expired_resumes:
+            try:
+                # 1. 清理 ChromaDB 向量
+                try:
+                    from services.rag.clients import with_chroma, knowledge_collection_name
+
+                    async def _clear_vectors():
+                        client = get_chroma_client()
+                        collection_name = knowledge_collection_name(user_id)
+                        try:
+                            collection = client.get_collection(collection_name)
+                            collection.delete(where={"asset_id": str(resume_id)})
+                        except Exception:
+                            pass  # 集合不存在或其他错误，忽略
+
+                    await with_chroma(_clear_vectors)
+                except Exception as e:
+                    logger.warning("Failed to clear vectors for expired resume %d: %s", resume_id, e)
+
+                # 2. 清理 Embedding 内存缓存
+                try:
+                    from core.cache import embedding_cache
+
+                    embedding_cache.clear_resume(resume_id)
+                except Exception as e:
+                    logger.warning("Failed to clear embedding cache for expired resume %d: %s", resume_id, e)
+
+                # 3. 清理 BM25 内存索引
+                try:
+                    from services.rag.retrieval import clear_bm25
+
+                    clear_bm25(user_id, resume_id)
+                except Exception as e:
+                    logger.warning("Failed to clear BM25 index for expired resume %d: %s", resume_id, e)
+
+                # 4. 删除物理文件
+                if file_path:
+                    try:
+                        file = Path(file_path)
+                        if file.exists():
+                            file.unlink()
+                            logger.info("Deleted expired resume file: %s", file_path)
+                    except Exception as e:
+                        logger.warning("Failed to delete expired resume file %s: %s", file_path, e)
+
+                # 5. 标记为 expired
+                resume_result = await db.execute(select(Resume).where(Resume.id == resume_id))
+                resume = resume_result.scalar_one_or_none()
+                if resume:
+                    resume.status = "expired"
+                    resume.status_message = f"简历已过期（过期时间: {resume.expires_at}）"
+
+                cleaned_count += 1
+                logger.info("Cleaned up expired resume: id=%d", resume_id)
+
+            except Exception as e:
+                logger.error("Failed to cleanup expired resume %d: %s", resume_id, e)
+
+        await db.commit()
+
+        if cleaned_count > 0:
+            logger.info("Successfully cleaned up %d expired resumes", cleaned_count)
+
+        return cleaned_count

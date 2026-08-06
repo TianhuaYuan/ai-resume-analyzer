@@ -64,6 +64,8 @@ _DOMAIN_TOOLS = {
     "translate": ["翻译", "translate", "英文版", "日文", "英文"],
     "rewrite_star": ["star", "改写", "亮点", "包装"],
     "save_memory": ["记住", "记得", "偏好", "目标", "决定"],
+    # M2: 实时岗位搜索（search_jobs_live 替代已删的 recommend_jobs 静态推荐）
+    "search_jobs_live": ["招聘", "岗位", "职位", "校招", "社招", "实习", "推荐", "有哪些"],
 }
 
 

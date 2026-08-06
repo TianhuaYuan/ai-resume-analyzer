@@ -195,26 +195,6 @@ def build_scope_where(scope: dict[str, list[int]]) -> dict[str, Any]:
     return where
 
 
-def build_asset_where(
-    asset_type: str,
-    asset_ids: list[int] | None = None,
-) -> dict[str, Any]:
-    """按资产类型（+ 可选 id 列表）构造向量库 where 过滤。
-
-    用于公共市场集合（market_public）检索：按 asset_type 限定（job/sample/guide），
-    默认只命中最新版本快照（is_latest=True）。与 build_scope_where 的区别是
-    不绑定 user 语义，直接按 asset_type 过滤，适合跨资产全量预筛（如岗位推荐）。
-    """
-    where: dict[str, Any] = {META_ASSET_TYPE: asset_type, META_IS_LATEST: True}
-    if asset_ids:
-        ids = sorted(asset_ids)
-        if len(ids) == 1:
-            where[META_ASSET_ID] = ids[0]
-        else:
-            where[META_ASSET_ID] = {"$in": ids}
-    return where
-
-
 def _scope_bm25_key(user_id: int, scope: dict[str, list[int]]) -> str:
     """BM25 缓存键：按 (user_id, 命中的资产 id 集合) 区分。"""
     ids = sorted({aid for aids in scope.values() for aid in aids})
@@ -249,15 +229,6 @@ async def clear_user_bm25(user_id: int) -> None:
         prefix = f"{user_id}:["
         for key in [k for k in _bm25_indexes if k.startswith(prefix)]:
             _bm25_indexes.pop(key, None)
-
-
-async def clear_market_bm25(collection: str, asset_id: int) -> None:
-    """清除公共集合指定资产的 BM25 缓存（市场数据重索引后调用）。
-
-    store_key 带 ``market:{collection}:`` 前缀，与个人集合 key 隔离。
-    """
-    async with _bm25_lock:
-        _bm25_indexes.pop(f"market:{collection}:[{asset_id}]", None)
 
 
 async def hybrid_search_corpus(

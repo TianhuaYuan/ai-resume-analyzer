@@ -4,12 +4,11 @@
 - 账户信息（不含密码哈希等敏感字段）
 - 简历（含结构化模块）
 - 问答历史
-- 求职跟踪（campus_tracks）
 - 知识资产（knowledge_assets）
 - 意见箱反馈 + 点赞
 
 设计：
-- 只导出 user_id 归属的数据（market_assets 等公共数据不导出）
+- 只导出 user_id 归属的数据（公共数据不导出）
 - 敏感字段（password_hash / 验证码等）一律剔除
 - 时间统一 ISO 格式，前端可直接下载为 JSON
 """
@@ -20,7 +19,6 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models.campus_track import CampusTrack
 from models.feedback_like import FeedbackLike
 from models.knowledge_asset import KnowledgeAsset
 from models.qa_history import QAHistory
@@ -104,12 +102,6 @@ async def export_user_data(db: AsyncSession, user_id: int) -> dict:
         for q in qa_history
     ]
 
-    # ── 求职跟踪 ──
-    tracks = (
-        await db.execute(select(CampusTrack).where(CampusTrack.user_id == user_id))
-    ).scalars().all()
-    track_data = [_serialize_row(t) for t in tracks]
-
     # ── 知识资产 ──
     assets = (
         await db.execute(select(KnowledgeAsset).where(KnowledgeAsset.user_id == user_id))
@@ -133,7 +125,6 @@ async def export_user_data(db: AsyncSession, user_id: int) -> dict:
         "account": account,
         "resumes": resume_data,
         "qa_history": qa_data,
-        "campus_tracks": track_data,
         "knowledge_assets": asset_data,
         "feedback": feedback_data,
         "feedback_likes": like_data,

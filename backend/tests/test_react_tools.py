@@ -36,7 +36,7 @@ class TestToolRegistry:
         assert set(TOOL_REGISTRY.keys()) == {"qa", "builder", "unified"}
 
     def test_qa_has_fourteen_tools(self):
-        """qa 类别有 14 个工具（含 recommend_jobs、cover_letter）。"""
+        """qa 类别有 14 个工具。"""
         assert len(TOOL_REGISTRY["qa"]) == 14
 
     def test_builder_has_five_tools(self):
@@ -59,7 +59,7 @@ class TestToolRegistry:
         assert len(tools) == 5
 
     def test_all_tool_names_unique(self):
-        """unified 中所有 19 个工具名不重复。"""
+        """unified 中所有 18 个工具名不重复。"""
         names = [tc.name for tc in TOOL_REGISTRY["unified"]]
         assert len(names) == len(set(names)), f"重复工具名: {names}"
 
