@@ -107,6 +107,23 @@ def knowledge_collection_name(user_id: int) -> str:
     return f"knowledge_{user_id}"
 
 
+# 公共语料集合（B1/B2 面经知识库）：只读全局知识，所有用户可检索。
+# 与 per-user ``knowledge_{user_id}`` 命名隔离，互不串扰。
+CORPUS_KINDS = ("interview_hub", "interview_qa", "resume_samples")
+
+
+def corpus_collection_name(kind: str) -> str:
+    """公共语料集合名（interview_hub 面经 / interview_qa 算法题库 / resume_samples 简历范文）。
+
+    - 每个公共语料一个独立集合，asset 以 ``user_id=0`` 写入（公共资产，所有用户可检索）
+    - 集合内全部为 ``is_latest=True`` 的 v1 快照；检索显式 ``where={is_latest: True}`` 全量过滤
+    - 集中定义合法类型，避免调用方拼错集合名（校验不通过抛 ValueError）
+    """
+    if kind not in CORPUS_KINDS:
+        raise ValueError(f"未知公共语料类型: {kind}（可选: {', '.join(CORPUS_KINDS)}）")
+    return kind
+
+
 def cleanup_orphan_segments() -> int:
     """清理 ChromaDB delete_collection 在 Windows 上留下的孤儿 HNSW 目录。
 

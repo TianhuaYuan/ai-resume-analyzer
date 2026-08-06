@@ -4,7 +4,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -424,83 +424,6 @@ async def ask_agent(
     )
 
 
-@router.post("/ask/builder")
-@limiter.limit(settings.RATE_LIMIT_ASK_AGENT)
-async def ask_builder(
-    request: Request,
-    data: QuestionRequest,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Builder Agent SSE 流式问答（已废弃，请使用 /ask/agent）。
-
-    .. deprecated:: v2
-        /ask/builder 已合并到 /ask/agent。保留此端点用于旧前端兼容。
-        /ask/agent 现在支持 qa + builder 全部工具，通过 tool_mode="builder"
-        或上下文中的 module_type/entry_id 自动识别 builder 场景。
-
-    走 ReAct Agent 循环，实时推送事件：agent_start → tool_call → tool_result/tool_error → agent_done。
-    """
-    _guard_question(data.question)
-    await resume_service.get_resume(db, data.resume_id, current_user.id)
-
-    async def builder_stream():
-        from core.database import AsyncSessionLocal
-
-        stream_db = AsyncSessionLocal()
-        try:
-            async for event in react_loop_stream(
-                db=stream_db,
-                user_id=current_user.id,
-                resume_id=data.resume_id,
-                question=data.question,
-                tool_mode="builder",
-                conversation_id=data.conversation_id,
-            ):
-                if event.get("type") == "agent_done":
-                    # PII 脱敏
-                    if settings.REDACT_PII_OUTPUT:
-                        event["answer"] = redact_pii(event.get("answer", ""))
-                    # E1：agent_done.sources 补全 section/start_char/end_char（保留 text/score 等原字段）
-                    src = event.get("sources")
-                    if isinstance(src, list):
-                        event["sources"] = [_enrich_source(s) for s in src]
-
-                # 记录 token 消耗
-                if event.get("type") == "agent_done" and "usage" in event:
-                    usage = event["usage"]
-                    if usage.get("prompt_tokens", 0) > 0 or usage.get("completion_tokens", 0) > 0:
-                        await record_usage(
-                            current_user.id,
-                            usage["prompt_tokens"],
-                            usage["completion_tokens"],
-                        )
-
-                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-        except asyncio.CancelledError:
-            logger.info(
-                "Client disconnected from builder stream: user=%d, resume=%d",
-                current_user.id,
-                data.resume_id,
-            )
-            raise
-        except Exception as e:
-            logger.error("Builder stream error: %s", e)
-            yield f"data: {json.dumps({'type': 'error', 'message': 'Builder 处理失败，请重试'}, ensure_ascii=False)}\n\n"
-        finally:
-            await stream_db.close()
-
-    return StreamingResponse(
-        builder_stream(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
-
-
 @router.get("/history/{resume_id}", response_model=QAHistoryResponse)
 async def get_history(
     resume_id: int,
@@ -594,6 +517,44 @@ async def delete_qa(
             detail="问答记录不存在或无权访问",
         )
     return None
+
+
+class ApprovalDecisionRequest(BaseModel):
+    """D1 工具审批决议：前端在 approval_request 弹窗确认后回传。
+
+    SSE 为单向流，决议无法在流内回传，经本独立端点返回。
+    """
+
+    approval_id: str = Field(..., description="approval_request 事件携带的审批请求 ID")
+    decision: str = Field(..., description="审批决议：approved / denied")
+
+
+@router.post("/approval")
+async def submit_approval_decision(
+    data: ApprovalDecisionRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """D1: 工具审批决议回传端点。
+
+    解析 react_agent.loop 中挂起的审批请求（wait_for_approval 等待的 asyncio.Event）。
+    - user_id 归属校验：只能解析自己发起的审批请求
+    - 幂等：已解析/不存在/不属于该用户 → 404
+    """
+    if data.decision not in ("approved", "denied"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="无效的审批决议，仅支持 approved / denied",
+        )
+    # 延迟导入避免 api 层与 service 层循环依赖
+    from services.react_agent.loop import resolve_approval
+
+    ok = resolve_approval(data.approval_id, current_user.id, data.decision)
+    if not ok:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="审批请求不存在、已过期或无权访问",
+        )
+    return {"status": "ok"}
 
 
 # ── 对话会话 CRUD ─────────────────────────────────────────

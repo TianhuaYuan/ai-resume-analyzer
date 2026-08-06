@@ -62,11 +62,6 @@ export async function listAssets(params: AssetListParams = {}): Promise<AssetLis
   return api.get(`/api/v1/assets?${qs}`) as Promise<AssetListResponse>;
 }
 
-/** GET /api/v1/assets/{id} — 单个资产详情 */
-export async function getAsset(id: number): Promise<KnowledgeAsset> {
-  return api.get(`/api/v1/assets/${id}`) as Promise<KnowledgeAsset>;
-}
-
 /** POST /api/v1/assets — 新建（返回 201 AssetResponse） */
 export async function createAsset(body: AssetCreateInput): Promise<KnowledgeAsset> {
   return api.post("/api/v1/assets", body) as Promise<KnowledgeAsset>;

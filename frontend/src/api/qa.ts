@@ -232,7 +232,10 @@ export interface AgentSSEEvent {
     | "tool_stream"
     | "agent_done"
     | "quota_exceeded"
-    | "error";
+    | "error"
+    // D1 工具审批门：approval_request 请求用户确认；approval_decision 回执决议
+    | "approval_request"
+    | "approval_decision";
 
   // ── agent_start ──
   resume_id?: number;
@@ -256,8 +259,6 @@ export interface AgentSSEEvent {
   tool_name?: string;
   /** tool_call 的参数 JSON 字符串 */
   args?: string;
-  /** tool_result 的截断摘要（≤2000 字符，Spec A#11） */
-  summary?: string;
   /** tool_result 的完整结果文本 */
   detail?: string;
   /** tool_error 的错误文本 */
@@ -279,6 +280,16 @@ export interface AgentSSEEvent {
 
   // ── quota_exceeded / error ──
   message?: string;
+
+  // ── approval_request / approval_decision（D1 工具审批门）──
+  /** 审批请求唯一 ID（前端 POST /api/v1/qa/approval 回传决议时携带） */
+  approval_id?: string;
+  /** 工具结果摘要（tool_result 截断摘要 ≤2000 字符，Spec A#11）或审批弹窗展示摘要（approval_request 工具描述首句 + 关键参数） */
+  summary?: string;
+  /** approval_decision 的决议结果：approved / denied */
+  decision?: string;
+  /** 触发审批时的 ReAct 轮次 */
+  round?: number;
 }
 
 /**

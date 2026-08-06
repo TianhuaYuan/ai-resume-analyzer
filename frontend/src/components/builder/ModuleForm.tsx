@@ -221,6 +221,7 @@ export function FieldRenderer({ field, value, onChange, aiMenu }: FieldRendererP
           placeholder={field.placeholder}
           rows={3}
           minHeight="80px"
+          ai={aiMenu ? { resumeId: aiMenu.resumeId, moduleType: aiMenu.moduleType } : undefined}
         />
         {/* 字段级 AI 三功能（改写/检查/优化）：仅长文本字段下方显示，作用于本字段单条文本 */}
         {aiMenu && (
@@ -740,6 +741,7 @@ export function TextContentForm({
           placeholder="请输入内容"
           rows={8}
           minHeight="160px"
+          ai={resumeId && moduleType ? { resumeId, moduleType } : undefined}
         />
         {/* 内容字段级 AI 三功能（other/custom 改写/检查/优化） */}
         {resumeId && moduleType && (
@@ -763,6 +765,9 @@ export function TextContentForm({
 interface CustomModuleFormProps {
   content: ModuleContent;
   onChange: (content: ModuleContent) => void;
+  /** G3 悬浮改写：透传 resumeId/moduleType 给条目内容 RichTextEditor */
+  resumeId?: number;
+  moduleType?: string;
 }
 
 /**
@@ -773,7 +778,7 @@ interface CustomModuleFormProps {
  * - content.entries 为数组 → 多板块编辑（每板块可折叠：标题输入 + 内容编辑器 + 删除 + 添加板块）
  * - 否则 → 复用 TextContentForm 单板块编辑（向后兼容）
  */
-export function CustomModuleForm({ content, onChange }: CustomModuleFormProps) {
+export function CustomModuleForm({ content, onChange, resumeId, moduleType }: CustomModuleFormProps) {
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
 
   // 向后兼容：无 entries 数组 → 单板块编辑
@@ -894,6 +899,7 @@ export function CustomModuleForm({ content, onChange }: CustomModuleFormProps) {
                     placeholder="请输入板块内容"
                     rows={6}
                     minHeight="120px"
+                    ai={resumeId && moduleType ? { resumeId, moduleType } : undefined}
                   />
                 </div>
               </div>
@@ -1102,7 +1108,14 @@ function ModuleFormImpl({ resumeId, moduleType, content, onChange }: ModuleFormP
         )}
 
         {/* custom：多板块编辑（向后兼容单板块 {title, content}） */}
-        {moduleType === "custom" && <CustomModuleForm content={content} onChange={onChange} />}
+        {moduleType === "custom" && (
+          <CustomModuleForm
+            content={content}
+            onChange={onChange}
+            resumeId={resumeId}
+            moduleType={moduleType}
+          />
+        )}
       </div>
     </div>
   );

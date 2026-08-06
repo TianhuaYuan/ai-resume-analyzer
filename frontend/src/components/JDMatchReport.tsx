@@ -11,6 +11,15 @@ import { CheckCircle, WarningCircle, TrendUp, Export } from "@phosphor-icons/rea
 import type { MatchJDResult } from "../api/resumes";
 import { formatGapList, type GapExportContext } from "../lib/gapExport";
 import { BAND_META, scoreBandKey } from "./ScoreCard";
+import JdReportBlocks from "./JdReportBlocks";
+
+// E3 四维 JD fit 标签（technical/experience/behavioral/career）
+const DIM_LABELS: Record<string, string> = {
+  technical: "技术栈",
+  experience: "经验/项目",
+  behavioral: "软技能",
+  career: "职业方向",
+};
 
 interface JDMatchReportProps {
   result: MatchJDResult;
@@ -78,6 +87,37 @@ export default function JDMatchReport({ result, resumeName, jdSnippet }: JDMatch
         <p className="text-xs text-[var(--color-text-secondary)] leading-relaxed">
           {result.analysis}
         </p>
+      )}
+
+      {/* E3 四维 JD fit 条形 */}
+      {result.dims && Object.keys(result.dims).length > 0 && (
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-1.5 mb-1">
+            <TrendUp size={13} className="text-brand" />
+            <span className="text-xs font-medium text-[var(--color-text-secondary)]">
+              四维 JD 匹配
+            </span>
+          </div>
+          {Object.entries(result.dims).map(([dim, score]) => {
+            const n = typeof score === "number" ? score : 0;
+            return (
+              <div key={dim} className="flex items-center gap-2 text-xs">
+                <span className="w-16 shrink-0 text-[var(--color-text-muted)]">
+                  {DIM_LABELS[dim] ?? dim}
+                </span>
+                <div className="flex-1 h-1.5 rounded-full bg-[var(--color-bg-tertiary)] overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-brand transition-all duration-500"
+                    style={{ width: `${n}%` }}
+                  />
+                </div>
+                <span className="w-8 shrink-0 text-right tabular-nums text-[var(--color-text-secondary)]">
+                  {n}
+                </span>
+              </div>
+            );
+          })}
+        </div>
       )}
 
       {/* 匹配/缺失关键词 chips（Magic-Resume KeywordChips 对照） */}
@@ -167,6 +207,9 @@ export default function JDMatchReport({ result, resumeName, jdSnippet }: JDMatch
           </div>
         </div>
       )}
+
+      {/* I1: 6-block 求职评估报告 */}
+      {result.report && <JdReportBlocks report={result.report} />}
     </div>
   );
 }

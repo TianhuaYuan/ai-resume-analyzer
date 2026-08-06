@@ -110,6 +110,9 @@ class AnalyzeResponse(BaseModel):
     analysis: str
     scores: ScoreDetail | None = None
     cached: bool = False  # True 表示来自 Redis 缓存（供前端提示用）
+    # P3 证据锚定：分析结论引用的原文段落（refer_index_range 切片还原），杜绝编造
+    evidence: list[dict] = Field(default_factory=list)
+    evidence_quote: str | None = None
 
 
 class FullAnalyzeResponse(BaseModel):
@@ -212,6 +215,8 @@ class MatchJDResponse(BaseModel):
     resume_id: int
     analysis: str
     scores: MatchJDScores | None = None
+    # E3 四维 JD fit（technical/experience/behavioral/career 各 0-100）
+    dims: dict[str, int] = Field(default_factory=dict)
     matched_keywords: list[str] = Field(default_factory=list)
     missing_keywords: list[str] = Field(default_factory=list)
     gaps: list[str] = Field(default_factory=list)

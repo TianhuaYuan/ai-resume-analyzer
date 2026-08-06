@@ -46,6 +46,9 @@ const TOOL_LABELS: Record<string, string> = {
   modify_module: "修改模块",
   rewrite_resume: "重写简历",
   ask_info: "追问信息",
+  web_search: "联网搜索",
+  search_corpus: "面经知识库",
+  negotiation_brief: "谈薪简报",
 };
 
 function getToolLabel(name: string): string {
@@ -106,8 +109,11 @@ const StepItem = memo(function StepItem({
   const [expanded, setExpanded] = useState(true);
   const [showArgs, setShowArgs] = useState(false);
   const [showResult, setShowResult] = useState(false);
+  // G2: 思考内容（agent_thought）默认折叠的 Accordion 状态 —— 模型推理过程不占主屏
+  const [showThought, setShowThought] = useState(false);
 
   const hasDetail = step.detail && step.detail.length > 0;
+  const isThought = step.type === "agent_thought";
   const hasArgs = step.args != null || (step.argsText != null && step.argsText.length > 0);
   const hasResult = step.result != null && step.result.length > 0;
   const hasDuration = step.durationMs != null && step.durationMs > 0;
@@ -180,7 +186,14 @@ const StepItem = memo(function StepItem({
       {/* 内容 */}
       <div className="flex-1 min-w-0 pb-2">
         <button
-          onClick={() => (hasDetail || hasArgs || hasResult) && setExpanded((v) => !v)}
+          onClick={() => {
+            // G2: 思考步骤点击切换思考折叠；其余步骤切换整体展开
+            if (isThought) {
+              if (hasDetail) setShowThought((v) => !v);
+            } else if (hasDetail || hasArgs || hasResult) {
+              setExpanded((v) => !v);
+            }
+          }}
           disabled={!hasDetail && !hasArgs && !hasResult}
           className={`text-xs font-medium ${config.color} ${
             hasDetail || hasArgs || hasResult
@@ -204,7 +217,7 @@ const StepItem = memo(function StepItem({
           )}
           {showToggle && (
             <span className="ml-1 text-[var(--color-text-muted)]">
-              {expanded ? "▲" : "▼"}
+              {isThought ? (showThought ? "▲" : "▼") : expanded ? "▲" : "▼"}
             </span>
           )}
         </button>
@@ -245,8 +258,36 @@ const StepItem = memo(function StepItem({
                 </pre>
               </div>
             )}
-            {/* detail 展示（原有逻辑） */}
-            {hasDetail && (
+            {/* G2: 思考内容（agent_thought）→ 默认折叠的 Accordion，点击展开查看模型推理过程，
+                流式期间亦默认折叠，避免推理过程抢占主屏 */}
+            {isThought ? (
+              hasDetail && (
+                <div className="mt-1">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowThought((v) => !v); }}
+                    className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded
+                      bg-[var(--color-bg-secondary)] border border-[var(--color-border)]
+                      text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]
+                      cursor-pointer transition-colors"
+                    aria-expanded={showThought}
+                  >
+                    {showThought ? "收起思考" : "展开思考"}
+                    <CaretDown
+                      size={10}
+                      weight="bold"
+                      className={`transition-transform ${showThought ? "" : "-rotate-90"}`}
+                      aria-hidden="true"
+                    />
+                  </button>
+                  {showThought && (
+                    <div className="mt-1 p-2 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[11px] text-[var(--color-text-secondary)] leading-relaxed whitespace-pre-wrap break-words max-h-40 overflow-y-auto">
+                      {step.detail}
+                    </div>
+                  )}
+                </div>
+              )
+            ) : hasDetail ? (
+              /* detail 展示（原有逻辑，非思考步骤） */
               <div
                 className={`p-2 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[11px] text-[var(--color-text-secondary)] leading-relaxed whitespace-pre-wrap break-words ${
                   streaming
@@ -256,7 +297,7 @@ const StepItem = memo(function StepItem({
               >
                 {step.detail}
               </div>
-            )}
+            ) : null}
             {/* 操作按钮：有 args/result 时显示展开/折叠按钮 */}
             {!streaming && (hasArgs || hasResult) && (
               <div className="flex gap-1.5">

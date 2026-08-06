@@ -27,6 +27,10 @@ class AgenticRAGState(TypedDict):
     # 下游可据此区分「真实 0.5 分」和「没评估直接放行」。
     eval_forced: bool
     reflection_result: str
+    # D2 失败分类定向恢复（借鉴 tau-bench）：反思节点判定的失败类型 + 归因，
+    # 写入 state（LangGraph channel）供追踪/下游读取；侧信道另供 react_agent.loop 使用。
+    fault_type: str
+    fault_assignment: str
     missing_info: list[str]
     supplement_queries: list[str]
     reflection_round: int

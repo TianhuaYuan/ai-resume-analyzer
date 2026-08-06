@@ -1,10 +1,10 @@
 """T21: Agent 工具集成测试。
 
-通过 loop._execute_tool_call 集成入口测试全部 18 工具（unified = 13 qa + 5 builder）：
-1. 注册表完整性：TOOL_REGISTRY 3 类（qa/builder/unified）18 工具
-2. Schema 生成：get_agent_schemas()=18（unified）, get_builder_schemas()=5（deprecated）
-3. 18 Agent 工具通过 _execute_tool_call 执行（mock 依赖）
-4. 工具查找：get_tool_by_name 覆盖全部 18 个名称
+通过 loop._execute_tool_call 集成入口测试全部 22 工具（unified = 17 qa + 5 builder）：
+1. 注册表完整性：TOOL_REGISTRY 3 类（qa/builder/unified）22 工具
+2. Schema 生成：get_agent_schemas()=22（unified）, get_builder_schemas()=5（deprecated）
+3. 21 Agent 工具通过 _execute_tool_call 执行（mock 依赖）
+4. 工具查找：get_tool_by_name 覆盖全部 21 个名称
 """
 
 import json
@@ -35,22 +35,22 @@ class TestToolRegistry:
         """TOOL_REGISTRY 包含 qa/builder/unified 三个类别。"""
         assert set(TOOL_REGISTRY.keys()) == {"qa", "builder", "unified"}
 
-    def test_qa_has_fourteen_tools(self):
-        """qa 类别有 14 个工具。"""
-        assert len(TOOL_REGISTRY["qa"]) == 14
+    def test_qa_has_seventeen_tools(self):
+        """qa 类别有 17 个工具（B3 加 search_corpus）。"""
+        assert len(TOOL_REGISTRY["qa"]) == 17
 
     def test_builder_has_five_tools(self):
         """builder 类别有 5 个工具。"""
         assert len(TOOL_REGISTRY["builder"]) == 5
 
-    def test_unified_has_nineteen_tools(self):
-        """unified 类别有 19 个工具（qa + builder 合并）。"""
-        assert len(TOOL_REGISTRY["unified"]) == 19
+    def test_unified_has_twenty_two_tools(self):
+        """unified 类别有 22 个工具（qa + builder 合并）。"""
+        assert len(TOOL_REGISTRY["unified"]) == 22
 
     def test_agent_tools_are_unified(self):
-        """get_tools_for_agent = unified(19)。"""
+        """get_tools_for_agent = unified(22)。"""
         tools = get_tools_for_agent()
-        assert len(tools) == 19
+        assert len(tools) == 22
 
     def test_builder_tools_deprecated(self):
         """get_tools_for_builder 保留向后兼容（deprecated）。"""
@@ -59,7 +59,7 @@ class TestToolRegistry:
         assert len(tools) == 5
 
     def test_all_tool_names_unique(self):
-        """unified 中所有 18 个工具名不重复。"""
+        """unified 中所有 22 个工具名不重复。"""
         names = [tc.name for tc in TOOL_REGISTRY["unified"]]
         assert len(names) == len(set(names)), f"重复工具名: {names}"
 
@@ -73,9 +73,9 @@ class TestSchemaGeneration:
     """OpenAI function calling schema 生成。"""
 
     def test_agent_schemas_count(self):
-        """get_agent_schemas() 返回 19 个 schema（unified）。"""
+        """get_agent_schemas() 返回 22 个 schema（unified）。"""
         schemas = get_agent_schemas()
-        assert len(schemas) == 19
+        assert len(schemas) == 22
 
     def test_builder_schemas_deprecated(self):
         """get_builder_schemas() 保留向后兼容（deprecated）。"""
@@ -111,11 +111,12 @@ class TestGetToolByName:
     @pytest.mark.parametrize("tool_name", [
         "search_resume", "jd_match", "diagnose_resume", "compare_resumes",
         "rewrite_star", "translate", "interview_coach",
+        "search_jobs_live", "web_search", "search_corpus",
         "generate_module", "check_module", "modify_module",
         "rewrite_resume", "ask_info",
     ])
     def test_find_existing_tool(self, tool_name):
-        """12 个工具名都能查到。"""
+        """14 个工具名都能查到。"""
         tool_class = get_tool_by_name(tool_name)
         assert tool_class is not None
         assert tool_class.name == tool_name
@@ -314,19 +315,29 @@ class TestLLMToolExecution:
 
     @pytest.mark.asyncio
     async def test_interview_coach_through_loop(self):
-        """interview_coach 通过 _execute_tool_call 执行。"""
+        """interview_coach 通过 _execute_tool_call 执行（多轮状态机首次调用出第 1 题）。
+
+        mock_db 的 execute 返回 scalars().all()（空列表 → 无进行中面试）→
+        走创建分支；generate_plan 打桩避免真实 LLM 网络调用。
+        """
         from services.react_agent.loop import _execute_tool_call
         from services.rag.pipeline import ToolCall
 
         tc = ToolCall(id="tc1", name="interview_coach", arguments=json.dumps({"resume_id": 1, "target_position": "后端"}))
         mock_db = self._make_mock_db_with_resume()
 
-        with patch("services.react_agent.tools.llm_generate", new_callable=AsyncMock) as mock_llm:
-            mock_llm.return_value = "面试问题 Q&A"
+        plan = [{
+            "id": "q1", "text": "请介绍一下你最有代表性的项目。", "section": "项目深挖",
+            "difficulty": 3, "rubric": [], "followups": [],
+            "target_competency": "项目深挖",
+        }]
+        with patch("services.interview_coach.generate_plan",
+                   new_callable=AsyncMock, return_value=plan):
             result, is_error, _, _ = await _execute_tool_call(tc, mock_db, user_id=1)
 
         assert is_error is False
         assert "面试" in result
+        assert "第 1/1 题" in result
 
 
 # ═══════════════════════════════════════════════════════════════

@@ -141,6 +141,11 @@ class Settings(BaseSettings):
     # LLM 失败落盘诊断目录（SmartResume 对照；空 = 关闭）
     LLM_DIAGNOSTICS_DIR: str = ""
 
+    # ── 博查联网搜索（web_search 工具 + search_jobs_live 主引擎 BochaEngine） ──
+    # 博查 Web Search API key（https://open.bochaai.com）；空则不启用联网搜索，
+    # 相关工具返回友好降级提示 / 引擎返回空列表走兜底链。
+    BOCHA_API_KEY: str = ""
+
     # ── Thinking 配置 ──
     THINKING_ENABLED: bool = True
     THINKING_EFFORT: str = "high"

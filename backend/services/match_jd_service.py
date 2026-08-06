@@ -31,10 +31,15 @@ _SYSTEM_PROMPT = (
 )
 
 # Magic-Resume FitReport 契约对照：结构化 JSON 输出（JSON-first）
+# E3 升级：四维 JD fit（technical/experience/behavioral/career），overall 由
+# rubric 权重代码计算（维度与分数绝不由 LLM 同时给，避免不一致），兼容旧 score 字段。
 _STRUCTURED_SYSTEM = (
     "你是一个专业的招聘分析师。将简历与 JD 对比分析。\n"
     "严格输出 JSON 对象（不要 Markdown，不要 ```json 包裹）：\n"
-    '{"score": <0-100 整数>,\n'
+    '{"dims": {"technical": <0-100 整数, 技术栈/工具匹配>,\n'
+    '           "experience": <0-100 整数, 年限/项目复杂度匹配>,\n'
+    '           "behavioral": <0-100 整数, 软技能/协作/主动性>,\n'
+    '           "career": <0-100 整数, 职业方向/行业背景契合>},\n'
     ' "matched": ["简历中与 JD 匹配的技能/经历关键词", ...],\n'
     ' "missing": ["JD 要求但简历中缺失的关键词/技能", ...],\n'
     ' "gaps": ["针对缺失的低成本改进建议", ...],\n'
@@ -55,8 +60,36 @@ def _extract_json_object(raw: str) -> dict:
         return json.loads(fixed)
 
 
+_FIT_DIMENSIONS = ("technical", "experience", "behavioral", "career")
+
+
+def _clamp_score(value) -> int:
+    try:
+        return max(0, min(100, int(value)))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _parse_fit_dims(data: dict) -> dict[str, int]:
+    """解析四维分数（0-100 夹紧）。缺维 → 该维 0（整体不参与）。"""
+    dims_raw = data.get("dims")
+    dims: dict[str, int] = {}
+    if isinstance(dims_raw, dict):
+        for d in _FIT_DIMENSIONS:
+            v = dims_raw.get(d)
+            if isinstance(v, (int, float)):
+                dims[d] = _clamp_score(v)
+    return dims
+
+
 async def _structured_match(user_prompt: str, user_id: int) -> dict | None:
-    """结构化匹配（JSON-first）：失败返回 None → 调用方降级 markdown。"""
+    """结构化匹配（JSON-first）：失败返回 None → 调用方降级 markdown。
+
+    E3 四维 JD fit：overall 由 rubric 权重加权计算（jd_fit_overall），
+    维度分数与总分同源；旧 `score` 字段作为 LLM 未输出 dims 时的兜底。
+    """
+    from services.rubric import jd_fit_overall
+
     try:
         raw = await with_retry(
             llm_generate,
@@ -67,11 +100,16 @@ async def _structured_match(user_prompt: str, user_id: int) -> dict | None:
             max_retries=1,
         )
         data = _extract_json_object(raw)
-        score = int(data.get("score", 0))
-        score = max(0, min(100, score))  # 0-100 夹紧
+        dims = _parse_fit_dims(data)
+        if len(dims) == len(_FIT_DIMENSIONS):
+            overall = jd_fit_overall(dims)  # 权重来自 rubric（I2 可编辑）
+        else:
+            # 旧契约兜底：直接读 score
+            overall = _clamp_score(data.get("score", 0))
         return {
-            "score": score,
-            "band": derive_band(score),
+            "score": overall,
+            "band": derive_band(overall),
+            "dims": dims,
             "matched": [str(s) for s in data.get("matched", []) if str(s).strip()][:10],
             "missing": [str(s) for s in data.get("missing", []) if str(s).strip()][:10],
             "gaps": [str(s) for s in data.get("gaps", []) if str(s).strip()][:5],
@@ -142,6 +180,7 @@ async def match_jd(
             "resume_id": resume_id,
             "analysis": reason,
             "scores": {"overall": structured["score"], "band": structured["band"]},
+            "dims": structured["dims"],  # E3 四维 JD fit（technical/experience/behavioral/career）
             "matched_keywords": structured["matched"],
             "missing_keywords": structured["missing"],
             "gaps": structured["gaps"],
@@ -166,3 +205,216 @@ async def match_jd(
         "resume_id": resume_id,
         "analysis": analysis,
     }
+
+
+# ═══════════════════════════════════════════════════════════
+# I1: JD 6-block 评估报告（JobMcp report_format.md 对照）
+# 角色摘要 / CV 匹配表 / 级别策略 / 薪酬市场 / 个性化计划 / 面试故事映射 /
+# Block G 岗位可信度防坑。LLM JSON 生成 + 确定性模板兜底。
+# ═══════════════════════════════════════════════════════════
+
+_6BLOCK_SYSTEM = (
+    "你是一位资深求职顾问。基于候选人简历与 JD 生成 6-block 求职评估报告。\n"
+    "严格输出 JSON 对象（不要 Markdown，不要 ```json 包裹），结构如下：\n"
+    "{\n"
+    '  "role_summary": {"archetype": "岗位类型（如 Agentic/FDE/后端）", "domain": "领域", '
+    '"function": "build/consult/manage/deploy", "seniority": "intern→principal", '
+    '"remote": "full/hybrid/onsite", "team_size": "团队规模或省略", "tldr": "一句话总结"},\n'
+    '  "cv_match": {"table": [{"jd_requirement": "JD 要求", "cv_evidence": "简历对应行/证据", '
+    '"status": "matched|partial|missing"}], '
+    '"gaps": [{"type": "hard_blocker|nice_to_have", "adjacent": "邻近经验", "mitigation": "求职信缓解话术"}]},\n'
+    '  "level_strategy": {"jd_level": "JD 暗示的级别", "candidate_level": "候选人自然级别", '
+    '"sell_senior_plan": "不撒谎地体现资深的话术与亮点", "downlevel_plan": "被降级时的应对（薪资合理则接受/6个月复审/晋升标准）"},\n'
+    '  "comp_market": {"market_range": "市场薪酬区间", "base_hint": "锚定建议", '
+    '"sources": ["薪资来源，如 Levels.fyi/看准/Boss"], "notes": "无数据时如实说明，不编造数字"},\n'
+    '  "personalization_plan": {"cv_changes": [{"section": "简历板块", "current": "现状", '
+    '"proposed": "建议改写", "why": "理由"}], "linkedin_changes": []},\n'
+    '  "interview_stories": [{"jd_requirement": "JD 要求", "story_title": "故事标题", '
+    '"s": "Situation", "t": "Task", "a": "Action", "r": "Result", "reflection": "反思"}]，\n'
+    '  "job_credibility": {"tier": "high_confidence|proceed_with_caution|suspicious", '
+    '"signals": [{"signal": "观察到的信号", "risk": "high|medium|low", "note": "解释"}], '
+    '"conclusion": "结论"}\n'
+    "}\n"
+    "硬性要求：\n"
+    "1. cv_match / interview_stories / personalization_plan 必须 grounded 在简历真实内容，"
+    "不得编造简历中不存在的公司/项目/成就；\n"
+    "2. comp_market 没有可靠数据时 notes 如实写『无市场数据』，绝不虚构薪资数字；\n"
+    "3. job_credibility 是呈现观察而非指控——每个信号都有合理解释；观察发布时长（30天内佳/"
+    "60天+需谨慎）、岗位要求内部矛盾（如初级头衔却要求 Staff 能力）、重复发布模式（90天内同一岗位发布 2 次以上）等；\n"
+    "4. 面试故事 6-10 条，每条含 STAR 四要素 + 反思。"
+)
+
+
+def _fallback_6block() -> dict:
+    """确定性模板兜底（LLM 失败时给出诚实的最小结构）。"""
+    return {
+        "role_summary": {
+            "archetype": "（未能解析）",
+            "domain": "（未能解析）",
+            "function": "（未能解析）",
+            "seniority": "（未能解析）",
+            "remote": "（未能解析）",
+            "team_size": "",
+            "tldr": "LLM 生成失败，可重试。",
+        },
+        "cv_match": {"table": [], "gaps": []},
+        "level_strategy": {
+            "jd_level": "（未能解析）",
+            "candidate_level": "（未能解析）",
+            "sell_senior_plan": "",
+            "downlevel_plan": "",
+        },
+        "comp_market": {
+            "market_range": "（未能解析）",
+            "base_hint": "",
+            "sources": [],
+            "notes": "LLM 生成失败，未获取市场数据。",
+        },
+        "personalization_plan": {"cv_changes": [], "linkedin_changes": []},
+        "interview_stories": [],
+        "job_credibility": {
+            "tier": "proceed_with_caution",
+            "signals": [],
+            "conclusion": "LLM 生成失败，无法评估岗位可信度；请人工核对岗位来源与发布时效。",
+        },
+    }
+
+
+def _normalize_6block(data: dict) -> dict:
+    """结构兜底：缺失的 block 用空结构补齐，保证前端可渲染。"""
+    fb = _fallback_6block()
+    out: dict = {}
+    for key, fallback_val in fb.items():
+        val = data.get(key)
+        if val is None:
+            out[key] = fallback_val
+        elif isinstance(val, dict):
+            # 逐字段兜底
+            merged = dict(fallback_val) if isinstance(fallback_val, dict) else {}
+            for fk, fv in val.items():
+                merged[fk] = fv
+            out[key] = merged
+        elif isinstance(val, list):
+            out[key] = val if isinstance(fallback_val, list) else fallback_val
+        else:
+            out[key] = fallback_val
+    return out
+
+
+async def build_6_block_report(
+    parsed_text: str,
+    jd_text: str,
+    fit: dict | None,
+    user_id: int,
+) -> dict:
+    """生成 6-block 求职评估报告（LLM JSON + 确定性模板兜底）。
+
+    Args:
+        parsed_text: 简历全文
+        jd_text: JD 原文
+        fit: match_jd 的结构化匹配结果（scores/dims/matched/missing/gaps），用于注入
+        user_id: LLM 用量记账
+
+    Returns:
+        6-block 报告 dict（role_summary/cv_match/level_strategy/comp_market/
+        personalization_plan/interview_stories/job_credibility）
+    """
+    fit_hint = ""
+    if fit:
+        fit_hint = (
+            f"\n\n已有匹配数据（参考，勿重复计算）：\n"
+            f"- overall: {fit.get('scores', {}).get('overall')} "
+            f"band: {fit.get('scores', {}).get('band')}\n"
+            f"- dims: {fit.get('dims')}\n"
+            f"- matched: {fit.get('matched_keywords', [])}\n"
+            f"- missing: {fit.get('missing_keywords', [])}"
+        )
+
+    user_prompt = (
+        f"候选人简历：\n{parsed_text[:6000]}\n\n"
+        f"目标 JD：\n{jd_text[:5000]}"
+        f"{fit_hint}\n\n请按 JSON 契约生成 6-block 求职评估报告。"
+    )
+
+    try:
+        raw = await with_retry(
+            llm_generate,
+            _6BLOCK_SYSTEM,
+            user_prompt,
+            user_id=user_id,
+            temperature=0.3,
+            fallback="",
+            max_retries=1,
+        )
+        data = _extract_json_object(raw)
+        if not isinstance(data, dict):
+            raise ValueError("6-block 报告非对象")
+        return _normalize_6block(data)
+    except Exception as e:
+        logger.warning("6-block 报告生成失败（使用模板兜底）: %s", e)
+        return _fallback_6block()
+
+
+async def save_jd_report(
+    db: AsyncSession,
+    user_id: int,
+    resume_id: int,
+    jd_text: str,
+    report: dict,
+    overall: int,
+    band: str,
+) -> bool:
+    """JD 6-block 报告落库（同 (user, resume, jd_hash) 幂等 upsert）。
+
+    Args:
+        db: DB session（调用方负责 commit；best-effort 失败只记日志）
+        user_id / resume_id / jd_text: 归属与幂等键
+        report: 6-block 报告 dict
+        overall / band: 汇总匹配分
+
+    Returns:
+        True 落库成功；False 失败（不抛异常，不阻断主流程）
+    """
+    from models.jd_match_report import JdMatchReport
+
+    try:
+        h = jd_text_hash(jd_text)
+        result = await db.execute(
+            select(JdMatchReport).where(
+                JdMatchReport.user_id == user_id,
+                JdMatchReport.resume_id == resume_id,
+                JdMatchReport.jd_text_hash == h,
+            )
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            row = JdMatchReport(
+                user_id=user_id,
+                resume_id=resume_id,
+                jd_text_hash=h,
+                jd_text=jd_text,
+                report=report,
+                overall=overall,
+                band=band,
+            )
+            db.add(row)
+        else:
+            row.jd_text = jd_text
+            row.report = report
+            row.overall = overall
+            row.band = band
+        await db.commit()
+        return True
+    except Exception as e:
+        logger.warning("save_jd_report 落库失败（忽略）: %s", e)
+        try:
+            await db.rollback()
+        except Exception:
+            pass
+        return False
+
+
+def jd_text_hash(jd_text: str) -> str:
+    import hashlib
+
+    return hashlib.sha256(jd_text.encode("utf-8")).hexdigest()

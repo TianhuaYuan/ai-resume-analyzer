@@ -12,7 +12,7 @@
  * - 预览模式已删除（showPreviewToggle 参数保留但忽略，保证调用方零改动）
  */
 
-import { useRef, useCallback, useEffect } from "react";
+import { useRef, useCallback, useEffect, useState } from "react";
 import type { Editor } from "@tiptap/react";
 import { useEditor, EditorContent, useEditorState } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -28,7 +28,9 @@ import {
   ListNumbers,
   LinkSimple,
   Code,
+  Sparkle,
 } from "@phosphor-icons/react";
+import { aiRewrite } from "../../api/builder";
 
 // ── Props（对外签名与旧实现完全一致）─────────────────────────────
 
@@ -45,6 +47,8 @@ interface RichTextEditorProps {
   minHeight?: string;
   /** 是否显示预览切换（预览模式已删除，参数保留兼容调用方） */
   showPreviewToggle?: boolean;
+  /** G3 悬浮改写：提供 resumeId + moduleType 时启用「选中文本 → 悬浮 AI 改写」 */
+  ai?: { resumeId: number; moduleType: string };
 }
 
 // ── 工具栏按钮配置 ──────────────────────────────────────────────
@@ -155,6 +159,7 @@ export function RichTextEditor({
   rows = 4,
   minHeight = "100px",
   showPreviewToggle = true,
+  ai,
 }: RichTextEditorProps) {
   // 用 ref 持有最新 onChange，避免 useEditor 创建时闭包过期
   const onChangeRef = useRef(onChange);
@@ -231,6 +236,77 @@ export function RichTextEditor({
     [editor],
   );
 
+  // ── G3 悬浮改写（ai prop 存在时启用）────────────────────────
+  // 选中文本 → 悬浮「AI 改写」按钮 → 调 aiRewrite 改写 → 替换选区（可接受/放弃）
+  const [hoverSel, setHoverSel] = useState<{ from: number; to: number; text: string } | null>(null);
+  const [floatPos, setFloatPos] = useState<{ x: number; y: number } | null>(null);
+  const [rewrite, setRewrite] = useState<
+    | { original: string; rewritten: string; from: number; to: number; loading: boolean }
+    | null
+  >(null);
+
+  // 选区变化 → 非空（且编辑器聚焦）时显示悬浮改写按钮
+  useEffect(() => {
+    if (!editor) return;
+    const onSelection = () => {
+      const { from, to, empty } = editor.state.selection;
+      if (!empty && ai && editor.isFocused) {
+        const text = editor.state.doc.textBetween(from, to, " ");
+        if (text.trim().length >= 2) {
+          const coords = editor.view.coordsAtPos(from);
+          setFloatPos({ x: coords.left, y: coords.top - 34 });
+          setHoverSel({ from, to, text });
+          return;
+        }
+      }
+      setFloatPos(null);
+      setHoverSel(null);
+    };
+    editor.on("selectionUpdate", onSelection);
+    return () => {
+      editor.off("selectionUpdate", onSelection);
+    };
+  }, [editor, ai]);
+
+  const handleFloatRewrite = useCallback(async () => {
+    if (!hoverSel || !ai || !floatPos) return;
+    const { from, to, text } = hoverSel;
+    setRewrite({ original: text, rewritten: "", from, to, loading: true });
+    try {
+      const res = await aiRewrite(
+        ai.resumeId,
+        text,
+        "润色改写，保持原意与专业表述，不新增简历外的事实",
+        ai.moduleType,
+      );
+      setRewrite({ original: text, rewritten: res.rewritten_text, from, to, loading: false });
+    } catch {
+      // 失败恢复：不替换、关闭气泡
+      setRewrite(null);
+      setHoverSel(null);
+      setFloatPos(null);
+    }
+  }, [hoverSel, ai, floatPos]);
+
+  const handleRewriteAccept = useCallback(() => {
+    if (!editor || !rewrite) return;
+    editor
+      .chain()
+      .focus()
+      .deleteRange({ from: rewrite.from, to: rewrite.to })
+      .insertContent(rewrite.rewritten)
+      .run();
+    setRewrite(null);
+    setHoverSel(null);
+    setFloatPos(null);
+  }, [editor, rewrite]);
+
+  const handleRewriteReject = useCallback(() => {
+    setRewrite(null);
+    setHoverSel(null);
+    setFloatPos(null);
+  }, []);
+
   // rows / showPreviewToggle 仅为对外签名兼容而保留（WYSIWYG 下不参与渲染）
   void rows;
   void showPreviewToggle;
@@ -275,6 +351,53 @@ export function RichTextEditor({
       >
         <EditorContent editor={editor} />
       </div>
+
+      {/* G3 悬浮改写：选中文本按钮 / 改写预览气泡 */}
+      {ai && floatPos && hoverSel && !rewrite && (
+        <button
+          type="button"
+          style={{ position: "fixed", left: floatPos.x, top: floatPos.y, zIndex: 50 }}
+          className="flex items-center gap-1 rounded-full bg-brand px-2.5 py-1 text-xs font-medium text-white shadow-lg transition-all hover:brightness-110 active:scale-95"
+          onClick={handleFloatRewrite}
+          title="AI 改写选中文本"
+        >
+          <Sparkle size={12} weight="fill" /> AI 改写
+        </button>
+      )}
+      {ai && rewrite && (
+        <div
+          style={{ position: "fixed", left: floatPos?.x ?? 0, top: (floatPos?.y ?? 0) - 4, zIndex: 50 }}
+          className="w-72 rounded-xl border border-[var(--color-border)] bg-white p-3 shadow-xl"
+        >
+          {rewrite.loading ? (
+            <div className="flex items-center gap-2 text-sm text-[var(--color-text-secondary)]">
+              <Sparkle size={14} className="animate-pulse text-brand" /> AI 改写中…
+            </div>
+          ) : (
+            <>
+              <div className="mb-2 max-h-40 overflow-auto rounded-md bg-[#F2F2F7] p-2 text-xs leading-relaxed text-[var(--color-text)]">
+                {rewrite.rewritten}
+              </div>
+              <div className="flex items-center justify-end gap-1.5">
+                <button
+                  type="button"
+                  onClick={handleRewriteReject}
+                  className="rounded-md px-2 py-1 text-xs text-[var(--color-text-muted)] hover:bg-[var(--color-bg-secondary)]"
+                >
+                  放弃
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRewriteAccept}
+                  className="rounded-md bg-brand px-2.5 py-1 text-xs font-medium text-white hover:brightness-110"
+                >
+                  接受替换
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

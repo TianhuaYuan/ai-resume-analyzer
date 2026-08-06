@@ -1,7 +1,7 @@
 /**
  * AICapabilitiesPage — AI 能力目录页（F「AI 能力呈现」）。
  *
- * 后端 Agent 共有 19 个工具，此前只藏在 /qa 对话里。本页把它们按用途分组
+ * 后端 Agent 的常用工具此前只藏在 /qa 对话里。本页把它们按用途分组
  * 以卡片形式集中呈现：每张卡片展示 图标 + 工具名 + 中文描述 + 触发问题，
  * 点击后 navigate("/qa", { state: { question } })（照抄 FloatingAIPanel 的
  * 跳转方式），由 QAPage 通过 location.state.question 自动预填触发。
@@ -26,6 +26,9 @@ import {
   Microphone,
   MagnifyingGlass,
   FolderOpen,
+  GlobeSimple,
+  HandCoins,
+  Books,
   ReadCvLogo,
   ChatCircleText,
   BookmarkSimple,
@@ -54,7 +57,7 @@ interface CapabilityGroup {
   cards: CapabilityCard[];
 }
 
-/* ── 能力分组（覆盖后端 18 工具） ── */
+/* ── 能力分组（覆盖后端 21 个工具） ── */
 
 const CAPABILITY_GROUPS: CapabilityGroup[] = [
   {
@@ -96,11 +99,18 @@ const CAPABILITY_GROUPS: CapabilityGroup[] = [
         question: "帮我分析这份简历和目标岗位 JD 的匹配度，指出差距在哪里",
       },
       {
-        tool: "recommend_jobs",
+        tool: "search_jobs_live",
         name: "岗位推荐",
-        desc: "根据简历内容推荐匹配的校招 / 社招 / 实习岗位并打分",
+        desc: "实时搜索匹配的校招 / 社招 / 实习岗位",
         icon: Briefcase,
-        question: "根据我的简历，推荐一些匹配的校招和社招岗位",
+        question: "请实时搜索最近的校招和社招岗位机会",
+      },
+      {
+        tool: "web_search",
+        name: "联网搜索",
+        desc: "实时搜索面经 / 薪资 / 公司评价等信息，弥补离线知识库的时效性缺口",
+        icon: GlobeSimple,
+        question: "搜索一下最近的 AI 岗位面经",
       },
     ],
   },
@@ -165,10 +175,17 @@ const CAPABILITY_GROUPS: CapabilityGroup[] = [
     cards: [
       {
         tool: "interview_coach",
-        name: "模拟面试",
-        desc: "基于简历生成面试问题与回答建议，最多 8 轮",
+        name: "多轮模拟面试",
+        desc: "一问一答逐题推进：生成题单 → 逐题提问与追问 → 完成自动评分出评分卡",
         icon: Microphone,
         question: "请根据我的简历，帮我做一次目标岗位的模拟面试",
+      },
+      {
+        tool: "negotiation_brief",
+        name: "谈薪简报",
+        desc: "生成目标岗位的薪资谈判参考：市场范围、依据与谈判要点",
+        icon: HandCoins,
+        question: "帮我生成后端岗位的谈薪简报",
       },
     ],
   },
@@ -189,6 +206,13 @@ const CAPABILITY_GROUPS: CapabilityGroup[] = [
         desc: "跨简历、JD、面试记录等知识资产库检索相关内容",
         icon: FolderOpen,
         question: "帮我在我的知识资产库（简历 / JD / 面试记录）里检索相关内容",
+      },
+      {
+        tool: "search_corpus",
+        name: "面经知识库",
+        desc: "检索离线面经 / 真题 / 范文库，快速定位可参考的面试素材",
+        icon: Books,
+        question: "检索面经库里的后端面试题",
       },
       {
         tool: "get_resume_content",

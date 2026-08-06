@@ -38,7 +38,7 @@ interface ChatInputProps {
 const QUICK_TAGS = [
   { icon: FileText, label: "简历诊断", question: "请全面诊断这份简历的优点和不足" },
   { icon: Translate, label: "简历翻译", question: "请将这份简历翻译为英文" },
-  { icon: Briefcase, label: "校招推荐", question: "请根据我的简历推荐合适的校招机会" },
+  { icon: Briefcase, label: "校招推荐", question: "请实时搜索最近的校招和社招岗位机会" },
   { icon: Microphone, label: "面试指导", question: "请根据这份简历模拟一场面试" },
   { icon: MapTrifold, label: "职业规划", question: "请帮我分析我的职业发展方向" },
 ] as const;

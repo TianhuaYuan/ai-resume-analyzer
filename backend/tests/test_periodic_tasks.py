@@ -85,14 +85,14 @@ class TestStartPeriodicTasks:
         assert tasks == []
 
     @pytest.mark.asyncio
-    async def test_enabled_returns_three_tasks(self):
-        """开关开启 → 返回 3 个后台 task。"""
+    async def test_enabled_returns_four_tasks(self):
+        """开关开启 → 返回 4 个后台 task（清理失效 + 孤儿扫描 + 过期简历 + 记忆合并）。"""
         from services.periodic_tasks import start_periodic_tasks
 
         with patch.object(settings, "PERIODIC_TASKS_ENABLED", True):
             tasks = await start_periodic_tasks()
 
-        assert len(tasks) == 3
+        assert len(tasks) == 4
         for t in tasks:
             t.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)

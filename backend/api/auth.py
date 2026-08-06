@@ -1,5 +1,4 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_current_user
@@ -109,29 +108,6 @@ async def login(
     以便既有前端零改动。
     """
     user = await authenticate_user(db, data.email, data.password)
-    tokens = create_tokens(user)
-    a_max, r_max = _cookie_max_age()
-    set_auth_cookies(
-        response,
-        tokens.access_token,
-        tokens.refresh_token,
-        access_max_age=a_max,
-        refresh_max_age=r_max,
-    )
-    return tokens
-
-
-@router.post("/token", response_model=TokenResponse)
-@limiter.limit(settings.RATE_LIMIT_LOGIN)
-async def login_form(
-    request: Request,
-    response: Response,
-    form: OAuth2PasswordRequestForm = Depends(),
-    db: AsyncSession = Depends(get_db),
-    _: bool = Depends(verify_origin),
-):
-    """登录（form）。Swagger UI 的 Authorize 按钮走的这个，username 字段填邮箱。"""
-    user = await authenticate_user(db, form.username, form.password)
     tokens = create_tokens(user)
     a_max, r_max = _cookie_max_age()
     set_auth_cookies(
@@ -344,6 +320,44 @@ async def export_user_data_endpoint(
     from services.data_export_service import export_user_data
 
     return await export_user_data(db, current_user.id)
+
+
+@router.get("/export-data/csv")
+async def export_data_csv(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """导出简历模块全字段 CSV 长表（fieldwork 全打平对照）。
+
+    每份简历平铺字段 + 每条列表模块 item 单独成行，Excel/Sheets 直接打开。
+    """
+    from services.data_export_service import build_resume_csv
+
+    csv_text = await build_resume_csv(db, current_user.id)
+    return Response(
+        content=csv_text,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="resumes.csv"'},
+    )
+
+
+@router.get("/export-data/markdown")
+async def export_data_markdown(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """导出简历 Markdown 摘要（fieldwork buildApplicationsMarkdown 对照）。
+
+    给人读的概览，与 CSV 长表互补。
+    """
+    from services.data_export_service import build_resume_markdown
+
+    md_text = await build_resume_markdown(db, current_user.id)
+    return Response(
+        content=md_text,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="resumes-summary.md"'},
+    )
 
 
 @router.delete("/account", status_code=204)

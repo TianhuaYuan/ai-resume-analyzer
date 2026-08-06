@@ -17,6 +17,10 @@ from models.resume_entity import (
 )
 from models.resume_status_event import ResumeStatusEvent
 from models.interview_session import InterviewSession
+from models.interview_simulation import InterviewSimulation
+from models.job_application import JobApplication
+from models.pending_change import PendingChange
+from models.jd_match_report import JdMatchReport
 
 __all__ = [
     "Base",
@@ -36,4 +40,8 @@ __all__ = [
     "ResumeEpisode",
     "ResumeStatusEvent",
     "InterviewSession",
+    "InterviewSimulation",
+    "JobApplication",
+    "PendingChange",
+    "JdMatchReport",
 ]

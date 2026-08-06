@@ -18,6 +18,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable
+from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,7 +36,12 @@ from services.react_agent.tools import (
     get_tool_by_name,
     get_tools_for_agent,
 )
-from services.react_agent.tools.base import ToolFailed, ToolRetryError
+from services.react_agent.tools.base import (
+    ApprovalRequired,
+    Tool,
+    ToolFailed,
+    ToolRetryError,
+)
 from services.token_quota import check_quota
 
 logger = logging.getLogger(__name__)
@@ -64,6 +70,94 @@ STUCK_PROMPT = (
 )
 STUCK_WINDOW = 3  # 回溯窗口：最近 N 轮
 STUCK_THRESHOLD = 2  # 签名重复 ≥2 次判为 stuck
+
+# ── D1 工具审批门（借鉴 pydantic-ai Deferred tools）──
+# 命中 requires_approval 的工具执行前需用户确认；SSE 单向流，
+# 决议经独立端点回传（api/qa.py POST /qa/approval）。
+APPROVAL_TIMEOUT_SEC = 120  # 审批挂起超时（秒）；超时按拒绝处理，避免无响应挂死
+
+# ── D3 空输出重试预算（与 A3 tool_retries 分离的独立计数器）──
+# 模型连续 N 次「空 content + 无 tool_calls」即直接收敛，不占用工具重试预算。
+OUTPUT_RETRY_LIMIT = 2
+
+# ── D2 失败分类定向恢复（借鉴 tau-bench fault_type）──
+# 按最近一次失败类型选择 stuck 换策略提示；未分类回退现有 STUCK_PROMPT。
+_FAULT_TYPE_HINTS: dict[str, str] = {
+    "used_wrong_tool": (
+        "检测到你最近几轮执行受阻。你可能用错了工具——请换一个更合适的工具，"
+        "或直接基于已有信息回答用户。"
+    ),
+    "used_wrong_tool_argument": (
+        "检测到你最近几轮执行受阻。请检查工具参数是否正确（如 resume_id、查询词、指令），"
+        "修正后重试，或直接基于已有信息回答用户。"
+    ),
+    "user_info_missing": (
+        "检测到你最近几轮执行受阻。当前缺少完成任务所需的用户信息，"
+        "请先向用户澄清需求（明确缺什么），或直接回答已知部分。"
+    ),
+}
+
+# D1 审批注册表：approval_id → 待审批条目（同进程内，uvicorn 单进程假设）。
+# 决议端点（api/qa.py）通过 resolve_approval 解析；loop 通过 wait_for_approval 挂起。
+class _ApprovalEntry:
+    __slots__ = ("user_id", "event", "decision")
+
+    def __init__(self, user_id: int) -> None:
+        self.user_id = user_id
+        self.event: asyncio.Event = asyncio.Event()
+        self.decision: str | None = None
+
+
+_approval_registry: dict[str, _ApprovalEntry] = {}
+
+
+def _pick_stuck_hint(fault_type: str | None) -> str:
+    """D2: 按最近 fault_type 选择 stuck 换策略提示；未分类回退现有 STUCK_PROMPT。"""
+    if not fault_type:
+        return STUCK_PROMPT
+    return _FAULT_TYPE_HINTS.get(fault_type, STUCK_PROMPT)
+
+
+def register_approval(approval_id: str, user_id: int) -> None:
+    """D1: 注册一个待审批请求到内存注册表。"""
+    _approval_registry[approval_id] = _ApprovalEntry(user_id)
+
+
+def resolve_approval(approval_id: str, user_id: int, decision: str) -> bool:
+    """D1: 决议端点调用——解析审批请求。
+
+    返回 False 表示请求不存在 / 不属于该用户 / 已被解析（幂等拒绝）。
+    """
+    entry = _approval_registry.get(approval_id)
+    if entry is None or entry.user_id != user_id or entry.event.is_set():
+        return False
+    entry.decision = decision
+    entry.event.set()
+    return True
+
+
+def drop_approval(approval_id: str) -> None:
+    """D1: 清理审批注册表条目（wait_for_approval 结束或异常时兜底）。"""
+    _approval_registry.pop(approval_id, None)
+
+
+async def wait_for_approval(approval_id: str, timeout: float = APPROVAL_TIMEOUT_SEC) -> str:
+    """D1: 挂起等待前端审批决议（approval_request 已发射后调用）。
+
+    决议端点 resolve_approval 放行 asyncio.Event → 返回 "approved" / "denied"。
+    超时按拒绝处理（避免用户不响应导致 Agent 无限挂起）；结束后清理注册表。
+    """
+    entry = _approval_registry.get(approval_id)
+    if entry is None:
+        return "denied"
+    try:
+        await asyncio.wait_for(entry.event.wait(), timeout=timeout)
+        return entry.decision or "denied"
+    except asyncio.TimeoutError:
+        logger.warning("审批超时（%ss），按拒绝处理: approval_id=%s", timeout, approval_id)
+        return "denied"
+    finally:
+        drop_approval(approval_id)
 
 
 @dataclass
@@ -214,6 +308,14 @@ async def react_loop(
     agent_tools = filter_agent_tools(question, get_tools_for_agent())
     tool_schemas = [tc().to_openai_schema() for tc in agent_tools]
 
+    # D1/D2/D3 循环级状态（置于 builder 意图直达之前——该路径也会执行工具，需要审批锁）
+    # D1 审批门：本轮审批串行化锁（同一轮并行工具的审批请求逐个处理，前端一次只弹一个）
+    approval_lock = asyncio.Lock()
+    # D3 空输出重试预算（独立计数器，不占用 A3 tool_retries 预算）
+    output_empty_rounds = 0
+    # D2 最近一次失败分类（stuck 时按此选变体换策略提示）
+    recent_fault_type: str | None = None
+
     # T17 优化① builder 意图直达：跳过 ReAct「决定轮」，直接执行解析出的工具。
     # 编辑器命令明确（生成/检查/修改 X 模块），一次操作从 3 轮 LLM 压到 1 次工具调用。
     if tool_mode == "builder":
@@ -233,7 +335,12 @@ async def react_loop(
             )
             tool_semaphore = _get_tool_semaphore()
             result, is_error, sources, _tool_usage = await _execute_tool_call_with_limit(
-                tc, user_id, tool_semaphore, emit=_emit
+                tc,
+                user_id,
+                tool_semaphore,
+                emit=_emit,
+                approval_lock=approval_lock,
+                round_no=1,
             )
             await _emit(
                 {
@@ -305,11 +412,17 @@ async def react_loop(
 
         # M3 next_step_prompt：第 2 轮起每轮 LLM 调用前注入引导（收敛/换策略）。
         # stuck 时注入换策略提示覆盖默认引导；注入后重置标志（下一轮重新检测）。
+        # D2: stuck 提示按最近失败分类（fault_type）选变体，未分类回退现有 STUCK_PROMPT。
         if rounds > 1:
-            hint = STUCK_PROMPT + "\n" + NEXT_STEP_PROMPT if stuck else NEXT_STEP_PROMPT
-            messages.append({"role": "user", "content": hint})
             if stuck:
+                hint = _pick_stuck_hint(recent_fault_type) + "\n" + NEXT_STEP_PROMPT
                 stuck = False
+                # 注入后清空签名窗口：避免当轮结尾检测到同签名又立即置回 stuck，
+                # 保证模型恢复不同调用后不再连续注入换策略提示（注入即视为已干预）。
+                recent_round_signatures.clear()
+            else:
+                hint = NEXT_STEP_PROMPT
+            messages.append({"role": "user", "content": hint})
 
         # 调用 LLM（中间轮用 JUDGE_MODEL = flash，流式：推理过程实时推给前端）
         _llm_round_start = time.perf_counter()
@@ -326,12 +439,54 @@ async def react_loop(
         _accumulate_usage(total_usage, response)
         await _emit({"type": "usage", "usage": dict(response.usage), "total": dict(total_usage)})
 
+        # D3: 模型产出内容或有 tool_call 即视为「非空输出」，重置空输出计数器
+        if response.tool_calls or (response.content or "").strip():
+            output_empty_rounds = 0
+
         # 无 tool_call → 直接回答
         if not response.tool_calls:
-            await _emit({"type": "agent_done", "content": response.content})
+            content = (response.content or "").strip()
+            # D3 独立空输出重试预算：连续「空 content + 无 tool_calls」达限直接收敛，
+            # 提示用户简化问题；与 A3 tool_retries（工具重试预算）完全分离。
+            if not content:
+                output_empty_rounds += 1
+                if output_empty_rounds >= OUTPUT_RETRY_LIMIT:
+                    msg = "模型连续多次未产出结果，请简化问题重试。"
+                    logger.warning(
+                        "ReAct 连续 %d 次空输出，收敛: user=%d resume=%d",
+                        output_empty_rounds,
+                        user_id,
+                        resume_id,
+                    )
+                    await _emit({"type": "agent_done", "content": msg})
+                    _log_agent_timing("empty_converged")
+                    return ReactLoopResult(
+                        answer=msg,
+                        process_trace=process_trace,
+                        usage=total_usage,
+                        sources=_deduplicate_sources(all_sources),
+                        db_trace=_build_db_trace(system_prompt, db_rounds, FINAL_MODEL),
+                    )
+                logger.warning(
+                    "ReAct 空输出（第 %d 次连续），注入提示继续: user=%d rounds=%d",
+                    output_empty_rounds,
+                    user_id,
+                    rounds,
+                )
+                # 提示模型直接作答，继续下一轮（不 return）
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": "你尚未产出任何回答内容。请直接给出最终回答，不要调用工具。",
+                    }
+                )
+                continue
+
+            # 正常回答
+            await _emit({"type": "agent_done", "content": content})
             _log_agent_timing("done")
             return ReactLoopResult(
-                answer=response.content,
+                answer=content,
                 process_trace=process_trace,
                 usage=total_usage,
                 sources=_deduplicate_sources(all_sources),
@@ -353,11 +508,19 @@ async def react_loop(
             )
 
         # 并行执行所有工具（Spec A#32: Semaphore 限单轮并发）
+        # D1: 传入本轮 approval_lock 串行化审批请求 + round_no 供 approval_request 展示
         tool_semaphore = _get_tool_semaphore()
         _tool_start = time.perf_counter()
         results = await asyncio.gather(
             *[
-                _execute_tool_call_with_limit(tc, user_id, tool_semaphore, emit=_emit)
+                _execute_tool_call_with_limit(
+                    tc,
+                    user_id,
+                    tool_semaphore,
+                    emit=_emit,
+                    approval_lock=approval_lock,
+                    round_no=rounds,
+                )
                 for tc in response.tool_calls
             ]
         )
@@ -450,6 +613,13 @@ async def react_loop(
             for tc, (_result, is_error, _sources, _usage) in zip(response.tool_calls, results):
                 if not is_error:
                     tool_retries[tc.name] = 0
+
+        # D2: 更新最近失败分类（本轮有失败时；成功轮不覆盖，保留最近一次失败信号）。
+        # 反思侧信道（answer_from_index 内部 agentic RAG 反思判定的 fault_type）优先。
+        if any(is_error for _r, is_error, _s, _u in results):
+            recent_fault_type = _classify_recent_fault(
+                user_id, question, response.tool_calls, results
+            )
 
         # M3 is_stuck：最近 STUCK_WINDOW 轮内 tool_call 签名重复 ≥STUCK_THRESHOLD → 判 stuck。
         # 不终止循环，仅下一轮注入换策略提示（配合 A3 per-tool 重试预算双保险）。
@@ -664,6 +834,9 @@ async def _execute_tool_call(
     db: AsyncSession,
     user_id: int,
     emit=None,
+    *,
+    approval_lock: asyncio.Lock | None = None,
+    round_no: int | None = None,
 ) -> tuple[str, bool, list[dict], dict]:
     """执行单个 tool_call。
 
@@ -672,7 +845,12 @@ async def _execute_tool_call(
     2. 工具名查找
     3. 工具执行（含 pydantic 校验 + 注入检测 + 归属校验）
 
+    D1 审批门：命中 requires_approval 的工具经 _handle_tool_approval 挂起等用户决议。
+    无事件通道（emit=None，如测试/无前端）时审批门退化为直接执行，保持旧行为。
+
     emit：事件回调，注入工具以支持工具内部 LLM 流式 token 推送（tool_stream 事件）。
+    approval_lock：本轮审批串行化锁（同一轮并行工具的审批请求逐个处理，前端一次只弹一个）。
+    round_no：当前 ReAct 轮次（写入 approval_request 事件供前端展示）。
 
     Returns:
         (result_text, is_error, sources, usage) — sources 为工具结构化来源，usage 为工具内部 LLM token 消耗
@@ -701,8 +879,22 @@ async def _execute_tool_call(
 
     # 3. 实例化并执行（注入 emit 供工具内部 LLM 流式推送）
     tool = tool_class(db=db, user_id=user_id, emit=emit)
+    # D1: 无事件通道（测试/无前端）时无用户可确认，审批门退化为直接执行（保持旧行为）
+    if emit is None and tool.is_approval_required():
+        tool.mark_approval_granted()
     try:
         result = await tool.execute(**args)
+        # D1: 命中审批拦截钩子 → 走审批门（发射 approval_request → 挂起等决议）
+        if isinstance(result, ApprovalRequired):
+            return await _handle_tool_approval(
+                tc,
+                tool,
+                result,
+                user_id,
+                round_no=round_no,
+                emit=emit,
+                approval_lock=approval_lock,
+            )
         return (
             result,
             False,
@@ -722,11 +914,131 @@ async def _execute_tool_call(
         return f"工具执行失败: {e}", True, [], {"prompt_tokens": 0, "completion_tokens": 0}
 
 
+async def _handle_tool_approval(
+    tc: ToolCall,
+    tool: Tool,
+    approval: ApprovalRequired,
+    user_id: int,
+    *,
+    round_no: int | None = None,
+    emit=None,
+    approval_lock: asyncio.Lock | None = None,
+) -> tuple[str, bool, list[dict], dict]:
+    """D1 审批门：发射 approval_request → 挂起等用户决议 → 按决议执行/拒绝。
+
+    - approved → 放行重执行工具（mark_approval_granted 后 execute 跳过拦截钩子）
+    - denied   → 以 outcome='denied' 的 tool result 回灌 LLM（提示换方案），
+                 返回 is_error=False，**不累计坏调用**（区别于 ToolRetryError/ToolFailed）
+
+    approval_lock 串行化同一轮并行工具的审批请求，保证前端一次只弹一个弹窗。
+    """
+    # 显式 acquire/release（审批可能挂起数分钟，用 try/finally 确保锁最终释放）
+    if approval_lock is not None:
+        await approval_lock.acquire()
+    try:
+        approval_id = uuid4().hex
+        register_approval(approval_id, user_id)
+        try:
+            if emit is not None:
+                await emit(
+                    {
+                        "type": "approval_request",
+                        "approval_id": approval_id,
+                        "tool_name": approval.tool_name,
+                        "args": json.dumps(approval.arguments, ensure_ascii=False),
+                        "summary": approval.summary,
+                        "round": round_no,
+                    }
+                )
+                decision = await wait_for_approval(approval_id)
+                await emit(
+                    {
+                        "type": "approval_decision",
+                        "approval_id": approval_id,
+                        "tool_name": approval.tool_name,
+                        "decision": decision,
+                    }
+                )
+            else:
+                # 无事件通道（不应到达：_execute_tool_call 已对 emit=None 放行）
+                decision = "approved"
+
+            if decision == "approved":
+                tool.mark_approval_granted()
+                result = await tool.execute(**approval.arguments)
+                return (
+                    result,
+                    False,
+                    getattr(tool, "sources", []),
+                    getattr(tool, "last_usage", {"prompt_tokens": 0, "completion_tokens": 0}),
+                )
+
+            logger.info(
+                "工具被用户拒绝: %s approval_id=%s user=%d round=%s",
+                approval.tool_name,
+                approval_id,
+                user_id,
+                round_no,
+            )
+            return (
+                "用户拒绝执行该工具，请换一种方案，或直接基于已有信息回答用户。",
+                False,  # 用户拒绝 ≠ 工具失败：不累计坏调用，LLM 应换路径
+                [],
+                {"prompt_tokens": 0, "completion_tokens": 0},
+            )
+        finally:
+            drop_approval(approval_id)  # wait_for_approval 已清理；此处兜底
+    finally:
+        if approval_lock is not None:
+            approval_lock.release()
+
+
+def _classify_recent_fault(
+    user_id: int,
+    question: str,
+    tool_calls: list,
+    results: list[tuple],
+) -> str:
+    """D2: 分类最近一次失败类型（tau-bench fault_type）。
+
+    优先级：
+    1. 反思侧信道——answer_from_index 工具内部 agentic RAG 反思判定的 fault_type
+    2. 本轮工具错误文本——参数错误 → used_wrong_tool_argument；
+       未知工具 → used_wrong_tool；其余 → goal_partially_completed
+    """
+    try:
+        from services.agentic_rag.reflection import get_fault_type
+
+        reflected = get_fault_type(user_id, question)
+        if reflected:
+            return reflected
+    except Exception:
+        logger.debug("读取反思 fault_type 侧信道失败（忽略）", exc_info=True)
+
+    has_arg_error = False
+    has_wrong_tool = False
+    for tc, (tool_result, is_error, _sources, _usage) in zip(tool_calls, results):
+        if not is_error:
+            continue
+        if tool_result.startswith("[参数或状态错误]"):
+            has_arg_error = True
+        elif "不存在" in tool_result and "可用工具" in tool_result:
+            has_wrong_tool = True
+    if has_wrong_tool:
+        return "used_wrong_tool"
+    if has_arg_error:
+        return "used_wrong_tool_argument"
+    return "goal_partially_completed"
+
+
 async def _execute_tool_call_with_limit(
     tc: ToolCall,
     user_id: int,
     semaphore: asyncio.Semaphore,
     emit=None,
+    *,
+    approval_lock: asyncio.Lock | None = None,
+    round_no: int | None = None,
 ) -> tuple[str, bool, list[dict], dict]:
     """带 Semaphore 限流的工具执行（Spec A#32：限单轮工具并发）。
 
@@ -737,7 +1049,14 @@ async def _execute_tool_call_with_limit(
     async with semaphore:
         # 每工具独立 session，用完即关；避免共享请求 session 的并发读冲突
         async with AsyncSessionLocal() as tool_db:
-            return await _execute_tool_call(tc, tool_db, user_id, emit)
+            return await _execute_tool_call(
+                tc,
+                tool_db,
+                user_id,
+                emit,
+                approval_lock=approval_lock,
+                round_no=round_no,
+            )
 
 
 def _deduplicate_sources(sources: list[dict]) -> list[dict]:

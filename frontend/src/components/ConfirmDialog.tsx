@@ -97,7 +97,7 @@ export default function ConfirmDialog({
           </div>
           <div className="flex-1 min-w-0">
             <h3 className="text-base font-semibold text-[var(--color-text)]">{title}</h3>
-            <p className="text-sm text-[var(--color-text-secondary)] mt-1.5 leading-relaxed">
+            <p className="text-sm text-[var(--color-text-secondary)] mt-1.5 leading-relaxed whitespace-pre-line">
               {description}
             </p>
           </div>

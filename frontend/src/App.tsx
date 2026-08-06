@@ -20,6 +20,7 @@ const ResumeManagementPage = lazy(() => import("./pages/ResumeManagementPage"));
 const AssetsPage = lazy(() => import("./pages/AssetsPage"));
 const AICapabilitiesPage = lazy(() => import("./pages/AICapabilitiesPage"));
 const InterviewPage = lazy(() => import("./pages/InterviewPage"));
+const JobApplicationsPage = lazy(() => import("./pages/JobApplicationsPage"));
 const BuilderPage = lazy(() =>
   import("./pages/BuilderPage").then((m) => ({ default: m.BuilderPage })),
 );
@@ -157,6 +158,17 @@ function AppRoutes() {
           <ProtectedRoute>
             <AppLayout>
               <InterviewPage />
+            </AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      {/* 投递看板页（J 投递状态机） */}
+      <Route
+        path="/applications"
+        element={
+          <ProtectedRoute>
+            <AppLayout>
+              <JobApplicationsPage />
             </AppLayout>
           </ProtectedRoute>
         }

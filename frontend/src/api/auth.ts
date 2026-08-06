@@ -28,6 +28,50 @@ export async function register(
   });
 }
 
+/** 导出下载（GET 附件，需 blob；不走 api.get 的 JSON 解析） */
+async function downloadExport(path: string, filename: string): Promise<void> {
+  const token = localStorage.getItem("access_token");
+  const res = await fetch(path, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) throw new Error(`导出失败（${res.status}）`);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+/** E4 导出增强：全量 JSON 导出（走 api.get 解析后由前端构造 JSON 文件下载） */
+export async function exportDataJson(): Promise<void> {
+  const data = await api.get("/api/v1/auth/export-data");
+  const blob = new Blob([JSON.stringify(data, null, 2)], {
+    type: "application/json;charset=utf-8",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "resumes.json";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+/** E4 导出增强：简历模块全字段 CSV 长表（Excel/Sheets 直开） */
+export function exportDataCsv(): Promise<void> {
+  return downloadExport("/api/v1/auth/export-data/csv", "resumes.csv");
+}
+
+/** E4 导出增强：简历 Markdown 摘要 */
+export function exportDataMarkdown(): Promise<void> {
+  return downloadExport("/api/v1/auth/export-data/markdown", "resumes.md");
+}
+
 export async function sendCode(email: string): Promise<string> {
   const data = await api.post("/api/v1/auth/send-code", { email }) as { detail: string };
   return data.detail;

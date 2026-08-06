@@ -1,15 +1,18 @@
-"""工具注册表 — unified 19 工具（v2 合并 qa + builder，M2 加 search_jobs_live）。
+"""工具注册表 — unified 21 工具（v2 合并 qa + builder，M2 加 search_jobs_live，A1 加 web_search，I3 加 negotiation_brief）。
 
 T11 创建骨架 + 注册表；T12/T13/T28 填充 _execute 实现。
-v2 统一 Agent 编辑器：合并 qa(14) + builder(5) → unified(19)。
+v2 统一 Agent 编辑器：合并 qa(16) + builder(5) → unified(21)。
 M1 移除 recommend_jobs（静态爬虫岗位管线）；M2 以 search_jobs_live（实时搜索）替代。
+v2 A1 新增 web_search（博查联网搜索：面经/薪资/公司评价/招聘资讯）。
+阶段4 I3 新增 negotiation_brief（谈薪简报）。
 
 分类：
-  qa (14):      search_resume / jd_match / diagnose_resume / compare_resumes
-                rewrite_star / translate / interview_coach / search_jobs_live 等
+  qa (16):      search_resume / jd_match / diagnose_resume / compare_resumes
+                rewrite_star / translate / interview_coach / search_jobs_live
+                web_search / negotiation_brief 等
   builder (5):  generate_module / check_module / modify_module
                 rewrite_resume / ask_info
-  unified (19): qa + builder 全部工具（/ask/agent 统一使用）
+  unified (21): qa + builder 全部工具（/ask/agent 统一使用）
 """
 
 import json as _json_std
@@ -27,6 +30,9 @@ from services.analyze_service import analyze_resume
 from services.match_jd_service import match_jd
 from services.react_agent.tools.base import Tool
 from services.react_agent.tools.search_jobs_live import SearchJobsLiveTool
+from services.react_agent.tools.web_search import WebSearchTool
+from services.react_agent.tools.negotiation_brief import NegotiationBriefTool
+from services.react_agent.tools.search_corpus import SearchCorpusTool
 from utils.privacy import sanitize_for_ai
 from services.rag.asset_source import ASSET_TYPE_RESUME
 from services.rag.clients import knowledge_collection_name
@@ -77,8 +83,22 @@ class TranslateArgs(BaseModel):
 
 
 class InterviewCoachArgs(BaseModel):
-    resume_id: int = Field(..., description="简历 ID")
-    target_position: str = Field(..., description="目标岗位")
+    resume_id: int | None = Field(
+        None, description="简历 ID（新开模拟面试时必传；继续已有面试时可不传）"
+    )
+    target_position: str | None = Field(
+        None, description="目标岗位（新开模拟面试时必传；继续已有面试时可不传）"
+    )
+    answer: str | None = Field(
+        None, description="用户对当前问题的回答。面试进行中用户回答后，必须把回答原文传到这里以推进面试"
+    )
+    action: str = Field(
+        "next",
+        description=(
+            "操作：next=记录回答并出下一题/追问（默认）；skip=跳过当前题不出评分；"
+            "end=结束面试并自动评分；start=强制重新开始一场新的模拟面试"
+        ),
+    )
 
 
 # ═══════════════════════════════════════════════════════════
@@ -392,15 +412,51 @@ class JDMatchTool(Tool):
             analysis = result.get("analysis", "分析结果为空")
             # P1-C: 追加结构化 JSON 块供前端提取渲染 JDMatchReport 卡片
             # LLM 读 analysis 正常总结；前端从 event.detail 提取 <match_result> 块
+            scores = result.get("scores") or {}
             structured = {
                 "analysis": analysis,
-                "scores": result.get("scores"),
+                "scores": scores,
+                # E3: 四维 JD fit（technical/experience/behavioral/career）
+                "dims": result.get("dims", {}),
                 "matched_keywords": result.get("matched_keywords", []),
                 "missing_keywords": result.get("missing_keywords", []),
                 "gaps": result.get("gaps", []),
             }
+
+            # I1: 6-block 求职评估报告（LLM 生成 + 模板兜底）+ 落库
+            # 仅当结构化匹配成功（有 scores）才生成；best-effort：失败不阻断匹配主流程
+            report_block = ""
+            if result.get("scores"):
+                try:
+                    from services.match_jd_service import build_6_block_report, save_jd_report
+
+                    report = await build_6_block_report(
+                        parsed_text=resume.parsed_text or "",
+                        jd_text=jd_text,
+                        fit=structured,
+                        user_id=self.user_id,
+                    )
+                    structured["report"] = report
+                    if self.db is not None:
+                        await save_jd_report(
+                            db=self.db,
+                            user_id=self.user_id,
+                            resume_id=resume_id,
+                            jd_text=jd_text,
+                            report=report,
+                            overall=scores.get("overall", 0),
+                            band=scores.get("band", "needsWork"),
+                        )
+                    report_block = (
+                        "\n\n<jd_report>"
+                        + _json_std.dumps(report, ensure_ascii=False)
+                        + "</jd_report>"
+                    )
+                except Exception as e:
+                    logger.warning("JDMatchTool 6-block 报告生成失败（忽略）: %s", e)
+
             structured_block = "\n\n<match_result>" + _json_std.dumps(structured, ensure_ascii=False) + "</match_result>"
-            return analysis + structured_block
+            return analysis + structured_block + report_block
         except HTTPException as e:
             return f"⚠️ {e.detail}"
         except Exception as e:
@@ -564,6 +620,7 @@ class RewriteStarTool(Tool):
             fail_prefix="STAR 改写失败",
             emit=self.emit,
             usage_target=self.last_usage,
+            tool_name="rewrite_star",
         )
 
 
@@ -614,32 +671,96 @@ class TranslateTool(Tool):
             fail_prefix="翻译失败",
             emit=self.emit,
             usage_target=self.last_usage,
+            tool_name="translate",
+            rationale=f"翻译为 {lang_name}",
         )
 
 
 class InterviewCoachTool(Tool):
+    """多轮模拟面试（H1-H3，阶段 5）。
+
+    单次工具调用推进一问：状态落 interview_simulations 表（按 user_id+resume_id
+    解析进行中的面试），每次调用记录回答 + 出下一题/追问；完成时自动逐题评分
+    并写入 InterviewSession（公司=模拟面试）流入复盘闭环。与 Agent loop 一问一答
+    多次调用交互，_execute 始终返回字符串（兼容既有 loop）。
+    """
+
     name = "interview_coach"
-    description = "基于简历模拟面试，生成可能的面试问题和回答建议（最多 8 轮）"
+    description = (
+        "多轮模拟面试教练。首次调用开始一场模拟面试并出第 1 题；"
+        "面试进行中，用户每回答一题，必须再次调用本工具并把用户回答原文作为 answer 传入，"
+        "工具会记录回答并推进到下一题/追问；用户想跳过当前题传 action=skip；"
+        "用户想结束面试传 action=end（自动逐题评分并出评分卡）。"
+    )
     args_model = InterviewCoachArgs
     category = "qa"
 
     async def _execute(self, **kwargs) -> str:
+        from services import interview_coach as ic
+
         resume_id = kwargs.get("resume_id")
-        target_position = kwargs.get("target_position")
+        target_position = kwargs.get("target_position") or ""
+        answer = kwargs.get("answer") or ""
+        action = kwargs.get("action") or "next"
 
-        resume = await self._get_resume(resume_id)
-        if not resume:
-            return "⚠️ 简历不存在或无权访问。"
+        # 1. 解析进行中的模拟面试
+        sim = await ic.get_active_simulation(self.db, self.user_id, resume_id)
 
-        system = (
-            f"你是面试教练，基于候选人的简历模拟 {target_position} 岗位的面试。"
-            "生成最多 8 轮可能的面试问题和回答建议。"
-            "每轮包含：问题、考察点、建议回答方向。"
-            "回答建议要基于简历中的实际经历，不要编造。"
-        )
-        user = f"目标岗位：{target_position}\n\n简历内容：\n{resume.parsed_text}"
+        # 2. 强制新开：终结旧的一场（标记 completed，不评分）
+        if action == "start" and sim is not None:
+            sim.status = "completed"
+            await self.db.commit()
 
-        return await llm_generate(system=system, user=user, user_id=self.user_id)
+        # 3. 无进行中的面试（或强制新开）→ 创建并出第 1 题
+        if sim is None or action == "start":
+            if not resume_id or not target_position:
+                return "⚠️ 开始模拟面试需要 resume_id 和 target_position（如目标岗位：前端工程师）。"
+            resume = await self._get_resume(resume_id)
+            if resume is None:
+                return "⚠️ 简历不存在或无权访问。"
+            resume_text = resume.parsed_text or ""
+            if not resume_text:
+                try:
+                    from services.resume_builder import get_resume_with_modules
+
+                    _, modules = await get_resume_with_modules(self.db, self.user_id, resume_id)
+                    resume_text = "\n".join(
+                        f"【{m.module_type}】{m.content}" for m in modules if m.content
+                    )
+                except Exception:  # noqa: BLE001 - 文本兜底失败不阻断
+                    resume_text = ""
+            sim = await ic.start_simulation(
+                self.db, self.user_id, resume_id, target_position, resume_text
+            )
+            return ic.format_question(sim, is_first=True)
+
+        # 4. 结束并评分
+        if action == "end":
+            scorecard, _session = await ic.finalize_simulation(self.db, self.user_id, sim)
+            return ic.format_scorecard_result(scorecard, sim)
+
+        # 5. 记录回答并推进（answer 非空时）
+        if answer and answer.strip():
+            ic.record_answer(sim, answer.strip())
+            ic.advance(sim)
+            if ic.is_complete(sim):
+                # 刚答完最后一题 → 结束评分
+                scorecard, _session = await ic.finalize_simulation(self.db, self.user_id, sim)
+                return ic.format_scorecard_result(scorecard, sim)
+            await self.db.commit()
+            return ic.format_question(sim)
+
+        # 6. 跳过当前题（含未答的追问，直接到下一题）
+        if action == "skip":
+            ic.skip_question(sim)
+            if ic.is_complete(sim):
+                scorecard, _session = await ic.finalize_simulation(self.db, self.user_id, sim)
+                return ic.format_scorecard_result(scorecard, sim)
+            await self.db.commit()
+            return ic.format_question(sim)
+
+        # 7. 无回答 → 重问当前题（不推进）
+        return ic.format_question(sim)
 
 
 class CoverLetterArgs(BaseModel):
@@ -898,14 +1019,26 @@ async def _submit_modules_via_llm(
     emit=None,
     usage_target: dict | None = None,
     complete: bool = False,
+    tool_name: str = "",
+    rationale: str | None = None,
 ) -> str:
     """让 LLM 通过 function calling 提交完整 modules 数组 → 逐模块校验 → 短事务全量替换。
 
     改写/翻译/重写类工具共用。整份重写保证：_replace_all_modules_short_txn 删旧插新原子全量替换，
     且不新建 Resume（多轮对话累积到同一份草稿）。
 
+    E2：传入 tool_name 时，在落库处附加字段级 PendingChange 记录（改动的审阅队列）。
+    快照与落库均为 best-effort，失败不阻断改写主流程。
+
     emit：工具内部 LLM 流式 token 回调（无则退化为非流式）。
     """
+    # E2: 改写前快照（作为 diff 的 before 基准）
+    before_modules: list[dict] = []
+    if tool_name:
+        from services.pending_changes import snapshot_modules
+
+        before_modules = await snapshot_modules(user_id, resume_id)
+
     tool_schema = _make_function_schema(
         name="submit_rewritten_resume",
         description=tool_desc,
@@ -980,6 +1113,21 @@ async def _submit_modules_via_llm(
             f"\n⚠️ {len(inferred_modules)} 个模块含 AI 推断/补充内容"
             f"（{', '.join(inferred_modules)}），请核对推断内容是否属实后再发布。"
         )
+    # E2: 落库成功后附加字段级 PendingChange 审阅记录（best-effort，失败不阻断）
+    if tool_name and not result.startswith("⚠️"):
+        try:
+            from services.pending_changes import save_pending_changes
+
+            await save_pending_changes(
+                user_id,
+                resume_id,
+                before_modules,
+                validated_modules,
+                tool_name=tool_name,
+                rationale=rationale,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("save_pending_changes 附加失败（忽略）: %s", e)
     return result
 
 
@@ -1503,6 +1651,10 @@ class RewriteResumeTool(Tool):
             emit=self.emit,
             usage_target=self.last_usage,
             complete=(mode == "generate"),  # generate 模式自动完成
+            tool_name="rewrite_resume",
+            rationale=(
+                "按目标岗位优化整份简历" if mode == "optimize" else "生成整份简历"
+            ),
         )
 
 
@@ -1597,6 +1749,9 @@ TOOL_REGISTRY: dict[str, list[type[Tool]]] = {
         InterviewCoachTool,
         CoverLetterTool,
         SearchJobsLiveTool,
+        WebSearchTool,
+        NegotiationBriefTool,  # I3: 谈薪简报（qa 16）
+        SearchCorpusTool,  # B3: 公共语料检索（面经/题库/范文，qa 17）
     ],
     "builder": [
         GenerateModuleTool,
@@ -1617,7 +1772,7 @@ TOOL_REGISTRY["unified"] = TOOL_REGISTRY["qa"] + TOOL_REGISTRY["builder"]
 
 
 def get_tools_for_agent() -> list[type[Tool]]:
-    """/ask/agent 工具集 = unified(18)，qa + builder 合并。"""
+    """/ask/agent 工具集 = unified(22)，qa + builder 合并。"""
     return TOOL_REGISTRY["unified"]
 
 

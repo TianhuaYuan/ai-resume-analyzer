@@ -22,6 +22,7 @@ import {
   Sparkle,
   Microphone,
   UserMinus,
+  PaperPlaneTilt,
 } from "@phosphor-icons/react";
 import { useAuth } from "../context/AuthContext";
 import { deleteAccount } from "../api/auth";
@@ -51,6 +52,7 @@ const NAV_ITEMS: NavItem[] = [
   { path: "/assets", label: "知识资产", icon: Books, match: "exact" },
   { path: "/capabilities", label: "AI 能力", icon: Sparkle, match: "exact" },
   { path: "/interviews", label: "面试复盘", icon: Microphone, match: "exact" },
+  { path: "/applications", label: "投递看板", icon: PaperPlaneTilt, match: "exact" },
   { path: "/feedback", label: "用户反馈", icon: ChatCircle, match: "exact" },
 ];
 

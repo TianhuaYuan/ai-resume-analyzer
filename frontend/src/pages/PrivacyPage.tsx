@@ -1,4 +1,14 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
+import { exportDataCsv, exportDataJson, exportDataMarkdown } from "../api/auth";
+
+type ExportFormat = "json" | "csv" | "markdown";
+
+const EXPORT_BUTTONS: { fmt: ExportFormat; label: string; desc: string }[] = [
+  { fmt: "json", label: "JSON", desc: "全部数据" },
+  { fmt: "csv", label: "CSV", desc: "Excel 可直开" },
+  { fmt: "markdown", label: "Markdown", desc: "摘要" },
+];
 
 /**
  * C2: 隐私政策页（信任合规）。
@@ -6,6 +16,23 @@ import { Link } from "react-router-dom";
  * 权利行使（导出/删除/更正），并提供透明的 AI 处理说明。
  */
 export default function PrivacyPage() {
+  const [exporting, setExporting] = useState<ExportFormat | null>(null);
+  const [exportError, setExportError] = useState("");
+
+  const handleExport = async (fmt: ExportFormat) => {
+    setExporting(fmt);
+    setExportError("");
+    try {
+      if (fmt === "json") await exportDataJson();
+      else if (fmt === "csv") await exportDataCsv();
+      else await exportDataMarkdown();
+    } catch (e) {
+      setExportError(e instanceof Error ? e.message : "导出失败");
+    } finally {
+      setExporting(null);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="mx-auto max-w-3xl px-4 py-12">
@@ -50,10 +77,47 @@ export default function PrivacyPage() {
             <h2 className="text-xl font-semibold text-slate-900">四、你的权利</h2>
             <ul className="mt-3 list-disc space-y-1 pl-5">
               <li><strong>查看与更正</strong>：登录后可在个人中心查看、编辑简历与历史</li>
-              <li><strong>导出</strong>：可在账户设置导出你的全部数据（JSON）</li>
+              <li><strong>导出</strong>：可在账户设置导出你的全部数据（JSON / CSV / Markdown）</li>
               <li><strong>删除</strong>：可在账户设置注销账号，我们将在合理期限内清除全部数据</li>
               <li>行使权利无需额外费用</li>
             </ul>
+
+            {/* 导出数据按钮组（E4：export-data 三种格式，需登录后使用） */}
+            <div className="mt-5 rounded-xl border border-slate-200 bg-white/70 p-5">
+              <p className="text-sm font-semibold text-slate-800">导出你的全部数据</p>
+              <p className="mt-1 text-xs text-slate-500">
+                以三种格式下载当前账号下的全部简历数据（需登录后使用）
+              </p>
+              <div className="mt-3.5 flex flex-wrap gap-2.5">
+                {EXPORT_BUTTONS.map((b) => (
+                  <button
+                    key={b.fmt}
+                    onClick={() => void handleExport(b.fmt)}
+                    disabled={exporting !== null}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg
+                      text-sm font-medium text-blue-600 bg-blue-50 border border-blue-200
+                      hover:bg-blue-100 active:scale-[0.98] motion-reduce:active:scale-100
+                      transition-all cursor-pointer
+                      disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {exporting === b.fmt && (
+                      <span
+                        className="inline-block w-3 h-3 rounded-full border-2
+                          border-blue-600 border-t-transparent animate-spin"
+                        aria-hidden="true"
+                      />
+                    )}
+                    {b.label}
+                    <span className="text-[11px] text-blue-500 font-normal">({b.desc})</span>
+                  </button>
+                ))}
+              </div>
+              {exportError && (
+                <p className="mt-3 text-xs text-red-500" role="alert">
+                  导出失败：{exportError}
+                </p>
+              )}
+            </div>
           </section>
 
           <section>

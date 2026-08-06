@@ -1,11 +1,11 @@
 import { useEffect, useState, useRef, useCallback, type ChangeEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { Upload, FileText, Sparkle, Trash, Plus, Spinner, TrendUp, X, ClipboardText, Copy } from "@phosphor-icons/react";
-import { listResumes, uploadResume, deleteResume, copyResume, generateIdempotencyKey, analyzeResume, matchJD, type ResumeItem, type AnalyzeResult, type MatchJDResult } from "../api/resumes";
+import { listResumes, uploadResume, deleteResume, copyResume, generateIdempotencyKey, analyzeResume, matchJD, roleScore, type ResumeItem, type AnalyzeResult, type MatchJDResult, type RoleScoreResult } from "../api/resumes";
 import { createBuilderResume } from "../api/builder";
 import { useToast } from "../components/Toast";
 import ConfirmDialog from "../components/ConfirmDialog";
-import ScoreCard from "../components/ScoreCard";
+import ScoreCard, { scoreBandKey, BAND_META } from "../components/ScoreCard";
 import JDMatchReport from "../components/JDMatchReport";
 import { ResumeTemplateView } from "../components/templates";
 import { A4PreviewContainer } from "../components/builder/A4PreviewContainer";
@@ -44,6 +44,91 @@ function formatTimestamp(dateStr?: string): string {
   }).formatToParts(d);
   const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
   return `${get("month")}-${get("day")} ${get("hour")}:${get("minute")}`;
+}
+
+/** E3 多角色评分：三角色名映射（peer/lead/HRBP） */
+const ROLE_LABELS: Record<string, string> = {
+  peer: "同级 Peer",
+  lead: "主管 Lead",
+  hrbp: "HRBP",
+};
+
+function clampScore(v: number): number {
+  return Math.max(0, Math.min(100, Number.isFinite(v) ? v : 0));
+}
+
+/**
+ * E3 多角色评分视图 — peer/lead/HRBP 三角色分数条 + 摘要 + aggregate + 分析文本。
+ * 风格与 ScoreCard 保持一致（分数条 + 摘要块 + 解读区）。
+ */
+function RoleScoreView({ result }: { result: RoleScoreResult }) {
+  const agg = result.aggregate;
+  const band = scoreBandKey(agg.score ?? 0);
+  const meta = BAND_META[band];
+  const roles = Object.entries(result.roles ?? {});
+
+  return (
+    <div className="space-y-4">
+      {/* 总分 + 档位 */}
+      <div className="flex items-center gap-5">
+        <div className="flex-1 min-w-0">
+          <div className={`text-[15px] font-medium ${meta.className}`}>
+            {meta.label}
+            <span className="text-xs text-[var(--color-text-muted)] ml-2">多角色综合</span>
+          </div>
+          <p className="text-xs text-[var(--color-text-muted)] mt-1 leading-relaxed">
+            同级 / 主管 / HRBP 三角色打分后按权重聚合
+          </p>
+        </div>
+        <span className="text-2xl font-semibold tabular-nums text-[var(--color-text)] shrink-0">
+          {Math.round(clampScore(agg.score ?? 0))}
+        </span>
+      </div>
+
+      {/* 三角色分数条 */}
+      <div className="space-y-3">
+        {roles.map(([key, item]) => (
+          <div key={key} className="flex items-center gap-3">
+            <span className="text-xs text-[var(--color-text-secondary)] w-24 shrink-0">
+              {ROLE_LABELS[key] ?? key}
+            </span>
+            <div className="flex-1 h-1.5 rounded-full bg-[var(--color-bg-secondary)] overflow-hidden">
+              <div
+                className="h-full rounded-full bg-brand/70 transition-all duration-700"
+                style={{ width: `${clampScore(item.score)}%` }}
+              />
+            </div>
+            <span className="text-xs font-medium text-[var(--color-text)] w-7 text-right tabular-nums">
+              {Math.round(clampScore(item.score))}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {/* 角色摘要 */}
+      {roles.length > 0 && (
+        <div className="space-y-2">
+          {roles.map(([key, item]) => (
+            <div key={key} className="rounded-xl bg-[var(--color-bg-secondary)]/60 px-3.5 py-2.5">
+              <p className="text-[11px] font-medium text-[var(--color-text-secondary)]">
+                {ROLE_LABELS[key] ?? key}
+              </p>
+              <p className="text-xs text-[var(--color-text-muted)] mt-1 leading-relaxed">
+                {item.summary || "（无摘要）"}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* 分析文本 */}
+      {result.analysis && (
+        <div className="rounded-xl bg-[var(--color-bg-secondary)]/60 px-3.5 py-3 text-xs text-[var(--color-text-secondary)] leading-relaxed whitespace-pre-wrap max-h-48 overflow-y-auto">
+          {result.analysis}
+        </div>
+      )}
+    </div>
+  );
 }
 
 /**
@@ -89,6 +174,11 @@ export default function ResumeManagementPage() {
   const [scoreResult, setScoreResult] = useState<AnalyzeResult | null>(null);
   const [scoreLoading, setScoreLoading] = useState(false);
   const [scoreError, setScoreError] = useState<string | null>(null);
+  // E3 多角色评分：peer/lead/HRBP 三角色评分（roleScore 消费），评分弹窗内 tab 切换
+  const [scoreView, setScoreView] = useState<"single" | "roles">("single");
+  const [roleResult, setRoleResult] = useState<RoleScoreResult | null>(null);
+  const [roleLoading, setRoleLoading] = useState(false);
+  const [roleError, setRoleError] = useState<string | null>(null);
   // JD 匹配弹窗（A3 结构化匹配报告，Magic-Resume FitReport 对照）
   const [jdTarget, setJdTarget] = useState<ResumeItem | null>(null);
   const [jdText, setJdText] = useState("");
@@ -101,6 +191,10 @@ export default function ResumeManagementPage() {
     setScoreResult(null);
     setScoreError(null);
     setScoreLoading(true);
+    // E3: 打开弹窗默认综合评分视图，并重置多角色状态
+    setScoreView("single");
+    setRoleResult(null);
+    setRoleError(null);
     try {
       const result = await analyzeResume(r.id, "score");
       setScoreResult(result);
@@ -108,6 +202,21 @@ export default function ResumeManagementPage() {
       setScoreError(e instanceof Error ? e.message : "评分失败");
     } finally {
       setScoreLoading(false);
+    }
+  };
+
+  const handleRoleScore = async (r: ResumeItem) => {
+    setScoreView("roles");
+    setRoleResult(null);
+    setRoleError(null);
+    setRoleLoading(true);
+    try {
+      const result = await roleScore(r.id);
+      setRoleResult(result);
+    } catch (e) {
+      setRoleError(e instanceof Error ? e.message : "多角色评分失败");
+    } finally {
+      setRoleLoading(false);
     }
   };
 
@@ -659,7 +768,35 @@ export default function ResumeManagementPage() {
                 <h3 className="text-base font-semibold text-[var(--color-text)] truncate">
                   {scoreTarget.filename}
                 </h3>
-                <p className="text-xs text-[var(--color-text-muted)] mt-0.5">AI 综合评分</p>
+                {/* E3: 综合评分 / 多角色评分 tab 切换 */}
+                <div className="mt-1.5 flex items-center gap-1">
+                  <button
+                    onClick={() => setScoreView("single")}
+                    className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors cursor-pointer ${
+                      scoreView === "single"
+                        ? "bg-sky-500/15 text-sky-500 border border-sky-500/30"
+                        : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] border border-transparent"
+                    }`}
+                  >
+                    综合评分
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (scoreView !== "roles" && !roleResult && scoreTarget) {
+                        void handleRoleScore(scoreTarget);
+                      } else {
+                        setScoreView("roles");
+                      }
+                    }}
+                    className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors cursor-pointer ${
+                      scoreView === "roles"
+                        ? "bg-sky-500/15 text-sky-500 border border-sky-500/30"
+                        : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] border border-transparent"
+                    }`}
+                  >
+                    多角色评分
+                  </button>
+                </div>
               </div>
               <button
                 onClick={() => setScoreTarget(null)}
@@ -670,21 +807,39 @@ export default function ResumeManagementPage() {
               </button>
             </div>
 
-            {scoreLoading ? (
+            {scoreView === "single" ? (
+              scoreLoading ? (
+                <div className="flex items-center justify-center py-16">
+                  <Spinner size={22} className="animate-spin text-[var(--color-text-muted)]" aria-hidden="true" />
+                  <span className="text-sm text-[var(--color-text-secondary)] ml-2.5">AI 评分中...</span>
+                </div>
+              ) : scoreError ? (
+                <div className="py-8 text-center">
+                  <p className="text-sm text-rose-400">{scoreError}</p>
+                  <p className="text-xs text-[var(--color-text-muted)] mt-2">请确认简历已完成分析后再试</p>
+                </div>
+              ) : scoreResult?.scores ? (
+                <ScoreCard scores={scoreResult.scores} />
+              ) : (
+                <div className="py-8 text-center text-sm text-[var(--color-text-secondary)]">
+                  暂未获取到评分结果，请稍后重试
+                </div>
+              )
+            ) : roleLoading ? (
               <div className="flex items-center justify-center py-16">
                 <Spinner size={22} className="animate-spin text-[var(--color-text-muted)]" aria-hidden="true" />
-                <span className="text-sm text-[var(--color-text-secondary)] ml-2.5">AI 评分中...</span>
+                <span className="text-sm text-[var(--color-text-secondary)] ml-2.5">多角色评分中...</span>
               </div>
-            ) : scoreError ? (
+            ) : roleError ? (
               <div className="py-8 text-center">
-                <p className="text-sm text-rose-400">{scoreError}</p>
+                <p className="text-sm text-rose-400">{roleError}</p>
                 <p className="text-xs text-[var(--color-text-muted)] mt-2">请确认简历已完成分析后再试</p>
               </div>
-            ) : scoreResult?.scores ? (
-              <ScoreCard scores={scoreResult.scores} />
+            ) : roleResult ? (
+              <RoleScoreView result={roleResult} />
             ) : (
               <div className="py-8 text-center text-sm text-[var(--color-text-secondary)]">
-                暂未获取到评分结果，请稍后重试
+                暂未获取到多角色评分结果，请稍后重试
               </div>
             )}
           </div>

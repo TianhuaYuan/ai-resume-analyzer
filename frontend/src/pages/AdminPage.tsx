@@ -668,14 +668,9 @@ function TemplatesSection() {
             <span className="text-[10px] text-[var(--color-text-muted)] font-mono">{t.id}</span>
           </div>
           <p className="text-xs text-[var(--color-text-secondary)] mb-3">{t.description}</p>
-          <a
-            href={`/api/v1/resumes/0/preview?template=${t.id}`}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 text-xs text-brand hover:text-brand-hover transition-colors"
-          >
-            预览
-          </a>
+          <span className="inline-flex items-center gap-1 text-xs text-[var(--color-text-muted)]">
+            预览已移至编辑器
+          </span>
         </div>
       ))}
     </div>

@@ -10,6 +10,8 @@ Chroma PersistentClient 非线程安全，所有操作经 services.rag.clients.w
 import logging
 from typing import Any
 
+from chromadb.errors import NotFoundError
+
 from services.rag.clients import get_chroma_client, with_chroma
 
 logger = logging.getLogger(__name__)
@@ -149,11 +151,11 @@ class ChromaAdapter:
 
     async def delete_collection(self, collection: str) -> None:
         def _sync() -> None:
-            # 只吞"集合不存在"（ValueError）；真实连接错误向上传播，
+            # 只吞"集合不存在"（ValueError / NotFoundError）；真实连接错误向上传播，
             # 让调用方（如 clear_resume_vectors）能触发 reconnect_chroma 恢复
             try:
                 get_chroma_client().delete_collection(collection)
-            except ValueError:
+            except (ValueError, NotFoundError):
                 pass
 
         await with_chroma(_sync)

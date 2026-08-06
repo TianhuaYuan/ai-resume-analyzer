@@ -2,15 +2,6 @@ import { api } from "./client";
 
 // ── 类型定义 ──
 
-export interface UserFeedbackItem {
-  id: number;
-  user_id: number;
-  content: string;
-  type: string;
-  status: string;
-  created_at: string;
-}
-
 export interface PublicFeedbackItem {
   id: number;
   content: string;
@@ -66,14 +57,4 @@ export async function toggleFeedbackLike(
   return api.post(
     `/api/v1/feedback/public/${feedbackId}/like`
   ) as Promise<{ likes_count: number; is_liked: boolean }>;
-}
-
-/** 管理员查看反馈列表 */
-export async function listFeedback(
-  limit = 20,
-  offset = 0
-): Promise<{ items: UserFeedbackItem[]; total: number }> {
-  return api.get(
-    `/api/v1/feedback?limit=${limit}&offset=${offset}`
-  ) as Promise<{ items: UserFeedbackItem[]; total: number }>;
 }

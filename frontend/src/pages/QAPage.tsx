@@ -1,6 +1,11 @@
-import { useEffect, useState, useRef, useCallback, memo } from "react";
+import {
+  useEffect, useState, useRef, useCallback, memo,
+  type Dispatch, type SetStateAction, type MutableRefObject,
+} from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAppChat } from "../context/AppChatContext";
+// D1 工具审批门：决议经独立端点回传（SSE 单向流无法在流内回传）
+import { api } from "../api/client";
 import {
   ChatCircleDots,
   MagnifyingGlass,
@@ -16,6 +21,9 @@ import {
   Briefcase,
   GraduationCap,
   MapTrifold,
+  Copy,
+  ArrowsClockwise,
+  Check,
 } from "@phosphor-icons/react";
 import {
   askAgentStream,
@@ -91,6 +99,350 @@ function normalizeHistorySources(raw: unknown): DiagnosisSource[] | undefined {
   );
 }
 
+// ── G1: SSE 事件驱动流式状态机 ──────────────────────────────
+// 借鉴 agent-ui useAIStreamHandler 的事件分派思路：
+// 将 sendQuestion 内散落的 if/else 链，重构为「按事件类型分派」的处理器集合。
+// 每个事件类型一个独立 handler（模块级纯函数，仅依赖 ctx 上下文），
+// 由集中的 dispatchStreamEvent 负责路由，未知事件安全忽略（向后兼容）。
+
+/** D1: 工具审批请求（approval_request → ConfirmDialog 弹窗状态） */
+interface ApprovalRequest {
+  approvalId: string;
+  toolName: string;
+  summary: string;
+}
+
+/**
+ * 单个流式消息的处理器上下文。
+ * sendQuestion 每次调用组装一次（闭包依赖收敛于此），dispatchStreamEvent 按需读取。
+ */
+interface StreamCtx {
+  tempId: string;
+  setChat: Dispatch<SetStateAction<ChatMessage[]>>;
+  setAsking: (v: boolean) => void;
+  setError: (v: string) => void;
+  // D1 审批门：必须是 useState setter（Dispatch<SetStateAction>），
+  // handleApprovalDecision 以 updater 函数形式关闭对应弹窗
+  setApprovalRequest: Dispatch<SetStateAction<ApprovalRequest | null>>;
+  setConversations: Dispatch<SetStateAction<ConversationItem[]>>;
+  setQuota: (v: QuotaResponse | null) => void;
+  navigate: (to: string) => void;
+  aiCreateMode: boolean;
+  setAiCreateMode: (v: boolean) => void;
+  activeConversationId: number | null;
+  resumeId: number;
+  pendingStepsRef: MutableRefObject<AgentStep[]>;
+  scheduleStreamingFlush: (targetId: string) => void;
+  flushStreamingNow: (targetId: string) => void;
+  appendThought: (content: string) => void;
+  stepStartRef: MutableRefObject<Map<string, number>>;
+  beforeModulesRef: MutableRefObject<ResumeModule[] | null>;
+  setDiffBeforeModules: (v: ResumeModule[] | null) => void;
+  setDiffAfterModules: (v: ResumeModule[] | null) => void;
+  setDiffToolName: (v: string) => void;
+  setDiffLoading: (v: boolean) => void;
+  setDiffDialogOpen: (v: boolean) => void;
+}
+
+/** handler: agent_start — 初始化 Agent 步骤列表 */
+function handleAgentStart(_ev: AgentSSEEvent, ctx: StreamCtx): void {
+  ctx.setChat((prev) =>
+    prev.map((m) =>
+      m.id === ctx.tempId ? { ...m, agent_steps: [] } : m
+    )
+  );
+}
+
+/** handler: agent_thought — LLM 推理过程（Spec A#7），追加到 pending 缓冲 rAF 批量刷新 */
+function handleAgentThought(ev: AgentSSEEvent, ctx: StreamCtx): void {
+  ctx.appendThought(ev.content ?? "");
+  ctx.scheduleStreamingFlush(ctx.tempId);
+}
+
+/** handler: tool_call（规范名 tool_start）— 记录开始时间 + 填充结构化字段 */
+function handleToolCall(ev: AgentSSEEvent, ctx: StreamCtx): void {
+  const stepId = ev.id ?? `tc-${Date.now()}`;
+  if (ev.id) ctx.stepStartRef.current.set(ev.id, Date.now());
+  let parsedArgs: Record<string, unknown> | undefined;
+  if (ev.args) {
+    try { parsedArgs = JSON.parse(ev.args); } catch { /* not JSON */ }
+  }
+  ctx.pendingStepsRef.current.push({
+    type: "tool_call" as const,
+    name: ev.tool_name ?? "",
+    detail: ev.args,
+    id: stepId,
+    args: parsedArgs,
+    argsText: ev.args,
+    status: "running",
+    startedAt: Date.now(),
+  });
+  ctx.scheduleStreamingFlush(ctx.tempId);
+}
+
+/**
+ * handler: tool_result（规范名 tool_done）— 计算耗时 + 填充 result。
+ * 改写类工具完成 → 实时弹出 diff 对比弹窗（DB 已提交，延迟拉取最新模块）。
+ */
+function handleToolResult(ev: AgentSSEEvent, ctx: StreamCtx): void {
+  const durationMs = ev.id
+    ? (Date.now() - (ctx.stepStartRef.current.get(ev.id) ?? Date.now()))
+    : undefined;
+  if (ev.id) ctx.stepStartRef.current.delete(ev.id);
+  ctx.pendingStepsRef.current.push({
+    type: "tool_result" as const,
+    name: ev.tool_name ?? "",
+    detail: ev.summary,
+    id: ev.id,
+    result: ev.detail,
+    status: "done",
+    durationMs: durationMs != null && durationMs > 0 ? durationMs : undefined,
+  });
+  ctx.scheduleStreamingFlush(ctx.tempId);
+
+  // ── 检测改写类工具完成 → 实时弹出 diff 对比 ──
+  // rewrite_star / translate 会全量替换模块并写入数据库
+  // tool_result 到达时 DB 已提交，可安全拉取最新模块
+  const MODIFYING_TOOLS = ["rewrite_star", "translate", "modify_module", "generate_module", "rewrite_resume"];
+  const toolName = ev.tool_name ?? "";
+  if (MODIFYING_TOOLS.includes(toolName) && ctx.beforeModulesRef.current && ctx.resumeId > 0) {
+    ctx.setDiffBeforeModules(ctx.beforeModulesRef.current);
+    ctx.setDiffToolName(toolName);
+    ctx.setDiffLoading(true);
+    ctx.setDiffDialogOpen(true);
+    // 延迟 500ms 等待 DB 提交完成（与 refreshModules 修复同模式）
+    setTimeout(() => {
+      getBuilderResume(ctx.resumeId)
+        .then((data) => {
+          ctx.setDiffAfterModules(data.modules);
+          // 更新 before 快照为当前状态，支持后续多次修改
+          ctx.beforeModulesRef.current = data.modules;
+        })
+        .catch(() => {
+          ctx.setDiffAfterModules(null);
+        })
+        .finally(() => {
+          ctx.setDiffLoading(false);
+        });
+    }, 500);
+  }
+}
+
+/** handler: tool_error（规范名 tool_done 异常分支）— 计算耗时 + status=error */
+function handleToolError(ev: AgentSSEEvent, ctx: StreamCtx): void {
+  const durationMs = ev.id
+    ? (Date.now() - (ctx.stepStartRef.current.get(ev.id) ?? Date.now()))
+    : undefined;
+  if (ev.id) ctx.stepStartRef.current.delete(ev.id);
+  ctx.pendingStepsRef.current.push({
+    type: "tool_error" as const,
+    name: ev.tool_name ?? "",
+    detail: ev.error,
+    id: ev.id,
+    status: "error",
+    durationMs: durationMs != null && durationMs > 0 ? durationMs : undefined,
+  });
+  ctx.scheduleStreamingFlush(ctx.tempId);
+}
+
+/** handler: tool_stream（规范名 content / reasoning）— copy-on-write 追加到最后一个同工具 step */
+function handleToolStream(ev: AgentSSEEvent, ctx: StreamCtx): void {
+  ctx.setChat((prev) =>
+    prev.map((m) => {
+      if (m.id !== ctx.tempId) return m;
+      const steps = m.agent_steps ?? [];
+      const lastStep = steps[steps.length - 1];
+      if (
+        lastStep &&
+        lastStep.type === "tool_stream" &&
+        lastStep.name === ev.tool_name
+      ) {
+        const updatedSteps = [...steps];
+        updatedSteps[updatedSteps.length - 1] = {
+          ...lastStep,
+          detail: (lastStep.detail ?? "") + (ev.content ?? ""),
+        };
+        return { ...m, agent_steps: updatedSteps };
+      }
+      return {
+        ...m,
+        agent_steps: [
+          ...steps,
+          {
+            type: "tool_stream" as const,
+            name: ev.tool_name ?? "",
+            detail: ev.content ?? "",
+          },
+        ],
+      };
+    })
+  );
+}
+
+/** handler: usage — 实时更新 token 消耗 */
+function handleUsage(ev: AgentSSEEvent, ctx: StreamCtx): void {
+  if (ev.total) {
+    ctx.setChat((prev) =>
+      prev.map((m) =>
+        m.id === ctx.tempId
+          ? {
+              ...m,
+              token_usage: {
+                total:
+                  (ev.total?.prompt_tokens ?? 0) +
+                  (ev.total?.completion_tokens ?? 0),
+                prompt: ev.total?.prompt_tokens ?? 0,
+                completion: ev.total?.completion_tokens ?? 0,
+              },
+            }
+          : m
+      )
+    );
+  }
+}
+
+/** handler: approval_request（D1 审批门）— 弹确认弹窗（复用 ConfirmDialog） */
+function handleApprovalRequest(ev: AgentSSEEvent, ctx: StreamCtx): void {
+  ctx.setApprovalRequest({
+    approvalId: ev.approval_id ?? "",
+    toolName: ev.tool_name ?? "",
+    summary: ev.summary ?? "",
+  });
+}
+
+/** handler: approval_decision（D1 审批门）— 后端已解析该审批 → 关闭对应弹窗 */
+function handleApprovalDecision(ev: AgentSSEEvent, ctx: StreamCtx): void {
+  ctx.setApprovalRequest((cur) =>
+    cur && cur.approvalId === ev.approval_id ? null : cur
+  );
+}
+
+/** handler: agent_done（规范名 done）— 终态：写入答案 + 复位 asking + 会话/写库同步 */
+function handleAgentDone(ev: AgentSSEEvent, ctx: StreamCtx): void {
+  // 先立即应用挂起的步骤，再写入最终答案
+  ctx.flushStreamingNow(ctx.tempId);
+  ctx.setChat((prev) =>
+    prev.map((m) =>
+      m.id === ctx.tempId
+        ? {
+            ...m,
+            id: ev.qa_id ?? ctx.tempId,
+            answer: ev.answer ?? "",
+            streaming: false,
+            // E1: agent_done.sources 携带可溯源来源（text/section/start_char/end_char）
+            sources: ev.sources as DiagnosisSource[] | undefined,
+            token_usage: ev.token_usage
+              ? {
+                  total:
+                    ev.token_usage.prompt_tokens +
+                    ev.token_usage.completion_tokens,
+                  prompt: ev.token_usage.prompt_tokens,
+                  completion: ev.token_usage.completion_tokens,
+                }
+              : undefined,
+            // Spec: process_trace 是紧凑摘要（rounds/tool_sequence/duration_ms），
+            // 不是 AgentStep[]，不能覆盖 agent_steps
+            // agent_steps 保留实时累积的步骤
+          }
+        : m
+    )
+  );
+  ctx.setAsking(false);
+  window.dispatchEvent(new CustomEvent("quota:refresh"));
+  // 问答完成 → 递增当前会话的消息数
+  if (ctx.activeConversationId != null && ev.qa_id != null) {
+    ctx.setConversations((prev) =>
+      prev.map((c) =>
+        c.id === ctx.activeConversationId
+          ? { ...c, message_count: c.message_count + 1 }
+          : c
+      )
+    );
+  }
+  // QA 改写类工具（rewrite_star/translate/rewrite_resume）写库后：通知编辑页/侧栏同步
+  const wroteModules = (ev.process_trace?.tool_sequence ?? []).some(
+    (t) => t === "rewrite_star" || t === "translate" || t === "rewrite_resume",
+  );
+  if (wroteModules) {
+    window.dispatchEvent(new Event("resume:modules-refresh"));
+    window.dispatchEvent(new Event("resume:list-refresh"));
+  }
+  // 新增：AI 创建简历完成后自动跳转到编辑器
+  if (ctx.aiCreateMode && ev.process_trace?.tool_sequence?.includes("rewrite_resume")) {
+    // 等待 500ms 确保数据写入完成
+    setTimeout(() => {
+      ctx.navigate(`/resumes/${ctx.resumeId}/edit`);
+    }, 500);
+    ctx.setAiCreateMode(false);
+  }
+}
+
+/** handler: quota_exceeded — 额度用尽终态 */
+function handleQuotaExceeded(ev: AgentSSEEvent, ctx: StreamCtx): void {
+  ctx.flushStreamingNow(ctx.tempId);
+  ctx.setChat((prev) =>
+    prev.map((m) =>
+      m.id === ctx.tempId
+        ? {
+            ...m,
+            answer: ev.message ?? "今日额度已用完",
+            streaming: false,
+          }
+        : m
+    )
+  );
+  ctx.setAsking(false);
+  getQuota().then(ctx.setQuota).catch(() => {});
+}
+
+/** handler: error（规范名 error）— 流式错误终态 */
+function handleError(ev: AgentSSEEvent, ctx: StreamCtx): void {
+  ctx.flushStreamingNow(ctx.tempId);
+  ctx.setChat((prev) =>
+    prev.map((m) =>
+      m.id === ctx.tempId
+        ? {
+            ...m,
+            answer: ev.message ?? "Agent 处理失败",
+            streaming: false,
+          }
+        : m
+    )
+  );
+  ctx.setAsking(false);
+}
+
+/**
+ * G1: 集中式 SSE 事件分派 —— 按事件类型路由到独立 handler，替代散落的 if/else 链。
+ *
+ * 规范事件名 ↔ 实际 AgentSSEEvent.type 映射：
+ *   tool_start         → tool_call
+ *   tool_done          → tool_result（正常）/ tool_error（异常）
+ *   content / reasoning → tool_stream（kind=token/reasoning）/ agent_thought
+ *   done               → agent_done
+ *   error              → error / quota_exceeded
+ *   approval_request / approval_decision → D1 审批门（分支原样保留，不得破坏）
+ *
+ * 未识别事件类型走 default 安全忽略（后端新增事件不导致前端崩溃）。
+ */
+function dispatchStreamEvent(ev: AgentSSEEvent, ctx: StreamCtx): void {
+  switch (ev.type) {
+    case "agent_start": return handleAgentStart(ev, ctx);
+    case "agent_thought": return handleAgentThought(ev, ctx);
+    case "tool_call": return handleToolCall(ev, ctx);
+    case "tool_result": return handleToolResult(ev, ctx);
+    case "tool_error": return handleToolError(ev, ctx);
+    case "tool_stream": return handleToolStream(ev, ctx);
+    case "usage": return handleUsage(ev, ctx);
+    case "approval_request": return handleApprovalRequest(ev, ctx);
+    case "approval_decision": return handleApprovalDecision(ev, ctx);
+    case "agent_done": return handleAgentDone(ev, ctx);
+    case "quota_exceeded": return handleQuotaExceeded(ev, ctx);
+    case "error": return handleError(ev, ctx);
+    default: return; // 未知事件忽略（向后兼容）
+  }
+}
+
 // 空状态功能卡片（参考 UP简历：1 大卡 + 4 小卡 不对称网格）
 // 大卡片 span 跨 2 列；question 点击发送问题，navigate 点击跳转路由
 interface GuideCard {
@@ -121,8 +473,8 @@ const GUIDE_CARDS: GuideCard[] = [
   {
     icon: Briefcase,
     label: "校招推荐",
-    description: "筛选全网校招信息",
-    question: "请根据我的简历推荐合适的校招机会",
+    description: "实时搜索全网校招/社招岗位",
+    question: "请实时搜索最近的校招和社招岗位机会",
   },
   {
     icon: GraduationCap,
@@ -259,12 +611,47 @@ interface MessageBubbleProps {
     rating: "positive" | "negative",
     current?: "positive" | "negative" | null
   ) => void;
+  /** G2: hover 消息动作栏 — 重新生成（重新发送该消息的问题） */
+  onRegenerate: (msg: ChatMessage) => void;
+  /** G2: 是否正在等待 AI 回复（流式期间禁用重新生成） */
+  asking: boolean;
 }
 
-const MessageBubble = memo(function MessageBubble({ msg, deleting, onDelete, onFeedback }: MessageBubbleProps) {
+/** G2: 复制文本到剪贴板（Clipboard API + 非安全上下文降级 textarea 方案） */
+async function copyToClipboard(text: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    // 非安全上下文（如 http 明文）降级：临时 textarea + execCommand
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+    } catch { /* 忽略复制失败 */ }
+  }
+}
+
+const MessageBubble = memo(function MessageBubble({ msg, deleting, onDelete, onFeedback, onRegenerate, asking }: MessageBubbleProps) {
   // 流式消息（id 仍是字符串 tempId）不显示删除按钮和反馈按钮
   const canDelete = !msg.streaming && typeof msg.id === "number";
   const canFeedback = !msg.streaming && typeof msg.id === "number";
+  // G2: 复制动作反馈（"已复制"短暂提示）
+  const [copied, setCopied] = useState(false);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+  }, []);
+  const handleCopy = useCallback(async () => {
+    await copyToClipboard(msg.answer || msg.question || "");
+    setCopied(true);
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    copyTimerRef.current = setTimeout(() => setCopied(false), 2000);
+  }, [msg.answer, msg.question]);
   return (
     <div className="group animate-fade-in-up">
       {/* 用户问题 */}
@@ -277,7 +664,39 @@ const MessageBubble = memo(function MessageBubble({ msg, deleting, onDelete, onF
 
       {/* AI 回答 */}
       <div className="flex justify-start mb-4">
-        <div className="max-w-[82%]">
+        <div className="relative max-w-[82%] group/bubble">
+          {/* G2: 消息动作栏（hover 气泡出现）— 复制 + 重新生成 */}
+          {!msg.streaming && (
+            <div className="absolute -top-2.5 right-2 z-10 flex items-center gap-0.5
+              px-1 py-0.5 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)]
+              shadow-sm opacity-0 group-hover/bubble:opacity-100
+              transition-opacity duration-200">
+              <button
+                onClick={handleCopy}
+                aria-label={copied ? "已复制" : "复制内容"}
+                title={copied ? "已复制" : "复制内容"}
+                className="p-1 rounded text-[var(--color-text-muted)]
+                  hover:text-brand hover:bg-brand/10 active:scale-95
+                  motion-reduce:active:scale-100 transition-all cursor-pointer"
+              >
+                {copied
+                  ? <Check size={11} weight="bold" aria-hidden="true" />
+                  : <Copy size={11} weight="regular" aria-hidden="true" />}
+              </button>
+              <button
+                onClick={() => onRegenerate(msg)}
+                disabled={asking}
+                aria-label="重新生成"
+                title={asking ? "等待当前回答完成" : "重新生成回答"}
+                className="p-1 rounded text-[var(--color-text-muted)]
+                  hover:text-brand hover:bg-brand/10 active:scale-95
+                  motion-reduce:active:scale-100 transition-all cursor-pointer
+                  disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <ArrowsClockwise size={11} weight="regular" aria-hidden="true" />
+              </button>
+            </div>
+          )}
           <div className="px-4 py-3.5 rounded-2xl rounded-bl-md leading-relaxed text-sm
             bg-[var(--color-bg-secondary)] border border-[var(--color-border)]">
             {/* T18: Agent 推理过程面板（#11: streaming 开始即显示占位，用户立即看到反馈） */}
@@ -436,6 +855,9 @@ export default function QAPage() {
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [deletingId, setDeletingId] = useState<number | string | null>(null);
+
+  // D1: 工具审批弹窗状态（收到 approval_request 事件触发，复用 ConfirmDialog）
+  const [approvalRequest, setApprovalRequest] = useState<ApprovalRequest | null>(null);
 
   // T19: 对比弹窗 + JD 输入 + 附件上传
   const [compareOpen, setCompareOpen] = useState(false);
@@ -1008,239 +1430,41 @@ export default function QAPage() {
       isNearBottomRef.current = true;
       requestAnimationFrame(() => scrollToBottom(false));
 
+      // G1: 组装本次流式消息的处理器上下文（闭包依赖收敛，供集中事件分派读取）
+      const streamCtx: StreamCtx = {
+        tempId,
+        setChat,
+        setAsking,
+        setError,
+        setApprovalRequest,
+        setConversations,
+        setQuota,
+        navigate,
+        aiCreateMode,
+        setAiCreateMode,
+        activeConversationId,
+        resumeId,
+        pendingStepsRef,
+        scheduleStreamingFlush,
+        flushStreamingNow,
+        appendThought,
+        stepStartRef,
+        beforeModulesRef,
+        setDiffBeforeModules,
+        setDiffAfterModules,
+        setDiffToolName,
+        setDiffLoading,
+        setDiffDialogOpen,
+      };
+
       abortRef.current = askAgentStream(
         resumeId,
         q,
         (event: AgentSSEEvent) => {
-          if (event.type === "agent_start") {
-            setChat((prev) =>
-              prev.map((m) =>
-                m.id === tempId ? { ...m, agent_steps: [] } : m
-              )
-            );
-          } else if (event.type === "agent_thought") {
-            // Spec A#7: LLM 推理过程内容，流式分段 emit。
-            // 性能优化：追加到 pendingStepsRef，rAF 批量刷新，避免每段触发整页重渲染。
-            appendThought(event.content ?? "");
-            scheduleStreamingFlush(tempId);
-          } else if (event.type === "tool_call") {
-            // P1-C: 记录开始时间 + 填充结构化字段
-            const stepId = event.id ?? `tc-${Date.now()}`;
-            if (event.id) stepStartRef.current.set(event.id, Date.now());
-            let parsedArgs: Record<string, unknown> | undefined;
-            if (event.args) {
-              try { parsedArgs = JSON.parse(event.args); } catch { /* not JSON */ }
-            }
-            pendingStepsRef.current.push({
-              type: "tool_call" as const,
-              name: event.tool_name ?? "",
-              detail: event.args,
-              id: stepId,
-              args: parsedArgs,
-              argsText: event.args,
-              status: "running",
-              startedAt: Date.now(),
-            });
-            scheduleStreamingFlush(tempId);
-          } else if (event.type === "tool_result") {
-            // P1-C: 计算 durationMs + 填充 result 字段
-            const durationMs = event.id
-              ? (Date.now() - (stepStartRef.current.get(event.id) ?? Date.now()))
-              : undefined;
-            if (event.id) stepStartRef.current.delete(event.id);
-            pendingStepsRef.current.push({
-              type: "tool_result" as const,
-              name: event.tool_name ?? "",
-              detail: event.summary,
-              id: event.id,
-              result: event.detail,
-              status: "done",
-              durationMs: durationMs != null && durationMs > 0 ? durationMs : undefined,
-            });
-            scheduleStreamingFlush(tempId);
-
-            // ── 检测改写类工具完成 → 实时弹出 diff 对比 ──
-            // rewrite_star / translate 会全量替换模块并写入数据库
-            // tool_result 到达时 DB 已提交，可安全拉取最新模块
-            const MODIFYING_TOOLS = ["rewrite_star", "translate", "modify_module", "generate_module", "rewrite_resume"];
-            const toolName = event.tool_name ?? "";
-            if (MODIFYING_TOOLS.includes(toolName) && beforeModulesRef.current && resumeId > 0) {
-              setDiffBeforeModules(beforeModulesRef.current);
-              setDiffToolName(toolName);
-              setDiffLoading(true);
-              setDiffDialogOpen(true);
-              // 延迟 500ms 等待 DB 提交完成（与 refreshModules 修复同模式）
-              setTimeout(() => {
-                getBuilderResume(resumeId)
-                  .then((data) => {
-                    setDiffAfterModules(data.modules);
-                    // 更新 before 快照为当前状态，支持后续多次修改
-                    beforeModulesRef.current = data.modules;
-                  })
-                  .catch(() => {
-                    setDiffAfterModules(null);
-                  })
-                  .finally(() => {
-                    setDiffLoading(false);
-                  });
-              }, 500);
-            }
-          } else if (event.type === "tool_error") {
-            // P1-C: 计算 durationMs + status=error
-            const errorDurationMs = event.id
-              ? (Date.now() - (stepStartRef.current.get(event.id) ?? Date.now()))
-              : undefined;
-            if (event.id) stepStartRef.current.delete(event.id);
-            pendingStepsRef.current.push({
-              type: "tool_error" as const,
-              name: event.tool_name ?? "",
-              detail: event.error,
-              id: event.id,
-              status: "error",
-              durationMs: errorDurationMs != null && errorDurationMs > 0 ? errorDurationMs : undefined,
-            });
-            scheduleStreamingFlush(tempId);
-          } else if (event.type === "tool_stream") {
-            // P1-C: 工具内部 LLM 流式 token → copy-on-write 追加到最后一个同工具 tool_stream step
-            // 从 BuilderAIChat 移植：高频事件直接 setChat，避免 pending buffer 无法合并
-            setChat((prev) =>
-              prev.map((m) => {
-                if (m.id !== tempId) return m;
-                const steps = m.agent_steps ?? [];
-                const lastStep = steps[steps.length - 1];
-                if (
-                  lastStep &&
-                  lastStep.type === "tool_stream" &&
-                  lastStep.name === event.tool_name
-                ) {
-                  const updatedSteps = [...steps];
-                  updatedSteps[updatedSteps.length - 1] = {
-                    ...lastStep,
-                    detail: (lastStep.detail ?? "") + (event.content ?? ""),
-                  };
-                  return { ...m, agent_steps: updatedSteps };
-                }
-                return {
-                  ...m,
-                  agent_steps: [
-                    ...steps,
-                    {
-                      type: "tool_stream" as const,
-                      name: event.tool_name ?? "",
-                      detail: event.content ?? "",
-                    },
-                  ],
-                };
-              }),
-            );
-          } else if (event.type === "usage") {
-            // 实时更新 token 消耗（每轮 LLM 调用后推送）
-            if (event.total) {
-              setChat((prev) =>
-                prev.map((m) =>
-                  m.id === tempId
-                    ? {
-                        ...m,
-                        token_usage: {
-                          total:
-                            (event.total?.prompt_tokens ?? 0) +
-                            (event.total?.completion_tokens ?? 0),
-                          prompt: event.total?.prompt_tokens ?? 0,
-                          completion: event.total?.completion_tokens ?? 0,
-                        },
-                      }
-                    : m
-                )
-              );
-            }
-          } else if (event.type === "agent_done") {
-            // 先立即应用挂起的步骤，再写入最终答案
-            flushStreamingNow(tempId);
-            setChat((prev) =>
-              prev.map((m) =>
-                m.id === tempId
-                  ? {
-                      ...m,
-                      id: event.qa_id ?? tempId,
-                      answer: event.answer ?? "",
-                      streaming: false,
-                      // E1: agent_done.sources 携带可溯源来源（text/section/start_char/end_char）
-                      sources: event.sources as DiagnosisSource[] | undefined,
-                      token_usage: event.token_usage
-                        ? {
-                            total:
-                              event.token_usage.prompt_tokens +
-                              event.token_usage.completion_tokens,
-                            prompt: event.token_usage.prompt_tokens,
-                            completion: event.token_usage.completion_tokens,
-                          }
-                        : undefined,
-                      // Spec: process_trace 是紧凑摘要（rounds/tool_sequence/duration_ms），
-                      // 不是 AgentStep[]，不能覆盖 agent_steps
-                      // agent_steps 保留实时累积的步骤
-                    }
-                  : m
-              )
-            );
-            setAsking(false);
-            window.dispatchEvent(new CustomEvent("quota:refresh"));
-            // 问答完成 → 递增当前会话的消息数
-            if (activeConversationId != null && event.qa_id != null) {
-              setConversations((prev) =>
-                prev.map((c) =>
-                  c.id === activeConversationId
-                    ? { ...c, message_count: c.message_count + 1 }
-                    : c
-                )
-              );
-            }
-            // QA 改写类工具（rewrite_star/translate/rewrite_resume）写库后：通知编辑页/侧栏同步
-            const wroteModules = (event.process_trace?.tool_sequence ?? []).some(
-              (t) => t === "rewrite_star" || t === "translate" || t === "rewrite_resume",
-            );
-            if (wroteModules) {
-              window.dispatchEvent(new Event("resume:modules-refresh"));
-              window.dispatchEvent(new Event("resume:list-refresh"));
-            }
-
-            // 新增：AI 创建简历完成后自动跳转到编辑器
-            if (aiCreateMode && event.process_trace?.tool_sequence?.includes("rewrite_resume")) {
-              // 等待 500ms 确保数据写入完成
-              setTimeout(() => {
-                navigate(`/resumes/${resumeId}/edit`);
-              }, 500);
-              setAiCreateMode(false);
-            }
-          } else if (event.type === "quota_exceeded") {
-            flushStreamingNow(tempId);
-            setChat((prev) =>
-              prev.map((m) =>
-                m.id === tempId
-                  ? {
-                      ...m,
-                      answer: event.message ?? "今日额度已用完",
-                      streaming: false,
-                    }
-                  : m
-              )
-            );
-            setAsking(false);
-            getQuota().then(setQuota).catch(() => {});
-          } else if (event.type === "error") {
-            flushStreamingNow(tempId);
-            setChat((prev) =>
-              prev.map((m) =>
-                m.id === tempId
-                  ? {
-                      ...m,
-                      answer: event.message ?? "Agent 处理失败",
-                      streaming: false,
-                    }
-                  : m
-              )
-            );
-            setAsking(false);
-          }
+          // G1: 按事件类型分派到独立 handler
+          //（tool_start→tool_call / tool_done→tool_result|tool_error / content|reasoning→agent_thought|tool_stream
+          //  / done→agent_done / error→error|quota_exceeded / approval_request|approval_decision 审批门）
+          dispatchStreamEvent(event, streamCtx);
         },
         (err: Error) => {
           flushStreamingNow(tempId);
@@ -1257,6 +1481,8 @@ export default function QAPage() {
         () => {
           flushStreamingNow(tempId);
           setAsking(false);
+          // 流结束（含超时/异常）兜底关闭审批弹窗，避免残留
+          setApprovalRequest(null);
           setChat((prev) =>
             prev.map((m) =>
               m.id === tempId ? { ...m, streaming: false } : m
@@ -1314,6 +1540,22 @@ export default function QAPage() {
       )
     );
   };
+
+  // D1: 提交工具审批决议（approved / denied）→ POST 独立端点回传后端
+  const handleApprovalDecision = useCallback(
+    (decision: "approved" | "denied") => {
+      const current = approvalRequest;
+      if (!current) return;
+      setApprovalRequest(null); // 立即关闭弹窗，等待后端 tool_result/tool_error
+      api.post("/api/v1/qa/approval", {
+        approval_id: current.approvalId,
+        decision,
+      }).catch((e) => {
+        setError(e instanceof Error ? e.message : "审批决议提交失败，请重试");
+      });
+    },
+    [approvalRequest]
+  );
 
   // Task 4：清空当前对话的问答历史（对话维度）
   const handleConfirmClear = async () => {
@@ -1393,6 +1635,15 @@ export default function QAPage() {
       }
     },
     []
+  );
+
+  // G2: 重新生成 — 重新发送该消息的问题触发新一轮回答（复用现有 sendQuestion 重发逻辑）
+  const handleRegenerate = useCallback(
+    (msg: ChatMessage) => {
+      if (asking) return;
+      sendQuestion(msg.question);
+    },
+    [asking, sendQuestion]
   );
 
   // ── 对话会话操作 ──────────────────────────────────────────
@@ -1702,6 +1953,8 @@ export default function QAPage() {
                         deleting={deletingId === msg.id}
                         onDelete={handleDeleteMessage}
                         onFeedback={handleFeedback}
+                        onRegenerate={handleRegenerate}
+                        asking={asking}
                       />
                     ))
                   )}
@@ -1820,6 +2073,19 @@ export default function QAPage() {
         loading={clearing}
         onConfirm={handleConfirmClear}
         onCancel={() => setClearConfirmOpen(false)}
+      />
+
+      {/* ── D1: 工具审批确认弹窗（Agent 请求执行写类工具前征求用户同意） ── */}
+      <ConfirmDialog
+        open={Boolean(approvalRequest)}
+        title={`AI 请求执行工具「${approvalRequest?.toolName ?? ""}」`}
+        description={approvalRequest
+          ? `${approvalRequest.summary}\n\n是否允许 AI 执行该操作？拒绝后 AI 将换一种方案。`
+          : ""}
+        confirmText="允许执行"
+        cancelText="拒绝"
+        onConfirm={() => handleApprovalDecision("approved")}
+        onCancel={() => handleApprovalDecision("denied")}
       />
 
       {/* ── 删除对话确认 ── */}

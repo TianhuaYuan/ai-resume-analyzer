@@ -12,10 +12,13 @@
      graphiti 候选阈值 0.6）
    - 兜底：候选打包 LLM 判定（graphiti dedupe_nodes："same real-world object or concept" 准则 +
      越界防御），-1 新建
-3. **ADD-only 事实**：``(entity_id, fact_text_norm)`` 唯一约束天然去重；每次新事实同步写一条
-   L4 记忆（save_memory 幂等，``fact.linked_memory_id`` 双向关联 → mem0 linked_memory_ids 索引）
-4. **recall boost**：query 命中实体（子串/语义双通道）→ 该实体有效事实（``invalid_at IS NULL``）
-   与语义召回记忆做 RRF 融合（k=60，对齐 retrieval.py）
+3. **ADD-only 事实 + F1 矛盾失效**：``(entity_id, fact_text_norm)`` 唯一约束天然去重；每次新事实
+   同步写一条 L4 记忆（save_memory 幂等，``fact.linked_memory_id`` 双向关联 → mem0 linked_memory_ids
+   索引）。写入前检测同实体同属性值明确矛盾且仍有效的旧事实（graphiti invalid_at 双时态）→ 置
+   ``invalid_at`` 并同步失效其 L4 记忆；只对明确矛盾的值生效，不误伤补充性事实（新增技能）
+4. **recall boost（F2 三信号）**：query 命中实体（子串/语义双通道）→ 该实体有效事实
+   （``invalid_at IS NULL``）与语义召回记忆做 向量 / 实体 / BM25 三信号加性融合（mem0 借鉴，
+   权重默认 0.5/0.3/0.2），输出 ``score_details`` 供前端/调试 explain
 """
 
 import json
@@ -23,13 +26,20 @@ import logging
 import math
 import re
 import unicodedata
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.retry import with_retry
 from models.resume_entity import ResumeEntity, ResumeEntityFact, ResumeEpisode
-from services.memory.memory_store import recall_memory, save_memory
+from services.memory.memory_store import (
+    expire_memory,
+    fuse_three_signals,
+    recall_memory,
+    save_memory,
+    score_bm25,
+)
 from services.rag.pipeline import llm_generate
 from services.rag.retrieval import get_embeddings
 
@@ -40,8 +50,6 @@ logger = logging.getLogger(__name__)
 SIMILARITY_CONFIRM = 0.9
 # embedding 候选与 query 的相似度阈值（recall boost 实体命中判定）
 ENTITY_MATCH_THRESHOLD = 0.8
-# RRF 融合常数（对齐 services/rag/retrieval.py _merge_results 的 rrf_k=60）
-RRF_K = 60
 # 实体候选上限（同简历实体超限时截断，控制 LLM 兜底 prompt 体积）
 MAX_CANDIDATES = 100
 
@@ -139,11 +147,6 @@ def _promote_entity(entity: "ResumeEntity", entity_type: str, description: str |
         entity.summary = description[:2000]
         promoted = True
     return promoted
-
-
-def _rrf_score(rank: int) -> float:
-    """RRF 融合分数：rank 从 1 开始（rank 越靠前分越高）。"""
-    return 1.0 / (RRF_K + rank)
 
 
 def parse_skills_text(text: str) -> list[str]:
@@ -379,6 +382,115 @@ def _fact_norm(fact_text: str) -> str:
     return re.sub(r"\s+", "", norm)[:500]
 
 
+# ═══════════════════════════════════════════════════════════════
+# F1 矛盾型时序失效（graphiti invalid_at 双时态借鉴）
+# ═══════════════════════════════════════════════════════════════
+# 单值谓词：同一时刻一个值，值变化即矛盾（如职业/求职意向/所在城市）
+_SINGLE_VALUE_PREDICATES = frozenset(
+    {
+        "职业方向", "求职意向", "目标岗位", "当前职业", "所在城市", "意向城市",
+        "目标城市", "目标公司", "就职公司", "学校", "毕业院校", "最高学历",
+        "学历", "姓名", "性别", "当前状态",
+    }
+)
+# 多值/补充性谓词：新增值不视为矛盾（技能、经历、项目等可共存）
+_ADDITIVE_PREDICATES = frozenset(
+    {
+        "技能", "掌握技能", "掌握", "熟悉", "了解", "会", "使用", "用过",
+        "工具", "框架", "参与", "做过", "负责", "经历", "项目", "成绩",
+        "证书", "获奖", "荣誉", "兴趣", "爱好",
+    }
+)
+# 单值实体类型：值变化即矛盾（skill 是明显多值类型，永不判矛盾）
+_SINGLE_VALUE_ENTITY_TYPES = frozenset(
+    {"job_title", "goal", "school", "company", "person", "city"}
+)
+
+
+def _split_predicate_value(fact_text: str) -> tuple[str, str] | None:
+    """拆「谓词：值」：按首个全/半角冒号。无冒号 → None（无法确认同属性，不判矛盾）。
+
+    事实若不带「谓词：值」结构（如纯描述「五年后端经验」），无法确定属性是否同一，
+    保守跳过，避免误伤补充性描述。
+    """
+    text = (fact_text or "").strip()
+    m = re.split(r"[:：]", text, maxsplit=1)
+    if len(m) == 2 and m[0].strip() and m[1].strip():
+        return m[0].strip(), m[1].strip()
+    return None
+
+
+def _value_norm(value: str) -> str:
+    """值归一化：NFKC + 去空白/标点，用于「明确矛盾」判定。"""
+    return re.sub(
+        r"[\s，,。.、；;：:！!？?（）()【】\[\]\"'`《》<>~～\-—]",
+        "",
+        normalize_name(value or ""),
+    )
+
+
+def _values_conflict(new_value: str, old_value: str) -> bool:
+    """值是否【明确矛盾】：非空、不相同、且不互为子串（互为子串视为补充细节/简称）。
+
+    例：「前端开发」vs「后端开发」→ 矛盾；「北京市」vs「北京」→ 不矛盾（补充/简称）。
+    """
+    a, b = _value_norm(new_value), _value_norm(old_value)
+    if not a or not b:
+        return False
+    if a == b:
+        return False
+    if a in b or b in a:
+        return False
+    return True
+
+
+def _find_conflicting_facts(new_fact: dict, existing_facts: list[dict]) -> list[dict]:
+    """F1：找出与 new_fact 明确矛盾且仍有效的旧事实（供调用方置 invalid_at）。
+
+    冲突判定 = 同实体 + 同谓词/同属性 + 值明确矛盾，且谓词/实体类型非补充性（多值共存）。
+    保守策略（宁漏勿伤）：任一条件不确定即不判，绝不对技能等补充性事实误失效。
+
+    Args:
+        new_fact: ``{"entity_id": int|None, "entity_type": str, "fact_text": str}``
+        existing_facts: ``[{"id": int, "entity_id": int|None, "entity_type": str,
+                            "fact_text": str, ...}]``
+
+    Returns:
+        ``existing_facts`` 中与 ``new_fact`` 明确矛盾的子集。
+    """
+    new_entity = new_fact.get("entity_id")
+    new_type = (new_fact.get("entity_type") or "").strip()
+    if new_type == "skill":
+        return []  # 技能实体多值共存，新增技能永不视为矛盾
+
+    parsed_new = _split_predicate_value(new_fact.get("fact_text", ""))
+    if parsed_new is None:
+        return []
+    new_pred, new_val = parsed_new
+    if new_pred in _ADDITIVE_PREDICATES:
+        return []  # 补充性谓词：多值共存（新增技能/经历不算矛盾）
+    if new_pred not in _SINGLE_VALUE_PREDICATES and new_type not in _SINGLE_VALUE_ENTITY_TYPES:
+        return []  # 未知谓词且实体非单值类型：无法确认同属性，保守不判
+
+    conflicts: list[dict] = []
+    for old in existing_facts:
+        if new_entity is not None and old.get("entity_id") not in (None, new_entity):
+            continue
+        if (old.get("entity_type") or "") == "skill":
+            continue
+        parsed_old = _split_predicate_value(old.get("fact_text", ""))
+        if parsed_old is None:
+            continue
+        old_pred, old_val = parsed_old
+        if old_pred != new_pred:
+            continue  # 不同属性 → 补充性事实，不判
+        if old_pred in _ADDITIVE_PREDICATES:
+            continue
+        if _values_conflict(new_val, old_val):
+            conflicts.append(old)
+    return conflicts
+
+
 async def add_fact(
     db: AsyncSession,
     *,
@@ -391,6 +503,8 @@ async def add_fact(
 ) -> ResumeEntityFact | None:
     """ADD-only 写事实：同 (entity_id, fact_text_norm) 已存在 → 跳过（返回 None）。
 
+    F1 矛盾失效：写入前检测同实体同属性值明确矛盾的旧事实（invalid_at IS NULL）→ 置
+    invalid_at 并同步失效其 L4 记忆（graphiti 双时态），保守不误伤技能等补充性事实。
     新事实同步写一条 L4 记忆（save_memory 幂等，同内容不重复），
     并双向关联：fact.linked_memory_id ↔ entity.linked_memory_ids（mem0 索引）。
     """
@@ -407,6 +521,55 @@ async def add_fact(
     )
     if existing.scalar_one_or_none() is not None:
         return None  # ADD-only：同事实重复提取自动跳过
+
+    # F1 矛盾型时序失效（graphiti 双时态）：同实体同属性值明确矛盾且仍有效的旧事实 → 置 invalid_at。
+    # 只对明确矛盾的值失效（技能等补充性事实由 _find_conflicting_facts 保守排除）。
+    # skill 实体多值共存（技能清单累积），整个跳过省一次查询。
+    valid_rows: list[ResumeEntityFact] = []
+    if entity.entity_type != "skill":
+        valid_rows = (
+            await db.execute(
+                select(ResumeEntityFact).where(
+                    ResumeEntityFact.entity_id == entity.id,
+                    ResumeEntityFact.invalid_at.is_(None),
+                )
+            )
+        ).scalars().all()
+    if valid_rows:
+        now = datetime.now(timezone.utc)
+        existing_dicts = [
+            {
+                "id": f.id,
+                "entity_id": f.entity_id,
+                "entity_type": entity.entity_type,
+                "fact_text": f.fact_text,
+                "linked_memory_id": f.linked_memory_id,
+            }
+            for f in valid_rows
+        ]
+        conflicting = _find_conflicting_facts(
+            {
+                "entity_id": entity.id,
+                "entity_type": entity.entity_type,
+                "fact_text": fact_text,
+            },
+            existing_dicts,
+        )
+        for old in conflicting:
+            row = next((f for f in valid_rows if f.id == old["id"]), None)
+            if row is None:
+                continue
+            row.invalid_at = now
+            row.expired_at = now  # graphiti 双时态：expired_at = 系统发现失效的壁钟时间
+            if row.linked_memory_id:
+                try:
+                    await expire_memory(user_id, row.linked_memory_id)
+                except Exception as e:
+                    logger.warning("矛盾事实 L4 记忆失效失败（不影响 SQL）: %s", e)
+            logger.info(
+                "事实矛盾失效: user=%d entity=%s 旧=%s 新=%s",
+                user_id, entity.name, row.fact_text, fact_text,
+            )
 
     # L4 记忆同步（memory_type="entity_fact" 便于与对话提炼区分）
     memory_id = None
@@ -650,16 +813,22 @@ async def recall_with_entity_boost(
     query: str,
     top_k: int = 5,
 ) -> list[dict]:
-    """语义召回 + 实体链接增强（RRF 融合）。
+    """语义召回 + 实体链接增强（F2 三信号加性融合，mem0 借鉴）。
 
-    - 原语义召回（recall_memory，扩展候选池）
-    - query 命中实体 → 该实体有效事实（invalid_at IS NULL）作为高优先级候选
-    - RRF（k=60）融合两路排序，取 top_k；无实体命中时退化为纯语义召回（行为与现状一致）
+    三信号：
+    - **vector**：recall_memory 的 embedding 余弦相似度原值（clamp 0-1）
+    - **entity**：query 命中实体 → 该实体有效事实（``invalid_at IS NULL``），
+      信号 = ``0.5 + 0.5*importance``（直接命中即强相关，最低 0.5）
+    - **bm25**：候选池内 BM25 关键词分（复用 retrieval.py 同款 rank_bm25 + jieba 分词，
+      池内按最大值归一化）
+    加性融合权重默认 0.5/0.3/0.2（memory_store.W_*，可调常量）；某信号缺失时权重在剩余
+    信号间重归一化。输出新增 ``score_details``（各信号分 + 融合分 + 权重）供前端/调试 explain；
+    返回结构保持 ``[{memory_id, text, score, metadata}]`` 兼容（仅新增字段）。
 
-    Returns:
-        ``[{memory_id, text, score, metadata}]``，按融合分降序。
+    无实体命中时退化为纯语义召回（行为与现状一致，不改动返回结构）。
     """
-    memories = await recall_memory(user_id=user_id, query=query, top_k=max(top_k * 2, 10))
+    # 扩展候选池（BM25 重排需要足够候选）
+    memories = await recall_memory(user_id=user_id, query=query, top_k=max(top_k * 4, 20))
 
     entities = await _find_entities_in_query(db, user_id=user_id, resume_id=resume_id, query=query)
     if not entities:
@@ -680,35 +849,65 @@ async def recall_with_entity_boost(
     if not facts:
         return memories[:top_k]
 
-    # RRF 融合：语义记忆按 score 排名，实体事实按 importance 排名
-    ranked: list[tuple[float, dict]] = []
-    for rank, mem in enumerate(memories, start=1):
-        ranked.append((_rrf_score(rank), dict(mem)))
-    for rank, fact in enumerate(facts, start=1):
-        ranked.append(
-            (
-                _rrf_score(rank) + 0.02 * fact.importance,  # 实体直接命中给小幅加成
-                {
-                    "memory_id": fact.linked_memory_id or f"fact_{fact.id}",
-                    "text": fact.fact_text,
-                    "score": round(fact.importance, 3),
-                    "metadata": {
-                        "source": "entity_fact",
-                        "entity_id": fact.entity_id,
-                        "fact_id": fact.id,
-                    },
-                },
-            )
-        )
+    # 候选池（按 text 去重）：entity 事实与其 L4 记忆同文本同 hash id，合并为同一候选
+    fact_by_text: dict[str, ResumeEntityFact] = {}
+    for f in facts:
+        fact_by_text.setdefault(f.fact_text, f)
 
-    # 同文本去重（fact 与 L4 记忆可能同内容，保留分数高的）
-    seen: dict[str, tuple[float, dict]] = {}
-    for score, item in sorted(ranked, key=lambda x: -x[0]):
-        key = item["text"]
-        if key not in seen:
-            seen[key] = (score, item)
-    merged = sorted(seen.values(), key=lambda x: -x[0])
-    return [item for _score, item in merged[:top_k]]
+    pool: dict[str, dict] = {}
+    for m in memories:
+        pool.setdefault(
+            m["text"],
+            {
+                "text": m["text"],
+                "memory_id": m["memory_id"],
+                "metadata": dict(m.get("metadata") or {}),
+                "vector": m["score"],
+                "entity": None,
+                "bm25": None,
+            },
+        )
+    for text, f in fact_by_text.items():
+        entry = pool.get(text)
+        entity_signal = 0.5 + 0.5 * float(f.importance)  # 直接实体命中：强相关，最低 0.5
+        if entry is None:
+            pool[text] = {
+                "text": text,
+                "memory_id": f.linked_memory_id or f"fact_{f.id}",
+                "metadata": {
+                    "source": "entity_fact",
+                    "entity_id": f.entity_id,
+                    "fact_id": f.id,
+                },
+                "vector": None,
+                "entity": entity_signal,
+                "bm25": None,
+            }
+        else:
+            entry["entity"] = entity_signal
+            entry["metadata"]["source"] = "entity_fact"
+            entry["metadata"]["entity_id"] = f.entity_id
+            entry["metadata"]["fact_id"] = f.id
+
+    # BM25 第三信号（候选集重排模式，复用 retrieval.py 同款 BM25Okapi + jieba 分词）
+    candidates = list(pool.values())
+    bm25_scores = score_bm25(query, [c["text"] for c in candidates])
+    for c, s in zip(candidates, bm25_scores):
+        c["bm25"] = s
+
+    fused = fuse_three_signals(candidates)
+    out: list[dict] = []
+    for item in fused:
+        out.append(
+            {
+                "memory_id": item["memory_id"],
+                "text": item["text"],
+                "score": item["score"],
+                "metadata": item["metadata"],
+                "score_details": item["score_details"],
+            }
+        )
+    return out[:top_k]
 
 
 # ═══════════════════════════════════════════════════════════════

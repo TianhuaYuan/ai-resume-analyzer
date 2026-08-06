@@ -21,6 +21,10 @@ class _FakePage:
     def extract_text(self):
         return self._text
 
+    def extract_words(self):
+        # P1 双栏重建：parse_pdf 先调 extract_words；无词块（空列表）→ 非双栏 → 走 extract_text 原路径
+        return []
+
     def to_image(self, resolution: int):
         return self
 

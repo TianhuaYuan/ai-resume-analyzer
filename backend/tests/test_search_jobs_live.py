@@ -36,6 +36,7 @@ class _RecordingEngine:
     def __init__(self, items):
         self.calls: list[int] = []
         self.items = items
+        self.name = "recording"  # 渲染时展示引擎名
 
     def search_sync(self, query, limit):
         self.calls.append(limit)
@@ -114,14 +115,14 @@ class TestSearchJobsLive:
             await tool.execute()
 
     @pytest.mark.asyncio
-    async def test_limit_capped_at_10(self):
-        """limit>10 被截断到 10 传给引擎。"""
+    async def test_limit_capped_at_20(self):
+        """limit>20 被截断到 20 传给引擎（博查 count 最多 50，岗位搜索取 20）。"""
         rec = _RecordingEngine(_fake_items())
         tool = SearchJobsLiveTool()
         with patch.object(SearchJobsLiveTool, "_engines", new=[rec]):
-            await tool.execute(query="后端", limit=20)
+            await tool.execute(query="后端", limit=30)
 
-        assert rec.calls[0] == 10
+        assert rec.calls[0] == 20
 
     @pytest.mark.asyncio
     async def test_resume_id_ownership_checked(self):

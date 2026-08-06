@@ -246,8 +246,9 @@ class TestIsStuck:
 
             await react_loop(db=AsyncMock(), user_id=1, resume_id=1, question="测试")
 
-        # 轮4 调用含 NEXT_STEP（通用引导），但不应含 STUCK（标志已重置）
+        # 轮4 调用含 NEXT_STEP（通用引导），但本轮不应再注入 STUCK 变体（标志已重置）。
+        # 历史轮次的 STUCK 提示仍留在上下文 messages 里，故断言只看本轮最后注入的 hint。
         fourth_msgs = stream_mock.call_args_list[3].kwargs["messages"]
         hints = _user_hints(fourth_msgs)
         assert any("不要再调用工具" in h for h in hints)
-        assert not any("陷入" in h or "换一种" in h for h in hints)
+        assert not any("陷入" in h or "换一种" in h for h in hints[-1:])

@@ -101,6 +101,10 @@ async def _load_bm25_index(
                 "text": item["text"],
                 "chunk_index": meta["chunk_index"],
                 "section": meta["section"],
+                # B3：跨 asset 的公共集合里 chunk_index 会重复，稀疏结果带上
+                # asset_id/version 供复合键（asset_id, chunk_index）去重合并
+                "asset_id": meta.get("asset_id"),
+                "version": meta.get("version"),
             }
         )
     if not chunks:
@@ -145,6 +149,9 @@ async def _keyword_search(
             "chunk_index": chunks[i]["chunk_index"],
             "section": chunks[i]["section"],
             "source": "sparse",
+            # B3：与稠密结果对齐，供公共集合复合键合并
+            "asset_id": chunks[i].get("asset_id"),
+            "version": chunks[i].get("version"),
         }
         for i in top_indices
         if scores[i] > 0

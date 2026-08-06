@@ -143,22 +143,30 @@ export async function analyzeResume(
   }) as Promise<AnalyzeResult>;
 }
 
-export interface ChunkItem {
-  chunk_index: number;
-  section: string;
-  text: string;
-  start_char: number;
-  end_char: number;
+export interface RoleScoreItem {
+  score: number;
+  summary: string;
 }
 
-export interface ChunksResult {
+export interface RoleScoreResult {
   resume_id: number;
-  total: number;
-  chunks: ChunkItem[];
+  analysis_type: string;
+  analysis: string;
+  roles: Record<string, RoleScoreItem>;
+  aggregate: { score: number; band: string; weights: Record<string, number> };
+  target_position: string | null;
+  evidence?: { start: number; end: number; quote: string }[];
+  evidence_quote?: string | null;
 }
 
-export async function getChunks(id: number): Promise<ChunksResult> {
-  return api.get(`/api/v1/resumes/${id}/chunks`) as Promise<ChunksResult>;
+/** E3 多角色评分：peer/lead/HRBP 各打 0-100 + rubric 加权聚合（含证据锚定） */
+export async function roleScore(
+  id: number,
+  targetPosition?: string
+): Promise<RoleScoreResult> {
+  return api.post(`/api/v1/resumes/${id}/role-score`, {
+    target_position: targetPosition ?? null,
+  }) as Promise<RoleScoreResult>;
 }
 
 // ── T18: 版本浏览 ─────────────────────────────────────────────
@@ -182,14 +190,65 @@ export async function getResumeVersions(
   return api.get(`/api/v1/resumes/${id}/versions`) as Promise<ResumeVersionsResult>;
 }
 
+/** I1: JD 6-block 评估报告（角色摘要/CV匹配/级别策略/薪酬市场/个性化计划/面试故事/岗位可信度） */
+export interface JdReport {
+  role_summary?: {
+    archetype?: string;
+    domain?: string;
+    function?: string;
+    seniority?: string;
+    remote?: string;
+    team_size?: string;
+    tldr?: string;
+  };
+  cv_match?: {
+    table?: { jd_requirement: string; cv_evidence: string; status: string }[];
+    gaps?: { type: string; adjacent: string; mitigation: string }[];
+  };
+  level_strategy?: {
+    jd_level?: string;
+    candidate_level?: string;
+    sell_senior_plan?: string;
+    downlevel_plan?: string;
+  };
+  comp_market?: {
+    market_range?: string;
+    base_hint?: string;
+    sources?: string[];
+    notes?: string;
+  };
+  personalization_plan?: {
+    cv_changes?: { section: string; current: string; proposed: string; why: string }[];
+    linkedin_changes?: string[];
+  };
+  interview_stories?: {
+    jd_requirement: string;
+    story_title: string;
+    s: string;
+    t: string;
+    a: string;
+    r: string;
+    reflection: string;
+  }[];
+  job_credibility?: {
+    tier?: string;
+    signals?: { signal: string; risk: string; note: string }[];
+    conclusion?: string;
+  };
+}
+
 export interface MatchJDResult {
   resume_id: number;
   analysis: string;
   /** A3 结构化匹配（Magic-Resume FitReport 契约对照；LLM JSON 输出失败时为 null/空） */
   scores?: { overall: number; band: string } | null;
+  /** E3: 四维 JD fit（technical/experience/behavioral/career） */
+  dims?: { technical?: number; experience?: number; behavioral?: number; career?: number } | null;
   matched_keywords?: string[];
   missing_keywords?: string[];
   gaps?: string[];
+  /** I1: 6-block 求职评估报告（JDMatchTool 生成） */
+  report?: JdReport | null;
 }
 
 export async function matchJD(
@@ -199,71 +258,6 @@ export async function matchJD(
   return api.post(`/api/v1/resumes/${id}/match-jd`, {
     jd_text: jdText,
   }) as Promise<MatchJDResult>;
-}
-
-/** 单个维度的值：summary/skills/experience 是 Markdown 字符串，score 是结构化评分，projects 是项目名列表 */
-export type DimensionValue = string | ScoreDetail | string[];
-
-export interface CompareDimensions {
-  summary?: Record<string, string>;
-  skills?: Record<string, string>;
-  experience?: Record<string, string>;
-  score?: Record<string, ScoreDetail>;
-  projects?: Record<string, string[]>;
-}
-
-export interface CompareResult {
-  resumes: Array<{ id: number; filename: string }>;
-  dimensions: CompareDimensions;
-}
-
-export async function compareResumes(
-  resumeIds: number[],
-  dimensions?: string[]
-): Promise<CompareResult> {
-  return api.post("/api/v1/resumes/compare", {
-    resume_ids: resumeIds,
-    dimensions,
-  }) as Promise<CompareResult>;
-}
-
-export async function exportResume(
-  id: number,
-  format: string = "markdown"
-): Promise<string> {
-  const token = localStorage.getItem("access_token");
-  const resp = await fetch(`/api/v1/resumes/${id}/export?format=${format}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "X-Request-ID": crypto.randomUUID?.() ?? "",
-    },
-  });
-  if (!resp.ok) throw new Error(`导出失败: ${resp.status}`);
-  return resp.text();
-}
-
-export interface AnalysisStatusResult {
-  resume_id: number;
-  has_cache: boolean;
-  cached_types: string[];
-}
-
-export async function getAnalysisStatus(
-  id: number
-): Promise<AnalysisStatusResult> {
-  return api.get(`/api/v1/resumes/${id}/analysis-status`) as Promise<AnalysisStatusResult>;
-}
-
-export interface BackgroundAnalyzeResult {
-  status: string;
-  resume_id: number;
-  message: string;
-}
-
-export async function triggerBackgroundAnalysis(
-  id: number
-): Promise<BackgroundAnalyzeResult> {
-  return api.post(`/api/v1/resumes/${id}/analyze-background`) as Promise<BackgroundAnalyzeResult>;
 }
 
 // ── P0-A: ATS 可读性审计 ──────────────────────────────────

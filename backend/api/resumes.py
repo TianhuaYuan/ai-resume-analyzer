@@ -55,6 +55,7 @@ from schemas.resume_module import (
     ResumeStyle,
 )
 from services import analyze_service, match_jd_service, resume_service
+from services import pending_changes as pending_changes_service
 from services.analytics_service import record_event
 from services.edit_lock import (
     acquire_edit_lock,
@@ -1050,6 +1051,43 @@ _AI_FIELD_ISOLATION_PROMPT = (
     "4. 若指令涉及文本中没有的信息，以文本为准，不自行补全\n"
 )
 
+# E4 事实天花板约束（fieldwork 职业档案天花板对照）：以已保存模块为唯一事实源，
+# AI 建议只改写不新增事实——不得引入档案外成就/经历/技能，不得编造量化数字。
+_AI_CEILING_CONSTRAINT = (
+    "5. 【事实天花板】以提供的「已保存模块事实源」为唯一事实依据：只能改写措辞、"
+    "结构与表述，不得引入事实源中不存在的新经历、新成就、新公司/学校/项目/技能；\n"
+    "6. 若指令要求增加量化数据，只能在原文已有成就的基础上优化表述，绝不虚构指标数字；"
+    "不得把推断内容写成既定事实。\n"
+)
+
+
+async def _load_module_fact_source(
+    resume_id: int,
+    module_type: str,
+    db: AsyncSession,
+    user_id: int,
+) -> str | None:
+    """读取已保存模块 content 作为事实源（best-effort，失败返回 None）。
+
+    E4：条目级 AI 以已保存模块为唯一事实依据；脱敏后传给 LLM。
+    """
+    try:
+        import json as _json
+
+        from services.resume_builder import get_resume_with_modules
+        from utils.privacy import sanitize_for_ai
+
+        _, modules = await get_resume_with_modules(db, user_id, resume_id)
+        for m in modules:
+            if m.module_type == module_type:
+                content = sanitize_for_ai(m.content) if isinstance(m.content, dict) else m.content
+                return _json.dumps(content, ensure_ascii=False)[:2000]
+    except HTTPException:
+        return None
+    except Exception:
+        return None
+    return None
+
 
 class AIOptimizeRequest(BaseModel):
     """一键优化请求。"""
@@ -1071,6 +1109,12 @@ class AIRewriteRequest(BaseModel):
     module_type: str = "basic_info"
 
 
+class RoleScoreRequest(BaseModel):
+    """多角色评分请求（E3）。"""
+
+    target_position: str | None = Field(None, max_length=100, description="目标岗位（可选）")
+
+
 class AICheckIssue(BaseModel):
     """智能检查发现的问题。"""
     severity: str  # high / medium / low
@@ -1088,6 +1132,7 @@ class AICheckResponse(BaseModel):
 async def ai_optimize(
     resume_id: int,
     body: AIOptimizeRequest,
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """一键优化模块文本。
@@ -1111,8 +1156,14 @@ async def ai_optimize(
         "1. 使用更强的动词（如'深耕'代替'专注于'，'主导'代替'参与'）\n"
         "2. 结构更清晰，适当使用分段或要点\n"
         + _AI_FIELD_ISOLATION_PROMPT
-        + "5. 语言更精炼，去除冗余表述\n"
-        "6. 直接输出优化后的文本，不要加任何解释或前缀\n"
+        + _AI_CEILING_CONSTRAINT
+        + "7. 语言更精炼，去除冗余表述\n"
+        "8. 直接输出优化后的文本，不要加任何解释或前缀\n"
+    )
+
+    # E4：以已保存模块为唯一事实源（只改写不新增事实）
+    fact_source = await _load_module_fact_source(
+        resume_id, body.module_type, db, current_user.id
     )
 
     try:
@@ -1120,7 +1171,12 @@ async def ai_optimize(
 
         result = await llm_generate(
             system=system_prompt,
-            user=f"模块类型：{body.module_type}\n\n请优化以下文本：\n\n{body.text}",
+            user=(
+                f"模块类型：{body.module_type}\n\n"
+                f"已保存模块事实源（唯一事实依据，不得引入其外新事实）：\n"
+                f"{fact_source or '（该模块暂无已保存内容）'}\n\n"
+                f"请优化以下文本：\n\n{body.text}"
+            ),
             temperature=0.3,
             user_id=current_user.id,
         )
@@ -1211,6 +1267,7 @@ async def ai_check(
 async def ai_rewrite(
     resume_id: int,
     body: AIRewriteRequest,
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """智能改写模块文本。
@@ -1234,7 +1291,13 @@ async def ai_rewrite(
         "1. 严格遵循用户的改写指令\n"
         "2. 保留原文的核心事实和技术栈，不编造数据\n"
         + _AI_FIELD_ISOLATION_PROMPT
-        + "5. 直接输出改写后的文本，不要加任何解释或前缀\n"
+        + _AI_CEILING_CONSTRAINT
+        + "7. 直接输出改写后的文本，不要加任何解释或前缀\n"
+    )
+
+    # E4：以已保存模块为唯一事实源（只改写不新增事实）
+    fact_source = await _load_module_fact_source(
+        resume_id, body.module_type, db, current_user.id
     )
 
     try:
@@ -1245,6 +1308,8 @@ async def ai_rewrite(
             user=(
                 f"模块类型：{body.module_type}\n"
                 f"改写指令：{instruction}\n\n"
+                f"已保存模块事实源（唯一事实依据，不得引入其外新事实）：\n"
+                f"{fact_source or '（该模块暂无已保存内容）'}\n\n"
                 f"请改写以下文本：\n\n{body.text}"
             ),
             temperature=0.4,
@@ -1257,6 +1322,23 @@ async def ai_rewrite(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"AI 改写失败：{e}",
         ) from e
+
+
+@router.post("/{resume_id}/role-score")
+async def post_role_score(
+    resume_id: int,
+    body: RoleScoreRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """多角色 LLM 评分（E3）：peer/lead/HRBP 各打 0-100 + 加权聚合。
+
+    聚合权重来自 rubric.json（I2 可编辑，热重载）。含证据锚定。
+    """
+    result = await analyze_service.analyze_resume_roles(
+        db, current_user.id, resume_id, body.target_position
+    )
+    return result
 
 
 @router.post("/compare", response_model=CompareResponse)
@@ -1396,3 +1478,71 @@ async def release_lock(
         )
 
     return {"released": True}
+
+
+# ═══════════════════════════════════════════════════════════
+# E2: 改写审阅队列（PendingChange）
+# ═══════════════════════════════════════════════════════════
+
+
+@router.get(
+    "/{resume_id}/pending-changes",
+    response_model=pending_changes_service.PendingChangeListResponse,
+)
+async def list_pending_changes(
+    resume_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """列出简历的待审阅改动（user_id 隔离，含已接受/已拒绝历史）。"""
+    items = await pending_changes_service.list_pending_changes(
+        db, current_user.id, resume_id
+    )
+    return {"items": items, "total": len(items)}
+
+
+@router.post(
+    "/{resume_id}/pending-changes/{change_id}/accept",
+    response_model=pending_changes_service.PendingChangeOut,
+)
+async def accept_pending_change(
+    resume_id: int,
+    change_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """确认保留该改动（status → accepted）。"""
+    change = await pending_changes_service.accept_pending_change(
+        db, current_user.id, change_id
+    )
+    return change
+
+
+@router.post(
+    "/{resume_id}/pending-changes/{change_id}/reject",
+    response_model=pending_changes_service.PendingChangeOut,
+)
+async def reject_pending_change(
+    resume_id: int,
+    change_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """丢弃该改动：字段按 before 还原到模块 content，status → rejected。"""
+    change = await pending_changes_service.reject_pending_change(
+        db, current_user.id, change_id
+    )
+    return change
+
+
+@router.delete("/{resume_id}/pending-changes")
+async def clear_pending_changes(
+    resume_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """清空简历的全部待审阅改动。"""
+    count = await pending_changes_service.clear_pending_changes(
+        db, current_user.id, resume_id
+    )
+    return {"cleared": count}

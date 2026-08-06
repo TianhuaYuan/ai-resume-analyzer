@@ -1,14 +1,20 @@
 """search_jobs_live — 实时岗位搜索工具（M2）。
 
 替代已删除的 RecommendJobsTool（静态爬虫数据管线 M1 已彻底移除）。
-岗位能力由实时网络搜索承接，按「自带工具/MCP → 轻量 HTTP → 友好降级」三级递进：
+岗位能力由实时网络搜索承接，按「API 直调 → 自带工具/MCP → 轻量 HTTP → 友好降级」四级递进：
 
-1. **主引擎 open-websearch**（npm 成熟 MCP 工具，免 key，本地 npx 直接消费）
+1. **主引擎博查 Bocha**（v2 A2/K，API 直调，需 .env 配置 BOCHA_API_KEY）
+   - key 为空/请求失败 → 返回空列表，降级链继续（不抛异常）
+2. **open-websearch**（npm 成熟 MCP 工具，免 key，本地 npx 直接消费）
    - 多引擎内部 fallback：csdn（岗位招聘博文，实测最佳）→ sogou → bing
    - 内部已封装反爬/降级，Agent 不感知，直接消费 search 结果
    - 经 subprocess 调 CLI（--spawn 自动起 daemon），输出结构化 JSON
-2. **兜底 360 轻量 HTTP 解析**（open-websearch 不可用时，免费无 key）
-3. **全部失败/无结果 → 友好降级提示**
+3. **兜底 360 轻量 HTTP 解析**（博查/open-websearch 不可用时，免费无 key）
+4. **全部失败/无结果 → 友好降级提示**
+
+统一 Job schema（A2/K）：各引擎结果归一化为
+{title, company, salary, city, url, deadline, source, snippet}，缺字段空串，
+薪资从「标题+摘要」正则提取，渲染前按 url 去重。
 
 选型记录（实测 2026-08）：
 - open-websearch（Aas-ee/open-webSearch, 1686★）：csdn 出真实岗位 / sogou 有招聘 / bing 泛 / baidu 反爬 → 主引擎 csdn+sogou
@@ -29,6 +35,7 @@ import httpx
 from bs4 import BeautifulSoup
 from pydantic import BaseModel, Field
 
+from core.config import settings
 from services.react_agent.tools.base import Tool
 
 logger = logging.getLogger(__name__)
@@ -59,6 +66,39 @@ def _clean_html(text: str) -> str:
     return re.sub(r"\s+", " ", _TAG_RE.sub("", text or "")).strip()
 
 
+# 薪资正则：20-40K / 15k-25k / 20万-40万 等区间格式
+_SALARY_RE = re.compile(
+    r"(\d+(?:\.\d+)?)\s*[Kk万]\s*(?:-|–|—|~|至)\s*(\d+(?:\.\d+)?)\s*[Kk万]?"
+)
+
+
+def _extract_salary(text: str) -> str:
+    """从文本简单正则提取薪资区间（如 20-40K），没有返回空串。"""
+    m = _SALARY_RE.search(text or "")
+    if not m:
+        return ""
+    return re.sub(r"\s+", "", m.group(0)).upper()
+
+
+def _job_schema(*, title, url, snippet, source, company="", city="", deadline="") -> dict:
+    """统一 Job schema：{title, company, salary, city, url, deadline, source, snippet}。
+
+    借鉴 third_party/JobHunter/crawler/api_crawler.py 的 field_mapping 归一化思路：
+    各引擎原始字段不一，统一收敛为结构化输出；缺字段用空串，
+    薪资从「标题 + 摘要」文本正则提取（没有则空）。
+    """
+    return {
+        "title": title,
+        "company": company,
+        "salary": _extract_salary(f"{title} {snippet}"),
+        "city": city,
+        "url": url,
+        "deadline": deadline,
+        "source": source,
+        "snippet": (snippet or "")[:300],
+    }
+
+
 class SearchJobsLiveArgs(BaseModel):
     query: str = Field(..., description="岗位关键词，如：后端开发、Java、数据分析、产品经理")
     target_position: str | None = Field(
@@ -74,7 +114,7 @@ class SearchJobsLiveArgs(BaseModel):
     resume_id: int | None = Field(
         None, description="简历 ID（可选，仅做归属校验，暂不参与结果排序）"
     )
-    limit: int = Field(5, description="返回结果数量上限，默认 5，最大 10")
+    limit: int = Field(5, description="返回结果数量上限，默认 5，最大 20（超出自动截断）")
 
 
 class _SearchEngine(ABC):
@@ -147,12 +187,12 @@ class OpenWebSearchEngine(_SearchEngine):
             if not title or not url:
                 continue
             out.append(
-                {
-                    "title": title,
-                    "url": url,
-                    "snippet": snippet[:300],
-                    "source": f"open-websearch/{engine}",
-                }
+                _job_schema(
+                    title=title,
+                    url=url,
+                    snippet=snippet,
+                    source=f"open-websearch/{engine}",
+                )
             )
             if len(out) >= limit:
                 break
@@ -179,20 +219,86 @@ class So360Engine(_SearchEngine):
             p = li.find("p", class_="res-desc") or li.find("p")
             site = li.find("span", class_="res-site")
             results.append(
-                {
-                    "title": a.get_text(strip=True),
-                    "url": a.get("href", ""),
-                    "snippet": (p.get_text(strip=True)[:300] if p and p.text else ""),
-                    "source": site.get_text(strip=True) if site else "360搜索",
-                }
+                _job_schema(
+                    title=a.get_text(strip=True),
+                    url=a.get("href", ""),
+                    snippet=(p.get_text(strip=True) if p and p.text else ""),
+                    source=site.get_text(strip=True) if site else "360搜索",
+                )
             )
             if len(results) >= limit:
                 break
         return results
 
 
+class BochaEngine(_SearchEngine):
+    """博查 Web Search 主引擎（v2 A2/K）：API 直调，质量与稳定性优于免 key 抓取。
+
+    需在 .env 配置 BOCHA_API_KEY（未配置或请求失败 → 返回空列表 []，不抛异常，
+    让降级链继续 OpenWebSearch / 360 兜底）。httpx 同步调用（httpx.Client 顶层便捷函数）。
+    """
+
+    name = "bocha"
+
+    _url = "https://api.bocha.cn/v1/web-search"  # 博查官方接口域名
+    _timeout = 15
+
+    def search_sync(self, query: str, limit: int) -> list[dict]:
+        api_key = getattr(settings, "BOCHA_API_KEY", "") or ""
+        if not api_key.strip():
+            logger.info("BOCHA_API_KEY 未配置，BochaEngine 降级跳过（走兜底引擎）")
+            return []
+        try:
+            resp = httpx.post(
+                self._url,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                # 时效策略（用户确认「两者都限时效」）：岗位搜索倾向近一年；summary 取文本摘要
+                json={"query": query, "count": limit, "freshness": "oneYear", "summary": True},
+                timeout=self._timeout,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as e:
+            logger.warning("BochaEngine 搜索异常: %s", e)
+            return []
+        return self._parse(data)
+
+    def _parse(self, data: dict) -> list[dict]:
+        # 官方响应主结构 data.webPages.value；兼容兜底 data["web_results"]（防回归）
+        web_pages = ((data or {}).get("data") or {}).get("webPages") or {}
+        web_results = web_pages.get("value") or []
+        if not web_results:
+            web_results = ((data or {}).get("data") or {}).get("web_results") or []
+
+        out: list[dict] = []
+        for item in web_results:
+            if not isinstance(item, dict):
+                continue
+            title = _clean_html(item.get("title") or item.get("name") or "")
+            url = (item.get("url") or "").strip()
+            if not title or not url:
+                continue
+            snippet = _clean_html(
+                item.get("content") or item.get("summary") or item.get("snippet") or ""
+            )
+            source = (item.get("site_name") or item.get("siteName") or "").strip()
+            # 博查结果可能无 company/city/deadline，统一缺省空串；薪资由 _job_schema 正则提取
+            out.append(
+                _job_schema(
+                    title=title,
+                    url=url,
+                    snippet=snippet,
+                    source=source or "博查搜索",
+                )
+            )
+        return out
+
+
 class SearchJobsLiveTool(Tool):
-    """实时岗位搜索：主引擎 open-websearch（MCP 成熟工具）→ 360/Bing 兜底 → 友好降级。
+    """实时岗位搜索：主引擎博查 Bocha（API，需 key）→ open-websearch → 360 兜底 → 友好降级。
 
     用途：回答「有哪些岗位」「帮我找/推荐岗位」「xx城市有没有xx岗位」等
     需要实时数据的岗位类问题。区别于简历内检索，本工具检索全网。
@@ -208,14 +314,14 @@ class SearchJobsLiveTool(Tool):
     args_model = SearchJobsLiveArgs
     category = "qa"
 
-    _engines: list[_SearchEngine] = [OpenWebSearchEngine(), So360Engine()]
+    _engines: list[_SearchEngine] = [BochaEngine(), OpenWebSearchEngine(), So360Engine()]
 
     async def _execute(self, **kwargs) -> str:
         query = kwargs.get("query") or ""
         target_position = kwargs.get("target_position")
         city = kwargs.get("city")
         job_type = kwargs.get("job_type") or "social"
-        limit = min(kwargs.get("limit", 5) or 5, 10)
+        limit = min(kwargs.get("limit", 5) or 5, 20)
         # resume_id 仅做归属校验（base.execute 已自动完成），本阶段不参与排序
 
         search_query = self._build_query(query, target_position, city, job_type)
@@ -237,13 +343,34 @@ class SearchJobsLiveTool(Tool):
         )
 
     def _render(self, items: list[dict], engine: str, search_query: str) -> str:
+        # URL 去重（按 url，去重后渲染）
+        seen: set[str] = set()
+        uniq: list[dict] = []
+        for it in items:
+            url = (it.get("url") or "").strip()
+            if not url or url in seen:
+                continue
+            seen.add(url)
+            uniq.append(it)
+
         self.sources = [
             {"title": it["title"], "url": it["url"], "text": it.get("snippet", "")}
-            for it in items
+            for it in uniq
         ]
-        lines = [f"「{search_query}」实时岗位搜索结果（{engine}，共 {len(items)} 条）："]
-        for i, it in enumerate(items, 1):
-            lines.append(f"\n{i}. {it['title']}")
+        lines = [f"「{search_query}」实时岗位搜索结果（{engine}，共 {len(uniq)} 条）："]
+        for i, it in enumerate(uniq, 1):
+            lines.append(f"\n{i}. {it.get('title') or ''}")
+            extra = []
+            if it.get("company"):
+                extra.append(f"公司：{it['company']}")
+            if it.get("salary"):
+                extra.append(f"薪资：{it['salary']}")
+            if it.get("city"):
+                extra.append(f"城市：{it['city']}")
+            if it.get("deadline"):
+                extra.append(f"截止：{it['deadline']}")
+            if extra:
+                lines.append("   " + " | ".join(extra))
             if it.get("snippet"):
                 lines.append(f"   简介：{it['snippet'][:120]}")
             lines.append(f"   来源：{it['source']} | {it['url']}")

@@ -26,6 +26,8 @@ import models.knowledge_asset  # noqa: F401
 import models.feedback_like  # noqa: F401
 import models.resume_entity  # noqa: F401
 import models.resume_status_event  # noqa: F401
+import models.pending_change  # noqa: F401
+import models.jd_match_report  # noqa: F401
 
 config = context.config
 

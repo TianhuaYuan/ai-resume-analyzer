@@ -7,6 +7,7 @@
 - target_position 传递到 prompt
 """
 
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -19,21 +20,6 @@ from services.react_agent.tools import (
 
 
 # ── 辅助函数 ──────────────────────────────────────────────────
-
-
-def _make_mock_db_with_resume(resume_id=1, parsed_text="3年Python后端，FastAPI项目经验"):
-    """构造返回指定 resume 的 mock db。"""
-    mock_resume = MagicMock()
-    mock_resume.id = resume_id
-    mock_resume.parsed_text = parsed_text
-    mock_resume.status = "ready"
-
-    mock_result = MagicMock()
-    mock_result.scalar_one_or_none.return_value = mock_resume
-
-    mock_db = AsyncMock()
-    mock_db.execute = AsyncMock(return_value=mock_result)
-    return mock_db
 
 
 def _make_mock_db_no_resume():
@@ -208,51 +194,132 @@ class TestTranslateTool:
 # ═══════════════════════════════════════════════════════════════
 
 
+# 确定性题单（单题，无追问 —— 便于断言推进/结束）
+_PLAN_SINGLE = [
+    {
+        "id": "q1",
+        "text": "请介绍一下你最有代表性的项目。",
+        "section": "项目深挖",
+        "difficulty": 3,
+        "rubric": [{"criterion": "深度", "weight": 1.0, "description": "能讲清难点与结果"}],
+        "followups": [],
+        "target_competency": "项目深挖",
+    }
+]
+
+
+def _make_sim(plan, cursor=0, followup_index=-1, answers=None, status="active"):
+    """构造真实的 InterviewSimulation（非 Mock，状态机纯函数可直接操作）。"""
+    from models.interview_simulation import InterviewSimulation
+
+    return InterviewSimulation(
+        user_id=1,
+        resume_id=1,
+        target_position="Python后端",
+        plan=plan,
+        cursor=cursor,
+        followup_index=followup_index,
+        answers=answers or [],
+        status=status,
+    )
+
+
+class _FakeResult:
+    """一次 execute 的结果：scalars().all() 与 scalar_one_or_none() 双通道。"""
+
+    def __init__(self, rows, resume):
+        self._rows = rows
+        self._resume = resume
+
+    def scalars(self):
+        class _S:
+            def all(_self):
+                return self._rows
+
+        return _S()
+
+    def scalar_one_or_none(self):
+        return self._resume
+
+
+class _FakeDB:
+    """支持 execute / add / commit / refresh 的最小异步 DB 桩。"""
+
+    def __init__(self, rows=None, resume=None):
+        self._rows = rows if rows is not None else []
+        self._resume = resume
+
+    async def execute(self, stmt):
+        return _FakeResult(self._rows, self._resume)
+
+    def add(self, obj):
+        pass
+
+    async def commit(self):
+        pass
+
+    async def refresh(self, obj):
+        return obj
+
+
 class TestInterviewCoachTool:
-    """模拟面试 Q&A。"""
+    """多轮模拟面试（阶段 5 H1-H3）：开始出第 1 题 → 答后推进 → 结束评分。"""
 
     @pytest.mark.asyncio
-    async def test_returns_llm_response(self):
-        mock_db = _make_mock_db_with_resume()
-        tool = InterviewCoachTool(db=mock_db, user_id=1)
+    async def test_start_returns_first_question(self):
+        """无进行中面试 → 创建并返回第 1 题（含目标岗位与题号）。"""
+        resume = MagicMock(parsed_text="3年Python后端，FastAPI项目经验", status="ready")
+        mock_db = _FakeDB(rows=[], resume=resume)
 
-        with patch("services.react_agent.tools.llm_generate", new_callable=AsyncMock) as mock_llm:
-            mock_llm.return_value = "面试问题和回答"
+        with patch("services.interview_coach.generate_plan",
+                   new_callable=AsyncMock, return_value=_PLAN_SINGLE):
+            tool = InterviewCoachTool(db=mock_db, user_id=1)
             result = await tool._execute(resume_id=1, target_position="Python后端")
 
-        assert result == "面试问题和回答"
+        assert "Python后端" in result
+        assert "第 1/1 题" in result
+        assert "项目深挖" in result
 
     @pytest.mark.asyncio
-    async def test_passes_target_position(self):
-        mock_db = _make_mock_db_with_resume()
+    async def test_answer_records_and_completes(self):
+        """单题面试：答完推进到末尾 → 自动结束并出评分卡。"""
+        sim = _make_sim(_PLAN_SINGLE)
+        mock_db = _FakeDB(rows=[sim])  # 有进行中的面试
+
+        score_json = json.dumps(
+            [{"question_id": "q1", "score": 80, "feedback": "好", "model_answer": "参考"}],
+            ensure_ascii=False,
+        )
+        with patch("services.rag.pipeline.llm_generate",
+                   new_callable=AsyncMock, return_value=score_json):
+            tool = InterviewCoachTool(db=mock_db, user_id=1)
+            result = await tool._execute(
+                resume_id=1, target_position="Python后端", answer="我用Python做过交易系统"
+            )
+
+        assert sim.answers[0]["answer"] == "我用Python做过交易系统"
+        assert sim.cursor == 1
+        assert sim.status == "completed"
+        assert "面试结束" in result
+
+    @pytest.mark.asyncio
+    async def test_no_answer_reasks_current(self):
+        """无回答（answer 为空）→ 不推进，重问当前题。"""
+        sim = _make_sim(_PLAN_SINGLE)
+        mock_db = _FakeDB(rows=[sim])
+
         tool = InterviewCoachTool(db=mock_db, user_id=1)
+        result = await tool._execute(resume_id=1, target_position="Python后端")
 
-        with patch("services.react_agent.tools.llm_generate", new_callable=AsyncMock) as mock_llm:
-            mock_llm.return_value = "result"
-            await tool._execute(resume_id=1, target_position="数据工程师")
-
-            call_kwargs = mock_llm.call_args
-            combined = (call_kwargs.kwargs.get("system", "") + call_kwargs.kwargs.get("user", ""))
-            assert "数据工程师" in combined
+        assert sim.cursor == 0
+        assert "第 1/1 题" in result
+        assert sim.answers == []
 
     @pytest.mark.asyncio
     async def test_handles_missing_resume(self):
-        mock_db = _make_mock_db_no_resume()
+        """简历不存在 → 明确提示。"""
+        mock_db = _FakeDB(rows=[], resume=None)
         tool = InterviewCoachTool(db=mock_db, user_id=1)
 
         result = await tool._execute(resume_id=999, target_position="后端")
-        assert "不存在" in result or "未找到" in result or "无法" in result
-
-    @pytest.mark.asyncio
-    async def test_max_rounds_in_prompt(self):
-        """prompt 中包含最多 8 轮的限制。"""
-        mock_db = _make_mock_db_with_resume()
-        tool = InterviewCoachTool(db=mock_db, user_id=1)
-
-        with patch("services.react_agent.tools.llm_generate", new_callable=AsyncMock) as mock_llm:
-            mock_llm.return_value = "result"
-            await tool._execute(resume_id=1, target_position="后端")
-
-            call_kwargs = mock_llm.call_args
-            combined = (call_kwargs.kwargs.get("system", "") + call_kwargs.kwargs.get("user", ""))
-            assert "8" in combined
+        assert "不存在" in result

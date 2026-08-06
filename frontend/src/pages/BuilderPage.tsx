@@ -39,6 +39,7 @@ import {
   translateResume,
 } from "../api/builder";
 import VersionHistoryDialog from "../components/VersionHistoryDialog";
+import PendingChangesDialog from "../components/PendingChangesDialog";
 import PasteResumeDialog from "../components/builder/PasteResumeDialog";
 import type {
   BuilderResume,
@@ -56,6 +57,7 @@ import { getTemplateConfigs } from "../components/templates/registry";
 import AtsAuditReport from "../components/AtsAuditReport";
 import { trackEvent } from "../api/analytics";
 import { copyResume, getResumeFamily, auditResume } from "../api/resumes";
+import { listPendingChanges } from "../api/pendingChanges";
 import type { ResumeFamilyItem, AtsAuditResult } from "../api/resumes";
 import { useNavigate } from "react-router-dom";
 import { useHistory } from "../hooks/useHistory";
@@ -159,6 +161,10 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
 
   // 粘贴简历文本弹窗
   const [showPasteDialog, setShowPasteDialog] = useState(false);
+
+  // E2: 待审阅改动（rewrite_star/translate/rewrite_resume 落库的字段级 diff 审阅队列）
+  const [showPendingChanges, setShowPendingChanges] = useState(false);
+  const [pendingCount, setPendingCount] = useState<number | null>(null);
 
   // 上传简历懒物化标记：false = LLM 反解析失败，需提示用户粘贴导入
   const [materialized, setMaterialized] = useState(true);
@@ -293,6 +299,26 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
   useEffect(() => {
     loadResume();
   }, [loadResume]);
+
+  // ── E2: 待审阅改动数量（入口徽标） ────────────────────────────
+  // 挂载时 + 改写类工具落库通知（resume:modules-refresh）后刷新计数。
+  const loadPendingCount = useCallback(async () => {
+    try {
+      const res = await listPendingChanges(resumeId);
+      setPendingCount(res.total ?? 0);
+    } catch {
+      // 静默失败，入口不显示数量徽标
+    }
+  }, [resumeId]);
+
+  useEffect(() => {
+    void loadPendingCount();
+    const sync = () => {
+      void loadPendingCount();
+    };
+    window.addEventListener("resume:modules-refresh", sync);
+    return () => window.removeEventListener("resume:modules-refresh", sync);
+  }, [loadPendingCount]);
 
   // ── T17: 索引新鲜度（懒索引脏标记 is_indexed / is_stale） ──
 
@@ -908,6 +934,29 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
           >
             🔍 ATS
           </button>
+
+          {/* E2: 待审阅改动（AI 改写/翻译的字段级 diff 审阅队列） */}
+          <button
+            onClick={() => {
+              setShowPendingChanges(true);
+              void loadPendingCount();
+            }}
+            className="btn-tool relative"
+            aria-label="待审阅改动"
+            title="审阅 AI 改写的字段级改动"
+          >
+            <ClipboardText size={12} weight="regular" aria-hidden="true" />
+            待审阅
+            {pendingCount !== null && pendingCount > 0 && (
+              <span
+                className="absolute -top-1 -right-1 min-w-4 h-4 px-0.5 rounded-full
+                  bg-red-500 text-white text-[9px] font-bold
+                  flex items-center justify-center"
+              >
+                {pendingCount > 99 ? "99+" : pendingCount}
+              </span>
+            )}
+          </button>
         </div>
       </div>
 
@@ -1037,6 +1086,17 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
             </div>
           </div>
         )}
+
+        {/* E2: 待审阅改动弹窗 */}
+        <PendingChangesDialog
+          resumeId={resumeId}
+          open={showPendingChanges}
+          onClose={() => {
+            setShowPendingChanges(false);
+            void loadPendingCount();
+          }}
+          onChanged={loadPendingCount}
+        />
       </div>
     </div>
   );
