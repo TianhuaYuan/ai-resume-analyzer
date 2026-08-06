@@ -10,7 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_current_user
 from core.database import get_db
+from core.exceptions import AppException
 from models.user import User
+from schemas.assets import AssetResponse
 from schemas.job_application import (
     DashboardResponse,
     DuplicateItem,
@@ -21,7 +23,7 @@ from schemas.job_application import (
     JobApplicationStatusUpdate,
     JobApplicationUpdate,
 )
-from services import job_application_service as svc
+from services import asset_service, job_application_service as svc
 
 router = APIRouter(prefix="/job-applications", tags=["job-applications"])
 
@@ -184,3 +186,43 @@ async def restore_application(
     """从垃圾箱恢复。"""
     app = await svc.restore_application(db, current_user.id, application_id)
     return _to_response(app)
+
+
+@router.post(
+    "/{application_id}/archive",
+    response_model=AssetResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def archive_application(
+    application_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """把投递的 JD 文本归档为知识资产（asset_type=jd，供 Agent 检索）。
+
+    - 软删除（垃圾箱）投递不允许归档
+    - 无 JD 内容（jd_text / jd_scorecard 均空）→ 400
+    - 幂等：同来源重复归档 → 覆盖更新资产（version+1 重建索引）
+    - 非本人 → 404（防枚举）
+
+    错误码：
+    - 401 未登录
+    - 404 记录不存在或非本人
+    - 400 已进垃圾箱 / 无 JD 内容
+    """
+    app = await svc.get_application(db, current_user.id, application_id)
+    if app.deleted_at is not None:
+        raise AppException(status_code=400, detail="投递记录已在垃圾箱，无法归档")
+    if not (app.jd_text or app.jd_scorecard):
+        raise AppException(status_code=400, detail="该投递没有 JD 内容，无法归档")
+
+    asset = await asset_service.upsert_asset_by_source(
+        db,
+        current_user.id,
+        source_type=asset_service.SOURCE_JOB_APPLICATION,
+        source_id=app.id,
+        asset_type="jd",
+        title=f"{app.company} {app.position} JD",
+        content=asset_service.build_jd_asset_content(app),
+    )
+    return AssetResponse.model_validate(asset)

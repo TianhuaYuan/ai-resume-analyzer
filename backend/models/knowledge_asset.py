@@ -14,6 +14,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -22,6 +23,13 @@ from core.database import Base
 
 class KnowledgeAsset(Base):
     __tablename__ = "knowledge_assets"
+
+    # 归档幂等：同一业务来源（投递/面试）最多一条资产；手动 note 资产 source 为 NULL
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "source_type", "source_id", name="uq_knowledge_assets_source"
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(
@@ -40,6 +48,10 @@ class KnowledgeAsset(Base):
     # 草稿中间态：is_draft=True 只进工作区，不触发索引（D3）
     is_draft: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    # 归档来源：业务表 → 知识资产的溯源（job_application / interview_session）。
+    # 手动新建的 note 资产为 NULL；来源相同则归档幂等（upsert 覆盖）。
+    source_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    source_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # T6：向量索引版本号（单调递增，独立于 document version）
     index_version: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(

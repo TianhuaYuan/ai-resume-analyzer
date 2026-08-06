@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions import AppException
 from models.interview_session import InterviewSession
+from models.job_application import JobApplication
 from services.memory.memory_store import save_memory
 
 logger = logging.getLogger(__name__)
@@ -142,18 +143,38 @@ async def create_interview(
     company: str,
     position: str,
     resume_id: int | None = None,
+    job_application_id: int | None = None,
     jd_text: str | None = None,
     questions: list | None = None,
     answers: list | None = None,
     notes: str | None = None,
     scorecard: dict | None = None,
 ) -> InterviewSession:
-    """落库一次面试记录。传了 scorecard 即视为已复盘（status=reviewed）。"""
+    """落库一次面试记录。传了 scorecard 即视为已复盘（status=reviewed）。
+
+    job_application_id：关联投递记录（可选，打通投递看板某面次）；存在但非本人 → 404（防枚举）。
+    jd_text 未传且关联投递有 JD → 自动取投递 jd_text（少粘一次）。
+    """
+    if job_application_id is not None:
+        app = (
+            await db.execute(
+                select(JobApplication).where(
+                    JobApplication.id == job_application_id,
+                    JobApplication.user_id == user_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if app is None:
+            raise AppException(status_code=404, detail="关联的投递记录不存在或无权访问")
+        if jd_text is None and app.jd_text:
+            jd_text = app.jd_text
+
     session = InterviewSession(
         user_id=user_id,
         company=company,
         position=position,
         resume_id=resume_id,
+        job_application_id=job_application_id,
         jd_text=jd_text,
         questions=questions,
         answers=answers,

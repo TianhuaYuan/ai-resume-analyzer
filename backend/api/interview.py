@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.deps import get_current_user
 from core.database import get_db
 from models.user import User
+from schemas.assets import AssetResponse
 from schemas.interview import (
     InterviewCreate,
     InterviewListResponse,
@@ -24,7 +25,7 @@ from schemas.interview import (
     ReviewSummaryResponse,
     ScorecardUpdateResponse,
 )
-from services import interview_service
+from services import asset_service, interview_service
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,7 @@ async def create_interview(
         company=body.company,
         position=body.position,
         resume_id=body.resume_id,
+        job_application_id=body.job_application_id,
         jd_text=body.jd_text,
         questions=body.questions,
         answers=body.answers,
@@ -155,3 +157,36 @@ async def update_scorecard(
         scorecard=session.scorecard,
         notes=session.notes,
     )
+
+
+@router.post(
+    "/{interview_id}/archive",
+    response_model=AssetResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def archive_interview(
+    interview_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """把一次面试复盘归档为知识资产（asset_type=interview，供 Agent 检索）。
+
+    - 幂等：同来源（interview_session）重复归档 → 覆盖更新资产（version+1 重建索引）
+    - 归档后同步触发索引，Agent search_assets 即可命中
+    - 非本人 → 404（防枚举）
+
+    错误码：
+    - 401 未登录
+    - 404 记录不存在或非本人
+    """
+    session = await interview_service.get_interview(db, current_user.id, interview_id)
+    asset = await asset_service.upsert_asset_by_source(
+        db,
+        current_user.id,
+        source_type=asset_service.SOURCE_INTERVIEW_SESSION,
+        source_id=session.id,
+        asset_type="interview",
+        title=f"{session.company} {session.position} 面试记录",
+        content=asset_service.build_interview_asset_content(session),
+    )
+    return AssetResponse.model_validate(asset)

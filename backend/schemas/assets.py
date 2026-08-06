@@ -37,6 +37,9 @@ class AssetResponse(BaseModel):
     indexed_hash: str | None
     created_at: datetime
     updated_at: datetime
+    # 归档来源（业务表 → 资产溯源）；手动 note 资产为 None
+    source_type: str | None = None
+    source_id: int | None = None
     # 派生字段：脏标记一致才认为已索引
     indexed: bool = False
     # 内部字段：仅用于计算 indexed，不进响应

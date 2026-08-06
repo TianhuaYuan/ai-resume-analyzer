@@ -23,6 +23,9 @@ export interface KnowledgeAsset {
   created_at: string;
   updated_at: string;
   indexed: boolean;
+  /** 归档来源（业务表 → 资产溯源）；手动 note 资产为 null */
+  source_type: string | null;
+  source_id: number | null;
 }
 
 export interface AssetListResponse {

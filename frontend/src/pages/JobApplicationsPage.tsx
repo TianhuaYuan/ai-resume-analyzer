@@ -41,6 +41,7 @@ import {
   transitionJobApplicationStatus,
   deleteJobApplication,
   restoreJobApplication,
+  archiveJobApplication,
   APPLICATION_STATUSES,
   APPLICATION_STATUS_FLOW,
   APPLICATION_PRIORITIES,
@@ -689,6 +690,19 @@ function ApplicationDetailModal({
   const toast = useToast();
   const dl = deadlineInfo(app);
   const [editOpen, setEditOpen] = useState(false);
+  const [archiving, setArchiving] = useState(false);
+
+  const handleArchive = async () => {
+    setArchiving(true);
+    try {
+      await archiveJobApplication(app.id);
+      toast.success("已归档到知识库");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "归档失败");
+    } finally {
+      setArchiving(false);
+    }
+  };
 
   return (
     <ModalShell
@@ -696,6 +710,17 @@ function ApplicationDetailModal({
       onClose={onClose}
       footer={
         <div className="flex gap-2">
+          {!app.deleted_at && (app.jd_text || app.jd_scorecard) && (
+            <button
+              onClick={() => void handleArchive()}
+              disabled={archiving}
+              title="把 JD 文本归档为知识资产，Agent 可检索"
+              className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-brand/30 text-sm text-brand hover:bg-brand/10 transition-colors cursor-pointer disabled:opacity-50"
+            >
+              {archiving && <Spinner size={14} className="animate-spin" />}
+              归档到知识库
+            </button>
+          )}
           {!app.deleted_at && (
             <button
               onClick={() => setEditOpen(true)}

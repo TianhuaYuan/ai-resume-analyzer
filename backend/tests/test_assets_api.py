@@ -4,7 +4,8 @@ import pytest
 
 
 async def _create(client, headers, **overrides):
-    body = {"asset_type": "jd", "title": "测试 JD", "content": "精通 Python 与高并发开发"}
+    # 职责重定位后手动新建仅支持笔记（note）；jd/interview 走业务模块归档
+    body = {"asset_type": "note", "title": "测试笔记", "content": "学习笔记内容"}
     body.update(overrides)
     return await client.post("/api/v1/assets", json=body, headers=headers)
 
@@ -26,11 +27,12 @@ async def test_create_asset(client, auth_headers):
     resp = await _create(client, auth_headers, is_draft=True)
     assert resp.status_code == 201
     data = resp.json()
-    assert data["asset_type"] == "jd"
-    assert data["title"] == "测试 JD"
+    assert data["asset_type"] == "note"
+    assert data["title"] == "测试笔记"
     assert data["is_draft"] is True
     assert data["version"] == 1
     assert "indexed" in data
+    assert data["source_type"] is None  # 手动新建无归档来源
 
 
 @pytest.mark.asyncio
@@ -40,14 +42,42 @@ async def test_create_asset_invalid_type(client, auth_headers):
 
 
 @pytest.mark.asyncio
-async def test_list_assets_filter_type(client, auth_headers):
-    await _create(client, auth_headers, asset_type="jd", is_draft=True)
+async def test_create_asset_manual_jd_rejected(client, auth_headers):
+    """职责重定位：手动新建 jd / interview → 400（只能从业务模块归档）。"""
+    resp = await _create(client, auth_headers, asset_type="jd")
+    assert resp.status_code == 400
+    resp2 = await _create(client, auth_headers, asset_type="interview")
+    assert resp2.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_list_assets_filter_type(client, auth_headers, db_session, test_user):
+    """asset_type 过滤仍可用：jd 由归档产生（直接插库模拟），note 走手动新建。"""
+    from models.knowledge_asset import KnowledgeAsset
+
+    db_session.add(
+        KnowledgeAsset(
+            user_id=test_user.id,
+            asset_type="jd",
+            title="归档 JD",
+            content="jd content",
+            is_draft=False,
+            version=1,
+            index_version=0,
+        )
+    )
+    await db_session.commit()
+
     await _create(client, auth_headers, asset_type="note", title="笔记", is_draft=True)
+
     resp = await client.get("/api/v1/assets?asset_type=jd", headers=auth_headers)
     assert resp.status_code == 200
     data = resp.json()
     assert data["total"] == 1
     assert data["items"][0]["asset_type"] == "jd"
+
+    resp2 = await client.get("/api/v1/assets?asset_type=note", headers=auth_headers)
+    assert resp2.json()["total"] == 1
 
 
 @pytest.mark.asyncio

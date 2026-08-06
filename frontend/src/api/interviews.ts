@@ -1,4 +1,5 @@
 import { api } from "./client";
+import type { KnowledgeAsset } from "./assets";
 
 // ── 类型定义 ──
 
@@ -15,6 +16,7 @@ export interface InterviewSession {
   company: string;
   position: string;
   resume_id: number | null;
+  job_application_id: number | null;
   jd_text: string | null;
   questions: string[] | null;
   answers: string[] | null;
@@ -52,6 +54,7 @@ export interface InterviewCreateInput {
   company: string;
   position: string;
   resume_id?: number;
+  job_application_id?: number;
   jd_text?: string;
   questions?: string[];
   answers?: string[];
@@ -131,4 +134,9 @@ export async function getReviewSummary(): Promise<InterviewReviewSummary> {
   return api.get(
     "/api/v1/interviews/review/summary"
   ) as Promise<InterviewReviewSummary>;
+}
+
+/** POST /api/v1/interviews/{id}/archive — 归档为知识资产（幂等，供 Agent 检索） */
+export async function archiveInterview(id: number): Promise<KnowledgeAsset> {
+  return api.post(`/api/v1/interviews/${id}/archive`) as Promise<KnowledgeAsset>;
 }

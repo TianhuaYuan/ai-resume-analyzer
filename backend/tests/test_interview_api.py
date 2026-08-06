@@ -92,3 +92,78 @@ async def test_interview_isolation(client, auth_headers):
     assert resp.status_code == 404
     resp2 = await client.delete(f"/api/v1/interviews/{created['id']}", headers=other_headers)
     assert resp2.status_code == 404
+
+
+# ── 关联投递（job_application_id）+ JD 自动填充 ──
+
+
+async def _create_application(client, headers, **overrides):
+    body = {"company": "字节", "position": "后端开发", "jd_text": "精通 Python 高并发"}
+    body.update(overrides)
+    resp = await client.post("/api/v1/job-applications", json=body, headers=headers)
+    assert resp.status_code == 201, resp.text
+    return resp.json()["application"]
+
+
+@pytest.mark.asyncio
+async def test_create_interview_linked_to_application(client, auth_headers):
+    app = await _create_application(client, auth_headers)
+    resp = await client.post(
+        "/api/v1/interviews",
+        json={"company": "字节", "position": "后端开发", "job_application_id": app["id"]},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201
+    assert resp.json()["job_application_id"] == app["id"]
+
+
+@pytest.mark.asyncio
+async def test_create_interview_auto_fills_jd_from_application(client, auth_headers):
+    """关联投递且未填 JD → 自动取投递的 jd_text（少粘一次）。"""
+    app = await _create_application(client, auth_headers)
+    resp = await client.post(
+        "/api/v1/interviews",
+        json={"company": "字节", "position": "后端开发", "job_application_id": app["id"]},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201
+    assert resp.json()["jd_text"] == "精通 Python 高并发"
+
+
+@pytest.mark.asyncio
+async def test_create_interview_manual_jd_overrides_application(client, auth_headers):
+    """手动填了 JD 时以手动为准，不覆盖为投递 JD。"""
+    app = await _create_application(client, auth_headers)
+    resp = await client.post(
+        "/api/v1/interviews",
+        json={
+            "company": "字节",
+            "position": "后端开发",
+            "job_application_id": app["id"],
+            "jd_text": "手动填的 JD",
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201
+    assert resp.json()["jd_text"] == "手动填的 JD"
+
+
+@pytest.mark.asyncio
+async def test_create_interview_linked_other_user_application_404(client, auth_headers):
+    """关联他人投递 → 404（防枚举）。"""
+    app = await _create_application(client, auth_headers)
+    other = {"username": "otherlink", "email": "otherlink@example.com", "password": "Test1234!", "password_confirm": "Test1234!"}
+    await client.post("/api/v1/auth/send-code", json={"email": other["email"]})
+    from services.verification_service import _CODE_KEY_PREFIX, _in_memory_codes
+
+    code = _in_memory_codes.get(f"{_CODE_KEY_PREFIX}{other['email']}")["code"]
+    await client.post("/api/v1/auth/register", json={**other, "verification_code": code})
+    login = await client.post("/api/v1/auth/login", json={"email": other["email"], "password": other["password"]})
+    other_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    resp = await client.post(
+        "/api/v1/interviews",
+        json={"company": "X", "position": "Y", "job_application_id": app["id"]},
+        headers=other_headers,
+    )
+    assert resp.status_code == 404

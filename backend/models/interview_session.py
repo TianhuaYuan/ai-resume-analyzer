@@ -30,6 +30,12 @@ class InterviewSession(Base):
         ForeignKey("resumes.id", ondelete="SET NULL"),
         nullable=True,
     )
+    # 关联投递记录（投递看板的某面次）；复盘可挂到投递，关联时自动取投递 JD
+    job_application_id: Mapped[int | None] = mapped_column(
+        ForeignKey("job_applications.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     jd_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     questions: Mapped[list | None] = mapped_column(JSON, nullable=True)
     answers: Mapped[list | None] = mapped_column(JSON, nullable=True)

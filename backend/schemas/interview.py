@@ -9,6 +9,9 @@ class InterviewCreate(BaseModel):
     company: str = Field(..., min_length=1, max_length=100, description="公司名")
     position: str = Field(..., min_length=1, max_length=100, description="面试岗位")
     resume_id: int | None = Field(None, description="关联简历 ID（可选）")
+    job_application_id: int | None = Field(
+        None, description="关联投递记录 ID（可选，未填 JD 时自动取该投递的 jd_text）"
+    )
     jd_text: str | None = Field(None, description="岗位 JD 文本（可选）")
     questions: list | None = Field(None, description="面试问题列表（可选）")
     answers: list | None = Field(None, description="回答内容列表（可选）")
@@ -35,6 +38,7 @@ class InterviewListItem(BaseModel):
     company: str
     position: str
     resume_id: int | None = None
+    job_application_id: int | None = None
     jd_text: str | None = None
     questions: list | None = None
     notes: str | None = None

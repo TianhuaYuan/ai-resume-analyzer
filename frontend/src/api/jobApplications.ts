@@ -1,4 +1,5 @@
 import { api } from "./client";
+import type { KnowledgeAsset } from "./assets";
 
 // ── 类型定义 ──
 
@@ -207,4 +208,11 @@ export async function deleteJobApplication(id: number): Promise<null> {
 /** POST /api/v1/job-applications/{id}/restore — 从垃圾箱恢复 */
 export async function restoreJobApplication(id: number): Promise<JobApplication> {
   return api.post(`/api/v1/job-applications/${id}/restore`) as Promise<JobApplication>;
+}
+
+/** POST /api/v1/job-applications/{id}/archive — 归档 JD 为知识资产（幂等，供 Agent 检索） */
+export async function archiveJobApplication(id: number): Promise<KnowledgeAsset> {
+  return api.post(
+    `/api/v1/job-applications/${id}/archive`
+  ) as Promise<KnowledgeAsset>;
 }

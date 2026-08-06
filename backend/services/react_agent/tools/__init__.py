@@ -239,7 +239,10 @@ class GetResumeContentTool(Tool):
 class SearchAssetsArgs(BaseModel):
     query: str = Field(..., description="检索查询词")
     asset_type: str = Field("resume", description="资产类型（resume/jd/interview/note）")
-    asset_ids: list[int] = Field(..., description="要检索的资产 ID 列表")
+    asset_ids: list[int] | None = Field(
+        None,
+        description="要检索的资产 ID 列表；不传则跨该用户全部知识库检索（含归档的 JD/面试记录/笔记）",
+    )
 
 
 class SearchAssetsTool(Tool):
@@ -253,11 +256,10 @@ class SearchAssetsTool(Tool):
     async def _execute(self, **kwargs) -> str:
         query = kwargs["query"]
         asset_type = kwargs["asset_type"]
-        asset_ids = kwargs["asset_ids"]
-        if not asset_ids:
-            return "⚠️ 请指定要检索的资产 ID 列表。"
-
-        scope = {asset_type: asset_ids}
+        asset_ids = kwargs.get("asset_ids") or []
+        # 未指定资产 ID → 全库检索该用户全部知识资产（含归档内容）；
+        # 指定则按 (asset_type, asset_ids) 范围过滤
+        scope = {asset_type: asset_ids} if asset_ids else {}
         chunks = await hybrid_search_corpus(self.user_id, scope, query, top_k=20)
         if not chunks:
             return "未找到相关内容。"

@@ -10,7 +10,6 @@ JD / 面试记录 / 笔记三类求职知识资产的增删改查：
 错误码统一走 AppException（core/exceptions.py），非本人资产一律 404（防枚举）。
 """
 
-import hashlib
 import logging
 
 from fastapi import APIRouter, Depends, Query, status
@@ -33,15 +32,11 @@ from services.rag.clients import knowledge_collection_name
 from services.rag.ensure_indexed import ensure_indexed
 from services.rag.metadata import META_ASSET_ID, META_ASSET_TYPE
 from services.vector_store import get_vector_store
+from services import asset_service
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/assets", tags=["assets"])
-
-
-def _sha256(content: str) -> str:
-    """资产内容哈希（与 resumes / ensure_indexed 同款）。"""
-    return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
 async def _get_owned_asset(
@@ -60,51 +55,32 @@ async def create_asset(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """创建知识资产。
+    """创建知识资产（职责重定位：手动新建仅支持笔记 note）。
 
-    - asset_type 白名单校验（jd / interview / note），非法 → 400
+    - JD / 面试记录不再支持手动创建：JD 从投递看板归档、面试记录从面试复盘归档
+      （POST /job-applications/{id}/archive、POST /interviews/{id}/archive）
     - 写 content_hash = sha256(content) 启用脏标记
     - is_draft=False → 懒触发 ensure_indexed 重建向量
-    - version=1, index_version=0（未索引）
 
     错误码：
     - 401 未登录
-    - 400 非法 asset_type
+    - 400 asset_type 非 note（JD / 面试记录走归档）
     - 500 向量化重建失败（ensure_indexed 内部降级，不阻断落库）
     """
-    if body.asset_type not in ASSET_TYPES:
+    if body.asset_type != "note":
         raise AppException(
             status_code=400,
-            detail=f"非法 asset_type: {body.asset_type}，仅支持 {', '.join(ASSET_TYPES)}",
+            detail="手动新建仅支持笔记（note）；JD / 面试记录请从投递看板 / 面试复盘归档",
         )
 
-    asset = KnowledgeAsset(
-        user_id=current_user.id,
+    asset = await asset_service.create_asset(
+        db,
+        current_user.id,
         asset_type=body.asset_type,
         title=body.title,
         content=body.content,
-        content_hash=_sha256(body.content),
         is_draft=body.is_draft,
-        version=1,
-        index_version=0,
     )
-    db.add(asset)
-    await db.commit()
-    await db.refresh(asset)
-
-    # 非草稿 → 懒触发重建（ensure_indexed 内部判断脏标记，就绪则直接返回）
-    if not asset.is_draft:
-        await ensure_indexed(
-            db,
-            user_id=current_user.id,
-            asset_id=asset.id,
-            asset_type=asset.asset_type,
-            collection=knowledge_collection_name(current_user.id),
-        )
-        # ensure_indexed 失败路径会 rollback（expire 所有 ORM 对象），重读一次避免
-        # model_validate 触发 sync lazy load → MissingGreenlet；同时拿到最新 indexed 状态
-        await db.refresh(asset)
-
     return AssetResponse.model_validate(asset)
 
 
@@ -190,7 +166,7 @@ async def update_asset(
         asset.title = body.title
     if body.content is not None:
         asset.content = body.content
-        asset.content_hash = _sha256(body.content)
+        asset.content_hash = asset_service._sha256(body.content)
         asset.version += 1
         asset.indexed_hash = None  # 索引过期 → 懒重建
     if body.is_draft is not None:

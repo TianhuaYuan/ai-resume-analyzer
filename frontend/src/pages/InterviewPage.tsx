@@ -34,12 +34,14 @@ import {
   updateInterviewScorecard,
   deleteInterview,
   getReviewSummary,
+  archiveInterview,
   type InterviewSession,
   type InterviewSummary,
   type InterviewReviewSummary,
   type InterviewScorecard,
 } from "../api/interviews";
 import { listResumes } from "../api/resumes";
+import { listJobApplications } from "../api/jobApplications";
 import { useToast } from "../components/Toast";
 import ConfirmDialog from "../components/ConfirmDialog";
 
@@ -125,6 +127,7 @@ interface CreateFormState {
   company: string;
   position: string;
   resume_id: string;
+  job_application_id: string;
   jd_text: string;
   questions: string;
   answers: string;
@@ -135,6 +138,7 @@ const EMPTY_FORM: CreateFormState = {
   company: "",
   position: "",
   resume_id: "",
+  job_application_id: "",
   jd_text: "",
   questions: "",
   answers: "",
@@ -169,6 +173,9 @@ export default function InterviewPage() {
   const [resumeOptions, setResumeOptions] = useState<
     Array<{ id: number; filename: string }>
   >([]);
+  const [jobAppOptions, setJobAppOptions] = useState<
+    Array<{ id: number; label: string }>
+  >([]);
   const [form, setForm] = useState<CreateFormState>(EMPTY_FORM);
 
   // 详情弹窗
@@ -182,6 +189,9 @@ export default function InterviewPage() {
   const [scorecardNotes, setScorecardNotes] = useState("");
   const [scorecardSaving, setScorecardSaving] = useState(false);
   const [weakCompetencies, setWeakCompetencies] = useState<string[]>([]);
+
+  // 归档到知识库
+  const [archiving, setArchiving] = useState(false);
 
   // 删除确认
   const [deleteTarget, setDeleteTarget] = useState<InterviewSummary | null>(
@@ -233,11 +243,26 @@ export default function InterviewPage() {
     }
   }, []);
 
+  const loadJobApplicationOptions = useCallback(async () => {
+    try {
+      const data = await listJobApplications({ limit: 100 });
+      setJobAppOptions(
+        data.items.map((a) => ({
+          id: a.id,
+          label: `${a.company} · ${a.position}`,
+        }))
+      );
+    } catch {
+      setJobAppOptions([]);
+    }
+  }, []);
+
   useEffect(() => {
     void fetchList();
     void fetchReview();
     void loadResumeOptions();
-  }, [fetchList, fetchReview, loadResumeOptions]);
+    void loadJobApplicationOptions();
+  }, [fetchList, fetchReview, loadResumeOptions, loadJobApplicationOptions]);
 
   // ── 新建 ──
 
@@ -268,6 +293,9 @@ export default function InterviewPage() {
         company: form.company.trim(),
         position: form.position.trim(),
         resume_id: form.resume_id ? Number(form.resume_id) : undefined,
+        job_application_id: form.job_application_id
+          ? Number(form.job_application_id)
+          : undefined,
         jd_text: form.jd_text.trim() || undefined,
         questions,
         answers,
@@ -356,6 +384,21 @@ export default function InterviewPage() {
       toast.error(e instanceof Error ? e.message : "保存评分卡失败");
     } finally {
       setScorecardSaving(false);
+    }
+  };
+
+  // ── 归档到知识库 ──
+
+  const handleArchive = async () => {
+    if (!detail) return;
+    setArchiving(true);
+    try {
+      await archiveInterview(detail.id);
+      toast.success("已归档到知识库");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "归档失败");
+    } finally {
+      setArchiving(false);
     }
   };
 
@@ -796,6 +839,30 @@ export default function InterviewPage() {
               </select>
             </div>
 
+            {/* 关联投递 */}
+            <div className="mb-4">
+              <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1.5">
+                关联投递（可选）
+              </label>
+              <select
+                value={form.job_application_id}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, job_application_id: e.target.value }))
+                }
+                className={`${INPUT_CLS} cursor-pointer`}
+              >
+                <option value="">不关联投递</option>
+                {jobAppOptions.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.label}
+                  </option>
+                ))}
+              </select>
+              <p className="text-[10px] text-[var(--color-text-muted)] mt-1">
+                关联后未填 JD 时自动带出该投递的 JD 文本
+              </p>
+            </div>
+
             {/* JD 文本 */}
             <div className="mb-4">
               <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1.5">
@@ -938,11 +1005,40 @@ export default function InterviewPage() {
                     </span>
                   </span>
                   <span>
+                    关联投递：
+                    <span className="text-[var(--color-text-muted)]">
+                      {detail.job_application_id
+                        ? jobAppOptions.find(
+                            (a) => a.id === detail.job_application_id
+                          )?.label ?? `投递 #${detail.job_application_id}`
+                        : "未关联"}
+                    </span>
+                  </span>
+                  <span>
                     更新时间：
                     <span className="text-[var(--color-text-muted)]">
                       {formatTimestamp(detail.updated_at)}
                     </span>
                   </span>
+                </div>
+
+                {/* 归档到知识库 */}
+                <div className="flex items-center justify-between gap-3 mb-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/60 px-3 py-2.5">
+                  <span className="text-xs text-[var(--color-text-muted)]">
+                    归档后进入知识库，Agent 可检索到本次复盘
+                  </span>
+                  <button
+                    onClick={() => void handleArchive()}
+                    disabled={archiving}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium
+                      text-brand border border-brand/30 hover:bg-brand/10 active:scale-[0.98]
+                      transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+                  >
+                    {archiving && (
+                      <Spinner size={12} className="animate-spin" aria-hidden="true" />
+                    )}
+                    归档到知识库
+                  </button>
                 </div>
 
                 {/* 问题 / 答案 */}

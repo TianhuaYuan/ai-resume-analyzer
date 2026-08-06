@@ -50,7 +50,7 @@ interface AssetFormState {
   is_draft: boolean;
 }
 
-const EMPTY_FORM: AssetFormState = { asset_type: "jd", title: "", content: "", is_draft: false };
+const EMPTY_FORM: AssetFormState = { asset_type: "note", title: "", content: "", is_draft: false };
 
 /** ISO → "MM-DD HH:mm"（北京时间）。后端 naive datetime 视为 UTC。 */
 function formatTimestamp(dateStr?: string): string {
@@ -239,10 +239,10 @@ export default function AssetsPage() {
                 hover:bg-[#0077ed] hover:scale-[1.02] hover:shadow-lg hover:shadow-brand/25
                 active:scale-[0.98] motion-reduce:active:scale-100
                 transition-all duration-300 cursor-pointer"
-              aria-label="新建知识资产"
+              aria-label="新建笔记"
             >
               <Plus size={14} weight="bold" aria-hidden="true" />
-              新建资产
+              新建笔记
             </button>
           </header>
 
@@ -440,7 +440,7 @@ export default function AssetsPage() {
                   {editing ? "编辑知识资产" : "新建知识资产"}
                 </h3>
                 <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
-                  支持 JD / 面试记录 / 笔记，自动进入知识库索引
+                  记录学习笔记，自动进入知识库索引（JD / 面试记录走业务模块归档）
                 </p>
               </div>
               <button
@@ -453,32 +453,31 @@ export default function AssetsPage() {
               </button>
             </div>
 
-            {/* 类型选择 */}
+            {/* 类型（新建仅支持笔记；编辑展示当前类型，不可改） */}
             <div className="mb-4">
               <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1.5">
                 类型
               </label>
-              <div className="flex flex-wrap items-center gap-2">
-                {(["jd", "interview", "note"] as KnowledgeAssetType[]).map((t) => {
-                  const active = form.asset_type === t;
-                  const meta = TYPE_META[t];
-                  return (
-                    <button
-                      key={t}
-                      type="button"
-                      onClick={() => setForm((f) => ({ ...f, asset_type: t }))}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer
-                        ${active
-                          ? `${meta.color} ${meta.bg}`
-                          : "bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:bg-[#E5E5EA] border border-transparent"
-                        }`}
-                      aria-pressed={active}
-                    >
-                      {meta.label}
-                    </button>
-                  );
-                })}
-              </div>
+              {editing ? (
+                <span
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium ${
+                    TYPE_META[editing.asset_type].color
+                  } ${TYPE_META[editing.asset_type].bg}`}
+                >
+                  {TYPE_META[editing.asset_type].label}
+                </span>
+              ) : (
+                <span
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium ${TYPE_META.note.color} ${TYPE_META.note.bg}`}
+                >
+                  {TYPE_META.note.label}
+                </span>
+              )}
+              {!editing && (
+                <p className="text-[10px] text-[var(--color-text-muted)] mt-1.5">
+                  JD / 面试记录请从投递看板、面试复盘归档，这里只建笔记
+                </p>
+              )}
             </div>
 
             {/* 标题 */}
