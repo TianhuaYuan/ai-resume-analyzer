@@ -1,4 +1,4 @@
-import { createContext, useContext, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useCallback, useMemo, type ReactNode } from "react";
 import { useWebSocket, type WSMessage } from "../hooks/useWebSocket";
 import { useToast } from "../components/Toast";
 import { useAuth } from "./AuthContext";
@@ -115,8 +115,12 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     onMessage: handleMessage,
   });
 
+  // memoize context value：send 稳定，仅 connected 变化时重建，
+  // 避免 WebSocketProvider 每次渲染都新建对象 → 所有 useWebSocketContext 消费者级联重渲染
+  const value = useMemo(() => ({ connected, send }), [connected, send]);
+
   return (
-    <WebSocketContext.Provider value={{ connected, send }}>
+    <WebSocketContext.Provider value={value}>
       {children}
     </WebSocketContext.Provider>
   );

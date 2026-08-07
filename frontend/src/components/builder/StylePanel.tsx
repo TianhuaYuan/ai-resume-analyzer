@@ -10,9 +10,9 @@
  * - 可折叠（toggle show/hide）
  */
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useState } from "react";
 import { PaintBrush, X, Check } from "@phosphor-icons/react";
-import type { ResumeStyle, ModuleType } from "../../api/builder";
+import type { ResumeStyle } from "../../api/builder";
 import {
   TEMPLATE_OPTIONS,
   FONT_OPTIONS,

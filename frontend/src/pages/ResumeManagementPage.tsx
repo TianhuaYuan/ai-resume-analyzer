@@ -242,8 +242,10 @@ export default function ResumeManagementPage() {
     try {
       const data = await listResumes(50);
       setResumes(data.items);
+      return data.items;
     } catch {
       // 静默失败，不打断用户
+      return null;
     } finally {
       setLoading(false);
     }
@@ -259,7 +261,25 @@ export default function ResumeManagementPage() {
     const hasActive = Object.keys(parseProgress).length > 0;
     if (!hasActive) return;
     const timer = setInterval(() => {
-      void fetchResumes();
+      void fetchResumes().then((items) => {
+        if (!items) return;
+        // 终态兜底：WS 断连导致 done/failed 事件丢失时，轮询拿到的真实列表里
+        // 若该简历已离开 processing（ready/partial/failed），则清理进度项，
+        // parseProgress 清空后本轮询 effect 自动停止，避免 3s 轮询永续
+        setParseProgress((prev) => {
+          const next = { ...prev };
+          let changed = false;
+          for (const idStr of Object.keys(next)) {
+            const id = Number(idStr);
+            const item = items.find((r) => r.id === id);
+            if (item && item.status !== "processing") {
+              delete next[id];
+              changed = true;
+            }
+          }
+          return changed ? next : prev;
+        });
+      });
     }, 3000);
     return () => clearInterval(timer);
   }, [parseProgress, fetchResumes]);

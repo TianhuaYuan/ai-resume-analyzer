@@ -116,6 +116,19 @@ export function useWebSocket({
   const connect = useCallback(() => {
     if (!enabledRef.current || !tokenRef.current) return;
 
+    // 清掉旧的 heartbeat / reconnect 定时器，避免重复 startHeartbeat 泄漏 interval
+    clearTimers();
+
+    // 先关闭旧连接（reconnect()/visibilitychange 路径会走到这里，旧连接可能仍 CONNECTING），
+    // 避免 new WebSocket 覆盖 wsRef 时旧连接挂在服务器上泄漏
+    if (wsRef.current && wsRef.current.readyState !== WebSocket.CLOSED) {
+      try {
+        wsRef.current.close(1000, "reconnect");
+      } catch {
+        // 忽略关闭异常
+      }
+    }
+
     const wsUrl = `${url}?token=${encodeURIComponent(tokenRef.current)}`;
 
     try {
@@ -123,12 +136,15 @@ export function useWebSocket({
       wsRef.current = ws;
 
       ws.onopen = () => {
+        // 过期连接（已被替换/关闭）的回调直接忽略，避免污染新连接状态
+        if (wsRef.current !== ws) return;
         reconnectAttemptsRef.current = 0;
         setConnected(true);
         startHeartbeat();
       };
 
       ws.onmessage = (event) => {
+        if (wsRef.current !== ws) return;
         try {
           const msg: WSMessage = JSON.parse(event.data);
           if (msg.type === "pong") return;
@@ -143,6 +159,8 @@ export function useWebSocket({
       };
 
       ws.onclose = (event: CloseEvent) => {
+        // 过期连接的回调直接忽略（cleanup 主动关闭时 wsRef.current 已置 null）
+        if (wsRef.current !== ws) return;
         setConnected(false);
         clearTimers();
 
@@ -165,13 +183,23 @@ export function useWebSocket({
     }
   }, [url, reconnectInterval, maxReconnectAttempts, clearTimers, startHeartbeat]);
 
-  // 连接管理：只在 enabled 变化时尝试连接，不主动关闭 WS
+  // 连接管理：只在 enabled/token 变化时尝试连接。
+  // cleanup 必须主动关闭 WS——StrictMode 双挂载 / 页面卸载 / token 刷新时，
+  // 若不关闭，旧连接对象被覆盖但连接仍挂在服务器 → 服务器连接数只增不减（泄漏）。
   useEffect(() => {
     if (enabled && token && (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN)) {
       connect();
     }
     return () => {
-      // 不在此关闭 WS——避免状态闪烁导致断连
+      const ws = wsRef.current;
+      wsRef.current = null;
+      if (ws) {
+        try {
+          ws.close(1000, "component unmount");
+        } catch {
+          // 忽略关闭异常
+        }
+      }
       clearTimers();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

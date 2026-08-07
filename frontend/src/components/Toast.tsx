@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useRef,
+  useMemo,
   type ReactNode,
 } from "react";
 import { X } from "@phosphor-icons/react";
@@ -75,8 +76,15 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const error = useCallback((message: string, options?: { title?: string }) => add("error", message, options), [add]);
   const info = useCallback((message: string, options?: { title?: string }) => add("info", message, options), [add]);
 
+  // memoize context value：success/error/info/remove 均稳定，仅 toasts 变化时重建，
+  // 避免 ToastProvider 每次渲染都新建对象 → 所有 useToast 消费者级联重渲染
+  const value = useMemo(
+    () => ({ success, error, info, toasts, remove }),
+    [success, error, info, toasts, remove]
+  );
+
   return (
-    <ToastContext.Provider value={{ success, error, info, toasts, remove }}>
+    <ToastContext.Provider value={value}>
       {children}
     </ToastContext.Provider>
   );

@@ -50,6 +50,9 @@ export default function LandingNav({ activeKey }: LandingNavProps) {
   const [usageDialogOpen, setUsageDialogOpen] = useState(false);
   const [quota, setQuota] = useState<QuotaResponse | null>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
+  // 最近一次已应用的额度（ref 缓存），数据未变时跳过 setState，
+  // 避免 30s 轮询导致 LandingNav 每次轮询都重渲染
+  const lastQuotaRef = useRef<QuotaResponse | null>(null);
 
   // 点击外部关闭用户菜单
   useEffect(() => {
@@ -68,7 +71,20 @@ export default function LandingNav({ activeKey }: LandingNavProps) {
     const fetchQuota = () => {
       import("../api/qa")
         .then(({ getQuota }) => getQuota())
-        .then((data) => setQuota(data))
+        .then((data) => {
+          const prev = lastQuotaRef.current;
+          if (
+            prev &&
+            prev.enabled === data.enabled &&
+            prev.used === data.used &&
+            prev.limit === data.limit &&
+            prev.remaining === data.remaining
+          ) {
+            return; // 数据未变 → 不 setState，避免无效重渲染
+          }
+          lastQuotaRef.current = data;
+          setQuota(data);
+        })
         .catch(() => {});
     };
     fetchQuota();

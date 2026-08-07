@@ -79,13 +79,29 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [quota, setQuota] = useState<QuotaResponse | null>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
+  // 最近一次已应用的额度（ref 缓存），数据未变时跳过 setState，
+  // 避免 30s 轮询 / quota:refresh 导致 Sidebar 每次轮询都重渲染
+  const lastQuotaRef = useRef<QuotaResponse | null>(null);
 
   // Token 用量：加载 + 监听 quota:refresh 事件 + 30s 轮询
   useEffect(() => {
     const fetchQuota = () => {
       import("../api/qa")
         .then(({ getQuota }) => getQuota())
-        .then((data) => setQuota(data))
+        .then((data) => {
+          const prev = lastQuotaRef.current;
+          if (
+            prev &&
+            prev.enabled === data.enabled &&
+            prev.used === data.used &&
+            prev.limit === data.limit &&
+            prev.remaining === data.remaining
+          ) {
+            return; // 数据未变 → 不 setState，避免无效重渲染
+          }
+          lastQuotaRef.current = data;
+          setQuota(data);
+        })
         .catch(() => {});
     };
     fetchQuota();

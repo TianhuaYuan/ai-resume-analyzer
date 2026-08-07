@@ -2468,16 +2468,6 @@ export default function QAPage() {
             }}
             show={showStylePanel}
             onToggle={() => setShowStylePanel(false)}
-            modules={previewModules}
-            onReorderModules={(orderedTypes) => {
-              setPreviewModules((prev) =>
-                prev.map((m) => ({
-                  ...m,
-                  sort_order: orderedTypes.indexOf(m.module_type),
-                }))
-              );
-              setPreviewKey((k) => k + 1);
-            }}
           />
         </div>
       )}

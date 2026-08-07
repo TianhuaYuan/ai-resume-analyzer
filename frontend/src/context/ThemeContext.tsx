@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, useMemo, type ReactNode } from "react";
 
 type Theme = "light" | "dark";
 
@@ -21,12 +21,18 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     localStorage.setItem("theme", theme);
   }, [theme]);
 
-  const toggleTheme = () => {
-    setTheme((prev) => (prev === "dark" ? "light" : "dark"));
-  };
+  // memoize context value：theme 未变时 value 引用稳定，避免 ThemeProvider 每次渲染
+  // 都重建对象 → 所有 useTheme 消费者级联重渲染
+  const value = useMemo(
+    () => ({
+      theme,
+      toggleTheme: () => setTheme((prev) => (prev === "dark" ? "light" : "dark")),
+    }),
+    [theme]
+  );
 
   return (
-    <ThemeContext.Provider value={{ theme, toggleTheme }}>
+    <ThemeContext.Provider value={value}>
       {children}
     </ThemeContext.Provider>
   );

@@ -3,6 +3,7 @@ import {
   useContext,
   useState,
   useCallback,
+  useMemo,
   type ReactNode,
 } from "react";
 import type { ConversationItem } from "../api/qa";
@@ -45,16 +46,26 @@ export function AppChatProvider({ children }: { children: ReactNode }) {
   const [activeConversationId, setActiveConversationId] = useState<number | null>(null);
   const [conversationLoading, setConversationLoading] = useState(false);
 
-  const value: AppChatContextValue = {
-    resumeId,
-    conversations,
-    activeConversationId,
-    conversationLoading,
-    setResumeId: useCallback((id: number | null) => setResumeId(id), []),
-    setConversations: useCallback((convs: ConversationItem[]) => setConversations(convs), []),
-    setActiveConversationId: useCallback((id: number | null) => setActiveConversationId(id), []),
-    setConversationLoading: useCallback((loading: boolean) => setConversationLoading(loading), []),
-  };
+  const setResumeIdCb = useCallback((id: number | null) => setResumeId(id), []);
+  const setConversationsCb = useCallback((convs: ConversationItem[]) => setConversations(convs), []);
+  const setActiveConversationIdCb = useCallback((id: number | null) => setActiveConversationId(id), []);
+  const setConversationLoadingCb = useCallback((loading: boolean) => setConversationLoading(loading), []);
+
+  // memoize context value：setter 均稳定（useCallback），value 仅在 4 个 state 变化时重建。
+  // 否则每次 Provider 渲染都新建对象 → 所有 useAppChat 消费者（Sidebar/QAPage）级联重渲染。
+  const value: AppChatContextValue = useMemo(
+    () => ({
+      resumeId,
+      conversations,
+      activeConversationId,
+      conversationLoading,
+      setResumeId: setResumeIdCb,
+      setConversations: setConversationsCb,
+      setActiveConversationId: setActiveConversationIdCb,
+      setConversationLoading: setConversationLoadingCb,
+    }),
+    [resumeId, conversations, activeConversationId, conversationLoading, setResumeIdCb, setConversationsCb, setActiveConversationIdCb, setConversationLoadingCb]
+  );
 
   return <AppChatContext.Provider value={value}>{children}</AppChatContext.Provider>;
 }

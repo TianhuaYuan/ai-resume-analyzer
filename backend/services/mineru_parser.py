@@ -136,9 +136,12 @@ class MinerUClient:
 
     async def _upload_file(self, upload_url: str, file_path: str) -> None:
         """PUT 上传原始文件到 OSS 临时链接。"""
+        # 注意：AsyncClient 的 content 需为 bytes（或 async 流），
+        # 直接传同步文件对象会被 httpx 判定为同步请求而抛错
+        with open(file_path, "rb") as f:
+            file_bytes = f.read()
         async with httpx.AsyncClient() as client:
-            with open(file_path, "rb") as f:
-                resp = await client.put(upload_url, content=f)
+            resp = await client.put(upload_url, content=file_bytes)
             if resp.status_code not in (200, 201):
                 raise MinerUParseError(f"文件上传失败: HTTP {resp.status_code}")
 

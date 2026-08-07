@@ -46,7 +46,6 @@ import {
   ENTRY_FIELD_CONFIGS,
   SOCIAL_LINK_FIELDS,
   getString,
-  getListString,
   getEntries,
 } from "./ModuleForm";
 import { AvatarUpload } from "./AvatarUpload";
