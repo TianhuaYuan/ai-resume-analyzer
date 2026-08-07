@@ -6,7 +6,6 @@
  * - 字体下拉、间距下拉
  * - 排版精细调参：字号下拉（细档位）、行高滑块（1.0–2.0）
  * - 主题色选择器（12 预设 + 自定义 hex 输入）
- * - 板块管理（可选）：模块显隐 + 排序（需传入 modules / onReorderModules）
  * - 所有变更立即调用 onChange(style)
  * - 可折叠（toggle show/hide）
  */
@@ -23,8 +22,6 @@ import {
   PAGE_SIZE_OPTIONS,
 } from "../../api/templates";
 import { TEMPLATE_THUMBNAILS } from "./templateThumbnails";
-import { ModuleManager } from "./ModuleManager";
-import type { StylePanelModule } from "./ModuleManager";
 
 interface StylePanelProps {
   /** 当前样式配置 */
@@ -35,10 +32,6 @@ interface StylePanelProps {
   show: boolean;
   /** 切换显示回调 */
   onToggle: () => void;
-  /** 当前模块列表（可选）。传入后启用「板块管理」区块（显隐 + 排序）。 */
-  modules?: StylePanelModule[];
-  /** 排序回调（可选）。板块管理排序完成后回传有序的模块类型数组，由上层更新 sort_order。 */
-  onReorderModules?: (orderedTypes: ModuleType[]) => void;
 }
 
 /** 通用下拉框样式 */
@@ -57,8 +50,6 @@ export function StylePanel({
   onChange,
   show,
   onToggle,
-  modules,
-  onReorderModules,
 }: StylePanelProps) {
   const [customColor, setCustomColor] = useState("");
 
@@ -66,27 +57,6 @@ export function StylePanel({
   const updateStyle = useCallback(
     <K extends keyof ResumeStyle>(key: K, value: ResumeStyle[K]) => {
       onChange({ ...style, [key]: value });
-    },
-    [style, onChange],
-  );
-
-  // ── 板块管理（可选 props） ──────────────────────────────────
-  // hidden_modules 读写容错：style.hidden_modules ?? []
-  const hiddenModules = style.hidden_modules ?? [];
-
-  // 板块列表按 sort_order 升序排列
-  const sortedModules = useMemo(
-    () => (modules ? [...modules].sort((a, b) => a.sort_order - b.sort_order) : []),
-    [modules],
-  );
-
-  // 切换显隐：合并写回 style.hidden_modules
-  const handleToggleHidden = useCallback(
-    (moduleType: string) => {
-      const hidden = style.hidden_modules ?? [];
-      const isHidden = hidden.includes(moduleType);
-      const next = isHidden ? hidden.filter((t) => t !== moduleType) : [...hidden, moduleType];
-      onChange({ ...style, hidden_modules: next });
     },
     [style, onChange],
   );
@@ -307,19 +277,6 @@ export function StylePanel({
             </span>
           </div>
         </div>
-
-        {/* 板块管理（可选：需传入 modules） */}
-        {modules && (
-          <div>
-            <label className={LABEL_CLASS + " mb-2"}>板块管理</label>
-            <ModuleManager
-              modules={sortedModules}
-              hiddenModules={hiddenModules}
-              onToggleHidden={handleToggleHidden}
-              onReorder={(orderedTypes) => onReorderModules?.(orderedTypes as ModuleType[])}
-            />
-          </div>
-        )}
 
         {/* 分隔线 */}
         <div className="border-t border-[var(--color-border)]/50 pt-4" />

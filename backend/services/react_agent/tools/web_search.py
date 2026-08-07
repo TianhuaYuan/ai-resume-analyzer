@@ -17,6 +17,7 @@
 
 import logging
 import re
+from typing import Literal
 
 import httpx
 from pydantic import BaseModel, Field
@@ -67,11 +68,25 @@ def _resolve_site_domains(site: str) -> str:
     return "|".join(domains)
 
 
+# time_range → 博查 freshness（信息时效范围）
+_TIME_RANGE_FRESHNESS: dict[str, str] = {
+    "day": "oneDay",
+    "week": "oneWeek",
+    "month": "oneMonth",
+    "year": "oneYear",
+}
+
+
 class WebSearchArgs(BaseModel):
     query: str = Field(
         ..., description="搜索关键词，如：字节跳动 后端 面经、某公司 薪资待遇、某公司 工作氛围"
     )
     count: int = Field(10, ge=1, le=50, description="返回结果数量，默认 10，范围 1-50（博查单次最多 50）")
+    time_range: Literal["day", "week", "month", "year"] | None = Field(
+        None,
+        description="信息时效范围：day 近一天 / week 近一周 / month 近一月 / year 近一年（默认 month）。"
+        "按用户问题中的时间意图选择，如「最近」「最新」→ week/day，行业行情 → month/year",
+    )
     site: str = Field(
         "",
         description="限定搜索的平台/网站，如：牛客、boss直聘、拉勾、智联、csdn、知乎；"
@@ -100,6 +115,7 @@ class WebSearchTool(Tool):
         query = (kwargs.get("query") or "").strip()
         count = min(kwargs.get("count", 10) or 10, 50)
         site = (kwargs.get("site") or "").strip()
+        time_range = kwargs.get("time_range")
 
         if not settings.BOCHA_API_KEY.strip():
             return (
@@ -108,11 +124,11 @@ class WebSearchTool(Tool):
             )
 
         try:
-            items = await self._search(query, count, site)
+            items = await self._search(query, count, site, time_range)
             # include 严格限定目标平台 0 条 → 去掉平台限定降级重试（标注来源），避免空结果
             degraded_site = False
             if not items and site:
-                items = await self._search(query, count, "")
+                items = await self._search(query, count, "", time_range)
                 degraded_site = True
         except Exception as e:
             logger.warning("web_search 搜索异常: %s", e)
@@ -127,15 +143,22 @@ class WebSearchTool(Tool):
 
         return self._render(items, query, site, degraded_site=degraded_site)
 
-    async def _search(self, query: str, count: int, site: str = "") -> list[dict]:
+    async def _search(
+        self,
+        query: str,
+        count: int,
+        site: str = "",
+        time_range: str | None = None,
+    ) -> list[dict]:
         """调博查 Web Search API，返回归一化的搜索结果列表（异常向上抛由 _execute 兜底）。"""
         headers = {
             "Authorization": f"Bearer {settings.BOCHA_API_KEY}",
             "Content-Type": "application/json",
         }
-        # 时效策略（用户确认「两者都限时效」）：面经/薪资/行情默认最近一个月
+        # 时效策略：按用户问题的时间意图映射 freshness，默认最近一个月
         # summary=true：博查返回文本摘要字段（文档：summary 属性当 summary=true 时显示）
-        payload = {"query": query, "count": count, "freshness": "oneMonth", "summary": True}
+        freshness = _TIME_RANGE_FRESHNESS.get(time_range or "month", "oneMonth")
+        payload = {"query": query, "count": count, "freshness": freshness, "summary": True}
         include = _resolve_site_domains(site)
         if include:
             payload["include"] = include

@@ -236,8 +236,9 @@ class TestEventCallback:
         assert "tool_call" in types
         assert "tool_result" in types
         assert "agent_done" in types
-        # process_trace 也应该和 callback 一致
-        assert len(result.process_trace) == len(events_received)
+        # process_trace 也应该和 callback 一致（排除不入 trace 的透传事件 tool_stream / answer_token）
+        traceable = [e for e in events_received if e["type"] not in ("tool_stream", "answer_token")]
+        assert len(result.process_trace) == len(traceable)
 
     @pytest.mark.asyncio
     async def test_callback_receives_quota_exceeded(self):

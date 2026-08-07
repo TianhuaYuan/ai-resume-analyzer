@@ -36,6 +36,13 @@ _SENTINEL = object()
 # 工具结果截断阈值（Spec A#11: summary ≤2000 字符）
 _RESULT_SUMMARY_MAX = 2000
 
+# 注入上下文的历史轮次上限 / 每条 answer 截断（多轮上下文注入）。
+# 修复：react_loop 的 history 参数之前未接线，Agent 每轮都是无上下文的单轮对话
+# （L2 摘要仅 200 字截断，方案 A/B 等结论在答案尾部时会丢失）。这里把完整轮次
+# 作为 user/assistant 消息注入，由 manage_l1_context 的 L1 预算再兜底逐出。
+_HISTORY_ROUNDS = 6
+_HISTORY_ANSWER_MAX = 4000
+
 
 def _get_tool_list(tool_mode: str) -> list[dict]:
     """获取工具列表（name + description），用于 agent_start 事件。
@@ -44,6 +51,45 @@ def _get_tool_list(tool_mode: str) -> list[dict]:
     """
     tool_classes = get_tools_for_agent()  # unified = qa + builder
     return [{"name": tc.name, "description": tc.description} for tc in tool_classes]
+
+
+async def _load_conversation_history(
+    db: AsyncSession,
+    user_id: int,
+    resume_id: int,
+    conversation_id: int | None,
+    limit: int = _HISTORY_ROUNDS,
+) -> list[dict]:
+    """加载最近 limit 轮完整问答作为对话历史（user/assistant 消息序列）。
+
+    与 L2 摘要（system prompt 里 200 字截断）不同：这里注入完整轮次，
+    模型能看到上一轮的完整结论（如"方案 A/B"），解决"回 a 无法识别选择 A"。
+    - conversation_id 提供时限定该对话，多对话不串上下文；
+    - 只取 status=complete（过滤中断空记录）；
+    - answer 截断到 _HISTORY_ANSWER_MAX，剩余由 manage_l1_context 的 L1 预算兜底。
+    """
+    filters = [
+        QAHistory.user_id == user_id,
+        QAHistory.resume_id == resume_id,
+        QAHistory.status == "complete",
+    ]
+    if conversation_id is not None:
+        filters.append(QAHistory.conversation_id == conversation_id)
+
+    result = await db.execute(
+        select(QAHistory)
+        .where(*filters)
+        .order_by(QAHistory.created_at.desc())
+        .limit(limit)
+    )
+    records = list(reversed(result.scalars().all()))  # 倒序取最近 → 正序注入
+
+    history: list[dict] = []
+    for r in records:
+        history.append({"role": "user", "content": r.question or ""})
+        ans = (r.answer or "").strip()
+        history.append({"role": "assistant", "content": ans[: _HISTORY_ANSWER_MAX]})
+    return history
 
 
 def _transform_event(event: dict) -> dict:
@@ -212,11 +258,22 @@ async def react_loop_stream(
         """后台运行 react_loop，结束后放入 SENTINEL 标记完成。"""
         nonlocal loop_result, loop_error
         try:
+            # 多轮上下文注入：加载该对话（或该简历）最近几轮完整问答传给 react_loop，
+            # 让 Agent 能看到上一轮结论（如"方案 A/B"）——修复"会话记忆不进入上下文"
+            try:
+                history = await _load_conversation_history(
+                    db, user_id, resume_id, conversation_id
+                )
+            except Exception:
+                # 历史加载失败（如测试用 mock db / 查询异常）降级为空，不阻断主流程
+                logger.warning("多轮历史加载失败，降级为空（不影响回答）", exc_info=True)
+                history = []
             loop_result = await react_loop(
                 db=db,
                 user_id=user_id,
                 resume_id=resume_id,
                 question=question,
+                history=history,
                 event_callback=event_callback,
                 tool_mode=tool_mode,
             )

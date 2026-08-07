@@ -146,12 +146,16 @@ export default function ChikoritaTemplate({
     <div className="resume-template chikorita-template">
       <style>{TEMPLATE_BASE_STYLES + STYLES}</style>
       <div className="chikorita-layout">
-        <div className="chikorita-sidebar">
-          {sidebar.map((mod) => renderSection(mod, opts))}
-        </div>
-        <div className="chikorita-main">
-          {main.map((mod) => renderSection(mod, opts))}
-        </div>
+        {sidebar.length > 0 && (
+          <div className="chikorita-sidebar" style={main.length === 0 ? { width: "100%" } : undefined}>
+            {sidebar.map((mod) => renderSection(mod, opts))}
+          </div>
+        )}
+        {main.length > 0 && (
+          <div className="chikorita-main">
+            {main.map((mod) => renderSection(mod, opts))}
+          </div>
+        )}
       </div>
     </div>
   );

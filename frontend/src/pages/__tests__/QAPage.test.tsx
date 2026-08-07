@@ -48,7 +48,7 @@ vi.mock("../../api/builder", () => ({
   createBuilderResume: vi.fn(async () => ({ id: 43, filename: "未命名简历" })),
 }));
 
-import { getHistory, clearHistory, deleteQa, submitFeedback, getQuota } from "../../api/qa";
+import { getHistory, clearHistory, deleteQa, submitFeedback, getQuota, askAgentStream } from "../../api/qa";
 
 function renderPage(route = "/resumes/42") {
   // P2-12：测试路由与生产 App.tsx 保持一致（/resumes/:id）
@@ -317,5 +317,86 @@ describe("QAPage 搜索防抖 (Task 4)", () => {
     });
 
     expect(screen.getByText("没有匹配的问答")).toBeInTheDocument();
+  });
+});
+
+describe("QAPage AI 能力入口触发（回归：location.state 死循环）", () => {
+  it("携带 question 进入只发送一次，回答完成后 asking 复位不重发", async () => {
+    // 模拟后端完整问答周期：收到 agent_done → onDone 结束流（asking 复位 false）。
+    // 用 setTimeout 延迟触发，模拟真实 LLM 生成耗时（毫秒级），
+    // 确保对话加载 / getHistory 先完成，避免 loadHistory 清掉刚完成的消息。
+    vi.mocked(askAgentStream).mockImplementation(
+      (_resumeId, _q, onEvent, _onError, onDone) => {
+        setTimeout(() => {
+          onEvent({
+            type: "agent_done",
+            qa_id: 1,
+            answer: "诊断完成",
+            process_trace: { rounds: 1, tool_sequence: [], duration_ms: 1 },
+          });
+          onDone?.();
+        }, 50);
+        return () => {};
+      },
+    );
+
+    render(
+      <AppChatProvider>
+        {/* 模拟 AI 能力页 / FloatingAIPanel 的 navigate("/qa", { state: { question } }) */}
+        <MemoryRouter
+          initialEntries={[{ pathname: "/qa", state: { question: "帮我诊断这份简历" } }]}
+        >
+          <Routes>
+            <Route path="/qa" element={<QAPage />} />
+          </Routes>
+        </MemoryRouter>
+      </AppChatProvider>,
+    );
+
+    // 简历 id=42 就绪后应自动发送一次该问题
+    await waitFor(() => {
+      expect(askAgentStream).toHaveBeenCalledTimes(1);
+    });
+    expect(askAgentStream.mock.calls[0][0]).toBe(42);
+    expect(askAgentStream.mock.calls[0][1]).toBe("帮我诊断这份简历");
+
+    // 等待问答周期结束（agent_done → asking=false）后，不得重复发送（死循环回归点）
+    await waitFor(() => {
+      expect(screen.getByText("诊断完成")).toBeInTheDocument();
+    });
+    expect(askAgentStream).toHaveBeenCalledTimes(1);
+  });
+
+  it("进入时历史加载晚到，新问题也排在历史之后（底部）而非顶部", async () => {
+    // 历史含 1 条旧消息；askAgentStream 保持流式（不触发 agent_done，asking 一直为 true），
+    // 使 loadHistory 的 setChat 在 sendQuestion 追加消息之后执行——复现"消息插到顶部"的竞态
+    vi.mocked(getHistory).mockResolvedValue({
+      items: [
+        { id: 1, question: "历史问题", answer: "历史答案", created_at: "2026-07-01" },
+      ],
+      total: 1,
+    });
+    vi.mocked(askAgentStream).mockImplementation(() => () => {});
+
+    const { container } = render(
+      <AppChatProvider>
+        <MemoryRouter
+          initialEntries={[{ pathname: "/qa", state: { question: "帮我诊断这份简历" } }]}
+        >
+          <Routes>
+            <Route path="/qa" element={<QAPage />} />
+          </Routes>
+        </MemoryRouter>
+      </AppChatProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("历史问题")).toBeInTheDocument();
+      expect(screen.getByText("帮我诊断这份简历")).toBeInTheDocument();
+    });
+
+    // 新问题必须排在历史消息之后（底部），而非插到顶部
+    const text = container.textContent ?? "";
+    expect(text.indexOf("历史问题")).toBeLessThan(text.indexOf("帮我诊断这份简历"));
   });
 });

@@ -682,13 +682,16 @@ def get_content_items(content: dict | BaseModel) -> list[dict]:
 
     新格式: content.items
     旧格式: content.entries 或 content.categories（skills）
+    过滤 hidden 条目（编辑端 EyeSlash 隐藏的条目不输出，修复"隐藏功能无法使用"）。
     """
     if isinstance(content, BaseModel):
         content = content.model_dump()
     if "items" in content:
-        return content["items"] if isinstance(content["items"], list) else []
+        items = content["items"] if isinstance(content["items"], list) else []
+        return _visible_items(items)
     if "entries" in content:
-        return content["entries"] if isinstance(content["entries"], list) else []
+        items = content["entries"] if isinstance(content["entries"], list) else []
+        return _visible_items(items)
     if "categories" in content:
         # skills 旧格式：展平为单条列表
         items = []
@@ -697,6 +700,11 @@ def get_content_items(content: dict | BaseModel) -> list[dict]:
                 items.append({"name": name, "category": cat.get("name", "")})
         return items
     return []
+
+
+def _visible_items(items: list) -> list[dict]:
+    """过滤 hidden 条目（渲染/导出时隐藏的条目不输出）。"""
+    return [i for i in items if isinstance(i, dict) and not i.get("hidden")]
 
 
 def get_content_title(content: dict | BaseModel, module_type: str) -> str:

@@ -150,12 +150,16 @@ export default function SlateTemplate({
     <div className="resume-template slate-template">
       <style>{TEMPLATE_BASE_STYLES + STYLES}</style>
       <div className="slate-layout">
-        <div className="slate-sidebar">
-          {sidebar.map((mod) => renderSection(mod, opts))}
-        </div>
-        <div className="slate-main">
-          {main.map((mod) => renderSection(mod, opts))}
-        </div>
+        {sidebar.length > 0 && (
+          <div className="slate-sidebar" style={main.length === 0 ? { width: "100%" } : undefined}>
+            {sidebar.map((mod) => renderSection(mod, opts))}
+          </div>
+        )}
+        {main.length > 0 && (
+          <div className="slate-main">
+            {main.map((mod) => renderSection(mod, opts))}
+          </div>
+        )}
       </div>
     </div>
   );

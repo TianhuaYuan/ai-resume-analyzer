@@ -14,6 +14,8 @@ interface SectionWrapperProps {
   moduleType: ModuleType;
   interactive?: boolean;
   onSelectSection?: (moduleType: ModuleType) => void;
+  /** 是否显示模块标题（条目级分页时续页不显示标题，标题只跟第一条） */
+  showTitle?: boolean;
   children: ReactNode;
 }
 
@@ -21,6 +23,7 @@ export function SectionWrapper({
   moduleType,
   interactive = false,
   onSelectSection,
+  showTitle = true,
   children,
 }: SectionWrapperProps) {
   const title = MODULE_TITLES[moduleType] ?? moduleType;
@@ -34,7 +37,7 @@ export function SectionWrapper({
       data-resume-section-id={moduleType}
       onClick={handleClick}
     >
-      {moduleType !== "basic_info" && <h2 className="module-title">{title}</h2>}
+      {showTitle && moduleType !== "basic_info" && <h2 className="module-title">{title}</h2>}
       <div className="module-content">{children}</div>
     </section>
   );

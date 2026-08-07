@@ -35,14 +35,15 @@
 
 import { useEffect, useMemo, type CSSProperties } from "react";
 import { ResumeTemplateView } from "../templates";
-import { isMultiColumnTemplate } from "../templates/registry";
+import { isMultiColumnTemplate, SIDEBAR_TYPES } from "../templates/registry";
 import {
   usePagination,
-  packPages,
+  packByItems,
   computeFitScale,
   A4_WIDTH_PX,
   A4_HEIGHT_PX,
   MM_TO_PX,
+  type PageSlice,
 } from "./usePagination";
 import type { ModuleType, ResumeModule, ResumeStyle } from "../../api/builder";
 
@@ -72,6 +73,20 @@ function resolvePagePadding(margin: string | undefined): number {
   const value = parseFloat(raw) || 0;
   const px = /px$/i.test(raw) ? value : value * MM_TO_PX;
   return Math.max(px, 8);
+}
+
+/** 把一页的 slices（含条目区间/标题标志）转为带 itemRange/showTitle 的 ResumeModule[] */
+function slicesToModules(
+  slices: PageSlice[],
+  moduleMap: Map<string, ResumeModule>,
+): ResumeModule[] {
+  const out: ResumeModule[] = [];
+  for (const s of slices) {
+    const m = moduleMap.get(s.moduleType);
+    if (!m) continue;
+    out.push({ ...m, itemRange: s.itemRange, showTitle: s.showTitle });
+  }
+  return out;
 }
 
 export function PaginatedResumePreview({
@@ -128,14 +143,26 @@ export function PaginatedResumePreview({
     [fitPages, effectiveHeight, availableHeight],
   );
 
-  // ② 装箱（内容被压缩 scaleFactor 后，单页能容纳的原始高度放大为 available / scaleFactor）
+  // ② 装箱（条目级流式分页，借鉴 reactive-resume/Magic-Resume：条目可跨页、每页尽量填满）
   //
-  // 双栏模板例外：垂直累加会把两栏串成一列、页数算成两倍，
-  // 因此这类模板暂不分页，全部内容渲染在一页（配合自动压缩使用）。
+  // 单栏：packByItems 按条目装箱——列表模块按条目拆分（标题跟第一条，其余条目流入后续页），
+  // 超长 section 不再独占一页被裁，上一页也不再留大片空白。
+  // 双栏：侧栏流与主栏流各自按条目装箱，页数取最大值逐页配对。
   const pages = useMemo(() => {
-    if (metrics.length === 0) return [] as string[][];
-    if (isMultiColumn) return [metrics.map((m) => m.id)];
-    return packPages(metrics, availableHeight / fit.scaleFactor);
+    if (metrics.length === 0) return [] as PageSlice[][];
+    const capacity = availableHeight / fit.scaleFactor;
+    if (isMultiColumn) {
+      const sidebar = metrics.filter((m) => SIDEBAR_TYPES.has(m.id));
+      const main = metrics.filter((m) => !SIDEBAR_TYPES.has(m.id));
+      const sidebarPages = packByItems(sidebar, capacity);
+      const mainPages = packByItems(main, capacity);
+      const count = Math.max(sidebarPages.length, mainPages.length);
+      return Array.from({ length: count }, (_, i) => [
+        ...(sidebarPages[i] ?? []),
+        ...(mainPages[i] ?? []),
+      ]);
+    }
+    return packByItems(metrics, capacity);
   }, [metrics, availableHeight, fit.scaleFactor, isMultiColumn]);
 
   const pageCount = pages.length;
@@ -201,10 +228,8 @@ export function PaginatedResumePreview({
       )}
 
       {/* ── 可见分页层：每页一张独立 A4 白纸 ── */}
-      {pages.map((sectionIds, pageIndex) => {
-        const pageModules = sectionIds
-          .map((id) => moduleMap.get(id))
-          .filter((m): m is ResumeModule => !!m);
+      {pages.map((slices, pageIndex) => {
+        const pageModules = slicesToModules(slices, moduleMap);
         return (
           <figure key={pageIndex} className="shrink-0 m-0">
             <figcaption className="mb-1 text-[10px] text-[var(--color-text-muted)] text-center select-none">

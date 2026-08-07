@@ -11,6 +11,7 @@
  */
 
 import { useNavigate } from "react-router-dom";
+import { useAppChat } from "../context/AppChatContext";
 import {
   FirstAidKit,
   Scales,
@@ -306,9 +307,14 @@ function CapabilityCardView({ card, onTrigger }: { card: CapabilityCard; onTrigg
  */
 export default function AICapabilitiesPage() {
   const navigate = useNavigate();
+  // 携带当前上下文中已选中的简历（QAPage 上次选中后写回），
+  // 让能力作用到用户真正期望的那份简历，而不是 QAPage 自动选的第一份。
+  const { resumeId: ctxResumeId } = useAppChat();
 
   const handleTrigger = (question: string) => {
-    navigate("/qa", { state: { question } });
+    navigate("/qa", {
+      state: ctxResumeId ? { question, resumeId: ctxResumeId } : { question },
+    });
   };
 
   return (

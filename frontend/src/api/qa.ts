@@ -230,6 +230,8 @@ export interface AgentSSEEvent {
     | "tool_result"
     | "tool_error"
     | "tool_stream"
+    // 最终轮答案分块实时推送（打字机效果，见后端 loop._stream_final_round）
+    | "answer_token"
     | "agent_done"
     | "quota_exceeded"
     | "error"

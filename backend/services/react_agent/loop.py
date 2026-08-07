@@ -52,6 +52,30 @@ MAX_ROUNDS = settings.REACT_MAX_TOOL_ROUNDS  # Spec A#6: 6 轮工具上限（con
 # 同一工具连续失败超限即终止本轮，成功一次即清零
 MAX_TOOL_RETRIES = 3
 AGENT_CONCURRENCY_LIMIT = 5
+# 工具实际执行墙钟超时（秒）：工具内部外部 API（embedding/rerank/LLM/网络）挂起时
+# 兜底超时降级，避免「调用工具后永久卡住」只能等会话级 REACT_MAX_DURATION_SEC 强断。
+# 按工具差异化：深度 agentic 工具（多轮 LLM + Reflexion 循环）正常就需要 >60s，
+# 一刀切 60s 会误杀（如 answer_from_index 实测 ~58s+）。轻量检索工具保持短超时防真卡。
+DEFAULT_TOOL_EXEC_TIMEOUT_SEC = 60
+LONG_TOOL_EXEC_TIMEOUT_SEC = 150  # 需 < REACT_MAX_DURATION_SEC(180)，留会话级余量
+LONG_EXEC_TOOLS = {
+    "answer_from_index",  # 深度 agentic RAG：改写→检索→重排→生成→反思（≤2 轮）
+    "interview_coach",    # 多轮模拟面试（一问一答推进）
+    "jd_match",           # 简历×JD LLM 匹配 + 6-block 报告
+    "diagnose_resume",    # 多维度简历诊断
+    "rewrite_resume",     # 整份简历重写
+    "rewrite_star",       # STAR 逐条改写
+    "translate",          # 中英文互译
+}
+
+
+def _tool_exec_timeout(tool_name: str) -> float:
+    """取工具执行超时：深度工具给足时间，其余用默认短超时防外部 API 挂起。"""
+    return (
+        LONG_TOOL_EXEC_TIMEOUT_SEC
+        if tool_name in LONG_EXEC_TOOLS
+        else DEFAULT_TOOL_EXEC_TIMEOUT_SEC
+    )
 
 # 中间轮用 JUDGE_MODEL（flash 快），最终轮用 CHAT_MODEL
 MIDDLE_MODEL = "judge"
@@ -226,10 +250,10 @@ async def react_loop(
     async def _emit(event: dict) -> None:
         """写入 process_trace 并调用事件回调（供 streaming 层使用）。
 
-        tool_stream 为逐 token 高频事件，只透传前端、不入 process_trace，
-        避免撑爆事件日志与 agent_done 的紧凑 trace。
+        tool_stream / answer_token 为逐 token（分块）高频透传事件，只推前端、
+        不入 process_trace，避免撑爆事件日志与 agent_done 的紧凑 trace。
         """
-        if event.get("type") != "tool_stream":
+        if event.get("type") not in ("tool_stream", "answer_token"):
             process_trace.append(event)
         if event_callback:
             await event_callback(event)
@@ -766,9 +790,19 @@ async def _stream_final_round(
     _llm_t0 = time.perf_counter()
     _first_chunk = True
 
+    # 答案实时推送分块参数：LLM 单 token 快但整段答案生成需数秒，
+    # 若一次性等 agent_done 才推送，前端"最后一步组织回答"长时间无内容显示。
+    # 按字符 / 时间双阈值分块 emit answer_token，前端打字机效果且事件数可控。
+    _ANSWER_CHUNK_CHARS = 48
+    _ANSWER_CHUNK_INTERVAL = 0.06
+
     async def _consume() -> None:
         """消费流式事件（DeepInterview _guarded 对照：整个流包一层墙钟超时）。"""
         nonlocal round_usage, _first_chunk
+        answer_chunk: list[str] = []
+        answer_chunk_len = 0
+        _last_emit_t = time.perf_counter()
+
         async for ev in llm_generate_with_tools_stream(
             messages=messages,
             tools=None,
@@ -787,11 +821,27 @@ async def _stream_final_round(
                 await emit({"type": "agent_thought", "content": ev["content"]})
             elif et == "token":
                 content_parts.append(ev["content"])
+                # 答案分块实时推送（打字机效果），避免最后一步长时间无内容
+                answer_chunk.append(ev["content"])
+                answer_chunk_len += len(ev["content"])
+                _now = time.perf_counter()
+                if (
+                    answer_chunk_len >= _ANSWER_CHUNK_CHARS
+                    or _now - _last_emit_t >= _ANSWER_CHUNK_INTERVAL
+                ):
+                    await emit({"type": "answer_token", "content": "".join(answer_chunk)})
+                    answer_chunk = []
+                    answer_chunk_len = 0
+                    _last_emit_t = _now
             elif et == "usage":
                 round_usage = {
                     "prompt_tokens": ev.get("prompt_tokens", 0),
                     "completion_tokens": ev.get("completion_tokens", 0),
                 }
+
+        # 流结束：flush 剩余的答案分块
+        if answer_chunk_len:
+            await emit({"type": "answer_token", "content": "".join(answer_chunk)})
 
     try:
         await asyncio.wait_for(_consume(), timeout=settings.REACT_LLM_TIMEOUT)
@@ -882,11 +932,18 @@ async def _execute_tool_call(
     # D1: 无事件通道（测试/无前端）时无用户可确认，审批门退化为直接执行（保持旧行为）
     if emit is None and tool.is_approval_required():
         tool.mark_approval_granted()
+    _tool_t0 = time.perf_counter()
+    _timeout = _tool_exec_timeout(tc.name)
     try:
-        result = await tool.execute(**args)
+        # 工具执行墙钟超时护栏（外部 API 挂起不卡死）：超时返回降级提示并计入坏调用，
+        # 由 A3 per-tool 重试预算控制连续超时上限（避免反复重试同一挂起工具烧 token）。
+        result = await asyncio.wait_for(
+            tool.execute(**args), timeout=_timeout
+        )
         # D1: 命中审批拦截钩子 → 走审批门（发射 approval_request → 挂起等决议）
         if isinstance(result, ApprovalRequired):
-            return await _handle_tool_approval(
+            approval_start = time.perf_counter()
+            outcome = await _handle_tool_approval(
                 tc,
                 tool,
                 result,
@@ -895,22 +952,45 @@ async def _execute_tool_call(
                 emit=emit,
                 approval_lock=approval_lock,
             )
+            logger.info(
+                "tool_exec: %s 实际执行=%.0fms 审批等待=%.0fms",
+                tc.name,
+                (approval_start - _tool_t0) * 1000,
+                (time.perf_counter() - approval_start) * 1000,
+            )
+            return outcome
+        logger.info(
+            "tool_exec: %s %.0fms", tc.name, (time.perf_counter() - _tool_t0) * 1000
+        )
         return (
             result,
             False,
             getattr(tool, "sources", []),
             getattr(tool, "last_usage", {"prompt_tokens": 0, "completion_tokens": 0}),
         )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "工具执行超时（%ss）: %s user=%d", _timeout, tc.name, user_id
+        )
+        return (
+            f"⛔ 工具 {tc.name} 执行超时（超过 {_timeout}s），请稍后重试或换一种方式。",
+            True,  # 超时算坏调用 → A3 累计重试预算，连续超限终止本轮
+            [],
+            {"prompt_tokens": 0, "completion_tokens": 0},
+        )
     except ToolRetryError as e:
         # A3 契约化：可重试错误（参数格式等）→ 结构化错误文本回灌，累计坏调用
         logger.warning("工具可重试失败: %s, args=%s, error=%s", tc.name, tc.arguments, e)
+        logger.info("tool_exec: %s %.0fms (retry)", tc.name, (time.perf_counter() - _tool_t0) * 1000)
         return f"[参数或状态错误] {e}", True, [], {"prompt_tokens": 0, "completion_tokens": 0}
     except ToolFailed as e:
         # A3 契约化：终端失败（业务确定性失败）→ 不累计坏调用，LLM 应换路径
         logger.info("工具终端失败（不重试）: %s, error=%s", tc.name, e)
+        logger.info("tool_exec: %s %.0fms (failed)", tc.name, (time.perf_counter() - _tool_t0) * 1000)
         return f"⛔ {e}", False, [], {"prompt_tokens": 0, "completion_tokens": 0}
     except Exception as e:
         logger.warning("工具执行失败: %s, args=%s, error=%s", tc.name, tc.arguments, e)
+        logger.info("tool_exec: %s %.0fms (error)", tc.name, (time.perf_counter() - _tool_t0) * 1000)
         return f"工具执行失败: {e}", True, [], {"prompt_tokens": 0, "completion_tokens": 0}
 
 
@@ -965,7 +1045,24 @@ async def _handle_tool_approval(
 
             if decision == "approved":
                 tool.mark_approval_granted()
-                result = await tool.execute(**approval.arguments)
+                _approval_timeout = _tool_exec_timeout(approval.tool_name)
+                try:
+                    result = await asyncio.wait_for(
+                        tool.execute(**approval.arguments),
+                        timeout=_approval_timeout,
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "审批通过后工具执行超时（%ss）: %s",
+                        _approval_timeout,
+                        approval.tool_name,
+                    )
+                    return (
+                        f"⛔ 工具 {approval.tool_name} 执行超时（超过 {_approval_timeout}s），请稍后重试。",
+                        True,
+                        [],
+                        {"prompt_tokens": 0, "completion_tokens": 0},
+                    )
                 return (
                     result,
                     False,

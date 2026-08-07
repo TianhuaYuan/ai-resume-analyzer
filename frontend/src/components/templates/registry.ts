@@ -42,7 +42,8 @@ export interface TemplateConfig {
  *
  * 双栏模板的 section 分布在左右两栏，垂直累加装箱（PaginatedResumePreview）
  * 对它无效 —— 累加高度会把左右两栏当成一列串起来，页数算成实际的两倍。
- * 这些模板暂按单页渲染（不分页），后续如需支持需实现按栏分别装箱。
+ * 分页改为「按栏分别装箱」：侧栏流与主栏流各自装箱后取最大页数逐页配对
+ * （见 PaginatedResumePreview），这样每页都渲染完整的双栏结构且内容不被裁。
  */
 export const MULTI_COLUMN_TEMPLATES = new Set(GENERATED_MULTI_COLUMN_IDS);
 
@@ -50,6 +51,19 @@ export const MULTI_COLUMN_TEMPLATES = new Set(GENERATED_MULTI_COLUMN_IDS);
 export function isMultiColumnTemplate(templateId: string | null | undefined): boolean {
   return MULTI_COLUMN_TEMPLATES.has(templateId ?? "");
 }
+
+/**
+ * 双栏模板侧栏模块类型（对齐后端 render_resume 的 sidebar_types）。
+ * 7 套双栏模板（azurill/teal/gengar/slate/orange/chikorita/golden-elegant）侧栏集合一致，
+ * 抽成共享常量供分页按栏装箱复用。
+ */
+export const SIDEBAR_TYPES = new Set<string>([
+  "basic_info",
+  "skills",
+  "language",
+  "social_links",
+  "interests",
+]);
 
 export interface TemplateComponentProps {
   modules: ResumeModule[];

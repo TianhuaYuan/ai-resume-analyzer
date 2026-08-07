@@ -73,16 +73,34 @@ export async function exportResumeToBrowserPrint(options?: {
   const containerShell = (containerEl?.cloneNode(false) as HTMLElement) ?? document.createElement("div");
   if (!containerEl) containerShell.className = "resume-container";
 
-  // 按 DOM 顺序汇总所有页的 section（去重：同一 moduleType 只保留第一次出现）
-  const seen = new Set<string>();
+  // 汇总所有页的 section，按 moduleType 合并条目。
+  // 条目级分页后同一 section 分散在连续页（每页只含部分条目、续页无标题），
+  // 简单去重会丢续页条目 —— 改为把各页的 [data-resume-item-index] 合并到第一个节点，
+  // 生成每个 section 标题一次 + 全部条目按全局下标排序的完整单长 DOM。
+  const nodesByType = new Map<string, HTMLElement[]>();
   source.querySelectorAll<HTMLElement>("[data-resume-section-id]").forEach((node) => {
     const id = node.dataset.resumeSectionId ?? "";
-    if (id && seen.has(id)) return;
-    if (id) seen.add(id);
-    const c = node.cloneNode(true) as HTMLElement;
-    c.classList.remove("module-interactive");
-    containerShell.appendChild(c);
+    if (!id) return;
+    const list = nodesByType.get(id);
+    if (list) list.push(node);
+    else nodesByType.set(id, [node]);
   });
+  for (const nodes of nodesByType.values()) {
+    const main = nodes[0].cloneNode(true) as HTMLElement;
+    main.classList.remove("module-interactive");
+    const content = main.querySelector<HTMLElement>(".module-content");
+    if (content) {
+      content.querySelectorAll<HTMLElement>("[data-resume-item-index]").forEach((el) => el.remove());
+      const allItems = nodes
+        .flatMap((n) => Array.from(n.querySelectorAll<HTMLElement>("[data-resume-item-index]")))
+        .sort(
+          (a, b) =>
+            (Number(a.dataset.resumeItemIndex) || 0) - (Number(b.dataset.resumeItemIndex) || 0),
+        );
+      for (const el of allItems) content.appendChild(el.cloneNode(true));
+    }
+    containerShell.appendChild(main);
+  }
 
   templateShell.appendChild(containerShell);
   shell.appendChild(templateShell);

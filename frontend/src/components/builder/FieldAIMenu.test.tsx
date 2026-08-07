@@ -24,7 +24,7 @@ describe("FieldAIMenu", () => {
     mockRewrite.mockReset();
   });
 
-  it("渲染优化/检查/改写三个操作按钮", async () => {
+  it("直接渲染优化/检查/改写三个操作按钮（不折叠）", () => {
     render(
       <FieldAIMenu
         resumeId={1}
@@ -33,17 +33,18 @@ describe("FieldAIMenu", () => {
         onApplyText={() => {}}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "AI 优化/改写此条内容" }));
     expect(screen.getByRole("button", { name: "优化此条内容" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "检查此条内容" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "按指令改写此条内容" })).toBeInTheDocument();
   });
 
-  it("空文本时禁用入口（调用方传 disabled）", () => {
+  it("空文本时禁用操作按钮（调用方传 disabled）", () => {
     render(
       <FieldAIMenu resumeId={1} moduleType="work_experience" text="" disabled onApplyText={() => {}} />,
     );
-    expect(screen.getByRole("button", { name: "AI 优化/改写此条内容" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "优化此条内容" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "检查此条内容" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "按指令改写此条内容" })).toBeDisabled();
   });
 
   it("点击检查触发 aiCheck 并展示问题列表", async () => {
@@ -65,7 +66,6 @@ describe("FieldAIMenu", () => {
         onApplyText={() => {}}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "AI 优化/改写此条内容" }));
     fireEvent.click(screen.getByRole("button", { name: "检查此条内容" }));
 
     await waitFor(() => {
@@ -80,7 +80,6 @@ describe("FieldAIMenu", () => {
     render(
       <FieldAIMenu resumeId={1} moduleType="work_experience" text={DEFAULT_TEXT} onApplyText={onApply} />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "AI 优化/改写此条内容" }));
     fireEvent.click(screen.getByRole("button", { name: "优化此条内容" }));
 
     await waitFor(() => {
@@ -95,7 +94,6 @@ describe("FieldAIMenu", () => {
     render(
       <FieldAIMenu resumeId={1} moduleType="work_experience" text={DEFAULT_TEXT} onApplyText={() => {}} />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "AI 优化/改写此条内容" }));
     fireEvent.click(screen.getByRole("button", { name: "按指令改写此条内容" }));
 
     fireEvent.change(screen.getByLabelText("改写指令"), { target: { value: "更简洁专业" } });

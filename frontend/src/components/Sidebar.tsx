@@ -157,6 +157,22 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
     }
   };
 
+  /**
+   * 选择对话：任意页面点击侧边栏会话都可用。
+   * 在 /qa 页 → 直接派发事件由 QAPage 处理；其他页面 → 先跳转 /qa
+   * 并携带 conversationId（QAPage 挂载后经 location.state 选中该会话）。
+   */
+  const handleSelectConversation = useCallback(
+    (conversationId: number) => {
+      if (location.pathname !== "/qa") {
+        navigate("/qa", { state: { conversationId } });
+      } else {
+        dispatchSelectConversation(conversationId);
+      }
+    },
+    [location.pathname, navigate],
+  );
+
   if (!user) return null;
 
   return (
@@ -300,7 +316,7 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
                               }`}
                           >
                             <button
-                              onClick={() => dispatchSelectConversation(conv.id)}
+                              onClick={() => handleSelectConversation(conv.id)}
                               className="flex-1 flex items-center gap-2 min-w-0 px-2.5 py-1.5 text-left cursor-pointer"
                               title={conv.title}
                             >

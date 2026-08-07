@@ -40,6 +40,9 @@ _MAX_RETRIES: int = 1
 # 会先消耗大量 token 思考再输出 content，4000 会被推理吃光导致 content 为空；
 # 16000 实测可完整输出（推理 + JSON 约 7500 tokens），真实简历稳定反解析。
 _MAX_TOKENS: int = 16000
+# 实际传给 LLM 的 max_tokens：对齐 DeepSeek 推理模型 API 上限（8K），
+# 超限（16000）会被 API 直接 400 拒绝 → 系统性反解析失败。实测 7500 足够。
+_PARSE_MAX_TOKENS: int = min(_MAX_TOKENS, 8000)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -613,14 +616,19 @@ async def parse_text_to_modules(
         error_feedback = _build_error_feedback(errors_history) if errors_history else None
         user_prompt = _build_user_prompt(indexed_text, error_feedback)
 
-        # 调 LLM
+        # 调 LLM（传输/超时错误经 with_retry 指数退避重试，避免一次失败就整个物化失败；
+        # temperature 传 None（不传给 API）规避推理模型对 temperature 参数的 400 拒绝）
         try:
-            response = await llm_generate(
+            from core.retry import RetryBudget, with_retry
+
+            response = await with_retry(
+                llm_generate,
                 system=_SYSTEM_PROMPT,
                 user=user_prompt,
-                temperature=0.1,
-                max_tokens=_MAX_TOKENS,
+                temperature=None,
+                max_tokens=_PARSE_MAX_TOKENS,
                 user_id=user_id,
+                budget=RetryBudget(max_retries=2, base_delay=1.5, timeout=90),
             )
         except Exception as e:
             logger.exception(

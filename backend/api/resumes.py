@@ -1081,7 +1081,8 @@ async def _load_module_fact_source(
         for m in modules:
             if m.module_type == module_type:
                 content = sanitize_for_ai(m.content) if isinstance(m.content, dict) else m.content
-                return _json.dumps(content, ensure_ascii=False)[:2000]
+                # 1200 字符截断：事实源仅供约束不新增事实，过长反而拖慢 prefill
+                return _json.dumps(content, ensure_ascii=False)[:1200]
     except HTTPException:
         return None
     except Exception:
@@ -1178,6 +1179,7 @@ async def ai_optimize(
                 f"请优化以下文本：\n\n{body.text}"
             ),
             temperature=0.3,
+            max_tokens=800,  # 条目级文本较短，限制输出防模型超长生成拖慢响应
             user_id=current_user.id,
         )
         return {"optimized_text": result, "original_text": body.text}
@@ -1237,6 +1239,7 @@ async def ai_check(
             system=system_prompt,
             user=f"{user_context}\n\n请检查以下文本：\n\n{body.text}",
             temperature=0.2,
+            max_tokens=500,  # 检查只输出 JSON issues，限制输出防超长生成
             user_id=current_user.id,
         )
 
@@ -1313,6 +1316,7 @@ async def ai_rewrite(
                 f"请改写以下文本：\n\n{body.text}"
             ),
             temperature=0.4,
+            max_tokens=800,  # 条目级文本较短，限制输出防模型超长生成拖慢响应
             user_id=current_user.id,
         )
         return {"rewritten_text": result, "original_text": body.text}

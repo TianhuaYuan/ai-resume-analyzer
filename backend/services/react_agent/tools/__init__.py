@@ -548,6 +548,54 @@ class CompareResumesTool(Tool):
     args_model = CompareResumesArgs
     category = "qa"
 
+    # 综合裁决 system prompt：要求模型横向对比（而非逐份复述），输出裁决
+    _COMPARE_SYSTEM = (
+        "你是一名资深的招聘专家和简历评审顾问。用户给了多份简历的提取摘要，"
+        "需要你真正地横向对比它们，而不是重复罗列每份简历的内容。请输出：\n"
+        "1. 各简历核心优势与短板（每份一句话）\n"
+        "2. 横向对比：按技能 / 项目 / 经验 / 评分维度，谁强谁弱\n"
+        "3. 综合裁决：给出竞争力排名与推荐理由\n"
+        "要求：中文、结构化 markdown、精炼（总字数 ≤ 600 字），不要逐字复述简历内容。"
+    )
+
+    async def _build_verdict(self, resumes, dimensions, id_to_name) -> str:
+        """把多份简历的关键内容拼进一次 LLM 调用，让模型综合裁决（打破逐份隔离）。
+
+        原 compare_resumes 只并列各简历独立分析，模型从没见过全部简历做比较；
+        这里追加一次综合对比调用，失败时降级保留维度明细（不阻断对比）。
+        """
+        try:
+            sections = []
+            for r in resumes:
+                rid = str(r["id"])
+                lines = [f"### {r['filename']}（ID {r['id']}）"]
+                for dim in ("summary", "skills", "experience", "score", "projects"):
+                    val = dimensions.get(dim, {}).get(rid)
+                    if val is None:
+                        continue
+                    if dim == "score" and isinstance(val, dict):
+                        val = _json_std.dumps(val, ensure_ascii=False)
+                    elif isinstance(val, list):
+                        val = "、".join(str(x) for x in val)
+                    lines.append(f"- {dim}: {str(val)[:600]}")
+                sections.append("\n".join(lines))
+
+            user = (
+                "以下是待对比的简历摘要（来自同一个人的多份简历，或不同候选人的简历）：\n\n"
+                + "\n\n".join(sections)
+                + "\n\n请给出横向对比与综合裁决。"
+            )
+            verdict = await llm_generate(
+                system=self._COMPARE_SYSTEM,
+                user=user,
+                temperature=0.2,
+                user_id=self.user_id,
+            )
+            return (verdict or "").strip()
+        except Exception as e:
+            logger.warning("综合裁决生成失败（忽略，保留维度明细）: %s", e)
+            return ""
+
     async def _execute(self, **kwargs) -> str:
         resume_ids = kwargs.get("resume_ids")
 
@@ -567,9 +615,14 @@ class CompareResumesTool(Tool):
         dimensions = result.get("dimensions", {})
         id_to_name = {r["id"]: r["filename"] for r in resumes}
 
+        # 综合裁决：一次 LLM 横向对比（真正"对比"，而非并列展示）
+        verdict = await self._build_verdict(resumes, dimensions, id_to_name)
+
         lines = [f"对比 {len(resumes)} 份简历："]
         for r in resumes:
             lines.append(f"  - {r['filename']} (ID: {r['id']})")
+        if verdict:
+            lines.append("\n## 综合裁决\n" + verdict)
 
         for dim, values in dimensions.items():
             lines.append(f"\n## {dim}")
@@ -1271,6 +1324,12 @@ async def _replace_all_modules_short_txn(
         resume.content_hash = hashlib.sha256(parsed_text.encode("utf-8")).hexdigest()
         resume.updated_at = datetime.now(timezone.utc)
 
+        # 草稿路径：改写内容待用户确认（未点"完成"发布），置为 draft。
+        # 不设 status 的话，ready 简历被 Agent 改写后 status 仍 ready 但 parsed_text
+        # 已变、Chroma 未重建 → Agent 会检索到旧索引内容（内容与表单不一致）。
+        if not complete:
+            resume.status = "draft"
+
         if complete:
             # 完成路径：立即触发索引 + bump version + status=ready
             from core import cache as embedding_cache
@@ -1644,6 +1703,8 @@ class RewriteResumeTool(Tool):
         )
 
         # 复用公共写模块辅助：function calling 提交完整 modules → 校验 → 全量替换
+        # 一律落草稿（不自动完成）：改写结果在前端实时预览并标记未保存，
+        # 由用户审阅后显式点击「草稿/完成」才生效（完成才重建索引供 Agent 检索）。
         return await _submit_modules_via_llm(
             self.user_id,
             resume_id,
@@ -1652,7 +1713,7 @@ class RewriteResumeTool(Tool):
             fail_prefix="AI 重写失败",
             emit=self.emit,
             usage_target=self.last_usage,
-            complete=(mode == "generate"),  # generate 模式自动完成
+            complete=False,
             tool_name="rewrite_resume",
             rationale=(
                 "按目标岗位优化整份简历" if mode == "optimize" else "生成整份简历"

@@ -44,10 +44,12 @@ class _RecordingEngine:
 
 
 def _fake_items():
+    # url 必须落在渠道白名单域名内（nowcoder 为默认招聘平台之一），
+    # 否则被 _filter_by_site 结果层过滤掉，成功类测试会走降级提示。
     return [
         {
             "title": "深圳后端开发工程师",
-            "url": "https://example.com/job/1",
+            "url": "https://www.nowcoder.com/job/1",
             "snippet": "负责后端服务开发，要求 Python/Go",
             "source": "open-websearch/csdn",
         }
@@ -69,7 +71,7 @@ class TestSearchJobsLive:
         assert "深圳后端开发工程师" in result
         assert "负责后端服务开发" in result
         assert len(tool.sources) == 1
-        assert tool.sources[0]["url"] == "https://example.com/job/1"
+        assert tool.sources[0]["url"] == "https://www.nowcoder.com/job/1"
 
     @pytest.mark.asyncio
     async def test_all_engines_empty_degrades_friendly(self):
@@ -159,3 +161,82 @@ class TestSearchJobsLive:
         assert "后端开发" in q
         assert "深圳" in q
         assert "社会招聘" in q
+
+    # ── 渠道白名单过滤（M2 增强：所有引擎含兜底统一限制） ──
+
+    def test_filter_by_site_keeps_whitelist(self):
+        """只保留主域名/子域名命中白名单的结果，丢弃新闻/就业中心。"""
+        from services.react_agent.tools.search_jobs_live import _filter_by_site
+
+        items = [
+            {"url": "https://www.zhipin.com/job/1", "title": "zhipin"},
+            {"url": "https://nowcoder.com/job/2", "title": "nowcoder"},
+            {"url": "https://job.lagou.com/3", "title": "lagou sub"},
+            {"url": "https://news.qq.com/x", "title": "qq news"},
+            {"url": "https://nankai.edu.cn/job", "title": "univ"},
+            {"url": "", "title": "no url"},
+        ]
+        kept = _filter_by_site(items, "zhipin.com|nowcoder.com|lagou.com")
+        assert [i["title"] for i in kept] == ["zhipin", "nowcoder", "lagou sub"]
+
+    def test_filter_by_site_empty_include_keeps_all(self):
+        from services.react_agent.tools.search_jobs_live import _filter_by_site
+
+        items = [
+            {"url": "https://qq.com/x", "title": "a"},
+            {"url": "", "title": "b"},
+        ]
+        assert _filter_by_site(items, "") == items
+
+    def test_filter_by_site_case_insensitive_host(self):
+        from services.react_agent.tools.search_jobs_live import _filter_by_site
+
+        items = [{"url": "HTTPS://WWW.ZHIPIN.COM/JOB/1", "title": "upper"}]
+        assert len(_filter_by_site(items, "zhipin.com")) == 1
+
+    @pytest.mark.asyncio
+    async def test_execute_filters_non_whitelist(self):
+        """混合结果：只渲染招聘平台域名，丢弃新闻/就业中心。"""
+        tool = SearchJobsLiveTool()
+        items = [
+            {"title": "牛客网 字节AI岗", "url": "https://www.nowcoder.com/job/1", "snippet": "", "source": "f"},
+            {"title": "腾讯新闻 AI资讯", "url": "https://news.qq.com/x", "snippet": "", "source": "f"},
+            {"title": "boss直聘 大模型开发", "url": "https://www.zhipin.com/job/2", "snippet": "", "source": "f"},
+        ]
+        with patch.object(SearchJobsLiveTool, "_engines", new=[_FakeEngine(items)]):
+            result = await tool.execute(query="AI 大模型", job_type="social")
+
+        assert "牛客网 字节AI岗" in result
+        assert "boss直聘 大模型开发" in result
+        assert "腾讯新闻" not in result
+
+    @pytest.mark.asyncio
+    async def test_execute_all_filtered_returns_fallback(self):
+        """全部结果不在渠道白名单 → 过滤后为空 → 友好降级提示。"""
+        tool = SearchJobsLiveTool()
+        items = [
+            {"title": "新闻资讯", "url": "https://news.qq.com/x", "snippet": "", "source": "f"}
+        ]
+        with patch.object(SearchJobsLiveTool, "_engines", new=[_FakeEngine(items)]):
+            result = await tool.execute(query="AI 大模型", job_type="social")
+
+        assert "没有找到" in result
+        assert tool.sources == []
+
+    @pytest.mark.asyncio
+    async def test_execute_tries_next_engine_after_filtered_out(self):
+        """第一个引擎全被过滤 → 试下一引擎，命中白名单则渲染。"""
+        tool = SearchJobsLiveTool()
+        bad = _FakeEngine(
+            [{"title": "非招聘渠道", "url": "https://news.qq.com/x", "snippet": "", "source": "f"}],
+            name="bad",
+        )
+        good = _FakeEngine(
+            [{"title": "拉勾 AI岗", "url": "https://www.lagou.com/job/9", "snippet": "", "source": "f"}],
+            name="good",
+        )
+        with patch.object(SearchJobsLiveTool, "_engines", new=[bad, good]):
+            result = await tool.execute(query="AI 大模型", job_type="social")
+
+        assert "拉勾 AI岗" in result
+        assert "非招聘渠道" not in result

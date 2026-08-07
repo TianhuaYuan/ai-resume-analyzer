@@ -1,5 +1,5 @@
 import {
-  useEffect, useState, useRef, useCallback, memo,
+  useEffect, useState, useRef, useCallback, useMemo, memo,
   type Dispatch, type SetStateAction, type MutableRefObject,
 } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -61,7 +61,7 @@ import { ModuleCardEditor } from "../components/builder/ModuleCardEditor";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { CompareSelectDialog } from "../components/CompareSelectDialog";
 import MarkdownRenderer from "../components/MarkdownRenderer";
-import AgentProcessPanel from "../components/AgentProcessPanel";
+import AgentProcessPanel, { getToolLabel } from "../components/AgentProcessPanel";
 // E1: 简历诊断结构化卡片（四维评分 + 诊断结论 + 可溯源来源）
 import DiagnosisCard, { isDiagnosisMessage } from "../components/DiagnosisCard";
 import type { DiagnosisSource } from "../components/DiagnosisCard";
@@ -142,6 +142,9 @@ interface StreamCtx {
   setDiffToolName: (v: string) => void;
   setDiffLoading: (v: boolean) => void;
   setDiffDialogOpen: (v: boolean) => void;
+  // answer_token：最终轮答案分块累积缓冲 + rAF 句柄（打字机追加到 answer）
+  answerBufferRef: MutableRefObject<Map<string, string>>;
+  answerRafRef: MutableRefObject<number | null>;
 }
 
 /** handler: agent_start — 初始化 Agent 步骤列表 */
@@ -245,38 +248,55 @@ function handleToolError(ev: AgentSSEEvent, ctx: StreamCtx): void {
   ctx.scheduleStreamingFlush(ctx.tempId);
 }
 
-/** handler: tool_stream（规范名 content / reasoning）— copy-on-write 追加到最后一个同工具 step */
+/**
+ * handler: tool_stream（规范名 content / reasoning）— 走 rAF 批量刷新，避免逐 token setChat。
+ *
+ * tool_stream 是工具内部 LLM 的逐 token 高频事件（见后端 loop.py：只透传前端不入 trace）。
+ * 原实现每次 token 都 setChat → 整页 map + AgentProcessPanel 全量重渲染 → 主线程卡顿，
+ * 拖慢 tool_result / agent_done 等后续事件的显示（表现为"工具结果/总结返回慢"）。
+ * 改为与 appendThought 同模式：累积到 pendingStepsRef，由 rAF 每帧只刷新一次。
+ */
 function handleToolStream(ev: AgentSSEEvent, ctx: StreamCtx): void {
-  ctx.setChat((prev) =>
-    prev.map((m) => {
-      if (m.id !== ctx.tempId) return m;
-      const steps = m.agent_steps ?? [];
-      const lastStep = steps[steps.length - 1];
-      if (
-        lastStep &&
-        lastStep.type === "tool_stream" &&
-        lastStep.name === ev.tool_name
-      ) {
-        const updatedSteps = [...steps];
-        updatedSteps[updatedSteps.length - 1] = {
-          ...lastStep,
-          detail: (lastStep.detail ?? "") + (ev.content ?? ""),
-        };
-        return { ...m, agent_steps: updatedSteps };
-      }
-      return {
-        ...m,
-        agent_steps: [
-          ...steps,
-          {
-            type: "tool_stream" as const,
-            name: ev.tool_name ?? "",
-            detail: ev.content ?? "",
-          },
-        ],
-      };
-    })
-  );
+  const steps = ctx.pendingStepsRef.current;
+  const last = steps[steps.length - 1];
+  if (last && last.type === "tool_stream" && last.name === ev.tool_name) {
+    steps[steps.length - 1] = {
+      ...last,
+      detail: (last.detail ?? "") + (ev.content ?? ""),
+    };
+  } else {
+    steps.push({
+      type: "tool_stream" as const,
+      name: ev.tool_name ?? "",
+      detail: ev.content ?? "",
+    });
+  }
+  ctx.scheduleStreamingFlush(ctx.tempId);
+}
+
+/**
+ * handler: answer_token — 最终轮答案分块实时追加到 answer（打字机效果）。
+ *
+ * 后端按字符/时间双阈值分块推送 answer_token（见 loop._stream_final_round），
+ * 前端用 rAF 节流每帧一次性追加累积块到 msg.answer，避免逐 token setChat 全量渲染。
+ * agent_done 到达时 answer 已完整（含残留块 flush 后的内容），此处只负责中途实时显示。
+ */
+function handleAnswerToken(ev: AgentSSEEvent, ctx: StreamCtx): void {
+  const id = ctx.tempId;
+  const buf = ctx.answerBufferRef.current.get(id) ?? "";
+  ctx.answerBufferRef.current.set(id, buf + (ev.content ?? ""));
+  if (ctx.answerRafRef.current != null) return;
+  ctx.answerRafRef.current = requestAnimationFrame(() => {
+    ctx.answerRafRef.current = null;
+    const pending = ctx.answerBufferRef.current.get(id);
+    if (!pending) return;
+    ctx.answerBufferRef.current.delete(id);
+    ctx.setChat((prev) =>
+      prev.map((m) =>
+        m.id === id ? { ...m, answer: (m.answer ?? "") + pending } : m
+      )
+    );
+  });
 }
 
 /** handler: usage — 实时更新 token 消耗 */
@@ -433,6 +453,7 @@ function dispatchStreamEvent(ev: AgentSSEEvent, ctx: StreamCtx): void {
     case "tool_result": return handleToolResult(ev, ctx);
     case "tool_error": return handleToolError(ev, ctx);
     case "tool_stream": return handleToolStream(ev, ctx);
+    case "answer_token": return handleAnswerToken(ev, ctx);
     case "usage": return handleUsage(ev, ctx);
     case "approval_request": return handleApprovalRequest(ev, ctx);
     case "approval_decision": return handleApprovalDecision(ev, ctx);
@@ -711,8 +732,15 @@ const MessageBubble = memo(function MessageBubble({ msg, deleting, onDelete, onF
             ) : !msg.streaming && msg.agent_steps && msg.agent_steps.length > 0 ? (
               /* P1-C: 有 Agent 步骤时 → 卡片通用分发（JDMatchReport 等，无匹配则 markdown） */
               <AgentCardRouter steps={msg.agent_steps} answer={msg.answer} streaming={msg.streaming} />
+            ) : msg.streaming ? (
+              /* 流式期间纯文本渲染：answer_token 每帧追加，若走 MarkdownRenderer 会
+                 每帧全量重新解析完整 markdown（react-markdown 无增量），CPU 密集卡顿。
+                 完成后（agent_done）才解析 markdown 一次。 */
+              <div className="whitespace-pre-wrap break-words">{msg.answer}</div>
             ) : (
-              <MarkdownRenderer>
+              /* 超长答案折叠：避免 agent_done 后一次性解析/渲染超大 markdown DOM
+                 （这是"最后一次渲染慢"的卡点），>3000 字截断 + 展开全文 */
+              <MarkdownRenderer maxChars={3000}>
                 {msg.answer}
               </MarkdownRenderer>
             )}
@@ -818,7 +846,9 @@ const MessageBubble = memo(function MessageBubble({ msg, deleting, onDelete, onF
 
 export default function QAPage() {
   const location = useLocation();
+  const navigate = useNavigate();
   const {
+    resumeId: ctxResumeId,
     setResumeId: setCtxResumeId,
     setConversations: setCtxConversations,
     setActiveConversationId: setCtxActiveConvId,
@@ -828,7 +858,17 @@ export default function QAPage() {
   // 自动选择简历：QAPage 在 / 路由下无 URL 参数，需自动选取第一份简历
   const [resumeId, setResumeId] = useState<number>(0);
 
+  // ── AI 能力入口 / 快捷操作：location.state 携带的待触发问题 ──
+  // pendingTriggerQuestion：resumeId 就绪后由 effect 统一发送一次（发送后置空，防重复）
+  // consumedStateRef：标记已消费的 location.state 引用，防 effect 因 asking/resumeId 变化重入
+  const [pendingTriggerQuestion, setPendingTriggerQuestion] = useState<string | null>(null);
+  const consumedStateRef = useRef<unknown>(null);
+  // 侧边栏跳转带来的"待选会话"：对话加载完成后优先选中（仅在列表中存在时）
+  const pendingConversationIdRef = useRef<number | null>(null);
+
   const [resume, setResume] = useState<ResumeItem | null>(null);
+  // 简历列表（顶栏切换简历/会话用；多简历时对话按简历隔离，可在此切换）
+  const [resumeOptions, setResumeOptions] = useState<ResumeItem[]>([]);
   const [chat, setChat] = useState<ChatMessage[]>([]);
   const [asking, setAsking] = useState(false);
   const [error, setError] = useState("");
@@ -844,9 +884,6 @@ export default function QAPage() {
   const [deleteConvTargetId] = useState<number | null>(null);
   const [deletingConv, setDeletingConv] = useState(false);
   const [creatingConv] = useState(false);
-
-  // sendQuestion ref — 供 location.state effect 调用
-  const sendQuestionRef = useRef<((q: string) => void) | null>(null);
 
   // Task 4：搜索 + 删除相关状态
   const [keyword, setKeyword] = useState("");
@@ -913,22 +950,57 @@ export default function QAPage() {
     beforeModulesRef.current = modules;
   }, []);
 
+  // ── A4PreviewPanel props 稳定化（配合组件 memo） ──
+  // agent_thought / tool_stream 高频刷新时 chat 变化触发 QAPage 重渲染，
+  // 但 previewModules/previewStyle 未变时预览面板（简历渲染很重）不应跟着重渲染。
+  // 必须保证 modulesData 与回调引用稳定，否则 memo 失效。
+  const previewModulesData = useMemo(
+    () => ({
+      modules: previewModules.map((m) => ({
+        module_type: m.module_type,
+        content: m.content,
+        sort_order: m.sort_order,
+      })),
+      style: previewStyle ?? ({} as ResumeStyle),
+    }),
+    [previewModules, previewStyle],
+  );
+  const handleToggleCollapse = useCallback(() => setShowPreview(false), []);
+  const handleSelectSection = useCallback((moduleType: ModuleType) => {
+    setEditingModule(moduleType);
+    setExpandedType(moduleType);
+  }, []);
+
   // 打开分屏时加载预览 HTML
   // ── 自动选择简历 ──
-  // QAPage 在 / 路由下无 URL 参数，需自动选取第一份简历
+  // QAPage 在 / 路由下无 URL 参数，需自动选取一份简历。
+  // 优先沿用 context 中已选中的简历（用户上次在 QA / 侧边栏的选择），
+  // 否则拉取列表选第一份 ready/partial 简历。
   useEffect(() => {
     if (resumeId > 0) return;
+    // 简历管理页点击带过来的 resumeId 最优先（否则会被 ctx 或自动选取覆盖，
+    // 表现为"点击简历不会自动切换"）
+    const stateResumeId = (location.state as { resumeId?: number } | null)?.resumeId;
+    if (stateResumeId && stateResumeId > 0) {
+      setResumeId(stateResumeId);
+      return;
+    }
+    if (ctxResumeId && ctxResumeId > 0) {
+      setResumeId(ctxResumeId);
+      return;
+    }
     let cancelled = false;
     listResumes(50, 0).then((data) => {
       if (cancelled) return;
       if (data.items.length > 0) {
         // 优先选择 ready/partial 状态的简历，否则选第一份
         const ready = data.items.find((r) => r.status === "ready" || r.status === "partial");
-        setResumeId((ready ?? data.items[0]).id);
+        // 守卫：resumeId 已被 state/ctx 设置时不再覆盖（异步返回晚于挂载）
+        setResumeId((prev) => (prev > 0 ? prev : (ready ?? data.items[0]).id));
       }
     }).catch(() => {});
     return () => { cancelled = true; };
-  }, [resumeId]);
+  }, [resumeId, ctxResumeId, location.state]);
 
   // ── 同步状态到 AppChatContext（供 Sidebar 读取） ──
   useEffect(() => { setCtxResumeId(resumeId || null); }, [resumeId, setCtxResumeId]);
@@ -997,21 +1069,35 @@ export default function QAPage() {
     };
   }, [resumeId, activeConversationId, creatingConv]);
 
-  // ── 接收来自简历列表的 resumeId（v2: 点击简历跳转 QA） ──
+  // ── 接收来自简历列表 / AI 能力入口 / 侧边栏会话的导航状态（resumeId / question / conversationId） ──
   useEffect(() => {
-    const state = location.state as { resumeId?: number; question?: string } | null;
-    if (state?.resumeId && state.resumeId !== resumeId) {
+    const state = location.state as {
+      resumeId?: number;
+      question?: string;
+      conversationId?: number;
+    } | null;
+    if (!state?.resumeId && !state?.question && !state?.conversationId) return;
+    // 防重入：同一份 location.state 只消费一次（否则因 asking/resumeId 变化重复触发 → 死循环）
+    if (consumedStateRef.current === location.state) return;
+    consumedStateRef.current = location.state;
+
+    if (state.resumeId) {
       setResumeId(state.resumeId);
       setShowPreview(true); // 立即显示预览
     }
-    if (state?.question && !asking && resumeId > 0) {
-      sendQuestionRef.current?.(state.question);
+    // 侧边栏会话跳转：标记待选会话（对话加载完成后优先选中，防被 list[0] 覆盖）
+    if (state.conversationId) {
+      pendingConversationIdRef.current = state.conversationId;
+      setActiveConversationId(state.conversationId);
     }
-    // 清除 state 防止重复触发
-    if (state?.resumeId || state?.question) {
-      window.history.replaceState({}, "");
+    // 缓存待触发问题，等 resumeId 就绪后由发送 effect 统一消费一次
+    if (state.question) {
+      setPendingTriggerQuestion(state.question);
     }
-  }, [location.state, asking, resumeId]);
+    // 正确清除 location.state（React Router 中 window.history.replaceState 无效，
+    // 必须走 navigate 同路径 replace，否则 state.question 会一直残留触发重复发送）
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.state, location.pathname, navigate]);
 
 
   // Token 限额状态
@@ -1049,6 +1135,9 @@ export default function QAPage() {
   const rafRef = useRef<number | null>(null);
   // P1-C: 记录每个 tool_call 的开始时间，用于计算 durationMs
   const stepStartRef = useRef<Map<string, number>>(new Map());
+  // answer_token：最终轮答案分块累积缓冲（tempId → 累积文本）+ rAF 句柄
+  const answerBufferRef = useRef<Map<string, string>>(new Map());
+  const answerRafRef = useRef<number | null>(null);
 
   const applyPendingSteps = useCallback(
     (targetId: string) => {
@@ -1056,11 +1145,31 @@ export default function QAPage() {
       pendingStepsRef.current = [];
       if (steps.length === 0) return;
       setChat((prev) =>
-        prev.map((m) =>
-          m.id === targetId
-            ? { ...m, agent_steps: [...(m.agent_steps ?? []), ...steps] }
-            : m
-        )
+        prev.map((m) => {
+          if (m.id !== targetId) return m;
+          const existing = m.agent_steps ?? [];
+          // 追加时合并同工具 tool_stream：逐 token 事件经 rAF 分帧到达，
+          // 若已渲染末步与待追加首步同为同名 tool_stream，累积到同一 step，
+          // 避免同一工具的 token 被拆成碎片步骤（agent_thought 由 mergeThoughtSteps 兜底）
+          const next = [...existing];
+          for (const step of steps) {
+            const last = next[next.length - 1];
+            if (
+              last &&
+              last.type === "tool_stream" &&
+              step.type === "tool_stream" &&
+              last.name === step.name
+            ) {
+              next[next.length - 1] = {
+                ...last,
+                detail: (last.detail ?? "") + (step.detail ?? ""),
+              };
+            } else {
+              next.push(step);
+            }
+          }
+          return { ...m, agent_steps: next };
+        })
       );
       // rAF 刷新后立即滚动到底部（仅在用户未上滚时）
       requestAnimationFrame(() => {
@@ -1108,11 +1217,15 @@ export default function QAPage() {
     }
   }, []);
 
-  // 卸载时取消挂起的 rAF
+  // 卸载时取消挂起的 rAF（ref 引用稳定，effect 只注册一次）
   useEffect(() => {
+    const stepsRaf = rafRef;
+    const answerRaf = answerRafRef;
     return () => {
-      if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+      if (stepsRaf.current != null) cancelAnimationFrame(stepsRaf.current);
+      if (answerRaf.current != null) cancelAnimationFrame(answerRaf.current);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 加载历史（封装成函数，便于搜索时复用）。conversationId 为空则加载该简历全部历史。
@@ -1143,7 +1256,9 @@ export default function QAPage() {
         historyItems.sort((a, b) => Number(a.id) - Number(b.id));
         setChat((prev) => {
           const streamingMsgs = prev.filter((m) => m.streaming);
-          return [...streamingMsgs, ...historyItems];
+          // 顺序必须：历史（旧）在前，正在流式的新消息（新）在后。
+          // 若反过来，从 AI 能力入口自动发送时新问题会插到历史前面显示在顶部。
+          return [...historyItems, ...streamingMsgs];
         });
       } catch (e) {
         setError(e instanceof Error ? e.message : "加载历史失败");
@@ -1158,6 +1273,7 @@ export default function QAPage() {
   useEffect(() => {
     if (!resumeId) return;
     listResumes().then((data) => {
+      setResumeOptions(data.items);
       const r = data.items.find((item) => item.id === resumeId);
       if (r) setResume(r);
     });
@@ -1169,6 +1285,20 @@ export default function QAPage() {
       setShowPreview(true);
     }).catch(() => {});
   }, [resumeId]);
+
+  // 顶栏切换简历：切换后 useEffect [resumeId] 重载该简历的对话/预览/锁
+  // （对话按简历隔离，切换即切换会话；ctxResumeId 由下方 useEffect 自动同步）
+  const handleSwitchResume = useCallback(
+    (id: number) => {
+      if (!id || id === resumeId) return;
+      const r = resumeOptions.find((x) => x.id === id);
+      if (!r) return;
+      setResumeId(id);
+      setResume(r);
+      setChat([]); // 清当前消息，等待该简历对话重载
+    },
+    [resumeId, resumeOptions, setChat],
+  );
 
   // v2: 编辑锁生命周期
   useEffect(() => {
@@ -1321,6 +1451,16 @@ export default function QAPage() {
     getConversations(resumeId)
       .then(async (list) => {
         if (cancelled) return;
+        // 侧边栏跳转带来的"待选会话"优先：仅在列表中存在时才选中，否则回退默认
+        if (pendingConversationIdRef.current != null) {
+          const target = list.find((c) => c.id === pendingConversationIdRef.current);
+          pendingConversationIdRef.current = null;
+          if (target) {
+            setConversations(list);
+            setActiveConversationId(target.id);
+            return;
+          }
+        }
         if (list.length > 0) {
           setConversations(list);
           // 默认选中最近活跃的对话（列表已按 updated_at 降序）
@@ -1455,6 +1595,8 @@ export default function QAPage() {
         setDiffToolName,
         setDiffLoading,
         setDiffDialogOpen,
+        answerBufferRef,
+        answerRafRef,
       };
 
       abortRef.current = askAgentStream(
@@ -1502,10 +1644,18 @@ export default function QAPage() {
     [resumeId, compareIds, activeConversationId, appendThought, scheduleStreamingFlush, flushStreamingNow]
   );
 
-  // 同步 sendQuestion 到 ref，供 location.state effect 调用
+  // ── AI 能力入口 / 快捷操作：待触发问题在 resumeId + 会话就绪后自动发送一次 ──
+  // 发送后立即清空 pendingTriggerQuestion，配合 location.state 的正确清除，
+  // 彻底避免 asking 变化导致的重复发送死循环（只发一次，不随 asking 往返重入）。
+  // activeConversationId 条件：等对话加载自动创建/选中第一个会话后再发，
+  // 确保这条问答的历史存入该会话（否则 conversation_id 为空导致历史不落库）。
   useEffect(() => {
-    sendQuestionRef.current = sendQuestion;
-  }, [sendQuestion]);
+    if (resumeId <= 0 || !pendingTriggerQuestion || asking) return;
+    if (activeConversationId == null) return; // 会话未就绪，等待
+    const q = pendingTriggerQuestion;
+    setPendingTriggerQuestion(null);
+    sendQuestion(q);
+  }, [resumeId, pendingTriggerQuestion, asking, activeConversationId, sendQuestion]);
 
   // ── AI 创建简历：resumeId 更新后发送待发送的问题 ──
   useEffect(() => {
@@ -1692,8 +1842,6 @@ export default function QAPage() {
   };
 
   // T19: 功能引导卡点击 — 根据卡片类型分流
-  const navigate = useNavigate();
-
   const handleGuideClick = useCallback(
     (card: Pick<GuideCard, "navigate" | "question">) => {
       if (asking) return;
@@ -1750,9 +1898,27 @@ export default function QAPage() {
       <div className="shrink-0 z-30 bg-[var(--color-bg)] px-6 py-4 border-b border-[var(--color-border)]">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="min-w-0 flex-1">
-            <h2 className="text-base font-semibold text-[var(--color-text)] truncate">
-              {resume?.filename ?? "加载中..."}
-            </h2>
+            {/* 简历切换下拉（多简历时切换会话/对话；对话按简历隔离）。
+                列出全部简历，value 匹配当前 resumeId，避免下拉无法显示/切换。 */}
+            <select
+              value={resumeId || ""}
+              onChange={(e) => handleSwitchResume(Number(e.target.value))}
+              className="max-w-[280px] text-base font-semibold text-[var(--color-text)] truncate
+                bg-transparent border border-transparent rounded-md px-1 py-0.5
+                hover:border-[var(--color-border)] focus:border-brand/40 focus:outline-none
+                cursor-pointer"
+              aria-label="切换简历"
+              title="切换简历（对话按简历隔离）"
+            >
+              {resumeOptions.length === 0 && (
+                <option value="">{resume?.filename ?? "加载中..."}</option>
+              )}
+              {resumeOptions.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.filename}
+                </option>
+              ))}
+            </select>
 
             {/* 当前对话名称（对话切换已移至左侧 Sidebar） */}
             {!conversationLoading && activeConversationId && (
@@ -1923,15 +2089,19 @@ export default function QAPage() {
       {/* ── 左右各 50%：聊天/编辑器 | 预览 ── */}
       <div className="flex-1 flex overflow-hidden">
         {/* 左侧 50%：聊天 或 模块编辑器（点击预览模块时覆盖聊天） */}
+        {/* 注意：真正的滚动容器是内层聊天区（flex-1 overflow-y-auto），
+            ref/onScroll 必须挂在内层，外层 h-full 高度恒定不会滚动 */}
         <div
-          ref={scrollContainerRef}
           className={`${showPreview ? "w-1/2" : "flex-1"} overflow-y-auto transition-all duration-300`}
-          onScroll={!editingModule ? checkNearBottom : undefined}
         >
           {/* Agent 聊天模式（无模块编辑时显示） */}
           {!editingModule ? (
             <div className="flex flex-col h-full">
-              <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-6">
+              <div
+                ref={scrollContainerRef}
+                onScroll={checkNearBottom}
+                className="flex-1 overflow-y-auto px-4 sm:px-6 py-6"
+              >
                 <div className="max-w-3xl mx-auto">
                   {historyLoading && chat.length === 0 && resumeId > 0 ? (
                     <div className="flex flex-col items-center justify-center py-16">
@@ -2044,19 +2214,9 @@ export default function QAPage() {
               resumeId={resumeId}
               previewKey={previewKey}
               collapsed={false}
-              onToggleCollapse={() => setShowPreview(false)}
-              modulesData={{
-                modules: previewModules.map((m) => ({
-                  module_type: m.module_type,
-                  content: m.content,
-                  sort_order: m.sort_order,
-                })),
-                style: previewStyle ?? ({} as ResumeStyle),
-              }}
-              onSelectSection={(moduleType) => {
-                setEditingModule(moduleType);
-                setExpandedType(moduleType);
-              }}
+              onToggleCollapse={handleToggleCollapse}
+              modulesData={previewModulesData}
+              onSelectSection={handleSelectSection}
             />
           </div>
         )}
@@ -2078,9 +2238,9 @@ export default function QAPage() {
       {/* ── D1: 工具审批确认弹窗（Agent 请求执行写类工具前征求用户同意） ── */}
       <ConfirmDialog
         open={Boolean(approvalRequest)}
-        title={`AI 请求执行工具「${approvalRequest?.toolName ?? ""}」`}
+        title={`AI 请求执行工具「${getToolLabel(approvalRequest?.toolName ?? "")}」`}
         description={approvalRequest
-          ? `${approvalRequest.summary}\n\n是否允许 AI 执行该操作？拒绝后 AI 将换一种方案。`
+          ? `AI 想执行这个操作，具体内容如下：\n\n${approvalRequest.summary}\n\n⚠️ 点「允许执行」后才会真正执行（不会重复调用）。拒绝后 AI 将换一种方案。`
           : ""}
         confirmText="允许执行"
         cancelText="拒绝"

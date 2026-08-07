@@ -273,6 +273,16 @@ export interface ResumeModule {
   created_at: string;
   /** G 可信度控制：fact/inferred/mixed（AI 改写内容来源标注） */
   source?: string;
+  /** 条目级分页：只渲染 [start, end) 区间条目（PaginatedResumePreview 分页注入，非持久化字段） */
+  itemRange?: ItemRange;
+  /** 条目级分页：是否显示模块标题（续页不显示标题；PaginatedResumePreview 分页注入） */
+  showTitle?: boolean;
+}
+
+/** 条目区间 [start, end)（与 templates/shared/sections 的 ItemRange 契约一致） */
+export interface ItemRange {
+  start: number;
+  end: number;
 }
 
 /** 创建/更新模块请求 */

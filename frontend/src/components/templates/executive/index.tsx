@@ -98,8 +98,12 @@ export default function ExecutiveTemplate({
       <style>{TEMPLATE_BASE_STYLES + STYLES}</style>
       {basic.length > 0 && (
         <div className="executive-banner">
+          {/* 必须带 data-resume-section-id：PaginatedResumePreview 靠它测量/装箱，
+              缺失会导致 basic_info 不参与分页，任何简历下基本信息都不渲染 */}
           {basic.map((m) => (
-            <SectionContent key={m.module_type} moduleType={m.module_type} content={m.content} />
+            <div key={m.module_type} data-resume-section-id={m.module_type}>
+              <SectionContent moduleType={m.module_type} content={m.content} />
+            </div>
           ))}
         </div>
       )}

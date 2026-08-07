@@ -35,6 +35,18 @@ export interface SectionMetric {
   id: string;
   /** 占用垂直空间（offsetHeight + 上下 margin），scale=1 基准 */
   height: number;
+  /** 模块标题占用垂直空间（含上下 margin；basic_info 无标题为 0） */
+  titleHeight: number;
+  /** 条目级高度（列表模块按 data-resume-item-index 排列；平铺模块为空数组） */
+  items: ItemMetric[];
+}
+
+/** 单个条目（如一条工作经历）的测量结果 */
+export interface ItemMetric {
+  /** 全局稳定下标（data-resume-item-index，sliceRows 保留原始下标） */
+  index: number;
+  /** 条目占用垂直空间（offsetHeight + 上下 margin），scale=1 基准 */
+  height: number;
 }
 
 /**
@@ -75,15 +87,42 @@ export function usePagination({ contentKey }: UsePaginationOptions): UsePaginati
     if (!root) return;
 
     const nodes = Array.from(root.querySelectorAll<HTMLElement>("[data-resume-section-id]"));
-    const next: SectionMetric[] = nodes.map((node) => ({
-      id: node.dataset.resumeSectionId ?? "",
-      height: outerHeight(node),
-    }));
+    const next: SectionMetric[] = nodes.map((node) => {
+      // 条目级高度：data-resume-item-index 是全局稳定下标（跨页 sliceRows 保留）
+      const items = Array.from(
+        node.querySelectorAll<HTMLElement>("[data-resume-item-index]"),
+      )
+        .map((el) => ({
+          index: Number(el.dataset.resumeItemIndex) || 0,
+          height: outerHeight(el),
+        }))
+        .sort((a, b) => a.index - b.index);
+      // 标题高度：basic_info 无标题（SectionWrapper 不渲染 h2），titleHeight 为 0
+      const titleEl = node.querySelector<HTMLElement>(".module-title");
+      const titleHeight = titleEl ? outerHeight(titleEl) : 0;
+      return {
+        id: node.dataset.resumeSectionId ?? "",
+        height: outerHeight(node),
+        titleHeight,
+        items,
+      };
+    });
 
     setMetrics((prev) => {
       const same =
         prev.length === next.length &&
-        prev.every((p, i) => p.id === next[i].id && Math.abs(p.height - next[i].height) < 0.5);
+        prev.every(
+          (p, i) =>
+            p.id === next[i].id &&
+            Math.abs(p.height - next[i].height) < 0.5 &&
+            Math.abs(p.titleHeight - next[i].titleHeight) < 0.5 &&
+            p.items.length === next[i].items.length &&
+            p.items.every(
+              (it, j) =>
+                it.index === next[i].items[j].index &&
+                Math.abs(it.height - next[i].items[j].height) < 0.5,
+            ),
+        );
       return same ? prev : next;
     });
     setMeasured(true);
@@ -160,6 +199,104 @@ export function packPages(metrics: SectionMetric[], capacity: number): string[][
     }
   }
   if (current.length > 0) pages.push(current);
+  return pages;
+}
+
+/**
+ * 单页渲染的最小单元：一个 section 的整块，或列表 section 的一段条目。
+ * 分页时把 modules 拆成 slices 列表，每页只渲染属于自己的 slices。
+ */
+export interface ItemRange {
+  start: number;
+  end: number;
+}
+
+export interface PageSlice {
+  /** section id（module_type） */
+  moduleType: string;
+  /** 该页渲染的条目区间（列表模块；平铺模块不传 = 整块） */
+  itemRange?: ItemRange;
+  /** 是否显示模块标题（续页不显示标题，标题只跟第一条） */
+  showTitle: boolean;
+}
+
+/**
+ * 条目级流式装箱（借鉴 reactive-resume 的流式分页：条目可跨页，每页尽量填满）。
+ *
+ * 与 packPages（section 整体装箱）的区别：
+ * - 列表 section 按条目拆分：标题 + 第一条绑定同页，其余条目流入后续页
+ * - 超长 section 不再独占一页被裁，而是条目均匀分布到连续页
+ * - 每页按条目高度尽量填满，避免"上一页尾部大片空白"
+ * - 平铺模块（basic_info/interests 等无条目）仍整体一块不拆
+ */
+export function packByItems(metrics: SectionMetric[], capacity: number): PageSlice[][] {
+  const pages: PageSlice[][] = [];
+  let cur: PageSlice[] = [];
+  let curH = 0;
+
+  const flush = () => {
+    if (cur.length > 0) {
+      pages.push(cur);
+      cur = [];
+      curH = 0;
+    }
+  };
+
+  for (const sec of metrics) {
+    if (sec.items.length === 0) {
+      // 平铺模块：整体块，不拆（sec.height 已含模块 padding）
+      if (curH + sec.height > capacity && cur.length > 0) flush();
+      cur.push({ moduleType: sec.id, showTitle: true });
+      curH += sec.height;
+      continue;
+    }
+
+    // 列表模块：标题 + 第一条同页，其余条目流式续排
+    const items = sec.items;
+    // 模块固定开销（padding/间距等非标题非条目空间）：
+    // sec.height 含标题 + 全部条目 + pad，反推 pad，每页该模块出现都要计一次
+    const itemSum = items.reduce((s, it) => s + it.height, 0);
+    const pad = Math.max(0, sec.height - sec.titleHeight - itemSum);
+    // 首条所在页：pad + 标题 + 第一条
+    const firstH = pad + sec.titleHeight + items[0].height;
+    if (curH + firstH > capacity && cur.length > 0) flush();
+    cur.push({
+      moduleType: sec.id,
+      itemRange: { start: items[0].index, end: items[0].index + 1 },
+      showTitle: true,
+    });
+    curH += firstH;
+
+    for (let i = 1; i < items.length; i++) {
+      const h = items[i].height;
+      // 放同页只计 item（pad 已计入该模块在本页的首个 slice）；
+      // 放不下则翻页，翻页首条额外计 pad（新一页的模块 padding）
+      if (curH + h > capacity && cur.length > 0) {
+        flush();
+        cur.push({
+          moduleType: sec.id,
+          itemRange: { start: items[i].index, end: items[i].index + 1 },
+          showTitle: false,
+        });
+        curH = pad + h;
+        continue;
+      }
+      // 同 section 连续条目并入当前 slice（扩展 itemRange）
+      const last = cur[cur.length - 1];
+      if (last.moduleType === sec.id && last.itemRange && last.itemRange.end === items[i].index) {
+        last.itemRange.end = items[i].index + 1;
+        curH += h;
+      } else {
+        cur.push({
+          moduleType: sec.id,
+          itemRange: { start: items[i].index, end: items[i].index + 1 },
+          showTitle: false,
+        });
+        curH += h;
+      }
+    }
+  }
+  flush();
   return pages;
 }
 

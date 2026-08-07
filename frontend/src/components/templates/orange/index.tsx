@@ -144,12 +144,16 @@ export default function OrangeTemplate({
     <div className="resume-template orange-template">
       <style>{TEMPLATE_BASE_STYLES + STYLES}</style>
       <div className="orange-layout">
-        <div className="orange-sidebar">
-          {sidebar.map((mod) => renderSection(mod, opts))}
-        </div>
-        <div className="orange-main">
-          {main.map((mod) => renderSection(mod, opts))}
-        </div>
+        {sidebar.length > 0 && (
+          <div className="orange-sidebar" style={main.length === 0 ? { width: "100%" } : undefined}>
+            {sidebar.map((mod) => renderSection(mod, opts))}
+          </div>
+        )}
+        {main.length > 0 && (
+          <div className="orange-main">
+            {main.map((mod) => renderSection(mod, opts))}
+          </div>
+        )}
       </div>
     </div>
   );

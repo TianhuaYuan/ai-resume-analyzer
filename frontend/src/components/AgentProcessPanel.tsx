@@ -51,7 +51,7 @@ const TOOL_LABELS: Record<string, string> = {
   negotiation_brief: "谈薪简报",
 };
 
-function getToolLabel(name: string): string {
+export function getToolLabel(name: string): string {
   return TOOL_LABELS[name] ?? name;
 }
 
@@ -83,7 +83,9 @@ function mergeThoughtSteps(raw: AgentStep[]): AgentStep[] {
         detail: (last.detail ?? "") + (step.detail ?? ""),
       };
     } else {
-      merged.push({ ...step });
+      // 保留原引用（不 spread）：agent_thought 高频刷新时，未变化的
+      // tool_call / tool_result 等步骤引用不变，StepItem 的 memo 才能跳过重渲染
+      merged.push(step);
     }
   }
   return merged;
@@ -109,8 +111,8 @@ const StepItem = memo(function StepItem({
   const [expanded, setExpanded] = useState(true);
   const [showArgs, setShowArgs] = useState(false);
   const [showResult, setShowResult] = useState(false);
-  // G2: 思考内容（agent_thought）默认折叠的 Accordion 状态 —— 模型推理过程不占主屏
-  const [showThought, setShowThought] = useState(false);
+  // G2: 思考内容（agent_thought）默认展开 —— 用户要求思考过程自动展开 + 实时滚动查看最新
+  const [showThought, setShowThought] = useState(true);
 
   const hasDetail = step.detail && step.detail.length > 0;
   const isThought = step.type === "agent_thought";
@@ -280,7 +282,13 @@ const StepItem = memo(function StepItem({
                     />
                   </button>
                   {showThought && (
-                    <div className="mt-1 p-2 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[11px] text-[var(--color-text-secondary)] leading-relaxed whitespace-pre-wrap break-words max-h-40 overflow-y-auto">
+                    // 流式期间不设 max-h：思考内容完整展开，由外层 stepsContainerRef（60vh 封顶）
+                    // 负责内部滚动，保证"最新思考"随实时滚动可见；完成后恢复 40 行截断便于复盘
+                    <div
+                      className={`mt-1 p-2 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[11px] text-[var(--color-text-secondary)] leading-relaxed whitespace-pre-wrap break-words ${
+                        streaming ? "" : "max-h-40 overflow-y-auto"
+                      }`}
+                    >
                       {step.detail}
                     </div>
                   )}

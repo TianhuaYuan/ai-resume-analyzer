@@ -144,12 +144,16 @@ export default function GengarTemplate({
     <div className="resume-template gengar-template">
       <style>{TEMPLATE_BASE_STYLES + STYLES}</style>
       <div className="gengar-layout">
-        <div className="gengar-sidebar">
-          {sidebar.map((mod) => renderSection(mod, opts))}
-        </div>
-        <div className="gengar-main">
-          {main.map((mod) => renderSection(mod, opts))}
-        </div>
+        {sidebar.length > 0 && (
+          <div className="gengar-sidebar" style={main.length === 0 ? { width: "100%" } : undefined}>
+            {sidebar.map((mod) => renderSection(mod, opts))}
+          </div>
+        )}
+        {main.length > 0 && (
+          <div className="gengar-main">
+            {main.map((mod) => renderSection(mod, opts))}
+          </div>
+        )}
       </div>
     </div>
   );

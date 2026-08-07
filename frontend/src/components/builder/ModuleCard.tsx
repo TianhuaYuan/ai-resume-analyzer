@@ -14,7 +14,6 @@ import {
   DotsSixVertical,
   TrashSimple,
   CaretDown,
-  Check,
   User,
   GraduationCap,
   Briefcase,
@@ -50,8 +49,6 @@ import {
   getListString,
   getEntries,
 } from "./ModuleForm";
-import { CheckIssueList } from "./CheckIssueList";
-import { useSilentCheck } from "./useSilentCheck";
 import { AvatarUpload } from "./AvatarUpload";
 
 // ── 模块图标映射（参考 Magic FormSection 图标 tile） ──────────
@@ -168,62 +165,6 @@ function getContentSummary(moduleType: ModuleType, content: ModuleContent): stri
   return "空模块";
 }
 
-// ── 模块文本提取（供静默纠错 schedule 使用） ────────────────
-
-/** 从模块内容中提取纯文本，用于 AI 优化/检查/改写 */
-function getModuleText(moduleType: ModuleType, content: ModuleContent): string {
-  if (!content || Object.keys(content).length === 0) return "";
-
-  if (moduleType === "basic_info") {
-    return [getString(content, "name"), getString(content, "job_title"), getString(content, "summary")]
-      .filter(Boolean)
-      .join("\n");
-  }
-
-  const entryFields = ENTRY_FIELD_CONFIGS[moduleType];
-  if (entryFields) {
-    const entries = getEntries(content);
-    return entries
-      .map((entry) =>
-        entryFields
-          .map((f) => {
-            const val = f.type === "list" ? getListString(entry, f.key) : getString(entry, f.key);
-            return val ? `${f.label}: ${val}` : "";
-          })
-          .filter(Boolean)
-          .join("\n"),
-      )
-      .join("\n\n---\n\n");
-  }
-
-  if (moduleType === "skills") {
-    const cats = content.categories;
-    if (!Array.isArray(cats)) return "";
-    return (cats as Array<{ name?: string; items?: string[] }>)
-      .map((c) => `${c.name ?? ""}: ${Array.isArray(c.items) ? (c.items as string[]).join(", ") : ""}`)
-      .join("\n");
-  }
-
-  if (moduleType === "interests") {
-    const items = content.items;
-    return Array.isArray(items) ? (items as string[]).join(", ") : "";
-  }
-
-  if (moduleType === "social_links") {
-    return SOCIAL_LINK_FIELDS.map((f) => {
-      const v = getString(content, f.key);
-      return v ? `${f.label}: ${v}` : "";
-    })
-      .filter(Boolean)
-      .join("\n");
-  }
-
-  // other / custom
-  const title = getString(content, "title");
-  const text = getString(content, "content");
-  return [title, text].filter(Boolean).join("\n");
-}
-
 // ── 内联表单渲染 ────────────────────────────────────────────────
 
 /** 渲染模块对应的内联表单字段（复用 ModuleForm 的子组件） */
@@ -232,14 +173,11 @@ function ModuleInlineForm({
   moduleType,
   content,
   onChange,
-  onFieldEdit,
 }: {
   resumeId: number;
   moduleType: ModuleType;
   content: ModuleContent;
   onChange: (content: ModuleContent) => void;
-  /** 静默纠错字段级接线：textarea 字段编辑时回传字段标签，非长文本字段回传 null */
-  onFieldEdit: (label: string | null) => void;
 }) {
   const label = getModuleTitle(content, moduleType);
   const entryFields = ENTRY_FIELD_CONFIGS[moduleType];
@@ -270,8 +208,6 @@ function ModuleInlineForm({
                   field={field}
                   value={getString(content, field.key)}
                   onChange={(v) => {
-                    // 静默纠错字段级接线：textarea（如 summary）聚焦该字段检查
-                    onFieldEdit(field.type === "textarea" ? field.label : null);
                     if (field.type === "number") {
                       onChange({ ...content, [field.key]: v === "" ? "" : Number(v) });
                     } else {
@@ -298,7 +234,6 @@ function ModuleInlineForm({
         onChange={onChange}
         fields={entryFields}
         moduleLabel={label}
-        onFieldEdit={onFieldEdit}
       />
     );
   }
@@ -324,7 +259,6 @@ function ModuleInlineForm({
         contentRequired
         resumeId={resumeId}
         moduleType={moduleType}
-        onFieldEdit={onFieldEdit}
       />
     );
   }
@@ -360,34 +294,13 @@ function ModuleCardImpl({
   const bodyRef = useRef<HTMLDivElement>(null);
   const [bodyHeight, setBodyHeight] = useState<number | "auto">("auto");
 
-  // G 静默纠错：编辑停顿后自动检查，角标提示（防抖/限流/竞态在 useSilentCheck 内）
-  const { state: checkState, issues: checkIssues, error: checkError, schedule } = useSilentCheck(resumeId, moduleType);
-  // 问题列表展开/收起
-  const [showIssues, setShowIssues] = useState(false);
-  const hasIssues = checkIssues.length > 0;
-
-  // 最近编辑字段（仅写 ref 不触发重渲染）：textarea 字段聚焦检查，null = 模块级
-  const recentFieldRef = useRef<string | null>(null);
-  const handleFieldEdit = useCallback((label: string | null) => {
-    recentFieldRef.current = label;
-  }, []);
-
-  // 稳定回调：依赖 moduleType + schedule（稳定引用）+ 父级稳定引用
+  // 稳定回调：内容变更（AI 检查/改写/优化由用户手动触发，不再自动检查）
   const handleInternalChange = useCallback(
     (newContent: ModuleContent) => {
       onChange(moduleType, newContent);
-      // 编辑停顿后静默检查（schedule 内部防抖 2.5s）；
-      // 最近编辑的是长文本字段则聚焦该字段（传 check_field），否则模块级检查
-      schedule(getModuleText(moduleType, newContent), recentFieldRef.current ?? undefined);
     },
-    [moduleType, onChange, schedule],
+    [moduleType, onChange],
   );
-
-  // 展开/收起问题列表：若卡片折叠先展开，再显示
-  const handleToggleIssues = useCallback(() => {
-    if (!expanded) onToggleExpand(moduleType);
-    setShowIssues((v) => !v);
-  }, [expanded, onToggleExpand, moduleType]);
 
   // 展开/折叠动画：测量内容高度用于 max-height transition
   // 依赖 expanded + showIssues：问题列表展开/收起时重新测量高度
@@ -407,7 +320,7 @@ function ModuleCardImpl({
         requestAnimationFrame(() => setBodyHeight(0));
       });
     }
-  }, [expanded, showIssues]);
+  }, [expanded]);
 
   return (
     <div
@@ -528,33 +441,6 @@ function ModuleCardImpl({
           />
         )}
 
-        {/* 静默纠错角标：检查中 spinner / N 问题红标 / 无问题绿勾（点击展开问题列表） */}
-        {checkState === "checking" && (
-          <span
-            className="shrink-0 inline-block w-3.5 h-3.5 rounded-full
-              border-2 border-brand border-t-transparent animate-spin"
-            aria-label="内容检查中"
-            title="正在检查内容..."
-          />
-        )}
-        {checkState === "done" && !checkError && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              handleToggleIssues();
-            }}
-            className={`shrink-0 inline-flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-semibold
-              transition-all cursor-pointer
-              ${hasIssues
-                ? "bg-red-500/15 text-red-500 border border-red-500/30 hover:bg-red-500/25"
-                : "text-emerald-500 hover:bg-emerald-500/10"}`}
-            aria-label={hasIssues ? `${checkIssues.length} 个问题，点击查看` : "内容质量良好"}
-            title={hasIssues ? `${checkIssues.length} 个问题，点击查看` : "内容质量良好"}
-          >
-            {hasIssues ? checkIssues.length : <Check size={10} weight="bold" aria-hidden="true" />}
-          </button>
-        )}
-
         {/* 删除按钮 */}
         <button
           onClick={(e) => {
@@ -605,19 +491,7 @@ function ModuleCardImpl({
             moduleType={moduleType}
             content={content}
             onChange={handleInternalChange}
-            onFieldEdit={handleFieldEdit}
           />
-
-          {/* 静默纠错问题列表（点击卡片头角标展开/收起） */}
-          {showIssues && (
-            <div className="mt-3">
-              <CheckIssueList
-                issues={checkIssues}
-                loading={checkState === "checking"}
-                error={checkError}
-              />
-            </div>
-          )}
         </div>
       </div>
     </div>

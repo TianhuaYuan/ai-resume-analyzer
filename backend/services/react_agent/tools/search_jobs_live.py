@@ -29,7 +29,7 @@ import shutil
 import subprocess
 from abc import ABC, abstractmethod
 from typing import Literal
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 import httpx
 from bs4 import BeautifulSoup
@@ -60,6 +60,67 @@ JOB_TYPE_LABEL = {
 
 _TAG_RE = re.compile(r"<[^>]+>")
 
+# time_range → 博查 freshness（发布时间范围）
+_TIME_RANGE_FRESHNESS: dict[str, str] = {
+    "day": "oneDay",
+    "week": "oneWeek",
+    "month": "oneMonth",
+    "year": "oneYear",
+}
+
+# time_range → 展示标签
+_TIME_RANGE_LABEL: dict[str, str] = {
+    "day": "近一天",
+    "week": "近一周",
+    "month": "近一月",
+    "year": "近一年",
+}
+
+# 招聘平台名 → 域名（site 参数限定搜索范围时映射为博查 include 参数）
+_JOB_SITE_DOMAINS: dict[str, str] = {
+    "牛客": "nowcoder.com",
+    "nowcoder": "nowcoder.com",
+    "boss": "zhipin.com",
+    "boss直聘": "zhipin.com",
+    "直聘": "zhipin.com",
+    "拉勾": "lagou.com",
+    "lagou": "lagou.com",
+    "智联": "zhaopin.com",
+    "zhaopin": "zhaopin.com",
+    "前程无忧": "51job.com",
+    "51job": "51job.com",
+    "猎聘": "liepin.com",
+    "liepin": "liepin.com",
+    "csdn": "csdn.net",
+}
+
+
+def _resolve_site_domains(site: str) -> str:
+    """平台名/域名 → 博查 include 参数值（| 分隔，去重）。"""
+    parts = [p.strip() for p in re.split(r"[|,，、]", site) if p.strip()]
+    domains: list[str] = []
+    for p in parts:
+        key = p.lower()
+        resolved = p if "." in p else _JOB_SITE_DOMAINS.get(key, p)
+        if resolved and resolved not in domains:
+            domains.append(resolved)
+    return "|".join(domains)
+
+
+# 默认限定渠道：各大知名招聘平台（用户要求「范围限定在招聘平台 + 公司官网」，
+# 公司官网域名无法穷举，先保证来自可靠招聘渠道；用户显式传 site 时叠加）。
+_DEFAULT_JOB_SITE_DOMAINS = [
+    "nowcoder.com",  # 牛客
+    "zhipin.com",    # BOSS直聘
+    "lagou.com",     # 拉勾
+    "zhaopin.com",   # 智联招聘
+    "51job.com",     # 前程无忧
+    "liepin.com",    # 猎聘
+    "kanzhun.com",   # 看准网
+    "maimai.cn",     # 脉脉
+    "csdn.net",      # CSDN
+]
+
 
 def _clean_html(text: str) -> str:
     """去除 HTML 标签 + 合并空白（open-websearch 结果 snippet 常含 <em> 等）。"""
@@ -78,6 +139,29 @@ def _extract_salary(text: str) -> str:
     if not m:
         return ""
     return re.sub(r"\s+", "", m.group(0)).upper()
+
+
+def _filter_by_site(items: list[dict], include: str) -> list[dict]:
+    """按渠道域名白名单过滤（对全部引擎统一生效，含兜底引擎）。
+
+    博查 ``include`` 只在搜索前限定且仅博查引擎生效；open-websearch / 360 等
+    兜底引擎完全不做渠道过滤，结果可能来自新闻/就业中心等非招聘渠道。
+    本函数在结果层兜底：只保留主域名/子域名命中白名单的结果。
+    include 形如 ``"zhipin.com|nowcoder.com"``（来自 _DEFAULT_JOB_SITE_DOMAINS 或用户 site）。
+    URL 缺失或不在白名单一律丢弃；宁可少而准，不混入非招聘渠道。
+    """
+    allowed = {d for d in (include or "").split("|") if d.strip()}
+    if not allowed:
+        return items
+    kept = []
+    for it in items:
+        url = (it.get("url") or "").strip()
+        if not url:
+            continue
+        host = (urlparse(url).hostname or "").lower()
+        if any(host == d or host.endswith("." + d) for d in allowed):
+            kept.append(it)
+    return kept
 
 
 def _job_schema(*, title, url, snippet, source, company="", city="", deadline="") -> dict:
@@ -111,10 +195,20 @@ class SearchJobsLiveArgs(BaseModel):
         "social",
         description="岗位类型：campus 校招 / social 社招 / intern 实习，默认 social",
     )
+    time_range: Literal["day", "week", "month", "year"] | None = Field(
+        None,
+        description="发布时间范围：day 近一天 / week 近一周 / month 近一月 / year 近一年（默认 year）。"
+        "按用户问题中的时间意图选择，如「最近一周」→ week",
+    )
+    site: str | None = Field(
+        None,
+        description="限定招聘平台/网站（如：牛客、boss直聘、拉勾、智联、前程无忧、猎聘、csdn），"
+        "多个用逗号或|分隔；也可直接传域名。空则不限定（注意：仅博查引擎生效，未配置博查 key 时忽略）",
+    )
     resume_id: int | None = Field(
         None, description="简历 ID（可选，仅做归属校验，暂不参与结果排序）"
     )
-    limit: int = Field(5, description="返回结果数量上限，默认 5，最大 20（超出自动截断）")
+    limit: int = Field(10, description="返回结果数量上限，默认 10，最大 20（超出自动截断）")
 
 
 class _SearchEngine(ABC):
@@ -243,20 +337,33 @@ class BochaEngine(_SearchEngine):
     _url = "https://api.bocha.cn/v1/web-search"  # 博查官方接口域名
     _timeout = 15
 
-    def search_sync(self, query: str, limit: int) -> list[dict]:
+    def search_sync(
+        self,
+        query: str,
+        limit: int,
+        freshness: str | None = None,
+        include: str = "",
+    ) -> list[dict]:
         api_key = getattr(settings, "BOCHA_API_KEY", "") or ""
         if not api_key.strip():
             logger.info("BOCHA_API_KEY 未配置，BochaEngine 降级跳过（走兜底引擎）")
             return []
         try:
+            payload: dict = {
+                "query": query,
+                "count": limit,
+                "freshness": freshness or "oneYear",  # 时间范围（默认近一年）
+                "summary": True,  # 取文本摘要
+            }
+            if include:
+                payload["include"] = include  # 渠道限制（招聘平台域名）
             resp = httpx.post(
                 self._url,
                 headers={
                     "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json",
                 },
-                # 时效策略（用户确认「两者都限时效」）：岗位搜索倾向近一年；summary 取文本摘要
-                json={"query": query, "count": limit, "freshness": "oneYear", "summary": True},
+                json=payload,
                 timeout=self._timeout,
             )
             resp.raise_for_status()
@@ -321,7 +428,17 @@ class SearchJobsLiveTool(Tool):
         target_position = kwargs.get("target_position")
         city = kwargs.get("city")
         job_type = kwargs.get("job_type") or "social"
-        limit = min(kwargs.get("limit", 5) or 5, 20)
+        limit = min(kwargs.get("limit", 10) or 10, 20)
+        # 时间/渠道限制（仅博查引擎生效；open-websearch / 360 不支持时忽略）
+        time_range = kwargs.get("time_range")
+        freshness = _TIME_RANGE_FRESHNESS.get(time_range or "year", "oneYear")
+        site = (kwargs.get("site") or "").strip()
+        # 渠道限制：用户显式指定优先；否则默认限定各大知名招聘平台（含公司官网渠道的招聘页）
+        if site:
+            include = _resolve_site_domains(site)
+        else:
+            include = "|".join(_DEFAULT_JOB_SITE_DOMAINS)
+        render_site = site or "知名招聘平台"
         # resume_id 仅做归属校验（base.execute 已自动完成），本阶段不参与排序
 
         search_query = self._build_query(query, target_position, city, job_type)
@@ -329,12 +446,34 @@ class SearchJobsLiveTool(Tool):
         # 引擎顺序尝试：主引擎内部多引擎 fallback，失败继续下一个引擎
         for engine in self._engines:
             try:
-                items = await asyncio.to_thread(engine.search_sync, search_query, limit)
+                if isinstance(engine, BochaEngine):
+                    items = await asyncio.to_thread(
+                        engine.search_sync, search_query, limit, freshness, include
+                    )
+                    # include 限定过严导致空结果 → 去掉渠道限定重试一次，避免空结果
+                    if not items and include:
+                        items = await asyncio.to_thread(
+                            engine.search_sync, search_query, limit, freshness, ""
+                        )
+                else:
+                    items = await asyncio.to_thread(engine.search_sync, search_query, limit)
             except Exception as e:
                 logger.warning("search_jobs_live %s 搜索异常: %s", engine.name, e)
                 continue
-            if items:
-                return self._render(items, engine.name, search_query)
+            if not items:
+                continue
+            # 渠道白名单过滤：对所有引擎统一生效（含兜底引擎），只保留招聘平台结果
+            filtered = _filter_by_site(items, include)
+            if not filtered:
+                logger.info(
+                    "search_jobs_live %s 返回 %d 条均不在渠道白名单内，试下一引擎",
+                    engine.name, len(items),
+                )
+                continue
+            return self._render(
+                filtered, engine.name, search_query,
+                time_range=time_range, site=render_site,
+            )
 
         # 全部引擎失败或无结果 → 友好降级提示
         return (
@@ -342,7 +481,14 @@ class SearchJobsLiveTool(Tool):
             "可稍后重试，或更换关键词、城市、岗位类型再试。"
         )
 
-    def _render(self, items: list[dict], engine: str, search_query: str) -> str:
+    def _render(
+        self,
+        items: list[dict],
+        engine: str,
+        search_query: str,
+        time_range: str | None = None,
+        site: str = "",
+    ) -> str:
         # URL 去重（按 url，去重后渲染）
         seen: set[str] = set()
         uniq: list[dict] = []
@@ -357,7 +503,13 @@ class SearchJobsLiveTool(Tool):
             {"title": it["title"], "url": it["url"], "text": it.get("snippet", "")}
             for it in uniq
         ]
-        lines = [f"「{search_query}」实时岗位搜索结果（{engine}，共 {len(uniq)} 条）："]
+        scope_parts = []
+        if time_range:
+            scope_parts.append(_TIME_RANGE_LABEL.get(time_range, time_range))
+        if site:
+            scope_parts.append(f"限定 {site}")
+        scope_str = f"（{'｜'.join(scope_parts)}）" if scope_parts else ""
+        lines = [f"「{search_query}」实时岗位搜索结果{scope_str}（{engine}，共 {len(uniq)} 条）："]
         for i, it in enumerate(uniq, 1):
             lines.append(f"\n{i}. {it.get('title') or ''}")
             extra = []

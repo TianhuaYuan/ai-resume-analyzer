@@ -152,12 +152,16 @@ export default function AzurillTemplate({
     <div className="resume-template azurill-template">
       <style>{TEMPLATE_BASE_STYLES + STYLES}</style>
       <div className="azurill-layout">
-        <div className="azurill-sidebar">
-          {sidebar.map((mod) => renderSection(mod, opts))}
-        </div>
-        <div className="azurill-main">
-          {main.map((mod) => renderSection(mod, opts))}
-        </div>
+        {sidebar.length > 0 && (
+          <div className="azurill-sidebar" style={main.length === 0 ? { width: "100%" } : undefined}>
+            {sidebar.map((mod) => renderSection(mod, opts))}
+          </div>
+        )}
+        {main.length > 0 && (
+          <div className="azurill-main">
+            {main.map((mod) => renderSection(mod, opts))}
+          </div>
+        )}
       </div>
     </div>
   );

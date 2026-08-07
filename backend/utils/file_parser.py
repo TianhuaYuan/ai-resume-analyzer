@@ -265,10 +265,17 @@ def _is_scanned_pdf(path: str, extracted_text: str) -> bool:
 
 
 async def parse_resume(path: str) -> str:
-    """根据扩展名自动选解析器。优先 MinerU，失败 fallback 本地解析。"""
+    """根据扩展名自动选解析器。
+
+    优先级：MinerU → 本地快速解析（pdfplumber / python-docx，秒级）→ Docling 版面增强 → OCR。
+
+    优化：原实现 MinerU 失败后无条件跑 Docling 版面分析（CPU 推理 + 首次加载 ~500MB 模型），
+    普通文本 PDF 也被拖慢到秒级。改为「本地解析结果足够就直接返回」，
+    Docling 降为本地结果不足/疑似扫描件时的版面感知兜底。
+    """
     ext = Path(path).suffix.lower()
 
-    # 1. 优先尝试 MinerU 精准解析（PDF/DOCX）
+    # 1. MinerU 在线精准解析（需配置，失败自动降级）
     if ext in {".pdf", ".docx"}:
         try:
             client = _get_mineru_client()
@@ -282,7 +289,28 @@ async def parse_resume(path: str) -> str:
         except Exception as e:
             logger.warning("MinerU 解析失败，fallback 本地解析: %s", e)
 
-    # 1.5 Docling 本地版面解析（MinerU 不可用/未配置时的版面感知兜底）
+    # 2. 本地快速解析（秒级）——优先跑，避免 Docling 拖慢普通文本 PDF
+    text = ""
+    parser = _PARSERS.get(ext)
+    if parser is not None:
+        try:
+            text = parser(path)
+        except Exception as e:
+            logger.warning("本地解析失败: %s: %s", path, e)
+    elif ext == ".txt":
+        text = parse_txt(path)
+    else:
+        raise ValueError(f"不支持的文件格式：{ext}")
+
+    # PDF 也做分节标注（DOCX 在 parse_docx_with_sections 里已做）
+    if ext == ".pdf":
+        text = _annotate_sections(text or "")
+
+    # 3. 本地结果足够（非扫描件）→ 直接返回，不跑 Docling
+    if text and len(text.strip()) >= MIN_SCAN_TEXT_LENGTH and not _is_scanned_pdf(path, text):
+        return text.strip()
+
+    # 4. Docling 本地版面解析（本地结果不足/疑似扫描件时的版面感知兜底）
     if ext == ".pdf":
         from utils.docling_parser import parse_pdf_with_docling
 
@@ -294,35 +322,17 @@ async def parse_resume(path: str) -> str:
             )
             return _annotate_sections(docling_text)
 
-    # 2. Fallback 本地解析
-    parser = _PARSERS.get(ext)
-    if parser is None:
-        if ext == ".txt":
-            text = parse_txt(path)
-        else:
-            raise ValueError(f"不支持的文件格式：{ext}")
-    else:
-        text = parser(path)
-
-    # PDF 也做分节标注（DOCX 在 parse_docx_with_sections 里已做）
+    # 5. 扫描件 PDF → RapidOCR 本地逐页 OCR 兜底
     if ext == ".pdf":
-        text = _annotate_sections(text)
+        from utils.ocr_parser import ocr_pdf
 
-    if len(text) < MIN_SCAN_TEXT_LENGTH or _is_scanned_pdf(path, text):
-        # A2 + Phase 2.5/P2: 扫描件 PDF（Producer 指纹 / 文本密度门控）或文本过短
-        # → RapidOCR 本地逐页 OCR 兜底
-        # （MinerU 在线不可用 / 未配置 token 时的本地扫描件识别）
-        if ext == ".pdf":
-            from utils.ocr_parser import ocr_pdf
+        ocr_text = await ocr_pdf(path)
+        if ocr_text and len(ocr_text) >= MIN_SCAN_TEXT_LENGTH:
+            logger.info(
+                "RapidOCR 扫描件识别成功: path=%s, len=%d",
+                path, len(ocr_text),
+            )
+            return _annotate_sections(ocr_text)
 
-            ocr_text = await ocr_pdf(path)
-            if ocr_text and len(ocr_text) >= MIN_SCAN_TEXT_LENGTH:
-                logger.info(
-                    "RapidOCR 扫描件识别成功: path=%s, len=%d",
-                    path, len(ocr_text),
-                )
-                return _annotate_sections(ocr_text)
-        logger.warning("解析文本过短: path=%s, len=%d", path, len(text))
-        raise ValueError("解析文本过短，可能是扫描件 PDF")
-
-    return text
+    logger.warning("解析文本过短: path=%s, len=%d", path, len(text or ""))
+    raise ValueError("解析文本过短，可能是扫描件 PDF")

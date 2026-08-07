@@ -93,6 +93,10 @@ async function handleResponse(res: Response) {
   return res.json();
 }
 
+/** 全局请求超时（毫秒）：后端挂起时 abort，防止前端 await 无限等待。
+ *  否则保存请求挂起 → saving 永久 true → 保存/完成按钮永久 disabled，点击无反应。 */
+const REQUEST_TIMEOUT_MS = 60000;
+
 async function request(
   path: string,
   options: RequestInit = {}
@@ -104,24 +108,37 @@ async function request(
     ...((options.headers as Record<string, string>) || {}),
   };
 
-  const res = await fetch(`${BASE}${path}`, { ...options, headers });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const doFetch = () =>
+    fetch(`${BASE}${path}`, { ...options, headers, signal: controller.signal });
 
-  // token 过期 → 静默刷新
-  if (res.status === 401 && token) {
-    const ok = await refreshToken();
-    if (ok) {
-      const newToken = localStorage.getItem("access_token");
-      headers.Authorization = `Bearer ${newToken}`;
-      return fetch(`${BASE}${path}`, { ...options, headers }).then(
-        handleResponse
-      );
+  try {
+    const res = await doFetch();
+
+    // token 过期 → 静默刷新
+    if (res.status === 401 && token) {
+      const ok = await refreshToken();
+      if (ok) {
+        const newToken = localStorage.getItem("access_token");
+        headers.Authorization = `Bearer ${newToken}`;
+        return doFetch().then(handleResponse);
+      }
+      // 刷新失败：弹全局过期提示，由用户点「去登录」再跳转
+      notifySessionExpired();
+      throw new Error("登录已过期");
     }
-    // 刷新失败：弹全局过期提示，由用户点「去登录」再跳转
-    notifySessionExpired();
-    throw new Error("登录已过期");
-  }
 
-  return handleResponse(res);
+    return handleResponse(res);
+  } catch (e) {
+    // 超时 abort → 明确报错（避免静默挂起让调用方无感）
+    if (e instanceof Error && e.name === "AbortError") {
+      throw new Error("请求超时，请重试");
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export const api = {

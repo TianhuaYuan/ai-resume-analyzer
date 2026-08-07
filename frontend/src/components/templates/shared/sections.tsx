@@ -64,6 +64,17 @@ const dictList = (v: unknown): Array<Record<string, unknown>> =>
     ? v.filter((x): x is Record<string, unknown> => !!x && typeof x === "object")
     : [];
 
+/**
+ * 条目列表：items 优先（后端 v2 / LLM 反解析产物统一用 items），兜底旧格式 entries。
+ * 只读 entries 会让上传物化的简历列表模块在前端预览为空（模块字段不显示 bug 根因）。
+ * 过滤 hidden 条目（编辑端 EyeSlash 隐藏的条目不渲染，修复"隐藏功能无法使用"）。
+ */
+const entryList = (content: ModuleContent): Array<Record<string, unknown>> =>
+  dictList(
+    (content as Record<string, unknown>).items ??
+      (content as Record<string, unknown>).entries,
+  ).filter((e) => !e.hidden);
+
 const formatDateRange = (start?: unknown, end?: unknown): string => {
   const s = str(start);
   const e = str(end);
@@ -135,9 +146,20 @@ function SectionBasicInfo({ content }: { content: ModuleContent }) {
   const location = str(content.location);
   const status = str(content.status);
   const hometown = str(content.hometown);
+  const gender = str(content.gender);
+  // age 是 number 类型（str() 只接受 string），需显式转字符串
+  const age = content.age != null && content.age !== "" ? String(content.age) : "";
   const summary = str(content.summary);
 
-  const contacts = [phone, email, location, status, hometown ? `籍贯: ${hometown}` : ""].filter(Boolean);
+  const contacts = [
+    gender ? `性别: ${gender}` : "",
+    age ? `年龄: ${age}` : "",
+    phone,
+    email,
+    location,
+    status,
+    hometown ? `籍贯: ${hometown}` : "",
+  ].filter(Boolean);
 
   return (
     <div className="basic-header">
@@ -185,7 +207,7 @@ function SectionBasicInfo({ content }: { content: ModuleContent }) {
 }
 
 function SectionEducation({ content, itemRange }: ListSectionProps) {
-  const rows = sliceRows(dictList(content.entries), itemRange);
+  const rows = sliceRows(entryList(content), itemRange);
   if (!rows.length) return null;
   return (
     <>
@@ -212,7 +234,7 @@ function SectionEducation({ content, itemRange }: ListSectionProps) {
 }
 
 function SectionWorkExperience({ content, itemRange }: ListSectionProps) {
-  const rows = sliceRows(dictList(content.entries), itemRange);
+  const rows = sliceRows(entryList(content), itemRange);
   if (!rows.length) return null;
   return (
     <>
@@ -240,7 +262,7 @@ function SectionWorkExperience({ content, itemRange }: ListSectionProps) {
 }
 
 function SectionProjectExperience({ content, itemRange }: ListSectionProps) {
-  const rows = sliceRows(dictList(content.entries), itemRange);
+  const rows = sliceRows(entryList(content), itemRange);
   if (!rows.length) return null;
   return (
     <>
@@ -271,9 +293,6 @@ function SectionProjectExperience({ content, itemRange }: ListSectionProps) {
 }
 
 function SectionSkills({ content, itemRange }: ListSectionProps) {
-  // show_levels：编辑端技能滑块存 items: [{name, level, category}]，渲染进度条
-  const showLevels = Boolean(content.show_levels);
-
   // 优先新格式 items（含 level/category），fallback 旧格式 categories
   const newItems = dictList(content.items);
   const hasNew = newItems.length > 0;
@@ -311,7 +330,8 @@ function SectionSkills({ content, itemRange }: ListSectionProps) {
         <div key={i} className="skill-cat" data-resume-item-index={i}>
           <span className="skill-name">{str(cat.name)}</span>{" "}
           {cat.skills.map((skill, j) => {
-            const level = showLevels && typeof skill.level === "number" ? skill.level : null;
+            // 熟练度：数据里有 level 就渲染进度条（不再依赖 show_levels 开关，修复"熟练度不显示"）
+            const level = typeof skill.level === "number" ? skill.level : null;
             const pct = level != null ? `${Math.min(100, Math.max(0, (level / 5) * 100))}%` : null;
             return (
               <span key={j} className="skill-item">
@@ -350,7 +370,7 @@ function SectionSkills({ content, itemRange }: ListSectionProps) {
 }
 
 function SectionLanguage({ content, itemRange }: ListSectionProps) {
-  const rows = sliceRows(dictList(content.entries), itemRange);
+  const rows = sliceRows(entryList(content), itemRange);
   if (!rows.length) return null;
   return (
     <>
@@ -373,7 +393,7 @@ function SectionLanguage({ content, itemRange }: ListSectionProps) {
 }
 
 function SectionHonors({ content, itemRange }: ListSectionProps) {
-  const rows = sliceRows(dictList(content.entries), itemRange);
+  const rows = sliceRows(entryList(content), itemRange);
   if (!rows.length) return null;
   return (
     <>
@@ -389,7 +409,7 @@ function SectionHonors({ content, itemRange }: ListSectionProps) {
 }
 
 function SectionCertificates({ content, itemRange }: ListSectionProps) {
-  const rows = sliceRows(dictList(content.entries), itemRange);
+  const rows = sliceRows(entryList(content), itemRange);
   if (!rows.length) return null;
   return (
     <>
@@ -419,7 +439,7 @@ function SectionInterests({ content }: { content: ModuleContent }) {
 }
 
 function SectionClubActivities({ content, itemRange }: ListSectionProps) {
-  const rows = sliceRows(dictList(content.entries), itemRange);
+  const rows = sliceRows(entryList(content), itemRange);
   if (!rows.length) return null;
   return (
     <>
@@ -438,7 +458,7 @@ function SectionClubActivities({ content, itemRange }: ListSectionProps) {
 }
 
 function SectionPublications({ content, itemRange }: ListSectionProps) {
-  const rows = sliceRows(dictList(content.entries), itemRange);
+  const rows = sliceRows(entryList(content), itemRange);
   if (!rows.length) return null;
   return (
     <>
@@ -451,6 +471,13 @@ function SectionPublications({ content, itemRange }: ListSectionProps) {
               <div className="pub-authors">{strList(entry.authors).join(", ")}</div>
             )}
             {info.length > 0 && <div className="pub-info">{info.join(" - ")}</div>}
+            {str(entry.url) && (
+              <div className="pub-url">
+                <a href={str(entry.url)} target="_blank" rel="noopener noreferrer">
+                  {str(entry.url)}
+                </a>
+              </div>
+            )}
           </div>
         );
       })}
@@ -459,7 +486,7 @@ function SectionPublications({ content, itemRange }: ListSectionProps) {
 }
 
 function SectionRecommendation({ content, itemRange }: ListSectionProps) {
-  const rows = sliceRows(dictList(content.entries), itemRange);
+  const rows = sliceRows(entryList(content), itemRange);
   if (!rows.length) return null;
   return (
     <>
@@ -511,6 +538,18 @@ function SectionSocialLinks({ content }: { content: ModuleContent }) {
       );
     }
   }
+  // v2: items 优先（后端存 items: [{name,url}] 或 [{label,value}]），兜底旧固定字段
+  for (const it of dictList((content as Record<string, unknown>).items)) {
+    const name = str(it.name) || str(it.label);
+    const url = str(it.url) || str(it.value);
+    if (name || url) {
+      parts.push(
+        <span key={`i-${parts.length}`} className="social-link">
+          <strong>{name}</strong>: {url}
+        </span>,
+      );
+    }
+  }
   if (!parts.length) return null;
   return (
     <div className="social-links">
@@ -534,7 +573,7 @@ function SectionOther({ content }: { content: ModuleContent }) {
 
 function SectionCustom({ content }: { content: ModuleContent }) {
   // 多板块模式（entries）
-  const entries = dictList(content.entries).filter((e) => str(e.content));
+  const entries = entryList(content).filter((e) => str(e.content));
   if (entries.length > 0) {
     return (
       <>
@@ -580,35 +619,38 @@ function SectionFallback({ content }: { content: ModuleContent }) {
 export function SectionContent({
   moduleType,
   content,
+  itemRange,
 }: {
   moduleType: ModuleType;
   content: ModuleContent;
+  /** 条目级分页：只渲染 [start, end) 区间条目；不传 = 全部（测量层/非分页场景） */
+  itemRange?: ItemRange;
 }) {
   switch (moduleType) {
     case "basic_info":
       return <SectionBasicInfo content={content} />;
     case "education":
-      return <SectionEducation content={content} />;
+      return <SectionEducation content={content} itemRange={itemRange} />;
     case "work_experience":
-      return <SectionWorkExperience content={content} />;
+      return <SectionWorkExperience content={content} itemRange={itemRange} />;
     case "project_experience":
-      return <SectionProjectExperience content={content} />;
+      return <SectionProjectExperience content={content} itemRange={itemRange} />;
     case "skills":
-      return <SectionSkills content={content} />;
+      return <SectionSkills content={content} itemRange={itemRange} />;
     case "language":
-      return <SectionLanguage content={content} />;
+      return <SectionLanguage content={content} itemRange={itemRange} />;
     case "honors":
-      return <SectionHonors content={content} />;
+      return <SectionHonors content={content} itemRange={itemRange} />;
     case "certificates":
-      return <SectionCertificates content={content} />;
+      return <SectionCertificates content={content} itemRange={itemRange} />;
     case "interests":
       return <SectionInterests content={content} />;
     case "club_activities":
-      return <SectionClubActivities content={content} />;
+      return <SectionClubActivities content={content} itemRange={itemRange} />;
     case "publications":
-      return <SectionPublications content={content} />;
+      return <SectionPublications content={content} itemRange={itemRange} />;
     case "recommendation":
-      return <SectionRecommendation content={content} />;
+      return <SectionRecommendation content={content} itemRange={itemRange} />;
     case "social_links":
       return <SectionSocialLinks content={content} />;
     case "other":

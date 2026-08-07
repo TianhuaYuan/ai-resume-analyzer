@@ -22,8 +22,13 @@ export function renderSection(mod: ResumeModule, opts: RenderSectionOptions = {}
       moduleType={mod.module_type}
       interactive={opts.interactive}
       onSelectSection={opts.onSelectSection}
+      showTitle={mod.showTitle !== false}
     >
-      <SectionContent moduleType={mod.module_type} content={mod.content} />
+      <SectionContent
+        moduleType={mod.module_type}
+        content={mod.content}
+        itemRange={mod.itemRange}
+      />
     </SectionWrapper>
   );
 }

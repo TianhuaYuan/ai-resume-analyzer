@@ -59,6 +59,7 @@ import { trackEvent } from "../api/analytics";
 import { copyResume, getResumeFamily, auditResume } from "../api/resumes";
 import { listPendingChanges } from "../api/pendingChanges";
 import type { ResumeFamilyItem, AtsAuditResult } from "../api/resumes";
+import { useToast } from "../components/Toast";
 import { useNavigate } from "react-router-dom";
 import { useHistory } from "../hooks/useHistory";
 
@@ -119,6 +120,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
   // 加载与错误状态
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const toast = useToast();
 
   // 简历数据
   const [resume, setResume] = useState<BuilderResume | null>(null);
@@ -147,6 +149,9 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   // T17: 最近一次成功的保存模式（draft → 草稿即时保存；complete → 已保存并完成）
   const [lastSaveMode, setLastSaveMode] = useState<"draft" | "complete" | null>(null);
+  // 未保存修改标记：编辑后置 true，仅显式"草稿/完成"保存成功后置 false。
+  // 不再自动保存——修改内容不落库，直到用户主动点击保存（配合 beforeunload 提示）。
+  const [isDirty, setIsDirty] = useState(false);
 
   // T17: 索引新鲜度（从 GET /resumes/{id} 的 is_indexed / is_stale 读取）
   const [indexInfo, setIndexInfo] = useState<{ is_indexed: boolean; is_stale: boolean } | null>(null);
@@ -199,7 +204,6 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
   const modulesRef = useRef(modules);
   const filenameRef = useRef(filename);
   const styleRef = useRef(style);
-  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const firstEditRef = useRef(true);
   // T37: builder 埋点只触发一次（避免重试/重复加载重复上报）
   const builderTrackedRef = useRef(false);
@@ -252,6 +256,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
       setMaterialized(data.modules_materialized ?? true);
       setExpandedType("basic_info");
       setSaveStatus("idle");
+      setIsDirty(false); // 加载完成即与已保存一致，无未保存修改
       firstEditRef.current = true; // 重置首次编辑标记
       // T37: 进入 builder 埋点（best-effort，只上报一次）
       if (!builderTrackedRef.current) {
@@ -377,42 +382,33 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
     [modules, style],
   );
 
-  // ── 自动保存（5s 防抖） ─────────────────────────────────────
+  // ── 未保存修改追踪（不再自动保存：用户显式点击「草稿/完成」才落库） ──
 
-  const doSaveDraft = useCallback(async () => {
-    if (!resume) return;
-    setSaveStatus("saving");
-    try {
-      const result = await saveDraft(resumeId, {
-        filename: filenameRef.current,
-        modules: modulesToInputs(modulesRef.current),
-        style: styleRef.current,
-      });
-      setVersion(result.version);
-      setSaveStatus("saved");
-      setLastSaveMode("draft"); // T17: 草稿即时保存（不等待向量）
-      notifyListRefresh();
-    } catch {
-      setSaveStatus("error");
-    }
-  }, [resume, resumeId]);
-
+  // 首次加载 / 简历重载（firstEditRef=true，loadResume 完成时重置）不置脏；
+  // 之后 modules/filename/style 任一变化 → 标记未保存，同时清除"已保存"提示。
+  // 依赖不能含 resume：保存成功后 handleSaveComplete 会 setResume(result) 回填，
+  // 若把 resume 当触发源会误把刚保存的内容重新标记为"未保存"（"完成"按钮看起来没反应）。
   useEffect(() => {
     if (firstEditRef.current) {
       firstEditRef.current = false;
       return;
     }
-    if (!resume) return;
+    if (!resumeId) return;
+    setIsDirty(true);
+    setSaveStatus("idle");
+  }, [modules, filename, style, resumeId]);
 
-    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
-    autoSaveTimerRef.current = setTimeout(() => {
-      doSaveDraft();
-    }, 5000);
-
-    return () => {
-      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+  // 未保存时关闭/刷新页面提示确认（浏览器原生 beforeunload；
+  // 站内路由切换不在保护范围，需用户主动保存后再离开）
+  useEffect(() => {
+    if (!isDirty) return;
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
     };
-  }, [modules, filename, style, resume, doSaveDraft]);
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [isDirty]);
 
   // ── 模块内容编辑（接收 type + content） ─────────────────────
 
@@ -523,13 +519,16 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
       setVersion(result.version);
       setSaveStatus("saved");
       setLastSaveMode("draft"); // T17: 草稿即时保存（不等待向量）
+      setIsDirty(false); // 已显式保存，清除未保存标记
       notifyListRefresh();
-    } catch {
+      toast.success("草稿已保存");
+    } catch (e) {
       setSaveStatus("error");
+      toast.error(e instanceof Error ? e.message : "保存草稿失败");
     } finally {
       setSaving(false);
     }
-  }, [resume, resumeId]);
+  }, [resume, resumeId, toast]);
 
   // ── 保存并完成 ──────────────────────────────────────────────
 
@@ -547,19 +546,23 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
       setResume(result);
       setSaveStatus("saved");
       setLastSaveMode("complete"); // T17: 保存并完成（触发索引预热）→ 提示可开始问答/检索
+      setIsDirty(false); // 已保存并完成，清除未保存标记
       notifyListRefresh();
       // T17: complete 会触发索引预热，刷新索引新鲜度标识（builder 响应已并入）
       setIndexInfo({
         is_indexed: result.is_indexed ?? false,
         is_stale: result.is_stale ?? false,
       });
+      toast.success("已保存并完成，可开始问答/检索");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "保存失败");
+      const msg = e instanceof Error ? e.message : "保存失败";
+      setError(msg);
       setSaveStatus("error");
+      toast.error(msg);
     } finally {
       setSaving(false);
     }
-  }, [resume, resumeId, version]);
+  }, [resume, resumeId, version, toast]);
 
   // ── 浮层面板切换回调（稳定引用，避免子组件因新函数引用重渲染） ──
   const handleTogglePreviewCollapse = useCallback(() => {
@@ -567,14 +570,14 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
   }, []);
   const handleCloseStylePanel = useCallback(() => setShowStylePanel(false), []);
 
-  // ── 模板切换（借鉴 Magic Resume setTemplate：覆盖主题色/间距与模板对齐） ──
+  // ── 模板切换（只改模板结构 + 间距；不再覆盖用户自定义主题色 accent_color，
+  //    主题色独立在样式面板控制，修复"切模板把用户主题色抹掉"） ──
   const handleSetTemplate = useCallback((templateId: string) => {
     const template = getTemplateConfigs().find((t) => t.id === templateId);
     if (!template) return;
     setStyle((prev) => ({
       ...prev,
       template_id: templateId,
-      accent_color: template.colorScheme.primary,
       margin: `${template.spacing.contentPadding}px`,
       section_spacing: `${template.spacing.sectionGap}px`,
       spacing: `${template.spacing.itemGap}px`,
@@ -748,7 +751,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
             )}
           </div>
 
-          {/* 保存状态指示器 */}
+          {/* 保存状态指示器（优先级：saving > error > 未保存 > 已保存） */}
           {saveStatus === "saving" && (
             <span className="flex items-center gap-1 text-[11px] text-[var(--color-text-muted)]">
               <span
@@ -759,7 +762,22 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
               保存中...
             </span>
           )}
-          {saveStatus === "saved" && (
+          {saveStatus === "error" && (
+            <span className="flex items-center gap-1 text-[11px] text-red-400">
+              <Warning size={11} weight="bold" aria-hidden="true" />
+              保存失败
+            </span>
+          )}
+          {isDirty && saveStatus !== "saving" && saveStatus !== "error" && (
+            <span
+              className="flex items-center gap-1 text-[11px] text-amber-500"
+              title="有未保存的修改，点击「草稿」或「完成」保存"
+            >
+              <Warning size={11} weight="bold" aria-hidden="true" />
+              未保存的修改
+            </span>
+          )}
+          {!isDirty && saveStatus === "saved" && (
             <span
               className="flex items-center gap-1 text-[11px] text-emerald-400"
               title={lastSaveMode === "complete" ? "已保存并完成，可开始问答/检索" : "草稿已保存"}
@@ -768,12 +786,6 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
               {lastSaveMode === "complete"
                 ? "已保存并完成，可开始问答/检索"
                 : "已保存"}
-            </span>
-          )}
-          {saveStatus === "error" && (
-            <span className="flex items-center gap-1 text-[11px] text-red-400">
-              <Warning size={11} weight="bold" aria-hidden="true" />
-              保存失败
             </span>
           )}
 
@@ -1025,8 +1037,6 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
           onChange={setStyle}
           show={showStylePanel}
           onToggle={handleCloseStylePanel}
-          modules={modules}
-          onReorderModules={handleReorder}
         />
 
         {/* 浮动覆盖层：模板切换抽屉 */}

@@ -13,6 +13,7 @@ A3 工具契约化（借鉴 pydantic-ai 的 ModelRetry/ToolFailed 双通道）�
 - args 校验失败格式化为逐字段错误回灌（替代 str(e) 黑盒，模型可自愈）
 """
 
+import json
 from abc import ABC, abstractmethod
 
 from pydantic import BaseModel, ValidationError
@@ -195,6 +196,17 @@ class Tool(ABC):
         parts: list[str] = []
         for key, value in data.items():
             if value in (None, "", [], {}):
+                continue
+            if isinstance(value, (dict, list)):
+                # 结构化参数（模块内容 / 简历 ID 列表等）：直接 str() 会输出原始 JSON，
+                # 用户看不懂。改为紧凑 JSON 摘要并截断，保留"操作对象/要改什么"的辨识度。
+                try:
+                    text = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+                except (TypeError, ValueError):
+                    text = str(value)
+                if len(text) > 60:
+                    text = text[:60] + "…"
+                parts.append(f"{key}={text}")
                 continue
             text = str(value)
             if len(text) > 80:

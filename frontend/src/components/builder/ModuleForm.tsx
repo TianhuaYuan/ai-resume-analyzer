@@ -55,10 +55,24 @@ export function getListString(content: Record<string, unknown>, key: string): st
   return "";
 }
 
-/** 从 content 中安全读取条目数组 */
+/**
+ * 从 content 中安全读取条目数组（items 优先，兜底旧格式 entries）。
+ * 后端 v2 / LLM 反解析产物统一用 items（schemas/resume_module.py），
+ * 前端若只读 entries，上传物化的简历列表模块会显示为空（模块字段不显示 bug 根因）。
+ */
 export function getEntries(content: ModuleContent): Record<string, unknown>[] {
-  const v = content.entries;
+  const v = content.items ?? content.entries;
   return Array.isArray(v) ? (v as Record<string, unknown>[]) : [];
+}
+
+/**
+ * 统一写条目数组到 items（后端 v2 格式），清空旧 entries 避免两套数据并存。
+ * 所有条目写入（新增/删除/移动/更新/隐藏）都应走本函数，保证读写一致
+ * （getEntries 已 items 优先读取）。
+ */
+export function setEntries(content: ModuleContent, entries: unknown[]): ModuleContent {
+  const { entries: _old, ...rest } = content;
+  return { ...rest, items: entries };
 }
 
 /**
@@ -75,7 +89,7 @@ export function updateEntryField(
   if (index < 0 || index >= entries.length) return content;
   const newEntries = [...entries];
   newEntries[index] = { ...newEntries[index], [key]: value };
-  return { ...content, entries: newEntries };
+  return setEntries(content, newEntries);
 }
 
 /** 将逗号分隔文本转为字符串数组（保留空串以维持输入光标） */
@@ -128,7 +142,6 @@ export const ENTRY_FIELD_CONFIGS: Partial<Record<ModuleType, FieldConfig[]>> = {
     { key: "end_date", label: "结束日期", type: "text", placeholder: "2023-12" },
     { key: "url", label: "项目链接", type: "text", placeholder: "https://github.com/..." },
     { key: "description", label: "项目描述", type: "textarea" },
-    { key: "tech_stack", label: "技术栈（逗号分隔）", type: "list", placeholder: "React, TypeScript, Node.js" },
   ],
   language: [
     { key: "name", label: "语言", type: "text", required: true, placeholder: "英语" },
@@ -323,13 +336,13 @@ export function EntriesEditor({
   const entryAIEnabled = !!resumeId && !!moduleType && AI_ENTRY_MODULE_TYPES.has(moduleType);
 
   const handleAdd = useCallback(() => {
-    onChange({ ...content, entries: [...entries, {}] });
+    onChange(setEntries(content, [...entries, {}]));
   }, [content, entries, onChange]);
 
   const handleRemove = useCallback(
     (index: number) => {
       const newEntries = entries.filter((_, i) => i !== index);
-      onChange({ ...content, entries: newEntries });
+      onChange(setEntries(content, newEntries));
     },
     [content, entries, onChange],
   );
@@ -339,7 +352,7 @@ export function EntriesEditor({
       if (index === 0) return;
       const newEntries = [...entries];
       [newEntries[index - 1], newEntries[index]] = [newEntries[index], newEntries[index - 1]];
-      onChange({ ...content, entries: newEntries });
+      onChange(setEntries(content, newEntries));
     },
     [content, entries, onChange],
   );
@@ -349,7 +362,7 @@ export function EntriesEditor({
       if (index === entries.length - 1) return;
       const newEntries = [...entries];
       [newEntries[index + 1], newEntries[index]] = [newEntries[index], newEntries[index + 1]];
-      onChange({ ...content, entries: newEntries });
+      onChange(setEntries(content, newEntries));
     },
     [content, entries, onChange],
   );
@@ -371,7 +384,7 @@ export function EntriesEditor({
       newEntries[index] = entry;
       // 静默纠错字段级接线：长文本字段（textarea）回传字段标签，聚焦该字段检查
       onFieldEdit?.(fieldConfig?.type === "textarea" ? fieldConfig.label : null);
-      onChange({ ...content, entries: newEntries });
+      onChange(setEntries(content, newEntries));
     },
     [content, entries, onChange, fields, onFieldEdit],
   );
@@ -429,7 +442,7 @@ export function EntriesEditor({
                 onClick={() => {
                   const newEntries = [...entries];
                   newEntries[index] = { ...newEntries[index], hidden: !newEntries[index].hidden };
-                  onChange({ ...content, entries: newEntries });
+                  onChange(setEntries(content, newEntries));
                 }}
                 className={`p-1 rounded transition-all cursor-pointer ${
                   entry.hidden
@@ -535,6 +548,17 @@ export function SkillsForm({ content, onChange }: SkillsFormProps) {
     [content, items, onChange],
   );
 
+  // 重命名整个分组的分类名（分类名在分组头部编辑，不再每条技能一个分类输入框）
+  const handleCategoryRename = useCallback(
+    (oldCat: string, newCat: string) => {
+      const next = items.map((it) =>
+        (it.category || "其他") === oldCat ? { ...it, category: newCat } : it,
+      );
+      onChange({ ...content, items: next });
+    },
+    [content, items, onChange],
+  );
+
   // 按 category 分组显示
   const grouped = items.reduce<Record<string, Array<{ item: typeof items[0]; index: number }>>>((acc, item, i) => {
     const cat = item.category || "其他";
@@ -553,9 +577,17 @@ export function SkillsForm({ content, onChange }: SkillsFormProps) {
           className="p-3 rounded-xl bg-[var(--color-bg-secondary)] border border-[var(--color-border)] space-y-3"
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-[var(--color-text-muted)]">
-              {cat}
-            </span>
+            {/* 分类名在分组头部编辑（一组一个，取代每条技能的冗余分类输入框） */}
+            <input
+              type="text"
+              value={cat}
+              onChange={(e) => handleCategoryRename(cat, e.target.value)}
+              placeholder="分类名（留空归入其他）"
+              className="w-full text-xs font-medium px-1.5 py-0.5 rounded border border-transparent
+                hover:border-[var(--color-border)] focus:border-brand/40 focus:outline-none
+                bg-transparent text-[var(--color-text-muted)]"
+              aria-label={`分类名（${cat}）`}
+            />
           </div>
           {/* 该分类下的技能条目 */}
           {grouped[cat]?.map(({ item, index: i }) => (
@@ -591,14 +623,6 @@ export function SkillsForm({ content, onChange }: SkillsFormProps) {
                   {item.level ? `${item.level}/5` : "隐藏"}
                 </span>
               </div>
-              {/* 分类标签 */}
-              <input
-                type="text"
-                value={item.category || ""}
-                onChange={(e) => handleSkillChange(i, "category", e.target.value)}
-                placeholder="分类"
-                className="w-20 text-xs px-2 py-1 rounded border border-[var(--color-border)] bg-white"
-              />
               <button
                 onClick={() => handleRemoveSkill(i)}
                 className="p-1 rounded text-[var(--color-text-muted)] hover:text-red-400 hover:bg-red-500/10 transition-all cursor-pointer"
@@ -810,15 +834,15 @@ export function CustomModuleForm({ content, onChange, resumeId, moduleType }: Cu
   ) => {
     const next = [...entries];
     next[index] = { ...(next[index] ?? {}), ...patch };
-    onChange({ ...content, entries: next });
+    onChange(setEntries(content, next));
   };
 
   const addEntry = () => {
-    onChange({ ...content, entries: [...entries, { title: "", content: "" }] });
+    onChange(setEntries(content, [...entries, { title: "", content: "" }]));
   };
 
   const removeEntry = (index: number) => {
-    onChange({ ...content, entries: entries.filter((_, i) => i !== index) });
+    onChange(setEntries(content, entries.filter((_, i) => i !== index)));
     // 清理折叠状态：被删项之后的索引整体前移
     setCollapsed((prev) => {
       const next = new Set<number>();

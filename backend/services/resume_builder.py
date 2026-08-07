@@ -64,9 +64,18 @@ def _validate_modules(modules: list[ResumeModuleCreate], strict: bool = True) ->
         try:
             validate_module_content(mod.module_type, mod.content)
         except ValidationError as e:
+            # 友好化：逐条提取「字段路径: 原因」，避免把原始 JSON errors 抛给前端
+            errs = []
+            for err in e.errors():
+                loc = ".".join(str(x) for x in err.get("loc", []) if x != "__root__")
+                msg = err.get("msg", "")
+                errs.append(f"{loc}: {msg}")
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"模块 {mod.module_type.value} content 校验失败: {e.errors()}",
+                detail=(
+                    f"模块 {mod.module_type.value} 校验失败: "
+                    f"{'; '.join(errs[:5]) or '字段缺失或格式错误'}"
+                ),
             ) from e
         except ValueError as e:
             raise HTTPException(
@@ -610,7 +619,8 @@ async def update_resume_draft(
     spec F: PUT mode=draft 不带 version。
 
     规则：
-    - 仅 status=draft 的简历可草稿更新（非 draft → 409）
+    - 仅 draft / ready 状态可草稿更新（非 draft/ready → 409）
+    - 保存草稿后 status 置为 draft（内容已变但未"保存并完成"，不再视为已就绪）
     - modules: 全量替换（先删后插）
     - style / filename: 可选部分更新
     - version 不变
@@ -661,6 +671,8 @@ async def update_resume_draft(
     # 不置脏也不触发索引；内容变更发生在 complete（重新合并 parsed_text 后统一算 hash）。
 
     # version 不变（last-write-wins）
+    # 内容已修改但未"保存并完成"重建索引 → 不再视为已就绪，置为 draft
+    resume.status = "draft"
     resume.updated_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(resume)
@@ -967,6 +979,9 @@ async def complete_resume(
     # 4. 全量替换模块（如果请求体包含 modules）
     current_modules = existing_modules
     if body.modules is not None:
+        # 先清理全空条目/补占位（复用草稿清洗），避免「残留空条目」被严格校验 422。
+        # 部分空条目（缺必填字段，如 work 填了 company 没填 position）仍会 422，由前端提示补全。
+        _sanitize_draft_modules(body.modules)
         _validate_modules(body.modules)
 
         for old_mod in existing_modules:

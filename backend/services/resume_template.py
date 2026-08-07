@@ -242,6 +242,10 @@ def _render_basic_info(content: dict) -> str:
 
     # 联系方式（电话 | 邮箱 | 所在城市 | 当前状态 | 籍贯）
     contact_parts = []
+    if content.get("gender"):
+        contact_parts.append(f'<span>性别: {_esc(content["gender"])}</span>')
+    if content.get("age"):
+        contact_parts.append(f'<span>年龄: {_esc(content["age"])}</span>')
     if content.get("phone"):
         contact_parts.append(f'<span>{_esc(content["phone"])}</span>')
     if content.get("email"):
@@ -412,7 +416,6 @@ def _render_skills(content: dict) -> str:
         return "\n".join(rows) if rows else ""
 
     # 新格式：按 category 分组显示
-    show_levels = content.get("show_levels", False)
     by_category: dict[str, list] = {}
     for item in items:
         cat = item.get("category", "") or "其他"
@@ -424,7 +427,8 @@ def _render_skills(content: dict) -> str:
         for item in cat_items:
             name = _esc(item.get("name", ""))
             level = item.get("level")
-            if show_levels and level:
+            # 熟练度：数据里有 level 就渲染星级（不再依赖 show_levels 开关，修复"熟练度不显示"）
+            if level:
                 skill_spans.append(
                     f'<span class="skill-item">{name} '
                     f'<span class="skill-level">{"★" * level}{"☆" * (5 - level)}</span></span>'
@@ -550,6 +554,7 @@ def _render_publications(content: dict) -> str:
         authors = entry.get("authors", [])
         venue = _esc(entry.get("venue", ""))
         date = _esc(entry.get("date", ""))
+        url = _esc(entry.get("url", ""))
 
         row = f'<div class="pub-item"><div class="pub-title">{title}</div>'
         if authors:
@@ -562,6 +567,8 @@ def _render_publications(content: dict) -> str:
             info_parts.append(date)
         if info_parts:
             row += f'<div class="pub-info">{" - ".join(info_parts)}</div>'
+        if url:
+            row += f'<div class="pub-url"><a href="{url}">{url}</a></div>'
         row += "</div>"
         rows.append(row)
     return "\n".join(rows)

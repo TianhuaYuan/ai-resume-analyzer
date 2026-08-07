@@ -9,7 +9,7 @@
  * - PDF/MD 导出保留（后端 WeasyPrint / Markdown）
  */
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, memo } from "react";
 import {
   FilePdf,
   FileText,
@@ -42,7 +42,7 @@ interface A4PreviewPanelProps {
 
 type ResumeModuleInputLite = Pick<ResumeModule, "module_type" | "content" | "sort_order">;
 
-export function A4PreviewPanel({
+export const A4PreviewPanel = memo(function A4PreviewPanel({
   resumeId,
   previewKey: _previewKey,
   collapsed,
@@ -260,4 +260,4 @@ export function A4PreviewPanel({
       </div>
     </div>
   );
-}
+});

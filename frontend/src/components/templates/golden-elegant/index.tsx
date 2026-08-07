@@ -144,12 +144,16 @@ export default function GoldenElegantTemplate({
     <div className="resume-template golden-elegant-template">
       <style>{TEMPLATE_BASE_STYLES + STYLES}</style>
       <div className="golden-elegant-layout">
-        <div className="golden-elegant-sidebar">
-          {sidebar.map((mod) => renderSection(mod, opts))}
-        </div>
-        <div className="golden-elegant-main">
-          {main.map((mod) => renderSection(mod, opts))}
-        </div>
+        {sidebar.length > 0 && (
+          <div className="golden-elegant-sidebar" style={main.length === 0 ? { width: "100%" } : undefined}>
+            {sidebar.map((mod) => renderSection(mod, opts))}
+          </div>
+        )}
+        {main.length > 0 && (
+          <div className="golden-elegant-main">
+            {main.map((mod) => renderSection(mod, opts))}
+          </div>
+        )}
       </div>
     </div>
   );

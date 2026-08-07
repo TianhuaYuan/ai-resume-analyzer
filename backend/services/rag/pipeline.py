@@ -333,8 +333,11 @@ async def llm_generate(
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
-        "temperature": temperature,
     }
+    # temperature=None → 不传该参数（推理模型如 deepseek-reasoner/mimo-v2.5
+    # 对 temperature 会 400 拒绝或忽略；None 时让服务端用模型默认值）
+    if temperature is not None:
+        kwargs["temperature"] = temperature
     if max_tokens is not None:
         kwargs["max_tokens"] = max_tokens
     response = await client.chat.completions.create(**kwargs)
