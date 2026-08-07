@@ -46,13 +46,14 @@ def greeting_reply(query: str) -> str:
 
 
 # ── 工具相关性过滤（保守策略）──
-# 核心工具恒保留（简历检索/整文直读/深度检索/记忆召回），保证基本问答能力不断。
+# 核心工具恒保留（简历检索/整文直读/深度检索/记忆召回/子代理委派），保证基本问答能力不断。
 _CORE_TOOLS = {
     "search_resume",
     "search_assets",
     "get_resume_content",
     "answer_from_index",
     "recall_memory",
+    "spawn",  # P1-1 子代理委派：恒保留，不随领域裁剪
 }
 
 # 领域工具 → 触发关键词（小写匹配）。仅在强命中时保留该工具 + 核心工具。

@@ -199,10 +199,15 @@ async def get_l2_history(
     user_id: int,
     resume_id: int,
     limit: int = DEFAULT_L2_LIMIT,
+    exclude_questions: set[str] | None = None,
 ) -> list[dict]:
     """从 qa_history 取最近 limit 条问答，按时间倒序。
 
     返回 [{"question": ..., "answer": ...}, ...]
+
+    ``exclude_questions``（P2-9）：已作为完整 user/assistant 轮次注入的消息问题集合。
+    同一批历史若既以 L2 摘要（200 字截断）注入 system prompt、又以完整轮次注入
+    messages，会 token 重复携带。此处过滤掉已完整注入的问答，仅保留其余历史摘要。
     """
     result = await db.execute(
         select(QAHistory)
@@ -215,6 +220,8 @@ async def get_l2_history(
         .limit(limit)
     )
     records = result.scalars().all()
+    if exclude_questions:
+        records = [r for r in records if r.question not in exclude_questions]
     return [{"question": r.question, "answer": r.answer} for r in records]
 
 
@@ -320,6 +327,7 @@ async def assemble_system_prompt(
     *,
     builder: bool = False,
     query: str | None = None,
+    exclude_questions: set[str] | None = None,
 ) -> str:
     """装配 system prompt：基础指令 + 当前简历上下文 + L3 画像 + L2 历史。
 
@@ -371,8 +379,10 @@ async def assemble_system_prompt(
             profile_parts.append(f"**技能**：{skills_text}")
         sections.append("\n".join(profile_parts))
 
-    # L2 历史
-    l2_history = await get_l2_history(db, user_id, resume_id)
+    # L2 历史（P2-9：排除已作为完整轮次注入的问答，避免同一历史双重携带）
+    l2_history = await get_l2_history(
+        db, user_id, resume_id, exclude_questions=exclude_questions
+    )
     _l2_ms = round((time.perf_counter() - _t2) * 1000)
     if l2_history:
         history_parts = ["\n# 历史问答（L2 情景记忆）"]
@@ -384,26 +394,25 @@ async def assemble_system_prompt(
     # L4 长期语义记忆（T15）：按当前问题语义召回，注入 system prompt（跨会话一致性）。
     # A3 实体增强：recall_with_entity_boost 在语义召回基础上，命中实体时把该实体有效事实
     # （resume_entity_facts，invalid_at IS NULL）RRF 融合进候选（借鉴 mem0 entity boost）。
-    # 性能护栏（T17 修复）：仅 QA 模式召回，编辑器 builder 流程不用「回忆偏好」；
-    # 且查询 embedding 未缓存时跳过——避免每个交互一次 embedding API 往返（这是 agent 交互的隐性开销）。
+    # 性能护栏（T17 修复）：仅 QA 模式召回，编辑器 builder 流程不用「回忆偏好」。
+    # P2-3 修复：不再"查询 embedding 未缓存则跳过"——那会让进程重启后冷缓存下
+    # 首轮交互永远拿不到长期记忆（功能被性能优化静默关闭）。recall_with_entity_boost
+    # 内部 get_embeddings 本身有缓存，未缓存时补一次 API 往返（功能必需），失败静默
+    # 降级为子串匹配，不阻塞主流程。
     if query and not builder:
         try:
-            from core import cache as embedding_cache
             from services.memory.entity_link import recall_with_entity_boost
 
-            if await embedding_cache.get_embedding(query) is None:
-                logger.debug("L4 召回跳过：查询 embedding 未缓存（避免 API 往返）")
-            else:
-                memories = await recall_with_entity_boost(
-                    db=db, user_id=user_id, resume_id=resume_id, query=query, top_k=3
-                )
-                if memories:
-                    mem_parts = ["\n# 长期记忆（L4 语义记忆，来自历史会话）"]
-                    for mem in memories:
-                        src = mem.get("metadata", {}).get("source")
-                        tag = "实体" if src == "entity_fact" else "语义"
-                        mem_parts.append(f"- [{tag}:{mem['score']:.2f}] {mem['text']}")
-                    sections.append("\n".join(mem_parts))
+            memories = await recall_with_entity_boost(
+                db=db, user_id=user_id, resume_id=resume_id, query=query, top_k=3
+            )
+            if memories:
+                mem_parts = ["\n# 长期记忆（L4 语义记忆，来自历史会话）"]
+                for mem in memories:
+                    src = mem.get("metadata", {}).get("source")
+                    tag = "实体" if src == "entity_fact" else "语义"
+                    mem_parts.append(f"- [{tag}:{mem['score']:.2f}] {mem['text']}")
+                sections.append("\n".join(mem_parts))
         except Exception as e:
             logger.warning("L4 记忆召回失败（不影响主流程）: %s", e)
 

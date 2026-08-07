@@ -12,10 +12,9 @@
 """
 
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
-from fastapi import HTTPException
 
 from services.edit_lock import (
     EDIT_LOCK_TTL,
@@ -26,6 +25,7 @@ from services.edit_lock import (
     renew_edit_lock,
 )
 from services.rag.pipeline import LLMToolResponse, ToolCall
+from services.react_agent.tools.base import ToolRetryError
 from tests.conftest import AsyncSessionTest
 
 
@@ -36,14 +36,18 @@ from tests.conftest import AsyncSessionTest
 _VALID_BASIC_INFO = {"name": "张三", "phone": "13800138000", "email": "zhangsan@example.com"}
 _VALID_EDUCATION = {"entries": [{"school": "广东海洋大学", "degree": "本科", "major": "软件工程"}]}
 _VALID_SKILLS = {"categories": [{"name": "编程语言", "items": ["Python", "Java"]}]}
-_VALID_WORK = {"entries": [{"company": "字节跳动", "position": "后端开发", "description": "负责 API 开发"}]}
+_VALID_WORK = {
+    "entries": [{"company": "字节跳动", "position": "后端开发", "description": "负责 API 开发"}]
+}
 
 
 def _tool_resp(name: str, args: dict) -> LLMToolResponse:
     """构造 llm_generate_with_tools 的 mock 返回（单个工具调用）。"""
     return LLMToolResponse(
         content="",
-        tool_calls=[ToolCall(id="call_1", name=name, arguments=json.dumps(args, ensure_ascii=False))],
+        tool_calls=[
+            ToolCall(id="call_1", name=name, arguments=json.dumps(args, ensure_ascii=False))
+        ],
     )
 
 
@@ -107,7 +111,7 @@ class TestEditLock:
 
     async def test_release_lock_wrong_token(self):
         """错误 token 释放锁 → 失败。"""
-        token = await acquire_edit_lock(resume_id=5, user_id=100)
+        await acquire_edit_lock(resume_id=5, user_id=100)
         result = await release_edit_lock(resume_id=5, user_id=100, lock_token="wrong_token")
         assert result is False
         assert await is_edit_locked(5) is True
@@ -189,13 +193,17 @@ class TestShortTransaction:
 
         with patch("services.react_agent.tools.AsyncSessionLocal", AsyncSessionTest):
             result = await _update_module_short_txn(
-                registered_user["id"], resume.id, "skills", _VALID_SKILLS,
+                registered_user["id"],
+                resume.id,
+                "skills",
+                _VALID_SKILLS,
             )
         assert "已更新" in result
 
         # 验证写入
         from sqlalchemy import select
         from models.resume_module import ResumeModule
+
         mod_result = await db_session.execute(
             select(ResumeModule).where(
                 ResumeModule.resume_id == resume.id,
@@ -215,13 +223,17 @@ class TestShortTransaction:
         new_content = {"name": "李四", "phone": "13900139000"}
         with patch("services.react_agent.tools.AsyncSessionLocal", AsyncSessionTest):
             result = await _update_module_short_txn(
-                registered_user["id"], resume.id, "basic_info", new_content,
+                registered_user["id"],
+                resume.id,
+                "basic_info",
+                new_content,
             )
         assert "已更新" in result
 
         # 验证更新（需 expire 已缓存的 ORM 对象，强制重新查询）
         from sqlalchemy import select
         from models.resume_module import ResumeModule
+
         resume_id = resume.id
         db_session.expire_all()
         mod_result = await db_session.execute(
@@ -234,18 +246,24 @@ class TestShortTransaction:
         assert module.content["name"] == "李四"
 
     async def test_update_module_invalid_content(self, db_session, registered_user):
-        """无效 content → 校验失败。"""
+        """无效 content（缺必填字段）→ 抛 ToolRetryError（A3 回灌自愈）。"""
         from services.react_agent.tools import _update_module_short_txn
 
         resume, _ = await _create_test_resume(db_session, registered_user["id"])
 
         # basic_info 必须有 name 字段
         invalid_content = {"phone": "13800138000"}
-        with patch("services.react_agent.tools.AsyncSessionLocal", AsyncSessionTest):
-            result = await _update_module_short_txn(
-                registered_user["id"], resume.id, "basic_info", invalid_content,
+        with pytest.raises(ToolRetryError) as exc_info:
+            await _update_module_short_txn(
+                registered_user["id"],
+                resume.id,
+                "basic_info",
+                invalid_content,
             )
-        assert "校验失败" in result
+        err = str(exc_info.value)
+        assert "校验失败" in err
+        # 结构化逐字段错误：明确指出缺失的 name 字段
+        assert "name" in err
 
     async def test_update_module_wrong_user(self, db_session, registered_user):
         """非本人简历 → 失败。"""
@@ -255,7 +273,10 @@ class TestShortTransaction:
 
         with patch("services.react_agent.tools.AsyncSessionLocal", AsyncSessionTest):
             result = await _update_module_short_txn(
-                99999, resume.id, "basic_info", _VALID_BASIC_INFO,
+                99999,
+                resume.id,
+                "basic_info",
+                _VALID_BASIC_INFO,
             )
         assert "不存在" in result or "无权" in result
 
@@ -273,7 +294,9 @@ class TestShortTransaction:
 
         with patch("services.react_agent.tools.AsyncSessionLocal", AsyncSessionTest):
             result = await _replace_all_modules_short_txn(
-                registered_user["id"], resume.id, new_modules,
+                registered_user["id"],
+                resume.id,
+                new_modules,
             )
         assert "重写" in result
         assert "3" in result
@@ -281,6 +304,7 @@ class TestShortTransaction:
         # 验证模块数
         from sqlalchemy import select
         from models.resume_module import ResumeModule
+
         resume_id = resume.id
         db_session.expire_all()
         mod_result = await db_session.execute(
@@ -290,7 +314,7 @@ class TestShortTransaction:
         assert len(modules) == 3
 
     async def test_replace_all_modules_invalid(self, db_session, registered_user):
-        """全量替换含无效模块 → 校验失败。"""
+        """全量替换含无效模块（缺必填字段）→ 抛 ToolRetryError。"""
         from services.react_agent.tools import _replace_all_modules_short_txn
 
         resume, _ = await _create_test_resume(db_session, registered_user["id"])
@@ -299,11 +323,15 @@ class TestShortTransaction:
             {"module_type": "basic_info", "content": {"phone": "123"}, "sort_order": 0},
         ]
 
-        with patch("services.react_agent.tools.AsyncSessionLocal", AsyncSessionTest):
-            result = await _replace_all_modules_short_txn(
-                registered_user["id"], resume.id, bad_modules,
+        with pytest.raises(ToolRetryError) as exc_info:
+            await _replace_all_modules_short_txn(
+                registered_user["id"],
+                resume.id,
+                bad_modules,
             )
-        assert "校验失败" in result
+        err = str(exc_info.value)
+        assert "校验失败" in err
+        assert "name" in err
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -365,15 +393,16 @@ class TestGenerateModuleTool:
             new_callable=AsyncMock,
             return_value=LLMToolResponse(content="", tool_calls=[]),
         ):
-            result = await tool._execute(
-                resume_id=resume.id,
-                module_type="basic_info",
-                prompt="",
-            )
-        assert "工具" in result or "提交" in result
+            with pytest.raises(ToolRetryError) as exc_info:
+                await tool._execute(
+                    resume_id=resume.id,
+                    module_type="basic_info",
+                    prompt="",
+                )
+        assert "未通过工具提交" in str(exc_info.value)
 
     async def test_generate_module_invalid_args_json(self, db_session, registered_user):
-        """工具参数非法 JSON → 报错。"""
+        """工具参数非法 JSON → 抛 ToolRetryError（A3 回灌自愈）。"""
         from services.react_agent.tools import GenerateModuleTool
 
         resume, _ = await _create_test_resume(db_session, registered_user["id"])
@@ -383,18 +412,21 @@ class TestGenerateModuleTool:
             "services.react_agent.tools.llm_generate_with_tools",
             new_callable=AsyncMock,
             return_value=LLMToolResponse(
-                tool_calls=[ToolCall(id="call_1", name="submit_module_content", arguments="{不是JSON}")]
+                tool_calls=[
+                    ToolCall(id="call_1", name="submit_module_content", arguments="{不是JSON}")
+                ]
             ),
         ):
-            result = await tool._execute(
-                resume_id=resume.id,
-                module_type="basic_info",
-                prompt="",
-            )
-        assert "解析失败" in result
+            with pytest.raises(ToolRetryError) as exc_info:
+                await tool._execute(
+                    resume_id=resume.id,
+                    module_type="basic_info",
+                    prompt="",
+                )
+        assert "JSON 解析失败" in str(exc_info.value)
 
     async def test_generate_module_wrong_tool_name(self, db_session, registered_user):
-        """模型调用了非预期工具 → 报错。"""
+        """模型调用了非预期工具 → 抛 ToolRetryError（A3 回灌自愈）。"""
         from services.react_agent.tools import GenerateModuleTool
 
         resume, _ = await _create_test_resume(db_session, registered_user["id"])
@@ -405,36 +437,37 @@ class TestGenerateModuleTool:
             new_callable=AsyncMock,
             return_value=_tool_resp("other_tool", {}),
         ):
-            result = await tool._execute(
-                resume_id=resume.id,
-                module_type="basic_info",
-                prompt="",
-            )
-        assert "非预期" in result
+            with pytest.raises(ToolRetryError) as exc_info:
+                await tool._execute(
+                    resume_id=resume.id,
+                    module_type="basic_info",
+                    prompt="",
+                )
+        assert "非预期工具" in str(exc_info.value)
 
     async def test_generate_module_content_validation_failed(self, db_session, registered_user):
-        """模型提交的 content 不合 schema → 校验失败 + 修复指引。"""
+        """模型提交的 content 缺必填字段 → 抛 ToolRetryError（中文逐字段 + 修复指引）。"""
         from services.react_agent.tools import GenerateModuleTool
 
         resume, _ = await _create_test_resume(db_session, registered_user["id"])
 
         # basic_info 缺必填 name
         tool = GenerateModuleTool(db=db_session, user_id=registered_user["id"])
-        with (
-            patch(
-                "services.react_agent.tools.llm_generate_with_tools",
-                new_callable=AsyncMock,
-                return_value=_tool_resp("submit_module_content", {"phone": "123"}),
-            ),
-            patch("services.react_agent.tools.AsyncSessionLocal", AsyncSessionTest),
+        with patch(
+            "services.react_agent.tools.llm_generate_with_tools",
+            new_callable=AsyncMock,
+            return_value=_tool_resp("submit_module_content", {"phone": "123"}),
         ):
-            result = await tool._execute(
-                resume_id=resume.id,
-                module_type="basic_info",
-                prompt="",
-            )
-        assert "校验失败" in result
-        assert "重新调用工具" in result
+            with pytest.raises(ToolRetryError) as exc_info:
+                await tool._execute(
+                    resume_id=resume.id,
+                    module_type="basic_info",
+                    prompt="",
+                )
+        err = str(exc_info.value)
+        assert "校验失败" in err
+        assert "name" in err
+        assert "必填" in err
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -454,7 +487,11 @@ class TestCheckModuleTool:
         llm_response = "## 检查结果\n- 完整性: ✅\n- ATS兼容性: ✅\n\n## 改进建议\n1. 补充邮箱"
 
         tool = CheckModuleTool(db=db_session, user_id=registered_user["id"])
-        with patch("services.react_agent.tools.llm_generate", new_callable=AsyncMock, return_value=llm_response):
+        with patch(
+            "services.react_agent.tools.llm_generate",
+            new_callable=AsyncMock,
+            return_value=llm_response,
+        ):
             result = await tool._execute(
                 resume_id=resume.id,
                 module_type="basic_info",
@@ -533,12 +570,13 @@ class TestModifyModuleTool:
             new_callable=AsyncMock,
             return_value=LLMToolResponse(content="", tool_calls=[]),
         ):
-            result = await tool._execute(
-                resume_id=resume.id,
-                module_type="basic_info",
-                instruction="修改名字",
-            )
-        assert "工具" in result or "提交" in result
+            with pytest.raises(ToolRetryError) as exc_info:
+                await tool._execute(
+                    resume_id=resume.id,
+                    module_type="basic_info",
+                    instruction="修改名字",
+                )
+        assert "未通过工具提交" in str(exc_info.value)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -618,12 +656,13 @@ class TestRewriteResumeTool:
             new_callable=AsyncMock,
             return_value=LLMToolResponse(content="", tool_calls=[]),
         ):
-            result = await tool._execute(
-                resume_id=resume.id,
-                mode="generate",
-                target_position=None,
-            )
-        assert "工具" in result or "提交" in result
+            with pytest.raises(ToolRetryError) as exc_info:
+                await tool._execute(
+                    resume_id=resume.id,
+                    mode="generate",
+                    target_position=None,
+                )
+        assert "未通过工具提交" in str(exc_info.value)
 
     async def test_rewrite_invalid_args_json(self, db_session, registered_user):
         """工具参数非法 JSON → 报错。"""
@@ -636,15 +675,18 @@ class TestRewriteResumeTool:
             "services.react_agent.tools.llm_generate_with_tools",
             new_callable=AsyncMock,
             return_value=LLMToolResponse(
-                tool_calls=[ToolCall(id="call_1", name="submit_rewritten_resume", arguments="{不是JSON}")]
+                tool_calls=[
+                    ToolCall(id="call_1", name="submit_rewritten_resume", arguments="{不是JSON}")
+                ]
             ),
         ):
-            result = await tool._execute(
-                resume_id=resume.id,
-                mode="generate",
-                target_position=None,
-            )
-        assert "解析失败" in result
+            with pytest.raises(ToolRetryError) as exc_info:
+                await tool._execute(
+                    resume_id=resume.id,
+                    mode="generate",
+                    target_position=None,
+                )
+        assert "JSON 解析失败" in str(exc_info.value)
 
     async def test_rewrite_invalid_module_skipped(self, db_session, registered_user):
         """部分模块校验失败 → 有效模块仍然写入。"""
@@ -695,12 +737,13 @@ class TestRewriteResumeTool:
             ),
             patch("services.react_agent.tools.AsyncSessionLocal", AsyncSessionTest),
         ):
-            result = await tool._execute(
-                resume_id=resume.id,
-                mode="generate",
-                target_position=None,
-            )
-        assert "校验失败" in result or "无有效" in result
+            with pytest.raises(ToolRetryError) as exc_info:
+                await tool._execute(
+                    resume_id=resume.id,
+                    mode="generate",
+                    target_position=None,
+                )
+        assert "无有效" in str(exc_info.value) or "校验失败" in str(exc_info.value)
 
     async def test_rewrite_missing_modules_key(self, db_session, registered_user):
         """模型提交的参数缺 modules 数组 → 报错。"""
@@ -714,12 +757,13 @@ class TestRewriteResumeTool:
             new_callable=AsyncMock,
             return_value=_tool_resp("submit_rewritten_resume", {}),
         ):
-            result = await tool._execute(
-                resume_id=resume.id,
-                mode="generate",
-                target_position=None,
-            )
-        assert "modules 应为数组" in result
+            with pytest.raises(ToolRetryError) as exc_info:
+                await tool._execute(
+                    resume_id=resume.id,
+                    mode="generate",
+                    target_position=None,
+                )
+        assert "modules 应为数组" in str(exc_info.value)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -743,7 +787,11 @@ class TestAskInfoTool:
         )
 
         tool = AskInfoTool(db=db_session, user_id=registered_user["id"])
-        with patch("services.react_agent.tools.llm_generate", new_callable=AsyncMock, return_value=llm_response):
+        with patch(
+            "services.react_agent.tools.llm_generate",
+            new_callable=AsyncMock,
+            return_value=llm_response,
+        ):
             result = await tool._execute(
                 resume_id=resume.id,
                 question="我的简历还缺什么？",
@@ -762,7 +810,11 @@ class TestAskInfoTool:
         llm_response = "建议先填写基本信息（姓名、联系方式）"
 
         tool = AskInfoTool(db=db_session, user_id=registered_user["id"])
-        with patch("services.react_agent.tools.llm_generate", new_callable=AsyncMock, return_value=llm_response):
+        with patch(
+            "services.react_agent.tools.llm_generate",
+            new_callable=AsyncMock,
+            return_value=llm_response,
+        ):
             result = await tool._execute(
                 resume_id=resume.id,
                 question="应该从哪里开始？",
@@ -788,7 +840,13 @@ class TestBuilderToolsRegistry:
             AskInfoTool,
         )
 
-        for tool_class in [GenerateModuleTool, CheckModuleTool, ModifyModuleTool, RewriteResumeTool, AskInfoTool]:
+        for tool_class in [
+            GenerateModuleTool,
+            CheckModuleTool,
+            ModifyModuleTool,
+            RewriteResumeTool,
+            AskInfoTool,
+        ]:
             assert tool_class.name != ""
             assert tool_class.description != ""
             assert tool_class.category == "builder"
@@ -796,6 +854,7 @@ class TestBuilderToolsRegistry:
     def test_builder_schemas_count(self):
         """get_builder_schemas() 返回 5 个 schema。"""
         from services.react_agent.tools import get_builder_schemas
+
         schemas = get_builder_schemas()
         assert len(schemas) == 5
 
@@ -808,6 +867,7 @@ class TestBuilderToolsRegistry:
             RewriteResumeTool,
             AskInfoTool,
         )
+
         names = [
             GenerateModuleTool.name,
             CheckModuleTool.name,
@@ -815,7 +875,13 @@ class TestBuilderToolsRegistry:
             RewriteResumeTool.name,
             AskInfoTool.name,
         ]
-        assert names == ["generate_module", "check_module", "modify_module", "rewrite_resume", "ask_info"]
+        assert names == [
+            "generate_module",
+            "check_module",
+            "modify_module",
+            "rewrite_resume",
+            "ask_info",
+        ]
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -855,9 +921,15 @@ class TestQAWriteToModules:
         assert "重写" in result
         after = (await db_session.execute(select(func.count()).select_from(Resume))).scalar_one()
         assert after == before  # 不新建简历
-        mods = (await db_session.execute(
-            select(ResumeModule).where(ResumeModule.resume_id == resume.id)
-        )).scalars().all()
+        mods = (
+            (
+                await db_session.execute(
+                    select(ResumeModule).where(ResumeModule.resume_id == resume.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
         assert len(mods) == 3  # 模块已全量落库
 
     async def test_translate_writes_modules(self, db_session, registered_user):
@@ -869,8 +941,16 @@ class TestQAWriteToModules:
         resume, _ = await _create_test_resume(db_session, registered_user["id"])
 
         modules = [
-            {"module_type": "basic_info", "content": {"name": "Zhang San", "phone": "13800138000"}, "sort_order": 0},
-            {"module_type": "skills", "content": {"categories": [{"name": "Languages", "items": ["Python"]}]}, "sort_order": 1},
+            {
+                "module_type": "basic_info",
+                "content": {"name": "Zhang San", "phone": "13800138000"},
+                "sort_order": 0,
+            },
+            {
+                "module_type": "skills",
+                "content": {"categories": [{"name": "Languages", "items": ["Python"]}]},
+                "sort_order": 1,
+            },
         ]
         tool = TranslateTool(db=db_session, user_id=registered_user["id"])
         with (
@@ -884,9 +964,15 @@ class TestQAWriteToModules:
             result = await tool._execute(resume_id=resume.id, target_lang="en")
 
         assert "重写" in result
-        mods = (await db_session.execute(
-            select(ResumeModule).where(ResumeModule.resume_id == resume.id)
-        )).scalars().all()
+        mods = (
+            (
+                await db_session.execute(
+                    select(ResumeModule).where(ResumeModule.resume_id == resume.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
         assert len(mods) == 2
 
     async def test_rewrite_star_skips_overlong_content(self, db_session, registered_user):
@@ -899,7 +985,11 @@ class TestQAWriteToModules:
 
         # basic_info.summary 超长（>500）→ 校验失败跳过；skills 有效 → 写入
         modules = [
-            {"module_type": "basic_info", "content": {"name": "张三", "summary": "长" * 501}, "sort_order": 0},
+            {
+                "module_type": "basic_info",
+                "content": {"name": "张三", "summary": "长" * 501},
+                "sort_order": 0,
+            },
             {"module_type": "skills", "content": _VALID_SKILLS, "sort_order": 1},
         ]
         tool = RewriteStarTool(db=db_session, user_id=registered_user["id"])
@@ -914,7 +1004,13 @@ class TestQAWriteToModules:
             result = await tool._execute(resume_id=resume.id, target_position="后端")
 
         assert "校验失败" in result or "跳过" in result
-        mods = (await db_session.execute(
-            select(ResumeModule).where(ResumeModule.resume_id == resume.id)
-        )).scalars().all()
+        mods = (
+            (
+                await db_session.execute(
+                    select(ResumeModule).where(ResumeModule.resume_id == resume.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
         assert len(mods) == 1  # 只有有效的 skills 写入

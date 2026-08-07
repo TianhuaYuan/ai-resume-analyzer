@@ -240,15 +240,22 @@ async def evaluate_node(state: AgenticRAGState) -> dict:
     if not answer or is_rejected:
         elapsed = time.monotonic() - timer_start
         trace = dict(state.get("trace", {}))
+        # P2-2 修复：拒答/零召回时不再直接短路，而是允许 Reflexion 重试
+        # （should_retry=True）。零召回是最需要补充查询（supplement_queries）救场的
+        # 场景，原实现把 should_retry 置 False，反思循环完全绕开——最该反思时不反思。
+        # 轮数仍由 _route_after_evaluate 的 search_round <= 2 约束，不会无限循环；
+        # 若反思也产不出补充方向，反思节点返回空 supplement_queries 即自然收敛。
+        should_retry = search_round <= _EVAL_MAX_RETRIES
         trace["evaluate"] = {
             "elapsed_ms": int(elapsed * 1000),
             "skipped": True,
             "reason": "no_answer_or_rejection",
+            "should_retry": should_retry,
         }
         return {
             "eval_score": 0.0,
-            "eval_feedback": "无有效答案",
-            "should_retry": False,
+            "eval_feedback": "无有效答案，需要补充检索",
+            "should_retry": should_retry,
             "completeness_score": 0.0,
             "accuracy_score": 0.0,
             "source_credibility_score": 0.0,

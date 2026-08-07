@@ -18,7 +18,7 @@
    ``invalid_at`` 并同步失效其 L4 记忆；只对明确矛盾的值生效，不误伤补充性事实（新增技能）
 4. **recall boost（F2 三信号）**：query 命中实体（子串/语义双通道）→ 该实体有效事实
    （``invalid_at IS NULL``）与语义召回记忆做 向量 / 实体 / BM25 三信号加性融合（mem0 借鉴，
-   权重默认 0.5/0.3/0.2），输出 ``score_details`` 供前端/调试 explain
+   权重默认 0.4/0.4/0.2），输出 ``score_details`` 供前端/调试 explain
 """
 
 import json
@@ -821,8 +821,9 @@ async def recall_with_entity_boost(
       信号 = ``0.5 + 0.5*importance``（直接命中即强相关，最低 0.5）
     - **bm25**：候选池内 BM25 关键词分（复用 retrieval.py 同款 rank_bm25 + jieba 分词，
       池内按最大值归一化）
-    加性融合权重默认 0.5/0.3/0.2（memory_store.W_*，可调常量）；某信号缺失时权重在剩余
-    信号间重归一化。输出新增 ``score_details``（各信号分 + 融合分 + 权重）供前端/调试 explain；
+    加性融合权重默认 0.4/0.4/0.2（memory_store.W_VECTOR/W_ENTITY/W_BM25，可调常量）；
+    某信号缺失时权重在剩余信号间重归一化。输出新增 ``score_details``（各信号分 + 融合分 + 权重）
+    供前端/调试 explain；
     返回结构保持 ``[{memory_id, text, score, metadata}]`` 兼容（仅新增字段）。
 
     无实体命中时退化为纯语义召回（行为与现状一致，不改动返回结构）。

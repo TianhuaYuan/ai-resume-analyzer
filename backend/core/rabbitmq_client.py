@@ -106,6 +106,9 @@ async def init_consumer(
         _connection = await aio_pika.connect_robust(settings.RABBITMQ_URL)
         _channel = await _connection.channel()
         queue = await _channel.declare_queue(settings.RABBITMQ_QUEUE, durable=True)
+        # P2-5：prefetch 限制——慢 LLM 任务队列若无限 in-flight 会堆积。
+        # 设为 1 实现"单消费者顺序处理 + 失败可重试"，配合消息失败 nack requeue。
+        await _channel.set_qos(prefetch_count=max(1, settings.RABBITMQ_PREFETCH_COUNT))
 
         # 注册消息处理回调
         async def _on_message(message: aio_pika.IncomingMessage) -> None:
@@ -113,12 +116,45 @@ async def init_consumer(
             if _stop_requested:
                 await message.reject(requeue=True)
                 return
-            async with message.process():
+            try:
+                body = json.loads(message.body.decode("utf-8"))
+                await message_handler(body)
+                await message.ack()
+            except Exception as e:
+                # P2-5：失败语义修复——原先 try/except 在 process() 内吞异常会 ack 丢消息
+                # （"分析重试"是死代码）。改为显式 nack：
+                #   - retry_count 未超限 → requeue（指数退避由 payload 内 retry_count 控制）
+                #   - 已超限 → 不 requeue（ack），由消费端落库 failed（避免无限重试）
+                logger.exception("RabbitMQ 消息消费失败: %s", e)
+                retry_count = 0
                 try:
                     body = json.loads(message.body.decode("utf-8"))
-                    await message_handler(body)
-                except Exception as e:
-                    logger.exception("RabbitMQ 消息消费失败: %s", e)
+                    retry_count = int(body.get("retry_count", 0) or 0)
+                except Exception:
+                    pass
+                if retry_count < settings.RABBITMQ_MAX_RETRIES:
+                    try:
+                        body = json.loads(message.body.decode("utf-8"))
+                        body["retry_count"] = retry_count + 1
+                    except Exception:
+                        body = {"retry_count": retry_count + 1}
+                    # 丢弃原消息（不 requeue，避免"原消息 + 重试消息"双份），
+                    # 发布带 retry_count+1 的重试消息实现受控重试。
+                    await message.nack(requeue=False)
+                    retry_msg = aio_pika.Message(
+                        body=json.dumps(body, ensure_ascii=False).encode("utf-8"),
+                        delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
+                    )
+                    await _channel.default_exchange.publish(
+                        retry_msg,
+                        routing_key=settings.RABBITMQ_QUEUE,
+                    )
+                else:
+                    logger.error(
+                        "RabbitMQ 消息重试 %d 次仍失败，丢弃（请检查消费端落库/告警）",
+                        settings.RABBITMQ_MAX_RETRIES,
+                    )
+                    await message.ack()
 
         _consumer_tag = await queue.consume(_on_message)
         logger.info("RabbitMQ 消费者初始化成功，队列: %s", settings.RABBITMQ_QUEUE)

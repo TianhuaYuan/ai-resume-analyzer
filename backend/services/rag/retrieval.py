@@ -285,13 +285,17 @@ def _merge_results(dense: list[dict], sparse: list[dict], top_k: int, k: int = 6
     """RRF 融合：按排名而非分数合并两路结果，同一 chunk 两路都中则累加得分。
 
     k 为 RRF 平滑常数：k 越小排名敏感度越高（头部优势更大），默认 60 为论文原始值。
+
+    复合键 (asset_id, chunk_index)（P2-1）：多资产 scope 检索时不同资产的
+    chunk_index 会碰撞，仅用 chunk_index 会把结果错误叠加/覆盖。corpus_retrieval
+    已用复合键规避，这里统一。单资产场景 asset_id 相同，行为不变。
     """
-    scores: dict[int, dict] = {}
+    scores: dict[tuple[int | None, int], dict] = {}
     for rank, item in enumerate(dense):
-        key = item["chunk_index"]
+        key = (item.get("asset_id"), item["chunk_index"])
         scores[key] = {"item": item, "score": 1.0 / (k + rank + 1)}
     for rank, item in enumerate(sparse):
-        key = item["chunk_index"]
+        key = (item.get("asset_id"), item["chunk_index"])
         if key in scores:
             scores[key]["score"] += 1.0 / (k + rank + 1)
         else:

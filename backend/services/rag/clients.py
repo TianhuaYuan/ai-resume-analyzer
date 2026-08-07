@@ -14,6 +14,7 @@ import chromadb
 from openai import AsyncOpenAI
 
 from core.config import settings
+from core.circuit_breaker import CircuitBreaker
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,39 @@ logger = logging.getLogger(__name__)
 # 与并发读（query/get）会损坏 HNSW 索引文件（Bug 3）。
 # 所有 Chroma 操作必须通过 with_chroma 串行化。
 _chroma_lock = asyncio.Lock()
+
+# 熔断器：按外部依赖独立实例化（P0-2 接入 ReAct LLM 基座）。
+# - chat 熔断：Chat 主模型 + 传统 RAG 生成共用（同一上游 API）
+# - judge 熔断：JUDGE_MODEL 快速推理独立上游（独立 key/base_url）
+# 连续失败阈值/recovery 来自 settings（缺省 5 次/30s，与 circuit_breaker 默认一致）。
+_breaker_failure_threshold = int(getattr(settings, "LLM_BREAKER_FAILURE_THRESHOLD", 5))
+_breaker_recovery_timeout = float(getattr(settings, "LLM_BREAKER_RECOVERY_SECONDS", 30))
+_chat_breaker: CircuitBreaker | None = None
+_judge_breaker: CircuitBreaker | None = None
+
+
+def get_chat_breaker() -> CircuitBreaker | None:
+    """Chat 上游熔断器（单例）。外部依赖故障时快速失败，不重复打上游。"""
+    global _chat_breaker
+    if _chat_breaker is None:
+        _chat_breaker = CircuitBreaker(
+            name="chat_llm",
+            failure_threshold=_breaker_failure_threshold,
+            recovery_timeout=_breaker_recovery_timeout,
+        )
+    return _chat_breaker
+
+
+def get_judge_breaker() -> CircuitBreaker | None:
+    """Judge 上游熔断器（单例）。"""
+    global _judge_breaker
+    if _judge_breaker is None:
+        _judge_breaker = CircuitBreaker(
+            name="judge_llm",
+            failure_threshold=_breaker_failure_threshold,
+            recovery_timeout=_breaker_recovery_timeout,
+        )
+    return _judge_breaker
 
 
 async def with_chroma(func, *args, **kwargs):

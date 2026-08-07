@@ -94,4 +94,9 @@ async def run_answer_from_index(
         "reflection_round": result.get("reflection_round", 0),
         "tool_errors": result.get("tool_errors", []) or [],
         "trace": result.get("trace", {}) or {},
+        # P2-2：透传反思识别的"当前范围缺哪类资产"信号（resume/jd/interview/note）。
+        # 原实现 scope_expansion 是死信号——反思产出了但无消费方。透传后调用方
+        # （answer_from_index 工具 / 经典 QA）可据此提示用户"回答可能缺 X 资产"，
+        # 或由上层决定是否补充 scope 重跑。
+        "scope_expansion": result.get("scope_expansion", []) or [],
     }

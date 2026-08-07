@@ -268,6 +268,19 @@ async def react_loop_stream(
                 # 历史加载失败（如测试用 mock db / 查询异常）降级为空，不阻断主流程
                 logger.warning("多轮历史加载失败，降级为空（不影响回答）", exc_info=True)
                 history = []
+            # P1-3：回合 checkpoint（崩溃/断连恢复续答）。仅 agent 模式启用；
+            # builder 意图直达是一次性工具调用，无需断点续跑。
+            # P1-2：回合注入队列（用户在 agent 思考期间追加消息）用同 key 结构。
+            checkpoint_key = None
+            inject_key = None
+            if tool_mode == "agent":
+                conv_suffix = conversation_id if conversation_id else "all"
+                checkpoint_key = (
+                    f"react:checkpoint:{user_id}:{resume_id}:{conv_suffix}"
+                )
+                inject_key = (
+                    f"react:inject:{user_id}:{resume_id}:{conv_suffix}"
+                )
             loop_result = await react_loop(
                 db=db,
                 user_id=user_id,
@@ -276,6 +289,8 @@ async def react_loop_stream(
                 history=history,
                 event_callback=event_callback,
                 tool_mode=tool_mode,
+                checkpoint_key=checkpoint_key,
+                inject_key=inject_key,
             )
         except Exception as e:
             loop_error = e
@@ -334,6 +349,17 @@ async def react_loop_stream(
             yield _transform_event(event)
 
         await task
+
+        # P1-2：回合结束清理注入队列（残留消息不污染下一回合）
+        if inject_key:
+            try:
+                from core.redis_client import get_redis
+
+                redis = await get_redis()
+                if redis is not None:
+                    await redis.delete(inject_key)
+            except Exception:
+                logger.debug("清理回合注入队列失败（忽略）", exc_info=True)
 
         # ── 检查异常 ──────────────────────────────────────────
         if loop_error:

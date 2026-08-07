@@ -20,6 +20,7 @@ import logging
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
+from core.config import settings
 from core.distributed_lock import acquire_lock, release_lock
 from core.websocket_manager import ws_manager
 from services.analyze_service import analyze_resume
@@ -90,8 +91,11 @@ async def process_analyze_task(payload: dict) -> None:
 
     lock_id = None
     try:
-        # 1. 获取分布式锁
-        lock_id = await acquire_lock(user_id, resume_id)
+        # 1. 获取分布式锁（P2-6：TTL 显式设 > 任务最大时长，防锁中途过期
+        #    导致同 (user,resume) 并发二进分析）
+        lock_id = await acquire_lock(
+            user_id, resume_id, ttl_seconds=settings.ANALYZE_LOCK_TTL_SECONDS
+        )
         if lock_id is None:
             logger.info(
                 "用户%d已有分析任务在执行，跳过 resume_id=%d",

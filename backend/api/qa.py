@@ -133,7 +133,7 @@ async def ask_question(
         asset_type=ASSET_TYPE_RESUME,
         collection=knowledge_collection_name(current_user.id),
     )
-    answer, sources, tool_errors = await _run_agentic_rag(data.resume_id, data.question)
+    answer, sources, tool_errors = await _run_agentic_rag(current_user.id, data.resume_id, data.question)
     # 按配置对 LLM 输出做 PII 脱敏（默认关，避免误伤简历正常内容）
     if settings.REDACT_PII_OUTPUT:
         answer = redact_pii(answer)
@@ -422,6 +422,43 @@ async def ask_agent(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+class InjectRequest(BaseModel):
+    """P1-2: 回合中追加消息请求体。"""
+
+    content: str = Field(..., min_length=1, max_length=500, description="追加给当前回合的消息")
+    conversation_id: int | None = None  # 不传则注入默认流（同 ask/agent 语义）
+
+
+@router.post("/{resume_id}/inject")
+@limiter.limit(settings.RATE_LIMIT_ASK_AGENT)
+async def inject_into_active_turn(
+    resume_id: int,
+    request: Request,
+    data: InjectRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """P1-2: 把追加消息注入当前活跃的 agent 回合（若正在运行）。
+
+    用户在 agent 思考期间发送的追问/补充会并入当前回合的下一轮 LLM 调用，
+    而非排队到回合结束后才处理。若当前无活跃回合（未运行 /ask/agent），
+    消息仍写入队列（最多 5 分钟，由下个同 resume 回合消费，append 语义）。
+
+    返回 {"injected": true} 表示已写入注入队列。
+    """
+    _guard_question(data.content)
+    await resume_service.get_resume(db, resume_id, current_user.id)
+
+    from services.react_agent.loop import _enqueue_injection
+
+    conv_suffix = data.conversation_id if data.conversation_id else "all"
+    inject_key = (
+        f"react:inject:{current_user.id}:{resume_id}:{conv_suffix}"
+    )
+    ok = await _enqueue_injection(inject_key, data.content)
+    return {"injected": ok}
 
 
 @router.get("/history/{resume_id}", response_model=QAHistoryResponse)

@@ -38,8 +38,8 @@ async def _load_asset(
     if asset_type == ASSET_TYPE_RESUME:
         row = await db.get(Resume, asset_id)
         return row, (row.parsed_text if row else "")
-    # 注意：知识资产启用时其创建路径须写 content_hash（sha256(content)）以启用脏标记；
-    # 当前 knowledge_assets 表无业务写入路径，content_hash 恒为 None → 每次检索都会重建。
+    # 知识资产创建/更新路径（asset_service）会写 content_hash（sha256(content)），
+    # 脏标记（content_hash != indexed_hash）驱动懒重建；旧资产无 hash 时每次检索重建。
     row = await db.get(KnowledgeAsset, asset_id)
     return row, (row.content if row else "")
 

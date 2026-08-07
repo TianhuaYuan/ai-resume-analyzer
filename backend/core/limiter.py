@@ -7,17 +7,14 @@ from .config import settings
 
 
 def get_real_ip(request: Request) -> str:
-    """从反向代理头中获取真实客户端 IP。
+    """限流 key 来源：只信 request.client.host，不读可伪造的代理头。
 
-    优先级：X-Real-IP > X-Forwarded-For 第一个 > request.client.host > "unknown"。
-    在 nginx 反代后，request.client.host 是 nginx 的 IP，必须读代理头才能拿到真实用户 IP。
+    安全理由（P0-3）：直接读 X-Real-IP / X-Forwarded-For 会被客户端伪造头绕过限流。
+    真实 IP 的改写由 SimpleProxyHeadersMiddleware 完成——它只对可信来源
+    （nginx 内网 CIDR / loopback，见 main.py trusted_hosts）信任代理头，
+    并把结果写回 request.client.host。限流器位于该中间件之后执行，
+    读 client.host 即可拿到经可信代理清洗的真实 IP，且天然免疫伪造头。
     """
-    x_real_ip = request.headers.get("X-Real-IP")
-    if x_real_ip:
-        return x_real_ip.strip()
-    x_forwarded_for = request.headers.get("X-Forwarded-For")
-    if x_forwarded_for:
-        return x_forwarded_for.split(",")[0].strip()
     if request.client:
         return request.client.host
     return "unknown"

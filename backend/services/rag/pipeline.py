@@ -7,13 +7,16 @@
 import asyncio
 import logging
 from dataclasses import dataclass, field
+from typing import Any
 
 from core.config import settings
-from core.retry import with_retry
+from core.retry import RetryBudget, with_retry
 from core.trace import StepTimer
 from services.rag.usage import record_llm_usage
 from services.rag.clients import (
+    get_chat_breaker,
     get_chat_client,
+    get_judge_breaker,
     get_judge_client,
     knowledge_collection_name,
     reconnect_chroma,
@@ -62,6 +65,129 @@ def _select_client_and_model(model: str | None) -> tuple:
     if model == "judge":
         return get_judge_client(), settings.JUDGE_MODEL
     return get_chat_client(), model or settings.CHAT_MODEL
+
+
+def _llm_retry_budget() -> RetryBudget:
+    """LLM 调用的重试预算（P0-2 接入项目已有 with_retry 体系）。
+
+    语义对齐 core/retry 的默认分类策略：限流多重试、超时少重试、
+    网络正常重试、编程错误不重试。timeout 经 asyncio.wait_for 落实
+    （60s 与 Chat 客户端超时一致），重试耗尽由 with_retry 抛最后一个异常。
+    """
+    return RetryBudget(
+        max_retries=2,
+        base_delay=1.0,
+        timeout=getattr(settings, "LLM_GENERATE_TIMEOUT", 60.0),
+    )
+
+
+def _breaker_for_model(model: str | None):
+    """按模型路由熔断器：judge 用独立熔断，其余走 chat 熔断。"""
+    return get_judge_breaker() if model == "judge" else get_chat_breaker()
+
+
+def _fallback_model_names() -> list[str]:
+    """P1-4: 解析 CHAT_FALLBACK_MODELS（逗号分隔）为备用模型名列表。"""
+    raw = getattr(settings, "CHAT_FALLBACK_MODELS", "") or ""
+    return [m.strip() for m in raw.split(",") if m.strip()]
+
+
+def _should_fallback_to_other_model(err: Exception) -> bool:
+    """P1-4: 判断错误是否值得切备用模型。
+
+    可回退：认证/欠费、限流、网络、未知（上游不稳定）。
+    不可回退：编程错误（TypeError/ValueError 等，重试无意义）、资源不存在。
+    """
+    from core.error_types import ErrorCategory, classify_error
+
+    category = classify_error(err)
+    return category in (
+        ErrorCategory.AUTH,
+        ErrorCategory.RATE_LIMIT,
+        ErrorCategory.NETWORK,
+        ErrorCategory.TIMEOUT,
+        ErrorCategory.UNKNOWN,
+    )
+
+
+def _create_coroutine(client, **kwargs):
+    """包一层 async 使 with_retry 能正确 await。
+
+    OpenAI SDK 的 bound method（client.chat.completions.create）在 Python 3.14 下
+    inspect.iscoroutinefunction 返回 False，with_retry 会误判为同步函数直接调用、
+    返回未 await 的 coroutine。用显式 async def 包装强制 with_retry await。
+    """
+
+    async def _create():
+        return await client.chat.completions.create(**kwargs)
+
+    return _create
+
+
+async def _call_completion_with_retry(
+    client,
+    kwargs: dict,
+    *,
+    model: str | None,
+) -> Any:
+    """带重试 + 熔断 + 模型 fallback 链的 LLM 完成调用（P0-2 + P1-4）。
+
+    1. 主模型经 with_retry（Full Jitter 退避 + 错误分类 + 失败落盘诊断）调用。
+    2. 主模型重试耗尽且错误为「可回退类」（欠费/认证/网络/限流/超时/未知）时，
+       逐个尝试 CHAT_FALLBACK_MODELS 备用模型（各带一次重试）。
+    3. 全部失败抛最后一个异常。
+
+    熔断器：主模型走对应熔断；备用模型共享 chat 熔断（同一上游端点）。
+    judge 模型不参与 fallback 链（JUDGE_FALLBACK_TO_CHAT 已提供单点回退）。
+    """
+    if model == "judge" or not _fallback_model_names():
+        breaker = _breaker_for_model(model)
+        return await with_retry(
+            _create_coroutine(client, **kwargs),
+            budget=_llm_retry_budget(),
+            breaker=breaker,
+        )
+
+    # 主模型尝试
+    breaker = _breaker_for_model(model)
+    try:
+        return await with_retry(
+            _create_coroutine(client, **kwargs),
+            budget=_llm_retry_budget(),
+            breaker=breaker,
+        )
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        if not _should_fallback_to_other_model(e):
+            raise
+        logger.warning(
+            "主模型 %s 重试耗尽（%s），尝试备用模型链",
+            kwargs.get("model"),
+            type(e).__name__,
+        )
+
+    # 备用模型链（每个带一次重试；共享 chat 熔断）
+    last_error: Exception | None = None
+    for fb_model in _fallback_model_names():
+        fb_kwargs = dict(kwargs)
+        fb_kwargs["model"] = fb_model
+        try:
+            logger.info("切换到备用模型: %s", fb_model)
+            return await with_retry(
+                _create_coroutine(client, **fb_kwargs),
+                budget=_llm_retry_budget(),
+                breaker=get_chat_breaker(),
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            last_error = e
+            logger.warning("备用模型 %s 失败: %s", fb_model, type(e).__name__)
+
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError("LLM fallback 链全部失败")
 
 
 def _build_llm_kwargs(
@@ -146,7 +272,7 @@ async def llm_generate_with_tools(
         thinking_effort=thinking_effort,
     )
     try:
-        response = await client.chat.completions.create(**kwargs)
+        response = await _call_completion_with_retry(client, kwargs, model=model)
     except Exception as e:
         # JUDGE_FALLBACK_TO_CHAT（SmartResume backup channel 对照）：
         # judge 客户端失败（配置开启时）退回 chat 客户端重试一次
@@ -154,7 +280,9 @@ async def llm_generate_with_tools(
             logger.warning("judge 客户端调用失败，退回 chat 客户端: %s", e)
             client, model_name = get_chat_client(), settings.CHAT_MODEL
             kwargs["model"] = model_name
-            response = await client.chat.completions.create(**kwargs)
+            response = await _call_completion_with_retry(
+                client, kwargs, model=model_name
+            )
         else:
             raise
 
@@ -211,7 +339,9 @@ async def llm_generate_with_tools_stream(
         thinking_effort=thinking_effort,
         stream=True,
     )
-    stream = await client.chat.completions.create(**kwargs)
+    # P0-2：流创建阶段接入重试 + 熔断（尚未产出 chunk，重试安全）。
+    # 流中途断流由调用方现有墙钟超时/降级兜底。
+    stream = await _call_completion_with_retry(client, kwargs, model=model)
 
     content_parts: list[str] = []
     # tool_call 累积: {index: {"id": str, "name": str, "arguments": str}}
@@ -340,7 +470,20 @@ async def llm_generate(
         kwargs["temperature"] = temperature
     if max_tokens is not None:
         kwargs["max_tokens"] = max_tokens
-    response = await client.chat.completions.create(**kwargs)
+    # P0-2：接入 with_retry（Full Jitter + 错误分类）+ 熔断器。
+    # max_retries=1 提供一次重试保护；调用方若另有 with_retry 包裹（如
+    # rewrite_query），外层仍会兜底，不构成有害的双重重试（内层先耗尽）。
+    # 注意：必须用 _create_coroutine 包装——SDK bound method 在 Python 3.14 下
+    # iscoroutinefunction 误判为 False，直接传会让 with_retry 返回未 await 的 coroutine。
+    response = await with_retry(
+        _create_coroutine(client, **kwargs),
+        budget=RetryBudget(
+            max_retries=1,
+            base_delay=1.0,
+            timeout=getattr(settings, "LLM_GENERATE_TIMEOUT", 60.0),
+        ),
+        breaker=get_chat_breaker(),
+    )
 
     # T3: 统一记账（只记成功）
     if user_id is not None and hasattr(response, "usage") and response.usage:
@@ -365,15 +508,20 @@ async def _llm_generate_stream(
         user_id: 传入时，收到 usage 后记录 LLM usage。
     """
     client = get_chat_client()
-    stream = await client.chat.completions.create(
-        model=settings.CHAT_MODEL,
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
-        temperature=temperature,
-        stream=True,
-        stream_options={"include_usage": True},  # 请求返回 token 使用量
+    # P0-2：流创建阶段接入重试 + 熔断（未产出 chunk，重试安全）。
+    stream = await _call_completion_with_retry(
+        client,
+        {
+            "model": settings.CHAT_MODEL,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            "temperature": temperature,
+            "stream": True,
+            "stream_options": {"include_usage": True},  # 请求返回 token 使用量
+        },
+        model=None,
     )
     async for chunk in stream:
         # 检查是否有 usage 信息（在最后一个 chunk）

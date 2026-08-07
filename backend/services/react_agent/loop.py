@@ -142,6 +142,121 @@ def _pick_stuck_hint(fault_type: str | None) -> str:
     return _FAULT_TYPE_HINTS.get(fault_type, STUCK_PROMPT)
 
 
+# ── P1-3: 回合 checkpoint（崩溃/断连恢复续答）────────────────
+# 每轮工具执行后把 messages 快照存 Redis（TTL 短），正常结束清除。
+# 下次同 resume 同问题提问时，若 checkpoint 未过期则从断点续跑，
+# 不再重跑已完成的工具（省 token）。key 由 streaming 层注入。
+
+
+async def _save_react_checkpoint(
+    key: str,
+    question: str,
+    messages: list[dict],
+    ttl_seconds: int,
+) -> None:
+    """存回合 checkpoint 到 Redis（best-effort，失败不影响主流程）。"""
+    try:
+        from core.redis_client import get_redis
+
+        redis = await get_redis()
+        if redis is None:
+            return
+        payload = {
+            "question": question,
+            "messages": messages,
+        }
+        await redis.setex(
+            key, ttl_seconds, json.dumps(payload, ensure_ascii=False)
+        )
+    except Exception:
+        logger.debug("保存回合 checkpoint 失败（忽略）", exc_info=True)
+
+
+async def _load_react_checkpoint(
+    key: str,
+    question: str,
+) -> list[dict] | None:
+    """读回合 checkpoint；仅当问题与上次一致时返回 messages（best-effort）。"""
+    try:
+        from core.redis_client import get_redis
+
+        redis = await get_redis()
+        if redis is None:
+            return None
+        raw = await redis.get(key)
+        if not raw:
+            return None
+        data = json.loads(raw)
+        if data.get("question") != question:
+            return None
+        messages = data.get("messages")
+        if not isinstance(messages, list) or not messages:
+            return None
+        logger.info("恢复回合 checkpoint: key=%s (%d 条消息)", key, len(messages))
+        return messages
+    except Exception:
+        logger.debug("读取回合 checkpoint 失败（忽略）", exc_info=True)
+        return None
+
+
+async def _clear_react_checkpoint(key: str) -> None:
+    """回合正常结束清除 checkpoint（best-effort）。"""
+    try:
+        from core.redis_client import get_redis
+
+        redis = await get_redis()
+        if redis is None:
+            return
+        await redis.delete(key)
+    except Exception:
+        logger.debug("清除回合 checkpoint 失败（忽略）", exc_info=True)
+
+
+# ── P1-2: 回合中注入（用户在 agent 思考期间追加消息）────────────────
+# 前端经 POST /qa/inject 把追加消息写入 Redis list（inject_key），
+# react_loop 每轮 LLM 调用前 drain 并入 messages。回合结束删除队列。
+# 用 Redis list 的 LPUSH/RPOP 实现 FIFO；不依赖 list TTL（回合结束清理），
+# 断连残留的未消费消息由同 key 的下一回合复用（可接受，append 语义）。
+
+
+async def _enqueue_injection(key: str, content: str) -> bool:
+    """把用户追加消息写入回合注入队列（best-effort）。"""
+    try:
+        from core.redis_client import get_redis
+
+        redis = await get_redis()
+        if redis is None:
+            return False
+        # InMemoryRedis 需支持 lpush/rpop；不支持时静默降级（不注入）
+        if not hasattr(redis, "lpush"):
+            return False
+        await redis.lpush(key, content)
+        return True
+    except Exception:
+        logger.debug("写入回合注入队列失败（忽略）", exc_info=True)
+        return False
+
+
+async def _drain_injections(key: str, max_items: int = 2) -> list[str]:
+    """弹出回合注入队列中的追加消息（FIFO，最多 max_items 条）。"""
+    try:
+        from core.redis_client import get_redis
+
+        redis = await get_redis()
+        if redis is None or not hasattr(redis, "rpop"):
+            return []
+        items: list[str] = []
+        for _ in range(max_items):
+            raw = await redis.rpop(key)
+            if raw is None:
+                break
+            items.append(str(raw))
+        return items
+    except Exception:
+        logger.debug("读取回合注入队列失败（忽略）", exc_info=True)
+        return []
+
+
 def register_approval(approval_id: str, user_id: int) -> None:
     """D1: 注册一个待审批请求到内存注册表。"""
     _approval_registry[approval_id] = _ApprovalEntry(user_id)
@@ -216,6 +331,9 @@ async def react_loop(
     history: list[dict] | None = None,
     event_callback: Callable[[dict], Awaitable[None]] | None = None,
     tool_mode: str = "agent",
+    checkpoint_key: str | None = None,
+    checkpoint_ttl_seconds: int = 300,
+    inject_key: str | None = None,
 ) -> ReactLoopResult:
     """ReAct 核心循环。
 
@@ -309,12 +427,20 @@ async def react_loop(
 
     # 2. 装配 system prompt（L2 历史 + L3 画像 + L4 记忆注入；builder 模式用允许生成的专属指令）
     _phases["prompt_assembly_ms"] = round((time.perf_counter() - _t0) * 1000)
+    # P2-9：history（多轮完整轮次）已作为 user/assistant 消息注入 messages，
+    # 其 question 集合传给 L2 摘要做排除，避免同一历史双重携带。
+    _injected_questions: set[str] = set()
+    if history:
+        for msg in history:
+            if msg.get("role") == "user" and msg.get("content"):
+                _injected_questions.add(str(msg["content"]))
     system_prompt = await assemble_system_prompt(
         db,
         user_id,
         resume_id,
         builder=(tool_mode == "builder"),
         query=question,
+        exclude_questions=_injected_questions or None,
     )
     _phases["prompt_assembly_ms"] = round((time.perf_counter() - _t0) * 1000)
 
@@ -325,6 +451,18 @@ async def react_loop(
     if history:
         messages.extend(history)
     messages.append({"role": "user", "content": question})
+
+    # P1-3：回合 checkpoint 恢复——若存在未过期且问题一致的 checkpoint
+    # （上次回合中断/断连留下），从断点续跑，不重跑已完成的工具。
+    # 恢复的消息含上次的 system prompt + 历史 + 已执行工具结果。
+    restored_from_checkpoint = False
+    if checkpoint_key:
+        checkpoint_messages = await _load_react_checkpoint(checkpoint_key, question)
+        if checkpoint_messages:
+            messages = checkpoint_messages
+            restored_from_checkpoint = True
+            # 恢复后清理（本次续跑若再中断会重新存）
+            await _clear_react_checkpoint(checkpoint_key)
 
     # 4. 获取工具 schemas（v2: 统一使用 unified 工具集 + 相关性过滤）
     from services.react_agent.tool_gate import filter_agent_tools
@@ -378,6 +516,8 @@ async def react_loop(
             await _emit({"type": "agent_done", "content": result})
             _phases["intent_tool_ms"] = round((time.perf_counter() - _t0) * 1000)
             _log_agent_timing("intent")
+            if checkpoint_key:
+                await _clear_react_checkpoint(checkpoint_key)
             return ReactLoopResult(
                 answer=result,
                 process_trace=process_trace,
@@ -434,6 +574,21 @@ async def react_loop(
         # L1 上下文管理（逐出旧轮次，截断工具结果）
         messages = manage_l1_context(messages)
 
+        # P1-2：回合中注入——用户在 agent 思考期间追加的消息并入当前回合
+        # （FIFO，每轮最多 2 条）。让 agent 感知"追问/补充"，无需等回合结束。
+        if inject_key:
+            injections = await _drain_injections(inject_key)
+            if injections:
+                for inj in injections:
+                    messages.append({"role": "user", "content": inj})
+                    await _emit(
+                        {"type": "injection", "content": inj}
+                    )
+                logger.info(
+                    "回合中注入 %d 条追加消息: user=%d rounds=%d",
+                    len(injections), user_id, rounds,
+                )
+
         # M3 next_step_prompt：第 2 轮起每轮 LLM 调用前注入引导（收敛/换策略）。
         # stuck 时注入换策略提示覆盖默认引导；注入后重置标志（下一轮重新检测）。
         # D2: stuck 提示按最近失败分类（fault_type）选变体，未分类回退现有 STUCK_PROMPT。
@@ -484,6 +639,8 @@ async def react_loop(
                     )
                     await _emit({"type": "agent_done", "content": msg})
                     _log_agent_timing("empty_converged")
+                    if checkpoint_key:
+                        await _clear_react_checkpoint(checkpoint_key)
                     return ReactLoopResult(
                         answer=msg,
                         process_trace=process_trace,
@@ -509,6 +666,8 @@ async def react_loop(
             # 正常回答
             await _emit({"type": "agent_done", "content": content})
             _log_agent_timing("done")
+            if checkpoint_key:
+                await _clear_react_checkpoint(checkpoint_key)
             return ReactLoopResult(
                 answer=content,
                 process_trace=process_trace,
@@ -615,6 +774,12 @@ async def react_loop(
         # 工具执行完毕后推送累计 usage（含工具内部 LLM 消耗），让前端实时更新 token 计数
         await _emit({"type": "usage", "usage": dict(total_usage), "total": dict(total_usage)})
 
+        # P1-3：本轮工具执行完成 → 存 checkpoint（中断/断连后可从断点续跑）
+        if checkpoint_key:
+            await _save_react_checkpoint(
+                checkpoint_key, question, messages, checkpoint_ttl_seconds
+            )
+
         # A3: per-tool 重试预算——同一工具连续失败超限即终止本轮（避免烧 token 反复重试同一错误）
         # 借鉴 pydantic-ai：retries[tool_name] 记账 + _check_max_retries 超限终止
         if all_bad:
@@ -672,6 +837,8 @@ async def react_loop(
 
     await _emit({"type": "agent_done", "content": response.content})
     _log_agent_timing("force")
+    if checkpoint_key:
+        await _clear_react_checkpoint(checkpoint_key)
     return ReactLoopResult(
         answer=response.content,
         process_trace=process_trace,
@@ -929,8 +1096,13 @@ async def _execute_tool_call(
 
     # 3. 实例化并执行（注入 emit 供工具内部 LLM 流式推送）
     tool = tool_class(db=db, user_id=user_id, emit=emit)
-    # D1: 无事件通道（测试/无前端）时无用户可确认，审批门退化为直接执行（保持旧行为）
-    if emit is None and tool.is_approval_required():
+    # D1（P0-4）: 无事件通道（测试/无前端）且审批模式为 "sse" 时无用户可确认，
+    # 审批门退化为直接执行（保持旧行为）。mode="always" 时 emit=None 也拦截审批。
+    if (
+        emit is None
+        and tool.is_approval_required()
+        and getattr(settings, "TOOL_APPROVAL_MODE", "sse") == "sse"
+    ):
         tool.mark_approval_granted()
     _tool_t0 = time.perf_counter()
     _timeout = _tool_exec_timeout(tc.name)

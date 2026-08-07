@@ -55,13 +55,21 @@ async def publish_analyze_task(
         )
         # 不 return False，继续往下走到同步执行
 
-    # MQ 未启用或发送失败，同步执行
+    # MQ 未启用或发送失败，降级为后台异步执行（P2-5）。
+    # 原实现 `await process_analyze_task` 同步内联——MQ 掉线时 4×90s 的分析
+    # 会阻塞调用方（process_resume_background 解析完成后等分析做完才返回）。
+    # 改为 asyncio.create_task 后台执行，调用方立即返回，不阻塞解析主流程。
+    import asyncio
+
     try:
         from services.resume_analyze_consumer import process_analyze_task
-        await process_analyze_task(payload)
+        asyncio.create_task(process_analyze_task(payload))
+        logger.info(
+            "MQ 降级：分析任务已转为后台任务 resume_id=%d", resume_id
+        )
         return True
     except Exception as e:
-        logger.exception("同步分析执行失败 resume_id=%d: %s", resume_id, e)
+        logger.exception("后台分析任务调度失败 resume_id=%d: %s", resume_id, e)
         return False
 
 

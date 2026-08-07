@@ -1184,10 +1184,12 @@ async def ai_optimize(
         )
         return {"optimized_text": result, "original_text": body.text}
     except Exception as e:
+        # P0-5：不把原始异常回显给客户端（可能泄露 API key 片段/内部错误栈），
+        # 完整 traceback 留在服务端日志（logger.exception）。
         logger.exception("AI optimize failed: resume=%d", resume_id)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"AI 优化失败：{e}",
+            detail="AI 优化失败，请稍后重试。",
         ) from e
 
 
@@ -1262,7 +1264,7 @@ async def ai_check(
         logger.exception("AI check failed: resume=%d", resume_id)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"AI 检查失败：{e}",
+            detail="AI 检查失败，请稍后重试。",
         ) from e
 
 
@@ -1324,7 +1326,7 @@ async def ai_rewrite(
         logger.exception("AI rewrite failed: resume=%d", resume_id)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"AI 改写失败：{e}",
+            detail="AI 改写失败，请稍后重试。",
         ) from e
 
 

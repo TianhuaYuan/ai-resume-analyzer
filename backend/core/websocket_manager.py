@@ -19,14 +19,21 @@ class WebSocketManager:
         # {user_id: set[WebSocket]}
         self._connections: dict[int, set[WebSocket]] = {}
 
-    async def connect(self, user_id: int, websocket: WebSocket) -> None:
-        """建立 WebSocket 连接。
+    def try_connect(self, user_id: int, websocket: WebSocket) -> bool:
+        """尝试注册连接；超上限返回 False（P2-8 DoS 防护）。
 
         Args:
             user_id: 用户 ID
             websocket: WebSocket 实例
+
+        Returns:
+            True 注册成功（并 accept）；False 连接数达上限（调用方自行 close）
         """
-        await websocket.accept()
+        from core.config import settings
+
+        max_per_user = max(1, settings.WS_MAX_CONNECTIONS_PER_USER)
+        if user_id in self._connections and len(self._connections[user_id]) >= max_per_user:
+            return False
         if user_id not in self._connections:
             self._connections[user_id] = set()
         self._connections[user_id].add(websocket)
@@ -34,6 +41,7 @@ class WebSocketManager:
             "WebSocket 连接建立: user_id=%d, 当前连接数=%d",
             user_id, len(self._connections[user_id]),
         )
+        return True
 
     def disconnect(self, user_id: int, websocket: WebSocket) -> None:
         """断开 WebSocket 连接。

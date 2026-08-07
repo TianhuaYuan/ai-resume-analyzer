@@ -399,7 +399,7 @@ class TestEvaluateNode:
 
     @pytest.mark.asyncio
     async def test_rejection_skips_evaluation(self):
-        """拒答答案 → 跳过评估，不重试。"""
+        """拒答答案 → 跳过评估，但允许 Reflexion 补充检索（P2-2）。"""
         state = _make_state(
             answer="抱歉，简历中未提及该信息。",
             trace={"generate": {"rejected": True}},
@@ -411,7 +411,9 @@ class TestEvaluateNode:
             result = await evaluate_node(state)
 
         assert result["eval_score"] == 0.0
-        assert result["should_retry"] is False
+        # P2-2：零召回是最需要补充检索（supplement_queries）的场景，
+        # 不再短路——轮数未超限时应触发反思重试。
+        assert result["should_retry"] is True
         assert result["trace"]["evaluate"]["skipped"] is True
         assert result["completeness_score"] == 0.0
         assert result["accuracy_score"] == 0.0
@@ -420,7 +422,7 @@ class TestEvaluateNode:
 
     @pytest.mark.asyncio
     async def test_empty_answer_skips_evaluation(self):
-        """空答案 → 跳过评估。"""
+        """空答案 → 跳过评估，但允许 Reflexion 补充检索（P2-2）。"""
         state = _make_state(answer="")
         with patch(
             "services.agentic_rag.generate.llm_generate",
@@ -429,7 +431,7 @@ class TestEvaluateNode:
             result = await evaluate_node(state)
 
         assert result["eval_score"] == 0.0
-        assert result["should_retry"] is False
+        assert result["should_retry"] is True
         mock_llm.assert_not_called()
 
     @pytest.mark.asyncio
@@ -588,7 +590,8 @@ class TestGenerateEvaluatePipeline:
             state.update(eval_result)
 
         assert "未提及" in state["answer"]
-        assert state["should_retry"] is False
+        # P2-2：零召回应触发 Reflexion 补充检索，而非短路
+        assert state["should_retry"] is True
         assert state["eval_score"] == 0.0
         # LLM 不应被调用（generate 拒答 + evaluate 跳过）
         mock_llm.assert_not_called()

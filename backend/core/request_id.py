@@ -18,7 +18,17 @@ def get_request_id() -> str:
 
 class RequestIDMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-        rid = request.headers.get(HEADER_NAME) or str(uuid4())
+        # P2-7：优先复用 Trace 中间件已生成的 trace_id（中间件反序包裹，Trace 在
+        # 外层先执行）。客户端不带 X-Request-ID 时，若各自 uuid4() 会产生
+        # request_id != trace_id，破坏全链路对账。以 trace_id 为权威源，
+        # request_id 跟随，二者恒一致。
+        from core.trace import get_trace_id
+
+        trace_id = get_trace_id()
+        if trace_id and trace_id != "-":
+            rid = trace_id
+        else:
+            rid = request.headers.get(HEADER_NAME) or str(uuid4())
         token = _request_id_ctx.set(rid)
 
         try:

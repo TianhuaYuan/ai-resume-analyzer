@@ -20,6 +20,7 @@ from pydantic import BaseModel, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.config import settings
 from core.security import detect_prompt_injection
 
 
@@ -80,6 +81,7 @@ _APPROVAL_REQUIRED: dict[str, bool] = {
     "rewrite_star": True,       # STAR 改写（写库）
     "translate": True,          # 翻译重写（写库）
     "search_jobs_live": True,   # 实时联网搜索（外部请求）
+    "web_search": True,         # P0-4：通用联网搜索同为外部请求，与 search_jobs_live 口径一致
 }
 
 
@@ -156,12 +158,14 @@ class Tool(ABC):
 
         # 2.5 D1 审批拦截钩子：命中 requires_approval 的工具不实际执行。
         #     参数已校验；返回 ApprovalRequired 携带待审批信息，由 loop 走审批门。
-        #     仅在存在前端通道（emit 非 None）时拦截；emit=None（测试/直接调用/无前端）
-        #     退化为直接执行，保持旧行为不破坏既有工具单测。
+        #     拦截条件由 TOOL_APPROVAL_MODE 控制（P0-4）：
+        #     - "sse"（默认）：仅存在前端通道（emit 非 None）时拦截；
+        #        emit=None（测试/直接调用/无前端）退化为直接执行（旧行为）
+        #     - "always"：无论是否有 emit 一律拦截——杜绝 emit=None 静默绕过
+        #     - "off"：不拦截（不推荐，写库工具将直接执行）
         if (
-            self.is_approval_required()
+            self._approval_gate_active()
             and not getattr(self, "_approval_granted", False)
-            and self.emit is not None
         ):
             return ApprovalRequired(
                 tool_name=self.name,
@@ -177,11 +181,31 @@ class Tool(ABC):
                     raise ToolFailed(f"简历 {rid} 不存在或无权访问，请先确认简历 ID。")
 
         # 4. 执行（子类可抛 ToolRetryError / ToolFailed 表达业务语义）
+        # P2-10：执行前清空侧信道，避免上一轮残留（工具异常提前返回时，
+        # loop 读到的是本轮空 sources 而非上一轮值）。
+        self.sources = []
+        self.last_usage = {"prompt_tokens": 0, "completion_tokens": 0}
         return await self._execute(**validated.model_dump())
 
     def is_approval_required(self) -> bool:
         """D1: 工具是否需要用户审批。类属性或集中映射命中即返回 True。"""
         return self.requires_approval or bool(_APPROVAL_REQUIRED.get(self.name, False))
+
+    def _approval_gate_active(self) -> bool:
+        """D1（P0-4）: 审批门在当前模式下是否拦截。
+
+        - mode=="off" 恒 False（关闭审批）
+        - mode=="always" 恒等于 is_approval_required()（无论 emit 有无都拦）
+        - mode=="sse"（默认）仅在存在事件通道时拦（emit 非 None）
+        """
+        mode = getattr(settings, "TOOL_APPROVAL_MODE", "sse")
+        if mode == "off":
+            return False
+        if not self.is_approval_required():
+            return False
+        if mode == "always":
+            return True
+        return self.emit is not None  # "sse"：需有事件通道才可弹审批
 
     def mark_approval_granted(self) -> None:
         """D1: 用户已批准本次调用——放行 execute()（跳过审批拦截钩子）。

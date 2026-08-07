@@ -15,25 +15,21 @@ v2 A1 新增 web_search（博查联网搜索：面经/薪资/公司评价/招聘
   unified (21): qa + builder 全部工具（/ask/agent 统一使用）
 """
 
+import hashlib
+import json as _json
 import json as _json_std
 import logging
+from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
-import hashlib
-from datetime import datetime, timezone
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-logger = logging.getLogger(__name__)
-
+from core.database import AsyncSessionLocal
 from services.analyze_service import analyze_resume
 from services.match_jd_service import match_jd
-from services.react_agent.tools.base import Tool
-from services.react_agent.tools.search_jobs_live import SearchJobsLiveTool
-from services.react_agent.tools.web_search import WebSearchTool
-from services.react_agent.tools.negotiation_brief import NegotiationBriefTool
-from services.react_agent.tools.search_corpus import SearchCorpusTool
-from utils.privacy import sanitize_for_ai
 from services.rag.asset_source import ASSET_TYPE_RESUME
 from services.rag.clients import knowledge_collection_name
 from services.rag.ensure_indexed import ensure_indexed
@@ -45,8 +41,17 @@ from services.rag.pipeline import (
     llm_generate_with_tools_stream,
 )
 from services.rag.retrieval import hybrid_search, hybrid_search_corpus, rerank
+from services.react_agent.tools.base import Tool, ToolRetryError, format_validation_error
+from services.react_agent.tools.negotiation_brief import NegotiationBriefTool
+from services.react_agent.tools.search_corpus import SearchCorpusTool
+from services.react_agent.tools.search_jobs_live import SearchJobsLiveTool
+from services.react_agent.tools.spawn import SpawnTool  # P1-1 子代理委派
+from services.react_agent.tools.web_search import WebSearchTool
 from services.resume_builder import get_resume_with_modules
 from services.resume_service import compare_resumes
+from utils.privacy import sanitize_for_ai
+
+logger = logging.getLogger(__name__)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -90,7 +95,8 @@ class InterviewCoachArgs(BaseModel):
         None, description="目标岗位（新开模拟面试时必传；继续已有面试时可不传）"
     )
     answer: str | None = Field(
-        None, description="用户对当前问题的回答。面试进行中用户回答后，必须把回答原文传到这里以推进面试"
+        None,
+        description="用户对当前问题的回答。面试进行中用户回答后，必须把回答原文传到这里以推进面试",
     )
     action: str = Field(
         "next",
@@ -457,7 +463,11 @@ class JDMatchTool(Tool):
                 except Exception as e:
                     logger.warning("JDMatchTool 6-block 报告生成失败（忽略）: %s", e)
 
-            structured_block = "\n\n<match_result>" + _json_std.dumps(structured, ensure_ascii=False) + "</match_result>"
+            structured_block = (
+                "\n\n<match_result>"
+                + _json_std.dumps(structured, ensure_ascii=False)
+                + "</match_result>"
+            )
             return analysis + structured_block + report_block
         except HTTPException as e:
             return f"⚠️ {e.detail}"
@@ -484,7 +494,6 @@ class DiagnoseResumeTool(Tool):
             return f"⚠️ 简历当前状态为 {resume.status}，暂不可诊断。"
 
         sections: list[str] = []
-        has_error = False
 
         for analysis_type in ("experience", "score"):
             try:
@@ -498,12 +507,10 @@ class DiagnoseResumeTool(Tool):
                 label = "经历分析" if analysis_type == "experience" else "评分"
                 sections.append(f"## {label}\n{analysis}")
             except HTTPException as e:
-                has_error = True
                 if "不存在" in str(e.detail):
                     return "⚠️ 简历不存在或无权访问。"
                 sections.append(f"## {analysis_type}\n分析失败: {e.detail}")
             except Exception as e:
-                has_error = True
                 sections.append(f"## {analysis_type}\n分析失败: {e}")
 
         if not sections:
@@ -872,16 +879,9 @@ class CoverLetterTool(Tool):
 
 # ═══════════════════════════════════════════════════════════
 # Builder 工具实现 (5) — T28
-# 设计：短事务独立 commit + 编辑锁 TTL 2min 心跳
+# 设计：短事务独立 commit（避免长事务锁行）；编辑锁已由前端 /lock 端点
+# + edit_lock.py 独立承载（此处工具内部不再用锁，注释不再提）
 # ═══════════════════════════════════════════════════════════
-
-import json as _json
-
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from core.database import AsyncSessionLocal
-from services.edit_lock import acquire_edit_lock, release_edit_lock
 
 
 # ── Builder 工具公共辅助 ──
@@ -993,18 +993,18 @@ def _extract_tool_args(response: LLMToolResponse, expected_name: str) -> dict:
         ValueError: 三类失败之一，错误串含修复指引，供外层 LLM 自愈
     """
     if not response.tool_calls:
-        raise ValueError("AI 未通过工具提交内容，请重新调用工具提交。")
+        raise ToolRetryError("AI 未通过工具提交内容，请重新调用工具提交。")
     tc = response.tool_calls[0]
     if tc.name != expected_name:
-        raise ValueError(
+        raise ToolRetryError(
             f"AI 调用了非预期工具 {tc.name}（期望 {expected_name}），请重新调用工具提交。"
         )
     try:
         args = _json.loads(tc.arguments) if tc.arguments else {}
     except (_json.JSONDecodeError, TypeError) as e:
-        raise ValueError("工具参数 JSON 解析失败，请重新调用工具提交纯 JSON。") from e
+        raise ToolRetryError("工具参数 JSON 解析失败，请重新调用工具提交纯 JSON。") from e
     if not isinstance(args, dict):
-        raise ValueError("工具参数应为 JSON 对象，请重新调用工具提交。")
+        raise ToolRetryError("工具参数应为 JSON 对象，请重新调用工具提交。")
     return args
 
 
@@ -1115,12 +1115,15 @@ async def _submit_modules_via_llm(
             usage_target=usage_target,
         )
         args = _extract_tool_args(response, "submit_rewritten_resume")
+    except ToolRetryError:
+        # A3 回灌自愈：参数/JSON 解析失败抛给 loop 回灌 LLM 修正重试，不吞成普通文本
+        raise
     except Exception as e:
         return f"⚠️ {fail_prefix}：{e}"
 
     raw_modules = args.get("modules")
     if not isinstance(raw_modules, list):
-        return "⚠️ AI 重写结果格式错误：modules 应为数组。"
+        raise ToolRetryError("AI 重写结果格式错误：modules 应为数组。")
 
     from schemas.resume_module import validate_module_content, ModuleType
     from pydantic import ValidationError
@@ -1154,7 +1157,8 @@ async def _submit_modules_via_llm(
             errors.append(f"模块 {idx} ({mt_str}): {e}")
 
     if not validated_modules:
-        return "⚠️ 重写结果校验失败，无有效模块:\n" + "\n".join(errors)
+        # 全部模块校验失败 → A3 回灌自愈（LLM 修正后重试），而非直接失败
+        raise ToolRetryError("重写结果校验失败，无有效模块:\n" + "\n".join(errors))
 
     result = await _replace_all_modules_short_txn(
         user_id, resume_id, validated_modules, complete=complete
@@ -1162,7 +1166,9 @@ async def _submit_modules_via_llm(
     if errors:
         result += f"\n⚠️ {len(errors)} 个模块校验失败被跳过。"
     # G 可信度控制：AI 推断/补充内容（source≠fact）提醒用户核对具体模块
-    inferred_modules = [m["module_type"] for m in validated_modules if m.get("source", "fact") != "fact"]
+    inferred_modules = [
+        m["module_type"] for m in validated_modules if m.get("source", "fact") != "fact"
+    ]
     if inferred_modules:
         result += (
             f"\n⚠️ {len(inferred_modules)} 个模块含 AI 推断/补充内容"
@@ -1201,11 +1207,20 @@ async def _update_module_short_txn(
     from models.resume_module import ResumeModule
     from schemas.resume_module import validate_module_content
 
-    # 入口校验 content（T22 四方契约）
+    # 入口校验 content（T22 四方契约）——失败抛 ToolRetryError 走 A3 回灌自愈：
+    # loop 收到后标记坏调用并回灌结构化错误，LLM 补齐缺失/空字段后重试。
+    from pydantic import ValidationError
+
     try:
         validate_module_content(module_type, new_content)
-    except Exception as e:
-        return f"⚠️ 模块 {module_type} content 校验失败: {e}。请重新调用工具提交修正后的 content。"
+    except ValidationError as e:
+        raise ToolRetryError(
+            f"模块 {module_type} content 校验失败（{len(e.errors())} 处）:\n"
+            + format_validation_error(e)
+            + "\n请补充/修正必填字段（不能缺失或为空字符串）后重新调用工具提交。"
+        ) from e
+    except Exception as e:  # noqa: BLE001 未知 module_type 等
+        raise ToolRetryError(f"模块 {module_type} content 校验失败: {e}") from e
 
     async with AsyncSessionLocal() as session:
         # 校验归属
@@ -1270,12 +1285,20 @@ async def _replace_all_modules_short_txn(
     from models.resume_module import ResumeModule
     from schemas.resume_module import validate_module_content
 
-    # 入口批量校验
+    # 入口批量校验——失败抛 ToolRetryError 走 A3 回灌自愈（同 _update_module_short_txn）
+    from pydantic import ValidationError
+
     for mod in modules_data:
         try:
             validate_module_content(mod["module_type"], mod["content"])
-        except Exception as e:
-            return f"⚠️ 模块 {mod.get('module_type', '?')} content 校验失败: {e}。请重新调用工具提交修正后的 content。"
+        except ValidationError as e:
+            raise ToolRetryError(
+                f"模块 {mod.get('module_type', '?')} content 校验失败（{len(e.errors())} 处）:\n"
+                + format_validation_error(e)
+                + "\n请补充/修正必填字段（不能缺失或为空字符串）后重新调用工具提交。"
+            ) from e
+        except Exception as e:  # noqa: BLE001 未知 module_type 等
+            raise ToolRetryError(f"模块 {mod.get('module_type', '?')} content 校验失败: {e}") from e
 
     async with AsyncSessionLocal() as session:
         # 校验归属
@@ -1474,6 +1497,8 @@ class GenerateModuleTool(Tool):
             )
             # 工具参数即 content（parameters == content schema）
             content = _extract_tool_args(response, "submit_module_content")
+        except ToolRetryError:
+            raise
         except Exception as e:
             return f"⚠️ AI 生成失败：{e}"
 
@@ -1507,8 +1532,6 @@ class CheckModuleTool(Tool):
             return f"⚠️ 简历 {resume_id} 不存在或无权访问。"
         if module is None:
             return f"⚠️ 模块 {module_type} 不存在，请先生成。"
-
-        content_str = _json.dumps(module.content, ensure_ascii=False, indent=2)
 
         # 脱敏后传给 LLM
         sanitized_content = (
@@ -1573,8 +1596,6 @@ class ModifyModuleTool(Tool):
         if module is None:
             return f"⚠️ 模块 {module_type} 不存在，请先用 generate_module 生成。"
 
-        content_str = _json.dumps(module.content, ensure_ascii=False, indent=2)
-
         # 脱敏后传给 LLM
         sanitized_content = (
             sanitize_for_ai(module.content) if isinstance(module.content, dict) else module.content
@@ -1624,6 +1645,8 @@ class ModifyModuleTool(Tool):
             )
             # 工具参数即修改后的 content
             content = _extract_tool_args(response, "submit_modified_content")
+        except ToolRetryError:
+            raise
         except Exception as e:
             return f"⚠️ AI 修改失败：{e}"
 
@@ -1715,9 +1738,7 @@ class RewriteResumeTool(Tool):
             usage_target=self.last_usage,
             complete=False,
             tool_name="rewrite_resume",
-            rationale=(
-                "按目标岗位优化整份简历" if mode == "optimize" else "生成整份简历"
-            ),
+            rationale=("按目标岗位优化整份简历" if mode == "optimize" else "生成整份简历"),
         )
 
 
@@ -1815,6 +1836,7 @@ TOOL_REGISTRY: dict[str, list[type[Tool]]] = {
         WebSearchTool,
         NegotiationBriefTool,  # I3: 谈薪简报（qa 16）
         SearchCorpusTool,  # B3: 公共语料检索（面经/题库/范文，qa 17）
+        SpawnTool,  # P1-1: 子代理委派（qa 18）
     ],
     "builder": [
         GenerateModuleTool,
