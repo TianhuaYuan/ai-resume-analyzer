@@ -48,14 +48,23 @@ class ApprovalRequired:
       ``approval_request`` SSE 事件等待用户确认
     - 用户批准后 loop 调用 ``mark_approval_granted()`` 重新执行；拒绝则把
       「用户拒绝」文本回灌 LLM（不累计坏调用，区别于 ToolRetryError / ToolFailed）
+
+    severity（审批增强，借鉴 OpenClaw 严重度分级）：
+    - info：信息性工具调用，前端仅提示（可自动允许）
+    - warning（默认）：写库/外部请求，需要用户确认
+    - critical：高风险操作（如批量修改/删除），需要确认 + 审计日志
     """
 
-    __slots__ = ("tool_name", "arguments", "summary")
+    __slots__ = ("tool_name", "arguments", "summary", "severity")
 
-    def __init__(self, tool_name: str, arguments: dict, summary: str) -> None:
+    def __init__(
+        self, tool_name: str, arguments: dict, summary: str, severity: str = "warning"
+    ) -> None:
         self.tool_name = tool_name
         self.arguments = arguments
         self.summary = summary
+        # 严重度分级："info" | "warning" | "critical"
+        self.severity = severity if severity in ("info", "warning", "critical") else "warning"
 
 
 def format_validation_error(e: ValidationError) -> str:
@@ -82,6 +91,19 @@ _APPROVAL_REQUIRED: dict[str, bool] = {
     "translate": True,          # 翻译重写（写库）
     "search_jobs_live": True,   # 实时联网搜索（外部请求）
     "web_search": True,         # P0-4：通用联网搜索同为外部请求，与 search_jobs_live 口径一致
+}
+
+# 审批严重度集中映射（审批增强，借鉴 OpenClaw severity 分级）：
+# 与 _APPROVAL_REQUIRED 同口径，标注每个需审批工具的风险等级。
+# critical = 高风险（批量/破坏性写库），warning = 常规写库/外部请求，info = 低风险提示。
+_APPROVAL_SEVERITY: dict[str, str] = {
+    "save_memory": "warning",       # 记忆写入，可回溯
+    "modify_module": "warning",     # 单模块修改，可 diff 审阅
+    "rewrite_resume": "warning",    # 整份重写，可 diff 审阅
+    "rewrite_star": "warning",      # 单条改写，可 diff 审阅
+    "translate": "warning",         # 翻译重写，可 diff 审阅
+    "search_jobs_live": "info",     # 只读联网搜索，低风险
+    "web_search": "info",           # 只读联网搜索，低风险
 }
 
 
@@ -113,6 +135,9 @@ class Tool(ABC):
     # 执行前需用户确认。子类可直接置 True，或通过下方集中映射 _APPROVAL_REQUIRED
     # 按工具名命中（优先用映射，避免逐个改 tools/ 下子类文件与阶段 1 冲突）。
     requires_approval: bool = False
+    # 审批严重度（审批增强，借鉴 OpenClaw）："info" | "warning" | "critical"
+    # 子类可覆盖；未设置时按 _APPROVAL_SEVERITY 集中映射兜底，再默认 "warning"。
+    approval_severity: str = ""
 
     def __init__(
         self,
@@ -171,6 +196,7 @@ class Tool(ABC):
                 tool_name=self.name,
                 arguments=validated.model_dump(),
                 summary=self._build_approval_summary(validated),
+                severity=self._get_approval_severity(),
             )
 
         # 3. 归属校验（对 resume_id 类参数）——确定性失败 → ToolFailed 不累计坏调用
@@ -190,6 +216,17 @@ class Tool(ABC):
     def is_approval_required(self) -> bool:
         """D1: 工具是否需要用户审批。类属性或集中映射命中即返回 True。"""
         return self.requires_approval or bool(_APPROVAL_REQUIRED.get(self.name, False))
+
+    def _get_approval_severity(self) -> str:
+        """审批增强: 计算工具的审批严重度（info/warning/critical）。
+
+        优先级：子类类属性 approval_severity > 集中映射 _APPROVAL_SEVERITY > 默认 warning。
+        """
+        if getattr(self, "approval_severity", ""):
+            sev = self.approval_severity
+        else:
+            sev = _APPROVAL_SEVERITY.get(self.name, "warning")
+        return sev if sev in ("info", "warning", "critical") else "warning"
 
     def _approval_gate_active(self) -> bool:
         """D1（P0-4）: 审批门在当前模式下是否拦截。

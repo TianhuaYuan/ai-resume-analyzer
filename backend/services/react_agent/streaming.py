@@ -20,6 +20,7 @@ process_trace 双载荷：
 import asyncio
 import logging
 import time
+from dataclasses import dataclass
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -504,3 +505,87 @@ def _build_compact_trace(trace: list[dict], duration_ms: int) -> dict:
         "tool_sequence": tool_sequence,
         "duration_ms": duration_ms,
     }
+
+
+# ═══════════════════════════════════════════════════════════════
+# T25: 中断消息注入 + 压缩后恢复用户消息（OpenClaw turn_aborted + Hermes 借鉴）
+# ═══════════════════════════════════════════════════════════════
+
+
+@dataclass
+class InterruptRecord:
+    """中断记录。"""
+
+    reason: str
+    timestamp: float
+    session_key: str
+    pending: bool = True
+
+
+class InterruptHandler:
+    """中断处理器：记录中断原因 + 生成注入消息。
+
+    断连/异常时 record_interrupt 记录；checkpoint 恢复后
+    get_interrupt_message 生成 turn_aborted 风格提示，让 LLM
+    感知上一轮被中断、工具可能部分执行（OpenClaw 借鉴）。
+    """
+
+    def __init__(self) -> None:
+        self._pending: list[InterruptRecord] = []
+
+    def record_interrupt(self, reason: str, session_key: str) -> None:
+        """记录中断（内存队列，最新优先，最多保留 5 条）。"""
+        self._pending.append(
+            InterruptRecord(
+                reason=reason,
+                timestamp=time.time(),
+                session_key=session_key,
+                pending=True,
+            )
+        )
+        if len(self._pending) > 5:
+            self._pending = self._pending[-5:]
+
+    def get_interrupt_message(self) -> str | None:
+        """生成中断提示消息（消费后清空 pending）。"""
+        pending = [r for r in self._pending if r.pending]
+        if not pending:
+            return None
+        for r in pending:
+            r.pending = False
+        reasons = "; ".join(r.reason for r in pending[-3:])
+        return (
+            "<turn_aborted>\n"
+            "上一轮对话被中断（原因: " + reasons + "）。任何正在运行的后台进程"
+            "可能仍在活动；已执行的工具可能部分完成。\n"
+            "</turn_aborted>"
+        )
+
+
+class UserMessageRestorer:
+    """压缩后恢复用户原始问题（Hermes _restore_user_after_reference_handoff 借鉴）。
+
+    L1 结构化压缩后用户消息可能被摘要 handoff 顶掉，模型会误解上下文。
+    该工具确保用户当前问题始终在消息列表末尾，避免"模型答非所问"。
+    """
+
+    @staticmethod
+    def should_restore(messages: list[dict], user_message: str | None) -> bool:
+        """是否需要恢复用户消息。"""
+        if not user_message or not user_message.strip():
+            return False
+        if not messages:
+            return True
+        # 最后一条是用户消息且内容一致 → 无需恢复
+        last = messages[-1]
+        if last.get("role") == "user" and last.get("content") == user_message:
+            return False
+        return True
+
+    @staticmethod
+    def restore(messages: list[dict], user_message: str | None) -> list[dict]:
+        """恢复用户消息到消息列表末尾（幂等）。"""
+        if not UserMessageRestorer.should_restore(messages, user_message):
+            return messages
+        messages.append({"role": "user", "content": user_message})
+        return messages

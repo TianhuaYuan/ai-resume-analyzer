@@ -13,9 +13,11 @@
 """
 
 import asyncio
+import hashlib
 import json
 import logging
 import time
+from collections import Counter
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable
 from uuid import uuid4
@@ -95,6 +97,25 @@ STUCK_PROMPT = (
 STUCK_WINDOW = 3  # 回溯窗口：最近 N 轮
 STUCK_THRESHOLD = 2  # 签名重复 ≥2 次判为 stuck
 
+# ── 工具结果预算管理（借鉴 Hermes budget_for_context_window）──
+# 单个工具结果回灌 LLM 前的预算上限（字符数）。超出预算的结果被截断，
+# 避免单一超长工具结果（如整份简历/批量搜索）挤爆 L1 上下文窗口。
+# 预算随上下文窗口大小自适应：窗口越大，允许的单结果预算越高。
+DEFAULT_CONTEXT_WINDOW = 16384  # 对应 L1 预算（memory.DEFAULT_L1_BUDGET）
+TOOL_RESULT_BUDGET_CHARS = 6000  # 16384 窗口下的默认单结果字符预算
+_TOOL_RESULT_BUDGET_STEP = 2000  # 每提升一档窗口，预算增加量
+
+
+def _tool_result_budget(context_window: int | None = None) -> int:
+    """根据上下文窗口大小返回工具结果预算（字符数）。
+
+    - context_window=None → 用默认 L1 预算档位
+    - 窗口越大 → 预算越高（线性增量），始终有下限 4000、上限 20000
+    """
+    window = context_window if context_window else DEFAULT_CONTEXT_WINDOW
+    budget = TOOL_RESULT_BUDGET_CHARS + max(0, window - DEFAULT_CONTEXT_WINDOW) // 8192 * _TOOL_RESULT_BUDGET_STEP
+    return max(4000, min(budget, 20000))
+
 # ── D1 工具审批门（借鉴 pydantic-ai Deferred tools）──
 # 命中 requires_approval 的工具执行前需用户确认；SSE 单向流，
 # 决议经独立端点回传（api/qa.py POST /qa/approval）。
@@ -133,6 +154,130 @@ class _ApprovalEntry:
 
 
 _approval_registry: dict[str, _ApprovalEntry] = {}
+
+
+# ── M3 增强：结构化工具调用记录 + 多模式循环检测 ──────────────
+# 相比旧方案（简单签名重复 ≥2 次），新增：
+# - 结构化调用记录（ToolCallRecord）：记录工具名、参数哈希、结果哈希、时间戳等，
+#   为后续审计和调试提供完整调用链路信息。
+# - 交替模式检测（A→B→A→B）：旧方案只检测相同签名重复，无法识别交替循环。
+# - 分级响应（critical/warning）：critical 级别强制终止循环避免烧 token，
+#   warning 级别注入换策略提示允许模型自愈。
+
+
+@dataclass
+class ToolCallRecord:
+    """工具调用记录，结构化存储单次调用的关键信息。"""
+
+    tool_name: str
+    args_hash: str
+    tool_call_id: str
+    run_id: str | None = None
+    outcome_kind: str | None = None  # "success" | "error" | "tool-loop-veto"
+    result_hash: str | None = None
+    timestamp: float = 0.0
+
+
+class ToolLoopDetector:
+    """工具循环检测器，支持相同调用重复检测 + 交替模式检测 + 分级响应。
+
+    设计思路：
+    - window：回溯窗口大小，保留最近 N 条调用记录（默认 5，覆盖 3+ 轮循环）
+    - critical_threshold：相同调用重复 ≥ N 次 → critical（强制终止，避免烧 token）
+    - warning_threshold：相同调用重复 ≥ N 次 → warning（注入换策略提示，允许自愈）
+    - 交替模式检测：A→B→A→B 模式 → warning（旧方案无法识别此类循环）
+    - 干预后 clear()：模型换策略成功后清空历史，重新计数
+    """
+
+    def __init__(
+        self,
+        window: int = 5,
+        critical_threshold: int = 3,
+        warning_threshold: int = 2,
+    ):
+        self.window = window
+        self.critical_threshold = critical_threshold
+        self.warning_threshold = warning_threshold
+        self.history: list[ToolCallRecord] = []
+
+    def record(
+        self, tool_name: str, args: dict, tool_call_id: str
+    ) -> ToolCallRecord:
+        """记录一次工具调用，超出窗口自动淘汰最旧记录。"""
+        args_hash = hashlib.md5(
+            json.dumps(args, sort_keys=True).encode()
+        ).hexdigest()[:8]
+        record = ToolCallRecord(
+            tool_name=tool_name,
+            args_hash=args_hash,
+            tool_call_id=tool_call_id,
+            timestamp=time.time(),
+        )
+        self.history.append(record)
+        # 维护滑动窗口，淘汰最旧记录
+        if len(self.history) > self.window:
+            self.history.pop(0)
+        return record
+
+    def update_outcome(
+        self,
+        record: ToolCallRecord,
+        *,
+        outcome_kind: str,
+        result_hash: str | None = None,
+    ) -> None:
+        """更新调用记录的执行结果（成功/失败/被 veto）。"""
+        record.outcome_kind = outcome_kind
+        if result_hash:
+            record.result_hash = result_hash
+
+    def detect_loop(self) -> dict:
+        """检测循环模式，返回 {stuck: bool, level: "critical"|"warning"|None, reason: str}。
+
+        检测策略（按优先级）：
+        1. 相同调用重复检测（critical）：同一工具+相同参数在窗口内出现 ≥ critical_threshold 次
+        2. 交替模式检测（warning）：A→B→A→B 模式在窗口内出现
+        """
+        if len(self.history) < 2:
+            return {"stuck": False, "level": None, "reason": ""}
+
+        # 检测策略 1：相同调用重复（critical 级别）
+        sig_counts = Counter(
+            (r.tool_name, r.args_hash) for r in self.history
+        )
+        for sig, count in sig_counts.items():
+            if count >= self.critical_threshold:
+                return {
+                    "stuck": True,
+                    "level": "critical",
+                    "reason": f"工具 {sig[0]} 以相同参数重复调用 {count} 次",
+                }
+            if count >= self.warning_threshold:
+                return {
+                    "stuck": True,
+                    "level": "warning",
+                    "reason": f"工具 {sig[0]} 以相同参数调用 {count} 次",
+                }
+
+        # 检测策略 2：交替模式 A→B→A→B（warning 级别）
+        if len(self.history) >= 4:
+            names = [r.tool_name for r in self.history[-4:]]
+            if (
+                names[0] == names[2]
+                and names[1] == names[3]
+                and names[0] != names[1]
+            ):
+                return {
+                    "stuck": True,
+                    "level": "warning",
+                    "reason": f"检测到交替调用模式: {names[0]} → {names[1]} → {names[0]} → {names[1]}",
+                }
+
+        return {"stuck": False, "level": None, "reason": ""}
+
+    def clear(self) -> None:
+        """清空历史（干预后调用，重新计数）。"""
+        self.history.clear()
 
 
 def _pick_stuck_hint(fault_type: str | None) -> str:
@@ -299,6 +444,41 @@ async def wait_for_approval(approval_id: str, timeout: float = APPROVAL_TIMEOUT_
         drop_approval(approval_id)
 
 
+# ── 审批增强（借鉴 OpenClaw allow-always + severity）──────────────
+# 用户对某工具选择"始终允许"后，记录到 Redis（TTL 7 天），后续同工具
+# 审批请求自动放行，减少重复弹窗。best-effort：Redis 不可用降级为不记忆。
+
+_APPROVAL_MEMORY_TTL_SEC = 7 * 24 * 3600  # 7 天
+
+
+async def remember_tool_approval(user_id: int, tool_name: str) -> None:
+    """记录用户"始终允许"该工具（best-effort，失败不影响审批流程）。"""
+    try:
+        from core.redis_client import get_redis
+
+        redis = await get_redis()
+        if redis is None:
+            return
+        key = f"react:approval:{user_id}:{tool_name}"
+        await redis.setex(key, _APPROVAL_MEMORY_TTL_SEC, "1")
+    except Exception:
+        logger.debug("记录 allow-always 审批偏好失败（忽略）", exc_info=True)
+
+
+async def check_tool_approval(user_id: int, tool_name: str) -> bool:
+    """检查用户是否"始终允许"该工具（命中则后续自动放行）。"""
+    try:
+        from core.redis_client import get_redis
+
+        redis = await get_redis()
+        if redis is None:
+            return False
+        key = f"react:approval:{user_id}:{tool_name}"
+        return bool(await redis.get(key))
+    except Exception:
+        return False
+
+
 @dataclass
 class ReactLoopResult:
     """ReAct 循环返回值。"""
@@ -308,6 +488,8 @@ class ReactLoopResult:
     usage: dict = field(default_factory=lambda: {"prompt_tokens": 0, "completion_tokens": 0})
     sources: list[dict] = field(default_factory=list)  # Spec A#10: search_resume 来源去重
     db_trace: dict = field(default_factory=dict)  # Spec 行 459: 完整 prompt 进 DB
+    # T17.1: checkpoint 恢复标记——streaming 层据此注入中断提示 + 恢复用户消息
+    checkpoint_restored: bool = False
 
 
 # 工具并行执行 Semaphore（Spec A#32：限单轮工具并发，非整个 Agent 循环）
@@ -463,6 +645,30 @@ async def react_loop(
             restored_from_checkpoint = True
             # 恢复后清理（本次续跑若再中断会重新存）
             await _clear_react_checkpoint(checkpoint_key)
+            # T25: 中断消息注入（借鉴 OpenClaw turn_aborted）——恢复时 LLM 感知
+            # 上一轮被中断、后台进程/工具可能部分执行，避免"当作全新会话"误答。
+            # 插入到 system prompt 之后（第 0 条之后）。
+            insert_at = 1
+            for i, m in enumerate(messages):
+                if m.get("role") == "system":
+                    insert_at = i + 1
+                    break
+            messages.insert(
+                insert_at,
+                {
+                    "role": "system",
+                    "content": (
+                        "<turn_aborted>\n上一轮对话被中断，已从断点续跑。任何正在运行"
+                        "的后台进程可能仍在活动；已执行的工具可能部分完成。"
+                        "请结合已有上下文继续处理，必要时补充查询/调用工具。\n"
+                        "</turn_aborted>"
+                    ),
+                },
+            )
+            logger.info(
+                "回合 checkpoint 恢复+中断提示注入: user=%d resume=%d messages=%d",
+                user_id, resume_id, len(messages),
+            )
 
     # 4. 获取工具 schemas（v2: 统一使用 unified 工具集 + 相关性过滤）
     from services.react_agent.tool_gate import filter_agent_tools
@@ -524,6 +730,7 @@ async def react_loop(
                 usage=total_usage,
                 sources=_deduplicate_sources(sources),
                 db_trace=_build_db_trace(system_prompt, [], FINAL_MODEL),
+                checkpoint_restored=restored_from_checkpoint,
             )
 
     # 5. ReAct 循环
@@ -532,9 +739,11 @@ async def react_loop(
     rounds = 0
     _llm_round_ms = 0.0
     _tool_exec_ms = 0.0
-    # M3 is_stuck：最近几轮 tool_call 签名 + 当前 stuck 标志（上一轮检测，本轮注入）
-    recent_round_signatures: list[tuple[str, ...]] = []
+    # M3 增强：ToolLoopDetector 替代旧方案的 recent_round_signatures
+    # 支持交替模式检测 + 分级响应（critical 强制终止 / warning 注入提示）
+    loop_detector = ToolLoopDetector()
     stuck = False
+    stuck_level: str | None = None  # "critical" | "warning" | None
 
     while rounds < MAX_ROUNDS:
         rounds += 1
@@ -556,6 +765,7 @@ async def react_loop(
                 usage=total_usage,
                 sources=_deduplicate_sources(all_sources),
                 db_trace=_build_db_trace(system_prompt, db_rounds),
+                checkpoint_restored=restored_from_checkpoint,
             )
 
         # 每轮 LLM 调用前复查配额（Spec A#5：超限立即停止）
@@ -569,10 +779,20 @@ async def react_loop(
                     usage=total_usage,
                     sources=_deduplicate_sources(all_sources),
                     db_trace=_build_db_trace(system_prompt, db_rounds),
+                    checkpoint_restored=restored_from_checkpoint,
                 )
 
         # L1 上下文管理（逐出旧轮次，截断工具结果）
         messages = manage_l1_context(messages)
+
+        # T25: 压缩后恢复用户原始问题（Hermes 借鉴）——L1 结构化压缩可能把
+        # 用户消息顶成摘要 handoff，末尾恢复确保模型不"答非所问"。幂等：question
+        # 已存在于消息列表（任何位置）则跳过，避免 L1 未逐出时重复注入。
+        if not any(
+            m.get("role") == "user" and m.get("content") == question
+            for m in messages
+        ):
+            messages.append({"role": "user", "content": question})
 
         # P1-2：回合中注入——用户在 agent 思考期间追加的消息并入当前回合
         # （FIFO，每轮最多 2 条）。让 agent 感知"追问/补充"，无需等回合结束。
@@ -592,13 +812,18 @@ async def react_loop(
         # M3 next_step_prompt：第 2 轮起每轮 LLM 调用前注入引导（收敛/换策略）。
         # stuck 时注入换策略提示覆盖默认引导；注入后重置标志（下一轮重新检测）。
         # D2: stuck 提示按最近失败分类（fault_type）选变体，未分类回退现有 STUCK_PROMPT。
+        # M3 增强：critical 级别不注入提示，直接 break 强制收敛（避免烧 token）。
         if rounds > 1:
             if stuck:
+                if stuck_level == "critical":
+                    # critical 级别：不再注入提示，直接跳出循环走强制收敛
+                    break
                 hint = _pick_stuck_hint(recent_fault_type) + "\n" + NEXT_STEP_PROMPT
                 stuck = False
-                # 注入后清空签名窗口：避免当轮结尾检测到同签名又立即置回 stuck，
+                stuck_level = None
+                # 注入后清空检测历史：避免当轮结尾又立即判 stuck，
                 # 保证模型恢复不同调用后不再连续注入换策略提示（注入即视为已干预）。
-                recent_round_signatures.clear()
+                loop_detector.clear()
             else:
                 hint = NEXT_STEP_PROMPT
             messages.append({"role": "user", "content": hint})
@@ -647,6 +872,7 @@ async def react_loop(
                         usage=total_usage,
                         sources=_deduplicate_sources(all_sources),
                         db_trace=_build_db_trace(system_prompt, db_rounds, FINAL_MODEL),
+                        checkpoint_restored=restored_from_checkpoint,
                     )
                 logger.warning(
                     "ReAct 空输出（第 %d 次连续），注入提示继续: user=%d rounds=%d",
@@ -674,6 +900,7 @@ async def react_loop(
                 usage=total_usage,
                 sources=_deduplicate_sources(all_sources),
                 db_trace=_build_db_trace(system_prompt, db_rounds, FINAL_MODEL),
+                checkpoint_restored=restored_from_checkpoint,
             )
 
         # 有 tool_call → 并行执行工具（Spec A#21: asyncio.gather）
@@ -753,12 +980,17 @@ async def react_loop(
             # 收集工具来源（Spec A#10: search_resume 来源聚合）
             all_sources.extend(tool_sources)
 
-            # tool 结果/错误回灌到 messages
+            # tool 结果/错误回灌到 messages（工具结果预算管理：超长结果截断到
+            # 预算上限，避免单一超长结果挤爆 L1 上下文窗口）
+            budget = _tool_result_budget()
+            content = tool_result
+            if len(content) > budget:
+                content = content[: budget - 3] + "..."
             messages.append(
                 {
                     "role": "tool",
                     "tool_call_id": tc.id,
-                    "content": tool_result,
+                    "content": content,
                 }
             )
 
@@ -810,19 +1042,45 @@ async def react_loop(
                 user_id, question, response.tool_calls, results
             )
 
-        # M3 is_stuck：最近 STUCK_WINDOW 轮内 tool_call 签名重复 ≥STUCK_THRESHOLD → 判 stuck。
-        # 不终止循环，仅下一轮注入换策略提示（配合 A3 per-tool 重试预算双保险）。
-        round_sig = _tool_round_signature(response.tool_calls)
-        recent_round_signatures.append(round_sig)
-        if len(recent_round_signatures) > STUCK_WINDOW:
-            recent_round_signatures.pop(0)
-        if recent_round_signatures.count(round_sig) >= STUCK_THRESHOLD:
-            stuck = True
-            logger.warning(
-                "ReAct 检测到重复 tool_call（stuck），下一轮注入换策略提示: %s user=%d",
-                round_sig,
-                user_id,
+        # M3 增强：ToolLoopDetector 替代旧方案的签名重复检测
+        # 记录本轮所有工具调用到滑动窗口 → 检测循环模式 → 按级别响应
+        for tc, (tool_result, is_error, _sources, _usage) in zip(
+            response.tool_calls, results
+        ):
+            try:
+                tc_args = json.loads(tc.arguments) if tc.arguments else {}
+            except json.JSONDecodeError:
+                tc_args = {}
+            rec = loop_detector.record(tc.name, tc_args, tc.id)
+            # 回填执行结果到记录（供后续审计）
+            loop_detector.update_outcome(
+                rec,
+                outcome_kind="error" if is_error else "success",
+                result_hash=hashlib.md5(tool_result[:500].encode()).hexdigest()[:8],
             )
+        loop_result = loop_detector.detect_loop()
+        if loop_result["stuck"]:
+            stuck = True
+            stuck_level = loop_result["level"]
+            logger.warning(
+                "ReAct 工具循环检测（level=%s）: %s user=%d resume=%d rounds=%d",
+                stuck_level,
+                loop_result["reason"],
+                user_id,
+                resume_id,
+                rounds,
+            )
+            if stuck_level == "critical":
+                # critical 级别：注入更强终止提示，下一轮开头 break
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "严重循环检测：你已连续多次执行相同操作且未产生有效进展。"
+                            "请立即停止所有工具调用，基于已有信息直接给出最终回答。"
+                        ),
+                    }
+                )
 
     # 6. 强制收敛：无工具调用，用 CHAT_MODEL（流式：推理过程实时推给前端）
     messages = manage_l1_context(messages)
@@ -845,6 +1103,7 @@ async def react_loop(
         usage=total_usage,
         sources=_deduplicate_sources(all_sources),
         db_trace=_build_db_trace(system_prompt, db_rounds, FINAL_MODEL),
+        checkpoint_restored=restored_from_checkpoint,
     )
 
 
@@ -1112,6 +1371,14 @@ async def _execute_tool_call(
         and getattr(settings, "TOOL_APPROVAL_MODE", "sse") == "sse"
     ):
         tool.mark_approval_granted()
+    # 审批增强：用户曾"始终允许"该工具 → 自动放行，跳过审批门（免重复弹窗）。
+    # best-effort：Redis 不可用返回 False，退化为正常审批。
+    if (
+        tool.is_approval_required()
+        and not getattr(tool, "_approval_granted", False)
+        and await check_tool_approval(user_id, tc.name)
+    ):
+        tool.mark_approval_granted()
     _tool_t0 = time.perf_counter()
     _timeout = _tool_exec_timeout(tc.name)
     try:
@@ -1208,9 +1475,16 @@ async def _handle_tool_approval(
                         "args": json.dumps(approval.arguments, ensure_ascii=False),
                         "summary": approval.summary,
                         "round": round_no,
+                        # 审批增强（借鉴 OpenClaw severity）：info/warning/critical，
+                        # 前端据此区分弹窗样式；critical 触发审计日志。
+                        "severity": getattr(approval, "severity", "warning"),
                     }
                 )
                 decision = await wait_for_approval(approval_id)
+                # allow-always：用户选择"始终允许该工具"→ 记入偏好，后续同工具自动放行
+                if decision == "allow_always":
+                    await remember_tool_approval(user_id, approval.tool_name)
+                    decision = "approved"
                 await emit(
                     {
                         "type": "approval_decision",
@@ -1222,6 +1496,13 @@ async def _handle_tool_approval(
             else:
                 # 无事件通道（不应到达：_execute_tool_call 已对 emit=None 放行）
                 decision = "approved"
+
+            # critical 审计日志（审批增强）：高风险工具放行/拒绝均留痕
+            if getattr(approval, "severity", "warning") == "critical":
+                logger.info(
+                    "CRITICAL 审批记录: tool=%s decision=%s user=%d approval_id=%s round=%s",
+                    approval.tool_name, decision, user_id, approval_id, round_no,
+                )
 
             if decision == "approved":
                 tool.mark_approval_granted()

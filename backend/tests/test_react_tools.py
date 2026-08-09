@@ -1,10 +1,10 @@
 """T21: Agent 工具集成测试。
 
-通过 loop._execute_tool_call 集成入口测试全部 22 工具（unified = 17 qa + 5 builder）：
-1. 注册表完整性：TOOL_REGISTRY 3 类（qa/builder/unified）22 工具
-2. Schema 生成：get_agent_schemas()=22（unified）, get_builder_schemas()=5（deprecated）
-3. 21 Agent 工具通过 _execute_tool_call 执行（mock 依赖）
-4. 工具查找：get_tool_by_name 覆盖全部 21 个名称
+通过 loop._execute_tool_call 集成入口测试全部 23 工具（unified = 18 qa + 5 builder）：
+1. 注册表完整性：TOOL_REGISTRY 3 类（qa/builder/unified）23 工具
+2. Schema 生成：get_agent_schemas()=23（unified）, get_builder_schemas()=5（deprecated）
+3. Agent 工具通过 _execute_tool_call 执行（mock 依赖）
+4. 工具查找：get_tool_by_name 覆盖全部 23 个名称
 """
 
 import json
@@ -36,21 +36,21 @@ class TestToolRegistry:
         assert set(TOOL_REGISTRY.keys()) == {"qa", "builder", "unified"}
 
     def test_qa_has_seventeen_tools(self):
-        """qa 类别有 17 个工具（B3 加 search_corpus）。"""
-        assert len(TOOL_REGISTRY["qa"]) == 17
+        """qa 类别有 18 个工具（B3 加 search_corpus + P1-1 加 spawn）。"""
+        assert len(TOOL_REGISTRY["qa"]) == 18
 
     def test_builder_has_five_tools(self):
         """builder 类别有 5 个工具。"""
         assert len(TOOL_REGISTRY["builder"]) == 5
 
     def test_unified_has_twenty_two_tools(self):
-        """unified 类别有 22 个工具（qa + builder 合并）。"""
-        assert len(TOOL_REGISTRY["unified"]) == 22
+        """unified 类别有 23 个工具（qa + builder 合并）。"""
+        assert len(TOOL_REGISTRY["unified"]) == 23
 
     def test_agent_tools_are_unified(self):
-        """get_tools_for_agent = unified(22)。"""
+        """get_tools_for_agent = unified(23)。"""
         tools = get_tools_for_agent()
-        assert len(tools) == 22
+        assert len(tools) == 23
 
     def test_builder_tools_deprecated(self):
         """get_tools_for_builder 保留向后兼容（deprecated）。"""
@@ -59,7 +59,7 @@ class TestToolRegistry:
         assert len(tools) == 5
 
     def test_all_tool_names_unique(self):
-        """unified 中所有 22 个工具名不重复。"""
+        """unified 中所有 23 个工具名不重复。"""
         names = [tc.name for tc in TOOL_REGISTRY["unified"]]
         assert len(names) == len(set(names)), f"重复工具名: {names}"
 
@@ -73,9 +73,9 @@ class TestSchemaGeneration:
     """OpenAI function calling schema 生成。"""
 
     def test_agent_schemas_count(self):
-        """get_agent_schemas() 返回 22 个 schema（unified）。"""
+        """get_agent_schemas() 返回 23 个 schema（unified）。"""
         schemas = get_agent_schemas()
-        assert len(schemas) == 22
+        assert len(schemas) == 23
 
     def test_builder_schemas_deprecated(self):
         """get_builder_schemas() 保留向后兼容（deprecated）。"""
@@ -101,7 +101,7 @@ class TestSchemaGeneration:
 
 
 # ═══════════════════════════════════════════════════════════════
-# 3. get_tool_by_name 覆盖全部 18 工具
+# 3. get_tool_by_name 覆盖全部 23 工具
 # ═══════════════════════════════════════════════════════════════
 
 

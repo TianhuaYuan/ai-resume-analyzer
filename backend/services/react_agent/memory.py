@@ -10,6 +10,12 @@ L3 画像构建钩子（T15）：
 - 只调 summary + skills 两种分析类型（2 次 LLM，不调全量 4 种）
 - 不阻塞热路径，错误不外抛
 
+上下文压缩（ContextCompactor）：
+- 自动检测 token 预算超限 → 结构化摘要替代手动逐出
+- 保留最近 N 轮完整消息 + 旧消息的结构化摘要
+- 支持增量更新：多次压缩时叠加摘要而非重复生成
+- 降级路径：compact_l1_context 在无法压缩时回退到 manage_l1_context
+
 决策依据：spec A#11/#12, B 层四层记忆表。
 """
 
@@ -87,7 +93,275 @@ def count_message_tokens(messages: list[dict]) -> int:
 
 
 # ═══════════════════════════════════════════════════════════════
-# L1 工作记忆：逐出管理
+# 上下文压缩器：自动触发 + 结构化摘要 + 增量更新
+# ═══════════════════════════════════════════════════════════════
+
+
+class ContextCompactor:
+    """结构化压缩器：当 token 预算超限时自动触发，生成摘要替代手动逐出。
+
+    设计思路：
+    - 与 manage_l1_context（手动逐出）互补：逐出丢弃信息，压缩保留信息摘要
+    - 自动触发：should_compact 检测预算 → compact 执行压缩
+    - 增量更新：多次压缩时 previous_summary 与新摘要合并，避免重复
+    - 切割安全：find_cut_point 保证不在工具调用中间切割
+
+    用法：
+        compactor = ContextCompactor(context_window=16384)
+        if compactor.should_compact(messages):
+            messages = await compactor.compact(messages, llm_caller)
+    """
+
+    def __init__(self, context_window: int = 16384, reserve_tokens: int = 4096):
+        """
+        Args:
+            context_window: 总 token 预算（对应 L1 工作记忆上限）
+            reserve_tokens: 为 system prompt + 新回复预留的 token 数
+        """
+        self.context_window = context_window
+        self.reserve_tokens = reserve_tokens
+        self.previous_summary: str | None = None
+
+    def estimate_tokens(self, messages: list[dict]) -> int:
+        """估算消息列表的 token 数。
+
+        复用模块级 count_message_tokens 的逻辑（中文 2 字/token，英文 4 字/token），
+        但按消息粒度调用，方便 find_cut_point 逐条累加。
+        """
+        return count_message_tokens(messages)
+
+    def should_compact(self, messages: list[dict]) -> bool:
+        """判断是否需要压缩：当前 token 数超过可用预算。"""
+        tokens = self.estimate_tokens(messages)
+        budget = self.context_window - self.reserve_tokens
+        return tokens > budget
+
+    def find_cut_point(
+        self, messages: list[dict], keep_recent_tokens: int = 4096
+    ) -> int:
+        """找到切割点：保留最近 keep_recent_tokens 的位置，保持轮次完整性。
+
+        从末尾向前累加 token，直到超过 keep_recent_tokens。
+        切割点会向前调整，确保：
+        1. 不在 tool 角色消息中间切割（工具调用必须完整）
+        2. 切割点在 user 消息之前（每个轮次从 user 开始）
+
+        Returns:
+            切割点索引：messages[:cut_point] 需要压缩，messages[cut_point:] 保留。
+            返回 0 表示无法压缩（所有消息都需要保留）。
+        """
+        accumulated = 0
+        cut_point = len(messages)
+
+        for i in range(len(messages) - 1, -1, -1):
+            msg_tokens = self.estimate_tokens([messages[i]])
+            accumulated += msg_tokens
+            if accumulated > keep_recent_tokens:
+                # 找到粗略切割点，向前调整保证轮次完整性
+                # 1. 跳过所有连续的 tool 消息（工具调用结果必须完整保留）
+                while i > 0 and messages[i].get("role") == "tool":
+                    i -= 1
+                # 2. 确保切割点在 user 消息之前（轮次从 user 开始）
+                while i > 0 and messages[i].get("role") != "user":
+                    i -= 1
+                # 3. 切割点设在该 user 消息之前，保留完整轮次
+                return i
+
+        return 0  # 所有消息都在预算内，无需切割
+
+    async def compact(
+        self, messages: list[dict], llm_caller=None
+    ) -> list[dict]:
+        """执行压缩：生成结构化摘要 + 保留最近消息。
+
+        流程：
+        1. 检查是否需要压缩
+        2. 找到切割点（保留最近消息的起始位置）
+        3. 对旧消息生成结构化摘要
+        4. 构建压缩后的消息列表：[摘要 system 消息] + [最近消息]
+
+        Args:
+            messages: 当前消息列表
+            llm_caller: LLM 调用函数（async callable），为 None 时使用模板摘要
+
+        Returns:
+            压缩后的消息列表
+        """
+        if not self.should_compact(messages):
+            return messages
+
+        # 找到切割点
+        keep_recent_tokens = min(self.reserve_tokens, 4096)
+        cut_point = self.find_cut_point(messages, keep_recent_tokens)
+        if cut_point == 0:
+            logger.debug("ContextCompactor: 无法压缩（所有消息都在预算内）")
+            return messages
+
+        # 分离：需要压缩的部分 + 需要保留的部分
+        to_compress = messages[:cut_point]
+        to_keep = messages[cut_point:]
+
+        # 生成结构化摘要
+        summary = await self._generate_summary(to_compress, llm_caller)
+
+        # 如果有历史摘要，合并（增量更新）
+        if self.previous_summary:
+            summary = f"{self.previous_summary}\n\n---\n\n{summary}"
+        self.previous_summary = summary
+
+        # 构建压缩后的消息列表：摘要作为 system 消息 + 保留的最近消息
+        # 注意：不移除原有的 system 消息（它们包含角色指令等重要信息）
+        compressed_messages = [
+            {
+                "role": "system",
+                "content": (
+                    "# 上下文摘要（已压缩）\n"
+                    "以下是之前对话的结构化摘要，用于节省上下文窗口。\n\n"
+                    f"{summary}"
+                ),
+            }
+        ]
+        compressed_messages.extend(to_keep)
+
+        before_tokens = self.estimate_tokens(messages)
+        after_tokens = self.estimate_tokens(compressed_messages)
+        logger.info(
+            "ContextCompactor: 压缩完成 %d -> %d tokens (节省 %d, %.1f%%)",
+            before_tokens,
+            after_tokens,
+            before_tokens - after_tokens,
+            (1 - after_tokens / max(before_tokens, 1)) * 100,
+        )
+
+        return compressed_messages
+
+    async def _generate_summary(
+        self, messages: list[dict], llm_caller=None
+    ) -> str:
+        """从旧消息中提取关键信息生成结构化摘要。
+
+        如果提供 llm_caller，调用 LLM 生成高质量摘要；
+        否则使用模板提取（零 LLM 开销的降级路径）。
+
+        摘要结构：
+        - 用户目标：最近的用户意图
+        - 已完成任务：工具调用记录
+        - 关键决策：assistant 的重要结论
+        """
+        user_goals: list[str] = []
+        completed_tasks: list[str] = []
+        key_decisions: list[str] = []
+
+        for msg in messages:
+            role = msg.get("role", "")
+            content = msg.get("content", "") or ""
+
+            if role == "user":
+                # 保留用户目标（截断过长内容）
+                goal = content[:300] if content else ""
+                if goal:
+                    user_goals.append(goal)
+
+            elif role == "assistant":
+                if msg.get("tool_calls"):
+                    # 记录工具调用
+                    for tc in msg["tool_calls"]:
+                        func = tc.get("function", {})
+                        name = func.get("name", "unknown")
+                        completed_tasks.append(name)
+                elif content:
+                    # assistant 的文字回复中的关键结论
+                    decision = content[:200]
+                    if decision:
+                        key_decisions.append(decision)
+
+        # 如果有 LLM 调用函数，用 LLM 生成更高质量的摘要
+        if llm_caller is not None:
+            try:
+                return await self._llm_summary(
+                    messages, user_goals, completed_tasks, key_decisions, llm_caller
+                )
+            except Exception as e:
+                logger.warning("ContextCompactor: LLM 摘要失败，降级为模板摘要: %s", e)
+
+        # 模板降级：零 LLM 开销的结构化摘要
+        return self._template_summary(user_goals, completed_tasks, key_decisions)
+
+    async def _llm_summary(
+        self,
+        messages: list[dict],
+        user_goals: list[str],
+        completed_tasks: list[str],
+        key_decisions: list[str],
+        llm_caller,
+    ) -> str:
+        """调用 LLM 生成高质量结构化摘要。
+
+        Args:
+            llm_caller: async callable(prompt: str) -> str
+        """
+        # 构造摘要 prompt
+        messages_text = "\n".join(
+            f"[{m.get('role', '?')}]: {(m.get('content') or '')[:150]}"
+            for m in messages[-20:]  # 最多传 20 条给 LLM 做摘要
+        )
+        prompt = (
+            "请将以下对话历史压缩为结构化摘要，保留关键信息。\n"
+            "输出格式（Markdown）：\n"
+            "### 用户目标\n- 最近的用户意图（2-3 条）\n"
+            "### 已完成\n- 工具调用和结果摘要（3-5 条）\n"
+            "### 关键上下文\n- 重要结论和决策（2-3 条）\n\n"
+            f"对话历史：\n{messages_text}"
+        )
+
+        summary = await llm_caller(prompt)
+        return summary.strip() if summary else self._template_summary(
+            user_goals, completed_tasks, key_decisions
+        )
+
+    def _template_summary(
+        self,
+        user_goals: list[str],
+        completed_tasks: list[str],
+        key_decisions: list[str],
+    ) -> str:
+        """模板降级摘要：零 LLM 开销，纯文本提取。"""
+        parts = []
+
+        if user_goals:
+            parts.append("### 用户目标")
+            # 只保留最近 3 个目标
+            for goal in user_goals[-3:]:
+                parts.append(f"- {goal}")
+            parts.append("")
+
+        if completed_tasks:
+            parts.append("### 已完成任务")
+            # 去重并保留最近 5 个
+            seen: set[str] = set()
+            unique_tasks: list[str] = []
+            for t in completed_tasks:
+                if t not in seen:
+                    seen.add(t)
+                    unique_tasks.append(t)
+            for t in unique_tasks[-5:]:
+                parts.append(f"- {t}")
+            parts.append("")
+
+        if key_decisions:
+            parts.append("### 关键上下文")
+            for d in key_decisions[-3:]:
+                parts.append(f"- {d}")
+            parts.append("")
+
+        if not parts:
+            return "（无可提取的关键信息）"
+
+        return "\n".join(parts)
+
+
+# ═══════════════════════════════════════════════════════════════
+# L1 工作记忆：逐出管理（降级路径）
 # ═══════════════════════════════════════════════════════════════
 
 
@@ -187,6 +461,57 @@ def manage_l1_context(
             evicted = True
 
     return system_msgs + [msg for round_msgs in rounds for msg in round_msgs]
+
+
+# ═══════════════════════════════════════════════════════════════
+# L1 工作记忆：结构化压缩（升级路径）
+# ═══════════════════════════════════════════════════════════════
+
+
+async def compact_l1_context(
+    messages: list[dict],
+    llm_caller=None,
+    max_tokens: int = DEFAULT_L1_BUDGET,
+) -> list[dict]:
+    """结构化压缩 L1 上下文（升级路径，优先于手动逐出）。
+
+    与 manage_l1_context 的区别：
+    - manage_l1_context：手动逐出，丢弃旧消息（信息不可恢复）
+    - compact_l1_context：结构化压缩，旧消息生成摘要（信息以摘要形式保留）
+
+    降级策略：
+    - 有 llm_caller 且需要压缩 → ContextCompactor 压缩
+    - 无需压缩 → 原样返回
+    - 无法压缩（cut_point=0）或异常 → 回退到 manage_l1_context
+
+    Args:
+        messages: 当前消息列表
+        llm_caller: LLM 调用函数（async callable），为 None 时用模板摘要
+        max_tokens: token 预算上限
+
+    Returns:
+        压缩后的消息列表
+    """
+    compactor = ContextCompactor(context_window=max_tokens)
+
+    if not compactor.should_compact(messages):
+        return messages
+
+    # 尝试结构化压缩
+    try:
+        compressed = await compactor.compact(messages, llm_caller)
+        # 如果压缩后仍然超预算，用 manage_l1_context 做最终兜底
+        if compactor.estimate_tokens(compressed) > max_tokens:
+            logger.debug(
+                "compact_l1_context: 压缩后仍超预算 (%d > %d)，降级为手动逐出",
+                compactor.estimate_tokens(compressed),
+                max_tokens,
+            )
+            return manage_l1_context(compressed, max_tokens)
+        return compressed
+    except Exception as e:
+        logger.warning("compact_l1_context: 压缩异常，降级为手动逐出: %s", e)
+        return manage_l1_context(messages, max_tokens)
 
 
 # ═══════════════════════════════════════════════════════════════
