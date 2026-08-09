@@ -5,6 +5,23 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>轻舟简历</title>
+    <script>
+      // P1: 主题防闪烁（FOUC）——在 React 挂载前同步解析 localStorage 主题并设置 data-theme。
+      // 与 ThemeContext 的解析逻辑保持一致：system 跟随 prefers-color-scheme，oled → oled-dark。
+      (function () {
+        try {
+          var t = localStorage.getItem("theme");
+          if (t !== "light" && t !== "dark" && t !== "system" && t !== "oled") t = "light";
+          var eff = t === "system"
+            ? (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+            : (t === "oled" ? "oled-dark" : t);
+          document.documentElement.setAttribute("data-theme", eff);
+          if (localStorage.getItem("high-contrast") === "1") {
+            document.documentElement.classList.add("high-contrast");
+          }
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

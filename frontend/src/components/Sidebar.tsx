@@ -371,7 +371,7 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
                                   e.stopPropagation();
                                   setDeleteTargetId(conv.id);
                                 }}
-                                className="p-1 rounded text-[var(--color-text-muted)] hover:text-red-400 hover:bg-red-500/10 transition-all cursor-pointer"
+                                className="p-1 rounded text-[var(--color-text-muted)] hover:text-danger hover:bg-danger-soft transition-all cursor-pointer"
                                 aria-label="删除"
                                 title="删除"
                               >
@@ -523,7 +523,7 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
                   {/* 注销账号（C3） */}
                   <button
                     onClick={() => setDeleteAccountOpen(true)}
-                    className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-red-400/80 hover:bg-red-500/10 transition-colors cursor-pointer"
+                    className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-danger/80 hover:bg-danger-soft transition-colors cursor-pointer"
                   >
                     <UserMinus size={14} weight="regular" aria-hidden="true" />
                     注销账号
@@ -532,7 +532,7 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
                   {/* 退出登录 */}
                   <button
                     onClick={handleLogout}
-                    className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
+                    className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-danger hover:bg-danger-soft transition-colors cursor-pointer"
                   >
                     <SignOut size={14} weight="regular" aria-hidden="true" />
                     退出登录

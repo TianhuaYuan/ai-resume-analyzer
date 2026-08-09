@@ -36,7 +36,7 @@ vi.mock("../../context/AuthContext", () => ({
 }));
 
 vi.mock("../../context/ThemeContext", () => ({
-  useTheme: () => ({ theme: "light", toggleTheme: vi.fn() }),
+  useTheme: () => ({ theme: "light", toggleTheme: vi.fn(), textScale: 1, setTextScale: vi.fn() }),
 }));
 
 // LandingNav 挂载时轮询 getQuota，避免真实请求
@@ -68,9 +68,9 @@ beforeEach(() => {
 describe("HomePage 渲染", () => {
   it("渲染 Hero 标题与副标题", () => {
     render(<MemoryRouter><HomePage /></MemoryRouter>);
-    // LandingNav 按钮也有"AI简历"文本，用 heading role 精确定位 Hero h1
-    expect(screen.getByRole("heading", { level: 1, name: "AI简历" })).toBeInTheDocument();
-    expect(screen.getByText(/AI帮你打造高通过率简历/)).toBeInTheDocument();
+    // P0 重设计后 h1 含品牌渐变强调行，用正则匹配
+    expect(screen.getByRole("heading", { level: 1, name: /拿下心仪 offer/ })).toBeInTheDocument();
+    expect(screen.getByText(/一站式 AI 求职助手/)).toBeInTheDocument();
   });
 
   it("未登录时显示「开始使用」CTA", () => {

@@ -8,8 +8,8 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { CaretDown, EnvelopeSimple, User, Shield, Key, Gauge, SignOut, Sun } from "@phosphor-icons/react";
-import { useTheme } from "../context/ThemeContext";
+import { CaretDown, EnvelopeSimple, User, Shield, Key, Gauge, SignOut, Sun, Moon, Monitor, CircleHalf, type Icon } from "@phosphor-icons/react";
+import { useTheme, type Theme } from "../context/ThemeContext";
 import { openLoginModal } from "./LoginModal";
 import ChangePasswordDialog from "./ChangePasswordDialog";
 import ChangeEmailDialog from "./ChangeEmailDialog";
@@ -31,6 +31,15 @@ const NAV_ITEMS: NavItem[] = [
   { key: "feedback", label: "用户反馈", route: "/feedback" },
 ];
 
+// ── P1: 主题 4 模式选项（浅色/深色/跟随系统/OLED） ──
+
+const THEME_OPTIONS: { key: Theme; label: string; icon: Icon }[] = [
+  { key: "light", label: "浅色", icon: Sun },
+  { key: "dark", label: "深色", icon: Moon },
+  { key: "system", label: "跟随系统", icon: Monitor },
+  { key: "oled", label: "OLED", icon: CircleHalf },
+];
+
 // ── 顶部导航 ──
 
 interface LandingNavProps {
@@ -40,7 +49,7 @@ interface LandingNavProps {
 
 export default function LandingNav({ activeKey }: LandingNavProps) {
   const { user, logout } = useAuth();
-  const { theme, toggleTheme } = useTheme();
+  const { theme, setTheme, textScale, setTextScale, highContrast, setHighContrast } = useTheme();
   const navigate = useNavigate();
 
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -171,9 +180,9 @@ export default function LandingNav({ activeKey }: LandingNavProps) {
                           <div
                             className={`h-full rounded-full transition-all ${
                               quota.remaining < quota.limit * 0.1
-                                ? "bg-red-500"
+                                ? "bg-danger"
                                 : quota.remaining < quota.limit * 0.3
-                                  ? "bg-yellow-500"
+                                  ? "bg-warning"
                                   : "bg-brand"
                             }`}
                             style={{
@@ -227,14 +236,61 @@ export default function LandingNav({ activeKey }: LandingNavProps) {
                       用量统计
                     </button>
 
-                    {/* 主题切换 */}
-                    <button
-                      onClick={toggleTheme}
-                      className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)] cursor-pointer transition-colors"
-                    >
-                      <Sun size={14} weight={theme === "dark" ? "fill" : "regular"} aria-hidden="true" />
-                      {theme === "dark" ? "浅色模式" : "深色模式"}
-                    </button>
+                    {/* P1: 外观（主题 4 模式 + 高对比开关 + UI Scale） */}
+                    <div className="px-3.5 py-2.5 border-t border-[var(--color-border)]">
+                      <div className="text-[10px] text-[var(--color-text-muted)] mb-2">外观</div>
+                      <div className="grid grid-cols-4 gap-1">
+                        {THEME_OPTIONS.map((opt) => {
+                          const Icon = opt.icon;
+                          const active = theme === opt.key;
+                          return (
+                            <button
+                              key={opt.key}
+                              onClick={() => setTheme(opt.key)}
+                              aria-pressed={active}
+                              className={`flex flex-col items-center gap-1 py-1.5 rounded-lg text-[10px] transition-all cursor-pointer
+                                ${active
+                                  ? "bg-brand/10 text-brand"
+                                  : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)]"
+                                }`}
+                            >
+                              <Icon size={15} weight={active ? "fill" : "regular"} aria-hidden="true" />
+                              {opt.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {/* 高对比无障碍模式 */}
+                      <label className="flex items-center justify-between mt-2.5 cursor-pointer">
+                        <span className="text-[10px] text-[var(--color-text-muted)]">高对比模式</span>
+                        <input
+                          type="checkbox"
+                          checked={highContrast}
+                          onChange={(e) => setHighContrast(e.target.checked)}
+                          className="accent-[var(--color-primary)] cursor-pointer"
+                        />
+                      </label>
+                    </div>
+
+                    {/* P0 UI Scale：界面缩放滑杆（1.0–1.5） */}
+                    <div className="px-3.5 py-2.5">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-[10px] text-[var(--color-text-muted)]">界面缩放</span>
+                        <span className="text-[10px] font-medium text-[var(--color-text-secondary)] tabular-nums">
+                          {Math.round(textScale * 100)}%
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={1}
+                        max={1.5}
+                        step={0.05}
+                        value={textScale}
+                        onChange={(e) => setTextScale(Number(e.target.value))}
+                        className="w-full accent-[var(--color-primary)] cursor-pointer"
+                        aria-label="界面缩放"
+                      />
+                    </div>
 
                     <div className="border-t border-[var(--color-border)] my-1" />
 

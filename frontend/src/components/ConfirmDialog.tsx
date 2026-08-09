@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Warning, X } from "@phosphor-icons/react";
+import Spinner from "./ui/Spinner";
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -66,7 +67,7 @@ export default function ConfirmDialog({
   };
 
   const confirmColor = danger
-    ? "bg-red-500/20 hover:bg-red-500/30 text-red-500 border border-red-500/40"
+    ? "bg-danger-soft hover:bg-danger/25 text-danger border border-danger/40"
     : "bg-brand/10 hover:bg-brand/15 text-brand border border-brand/30";
 
   if (!open) return null;
@@ -91,7 +92,7 @@ export default function ConfirmDialog({
         <div className="flex items-start gap-3 px-6 py-5">
           <div
             className={`shrink-0 mt-0.5 p-2 rounded-lg
-              ${danger ? "bg-red-500/15 text-red-400" : "bg-amber-500/15 text-amber-400"}`}
+              ${danger ? "bg-danger-soft text-danger" : "bg-warning-soft text-warning"}`}
           >
             <Warning size={20} weight="bold" aria-hidden="true" />
           </div>
@@ -138,10 +139,9 @@ export default function ConfirmDialog({
               flex items-center gap-1.5`}
           >
             {loading && (
-              <span
-                className="inline-block w-3 h-3 rounded-full border-2 border-current border-t-transparent animate-spin"
-                aria-hidden="true"
-              />
+              <span aria-hidden="true">
+                <Spinner size={12} className="text-current" />
+              </span>
             )}
             {confirmText}
           </button>

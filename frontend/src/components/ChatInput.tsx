@@ -156,7 +156,7 @@ export default function ChatInput({
   return (
     <div className="shrink-0 px-4 sm:px-6 py-4 border-t border-[var(--color-border)]">
       <form onSubmit={handleSubmit} className="max-w-3xl mx-auto">
-        <div className="rounded-3xl bg-white/80 backdrop-blur-xl border border-[var(--color-border)]
+        <div className="rounded-input bg-white/80 backdrop-blur-xl border border-[var(--color-border)]
           shadow-sm
           focus-within:ring-4 focus-within:ring-brand/15 focus-within:border-brand/40
           transition-all duration-200 overflow-hidden">

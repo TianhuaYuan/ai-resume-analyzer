@@ -7,6 +7,7 @@ import AppLayout from "./AppLayout";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { LoginModalHost, openLoginModal } from "./components/LoginModal";
 import { ToastProvider, ToastContainer } from "./components/Toast";
+import { Button, Spinner } from "./components/ui";
 import { captureCtaSource } from "./api/analytics";
 
 // ── 路由级懒加载（拆分 JS bundle，首屏只加载当前路由代码） ──
@@ -31,7 +32,7 @@ const AdminPage = lazy(() => import("./pages/AdminPage"));
 function PageLoader() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-[var(--color-bg)] text-[var(--color-text-secondary)] text-sm">
-      <span className="inline-block w-5 h-5 rounded-full border-2 border-brand border-t-transparent animate-spin mr-2" />
+      <Spinner size={18} className="text-brand mr-2" />
       加载中...
     </div>
   );
@@ -42,14 +43,7 @@ function LoginRequired() {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-[var(--color-bg)] text-[var(--color-text-secondary)] text-sm">
       <span>请先登录后访问</span>
-      <button
-        onClick={() => openLoginModal()}
-        className="px-4 py-2 rounded-full bg-brand text-white text-sm font-semibold
-          hover:bg-[#0077ed] hover:scale-[1.02] active:scale-[0.98]
-          transition-all duration-300 cursor-pointer"
-      >
-        去登录
-      </button>
+      <Button onClick={() => openLoginModal()}>去登录</Button>
     </div>
   );
 }

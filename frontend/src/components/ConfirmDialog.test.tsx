@@ -117,7 +117,7 @@ describe("ConfirmDialog (Task 4 通用确认弹窗)", () => {
     renderDialog({ danger: true });
     const confirmBtn = screen.getByRole("button", { name: "确认" });
     // 危险态确认按钮带红色背景类
-    expect(confirmBtn.className).toMatch(/bg-red-500/);
+    expect(confirmBtn.className).toMatch(/bg-danger/);
   });
 
   it("loading=true 时确认按钮显示 spinner", () => {

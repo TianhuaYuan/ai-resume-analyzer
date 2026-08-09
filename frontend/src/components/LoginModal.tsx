@@ -11,8 +11,10 @@
  */
 
 import { useState, useEffect, type FormEvent } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { useAuth } from "../context/AuthContext";
 import { ChatCircleDots, EnvelopeSimple, LockSimple, User, Hash } from "@phosphor-icons/react";
+import { overlayVariants, panelVariants } from "./useModalMotion";
 
 // ── Apple 风格输入框 ──
 
@@ -183,12 +185,25 @@ export function LoginModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <motion.div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      variants={overlayVariants}
+      initial="hidden"
+      animate="visible"
+      exit="exit"
+    >
       {/* 遮罩 */}
       <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
 
-      {/* 卡片（毛玻璃） */}
-      <div className="relative w-full max-w-sm mx-4 glass-card shadow-2xl shadow-black/10 animate-fade-in-up">
+      {/* 卡片（毛玻璃）— 统一弹簧入场（useModalMotion） */}
+      <motion.div
+        className="relative w-full max-w-sm mx-4 glass-card shadow-2xl shadow-black/10"
+        variants={panelVariants}
+        initial="hidden"
+        animate="visible"
+        exit="exit"
+        style={{ transformOrigin: "center" }}
+      >
         {/* 关闭按钮 */}
         <button
           onClick={onClose}
@@ -336,8 +351,8 @@ export function LoginModal({
             </form>
           )}
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }
 
@@ -384,13 +399,16 @@ export function LoginModalHost() {
     return () => window.removeEventListener("open-login-modal", handler);
   }, []);
 
-  if (!open) return null;
   return (
-    <LoginModal
-      initialTab={tab}
-      initialEmail={email}
-      onClose={() => setOpen(false)}
-    />
+    <AnimatePresence>
+      {open && (
+        <LoginModal
+          initialTab={tab}
+          initialEmail={email}
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </AnimatePresence>
   );
 }
 

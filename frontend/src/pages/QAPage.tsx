@@ -94,6 +94,8 @@ interface ChatMessage {
   agent_steps?: AgentStep[];
   /** E1: 结构化引用来源（text / section / start_char / end_char） */
   sources?: DiagnosisSource[];
+  /** P1: 流式期间答案分块（每 rAF 帧追加一段，用于 token 淡入动画） */
+  answerChunks?: string[];
 }
 
 /** E1: 历史 sources 兼容两种格式（后端并行升级中：string[] → SourceItem[]） */
@@ -298,7 +300,13 @@ function handleAnswerToken(ev: AgentSSEEvent, ctx: StreamCtx): void {
     ctx.answerBufferRef.current.delete(id);
     ctx.setChat((prev) =>
       prev.map((m) =>
-        m.id === id ? { ...m, answer: (m.answer ?? "") + pending } : m
+        m.id === id
+          ? {
+              ...m,
+              answer: (m.answer ?? "") + pending,
+              answerChunks: [...(m.answerChunks ?? []), pending],
+            }
+          : m
       )
     );
   });
@@ -739,7 +747,15 @@ const MessageBubble = memo(function MessageBubble({ msg, deleting, onDelete, onF
               <AgentProcessPanel steps={msg.agent_steps ?? []} streaming={msg.streaming} />
             ) : null}
             {msg.streaming && !msg.answer && !(msg.agent_steps && msg.agent_steps.length > 0) ? (
-              <span className="text-[var(--color-text-muted)]">思考中...</span>
+              /* P1: 打字指示器精化——两粒圆点 pulse + 上浮（1.5s），对齐 Open WebUI */
+              <span
+                className="inline-flex items-center gap-1 py-0.5 text-[var(--color-text-muted)]"
+                role="status"
+                aria-label="AI 思考中"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-current animate-typing-dot" />
+                <span className="w-1.5 h-1.5 rounded-full bg-current animate-typing-dot" style={{ animationDelay: "150ms" }} />
+              </span>
             ) : !msg.streaming && isDiagnosisMessage(msg) ? (
               /* E1: 简历诊断回答 → 结构化卡片（评分提取失败自动回退纯 markdown） */
               <DiagnosisCard answer={msg.answer} sources={msg.sources} />
@@ -750,7 +766,14 @@ const MessageBubble = memo(function MessageBubble({ msg, deleting, onDelete, onF
               /* 流式期间纯文本渲染：answer_token 每帧追加，若走 MarkdownRenderer 会
                  每帧全量重新解析完整 markdown（react-markdown 无增量），CPU 密集卡顿。
                  完成后（agent_done）才解析 markdown 一次。 */
-              <div className="whitespace-pre-wrap break-words">{msg.answer}</div>
+              /* P1: 流式期间 token 淡入——answerChunks 每帧追加一段，新段插入时淡入（100ms） */
+              <div className="whitespace-pre-wrap break-words">
+                {msg.answerChunks && msg.answerChunks.length > 0
+                  ? msg.answerChunks.map((chunk, i) => (
+                      <span key={i} className="inline animate-fade-in-token">{chunk}</span>
+                    ))
+                  : msg.answer}
+              </div>
             ) : (
               /* 超长答案折叠：避免 agent_done 后一次性解析/渲染超大 markdown DOM
                  （这是"最后一次渲染慢"的卡点），>3000 字截断 + 展开全文 */
@@ -763,7 +786,7 @@ const MessageBubble = memo(function MessageBubble({ msg, deleting, onDelete, onF
             {/* 失败/中断消息：视觉区分 + 常显重试按钮（不依赖 hover） */}
             {isFailed && (
               <div className="mt-2 flex items-center gap-2">
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/10 text-red-500 border border-red-500/30 shrink-0">
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-danger-soft text-danger border border-danger/30 shrink-0">
                   未完成
                 </span>
                 <button
@@ -788,7 +811,7 @@ const MessageBubble = memo(function MessageBubble({ msg, deleting, onDelete, onF
                 {msg.created_at && formatTimestamp(msg.created_at) && (
                   <span
                     data-testid="message-timestamp"
-                    className="text-[10px] text-[var(--color-text-muted)] mt-1 block"
+                    className="text-[11px] tabular-nums text-[var(--color-text-muted)] mt-1 block"
                   >
                     {formatTimestamp(msg.created_at)}
                   </span>
@@ -944,6 +967,34 @@ export default function QAPage() {
 
   // v2: 简历预览面板（点击简历时右侧弹出）
   const [showPreview, setShowPreview] = useState(false);
+  // P2: 预览分栏可拖拽（宽度 30–70%，localStorage 持久化）
+  const splitRef = useRef<HTMLDivElement>(null);
+  const [splitPct, setSplitPct] = useState<number>(() => {
+    const saved = Number(localStorage.getItem("qa-split-pct"));
+    return saved >= 30 && saved <= 70 ? saved : 50;
+  });
+  const splitPctRef = useRef(splitPct);
+  useEffect(() => { splitPctRef.current = splitPct; }, [splitPct]);
+  const handleStartSplitDrag = (e: React.MouseEvent) => {
+    if (!splitRef.current) return;
+    e.preventDefault();
+    const rect = splitRef.current.getBoundingClientRect();
+    const onMove = (ev: MouseEvent) => {
+      const pct = Math.min(70, Math.max(30, ((ev.clientX - rect.left) / rect.width) * 100));
+      setSplitPct(pct);
+    };
+    const onUp = () => {
+      localStorage.setItem("qa-split-pct", String(splitPctRef.current));
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  };
   const [previewModules, setPreviewModules] = useState<ResumeModule[]>([]);
   const [previewStyle, setPreviewStyle] = useState<ResumeStyle | null>(null);
   const [editingModule, setEditingModule] = useState<string | null>(null);
@@ -2191,7 +2242,8 @@ export default function QAPage() {
         {/* 注意：真正的滚动容器是内层聊天区（flex-1 overflow-y-auto），
             ref/onScroll 必须挂在内层，外层 h-full 高度恒定不会滚动 */}
         <div
-          className={`${showPreview ? "w-1/2" : "flex-1"} overflow-y-auto transition-all duration-300`}
+          className={`${showPreview ? "" : "flex-1"} overflow-y-auto`}
+          style={showPreview ? { width: `${splitPct}%` } : undefined}
         >
           {/* Agent 聊天模式（无模块编辑时显示） */}
           {!editingModule ? (
@@ -2229,7 +2281,7 @@ export default function QAPage() {
                     ))
                   )}
                   {error && (
-                    <div className="max-w-3xl mx-auto mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 text-sm animate-shake">
+                    <div className="max-w-3xl mx-auto mb-4 p-3 rounded-xl bg-danger-soft border border-danger/30 text-danger text-sm animate-shake">
                       {error}
                     </div>
                   )}
@@ -2308,9 +2360,22 @@ export default function QAPage() {
           ) : null}
         </div>
 
-        {/* 右侧 50%：简历预览面板 */}
+        {/* P2: 可拖拽分隔条（仅预览模式） */}
         {showPreview && resumeId > 0 && (
-          <div className="w-1/2 border-l border-[var(--color-border)] overflow-hidden transition-all duration-300">
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="拖拽调整预览宽度"
+            onMouseDown={handleStartSplitDrag}
+            className="relative w-2 shrink-0 cursor-col-resize group"
+          >
+            <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-[var(--color-border)] group-hover:w-0.5 group-hover:bg-brand/40 transition-all" />
+          </div>
+        )}
+
+        {/* 右侧：简历预览面板（宽度跟随拖拽） */}
+        {showPreview && resumeId > 0 && (
+          <div className="border-l border-[var(--color-border)] overflow-hidden" style={{ width: `${100 - splitPct}%` }}>
             <A4PreviewPanel
               resumeId={resumeId}
               previewKey={previewKey}

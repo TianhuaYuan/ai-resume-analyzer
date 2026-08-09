@@ -103,9 +103,9 @@ export function useToast() {
 // ── Container ──
 
 const BG_CLASS: Record<ToastType, string> = {
-  success: "bg-emerald-500",
-  error: "bg-red-500",
-  info: "bg-blue-500",
+  success: "bg-success",
+  error: "bg-danger",
+  info: "bg-info",
 };
 
 function ToastEntry({ item, onDismiss }: { item: ToastItem; onDismiss: (id: number) => void }) {

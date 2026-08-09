@@ -47,7 +47,7 @@ describe("Toast 系统", () => {
     await waitFor(() => {
       expect(screen.getByRole("status")).toHaveTextContent("操作成功");
     });
-    expect(screen.getByRole("status")).toHaveClass("bg-emerald-500");
+    expect(screen.getByRole("status")).toHaveClass("bg-success");
   });
 
   it("toast.error 显示错误 Toast（红色 + role=alert）", async () => {
@@ -58,7 +58,7 @@ describe("Toast 系统", () => {
     await waitFor(() => {
       expect(screen.getByRole("alert")).toHaveTextContent("操作失败");
     });
-    expect(screen.getByRole("alert")).toHaveClass("bg-red-500");
+    expect(screen.getByRole("alert")).toHaveClass("bg-danger");
   });
 
   it("toast.info 显示信息 Toast（蓝色 + role=status）", async () => {
@@ -69,7 +69,7 @@ describe("Toast 系统", () => {
     await waitFor(() => {
       expect(screen.getByRole("status")).toHaveTextContent("提示信息");
     });
-    expect(screen.getByRole("status")).toHaveClass("bg-blue-500");
+    expect(screen.getByRole("status")).toHaveClass("bg-info");
   });
 
   // ── aria-live 无障碍 ──
