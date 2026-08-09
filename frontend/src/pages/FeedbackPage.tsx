@@ -8,7 +8,6 @@
 
 import { useEffect, useState, useCallback } from "react";
 import {
-  ChatTeardropText,
   Plus,
   Archive,
   X,
@@ -18,6 +17,7 @@ import {
   User,
 } from "@phosphor-icons/react";
 import { useToast } from "../components/Toast";
+import PageHeaderProvider, { usePageHeader } from "../components/PageHeaderProvider";
 import {
   submitFeedback,
   listPublicFeedback,
@@ -62,6 +62,35 @@ function formatTimestamp(dateStr?: string): string {
 }
 
 // ── 主组件 ──
+
+/**
+ * FeedbackPageHeader — 通过 PageHeaderProvider 槽位注入页头内容（P4-34 示范）。
+ * - setTitle 可覆盖默认标题
+ * - setEnd 注入右侧"反馈建议"按钮
+ * 卸载时清空槽位（恢复默认页头），避免页面切换串扰。
+ */
+function FeedbackPageHeader({ onOpenDialog }: { onOpenDialog: () => void }) {
+  const { setEnd } = usePageHeader();
+
+  useEffect(() => {
+    setEnd(
+      <button
+        type="button"
+        onClick={onOpenDialog}
+        className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium
+          bg-brand text-white hover:bg-[#0077ed]
+          hover:scale-[1.02] active:scale-[0.98] motion-reduce:active:scale-100
+          transition-all duration-300 cursor-pointer shadow-sm shadow-brand/25"
+      >
+        <Plus size={16} weight="bold" aria-hidden="true" />
+        反馈建议
+      </button>,
+    );
+    return () => setEnd(null); // 卸载清空槽位
+  }, [setEnd, onOpenDialog]);
+
+  return null;
+}
 
 export default function FeedbackPage() {
   const toast = useToast();
@@ -146,33 +175,10 @@ export default function FeedbackPage() {
   };
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
-      <div className="max-w-6xl mx-auto w-full px-6 py-6 flex flex-col flex-1 min-h-0">
-        {/* 标题区 + 反馈按钮 */}
-        <div className="mb-6">
-          <div className="flex items-center justify-between gap-4 mb-1">
-            <div className="flex items-center gap-2.5">
-              <div className="p-1.5 rounded-xl bg-brand/10 text-brand">
-                <ChatTeardropText size={20} weight="duotone" aria-hidden="true" />
-              </div>
-              <h1 className="text-xl font-bold text-[var(--color-text)]">用户反馈</h1>
-            </div>
-            <button
-              type="button"
-              onClick={() => setDialogOpen(true)}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium
-                bg-brand text-white hover:bg-[#0077ed]
-                hover:scale-[1.02] active:scale-[0.98] motion-reduce:active:scale-100
-                transition-all duration-300 cursor-pointer shadow-sm shadow-brand/25"
-            >
-              <Plus size={16} weight="bold" aria-hidden="true" />
-              反馈建议
-            </button>
-          </div>
-          <p className="text-sm text-[var(--color-text-muted)] ml-10">
-            用的不爽？跟产品负责人一吐为快！
-          </p>
-        </div>
+    <PageHeaderProvider title="用户反馈" subtitle="用的不爽？跟产品负责人一吐为快！">
+      <FeedbackPageHeader onOpenDialog={() => setDialogOpen(true)} />
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-6xl mx-auto w-full px-6 py-6 flex flex-col flex-1 min-h-0">
 
         {/* 反馈列表 */}
         {loading ? (
@@ -330,7 +336,8 @@ export default function FeedbackPage() {
             </div>
           </div>
         )}
+        </div>
       </div>
-    </div>
+    </PageHeaderProvider>
   );
 }
