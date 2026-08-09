@@ -194,10 +194,10 @@ export const SOCIAL_LINK_FIELDS: FieldConfig[] = [
 // ── 通用输入样式 ──────────────────────────────────────────────
 
 export const INPUT_CLASS =
-  "w-full px-3 py-2 rounded-lg text-sm text-[var(--color-text)] " +
+  "w-full px-3 py-2 rounded-action text-sm text-[var(--color-text)] " +
   "bg-[#F2F2F7] border border-transparent " +
   "placeholder:text-[var(--color-text-muted)] " +
-  "hover:border-black/10 hover:bg-[#EDEDF0] " +
+  "hover:border-black/10 hover:bg-[var(--color-bg-secondary)] " +
   "focus:outline-none focus:bg-white focus:border-brand/40 " +
   "focus:ring-3 focus:ring-brand/15 transition-all duration-150";
 
@@ -219,7 +219,7 @@ export function FieldRenderer({ field, value, onChange, aiMenu }: FieldRendererP
     <div className="flex items-center justify-between mb-1">
       <label className={`${LABEL_CLASS} mb-0`}>
         {field.label}
-        {field.required && <span className="ml-0.5 text-red-400">*</span>}
+        {field.required && <span className="ml-0.5 text-danger">*</span>}
       </label>
     </div>
   );
@@ -397,9 +397,9 @@ export function EntriesEditor({
       {entries.map((entry, index) => (
         <div
           key={index}
-          className={`group p-3 rounded-lg border space-y-3 transition-all duration-150 ${
+          className={`group p-3 rounded-action border space-y-3 transition-all duration-150 ${
             entry.hidden
-              ? "bg-amber-50/50 border-amber-200/50 opacity-60"
+              ? "bg-warning/50 border-warning/50 opacity-60"
               : "bg-[var(--color-bg-secondary)] border-[var(--color-border)] hover:border-black/20 hover:bg-white"
           }`}
         >
@@ -434,7 +434,7 @@ export function EntriesEditor({
               <button
                 onClick={() => handleRemove(index)}
                 className="p-1 rounded text-[var(--color-text-muted)] opacity-40 group-hover:opacity-100
-                  hover:text-red-400 hover:bg-red-500/10
+                  hover:text-danger hover:bg-danger/10
                   transition-all cursor-pointer"
                 aria-label="删除条目"
               >
@@ -449,7 +449,7 @@ export function EntriesEditor({
                 }}
                 className={`p-1 rounded transition-all cursor-pointer ${
                   entry.hidden
-                    ? "text-amber-400 bg-amber-500/10"
+                    ? "text-warning bg-warning/10"
                     : "text-[var(--color-text-muted)] opacity-40 group-hover:opacity-100 hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-border)]"
                 }`}
                 title={entry.hidden ? "显示条目" : "隐藏条目"}
@@ -503,7 +503,7 @@ export function EntriesEditor({
       <button
         onClick={handleAdd}
         className="w-full flex items-center justify-center gap-1.5 py-2.5
-          rounded-xl text-xs font-medium text-[var(--color-text-secondary)]
+          rounded-list text-xs font-medium text-[var(--color-text-secondary)]
           border border-dashed border-[var(--color-border)]
           hover:text-brand hover:border-brand/30 hover:bg-brand/5
           active:scale-[0.98] motion-reduce:active:scale-100
@@ -577,7 +577,7 @@ export function SkillsForm({ content, onChange }: SkillsFormProps) {
       {categories.map((cat) => (
         <div
           key={cat}
-          className="p-3 rounded-xl bg-[var(--color-bg-secondary)] border border-[var(--color-border)] space-y-3"
+          className="p-3 rounded-list bg-[var(--color-bg-secondary)] border border-[var(--color-border)] space-y-3"
         >
           <div className="flex items-center justify-between">
             {/* 分类名在分组头部编辑（一组一个，取代每条技能的冗余分类输入框） */}
@@ -628,7 +628,7 @@ export function SkillsForm({ content, onChange }: SkillsFormProps) {
               </div>
               <button
                 onClick={() => handleRemoveSkill(i)}
-                className="p-1 rounded text-[var(--color-text-muted)] hover:text-red-400 hover:bg-red-500/10 transition-all cursor-pointer"
+                className="p-1 rounded text-[var(--color-text-muted)] hover:text-danger hover:bg-danger/10 transition-all cursor-pointer"
               >
                 <Trash size={12} />
               </button>
@@ -640,7 +640,7 @@ export function SkillsForm({ content, onChange }: SkillsFormProps) {
       <button
         onClick={handleAddSkill}
         className="w-full flex items-center justify-center gap-1.5 py-2.5
-          rounded-xl text-xs font-medium text-[var(--color-text-secondary)]
+          rounded-list text-xs font-medium text-[var(--color-text-secondary)]
           border border-dashed border-[var(--color-border)]
           hover:text-brand hover:border-brand/30 hover:bg-brand/5
           active:scale-[0.98] motion-reduce:active:scale-100
@@ -741,7 +741,7 @@ export function TextContentForm({
       <div>
         <label className={LABEL_CLASS}>
           {titleLabel}
-          {contentRequired && <span className="ml-0.5 text-red-400">*</span>}
+          {contentRequired && <span className="ml-0.5 text-danger">*</span>}
         </label>
         <input
           type="text"
@@ -757,7 +757,7 @@ export function TextContentForm({
       <div>
         <label className={`${LABEL_CLASS} mb-1`}>
           内容
-          <span className="ml-0.5 text-red-400">*</span>
+          <span className="ml-0.5 text-danger">*</span>
         </label>
         <RichTextEditor
           value={getString(content, "content")}
@@ -871,7 +871,7 @@ export function CustomModuleForm({ content, onChange, resumeId, moduleType }: Cu
         return (
           <div
             key={index}
-            className="p-3 rounded-xl bg-[var(--color-bg-secondary)] border border-[var(--color-border)] space-y-2"
+            className="p-3 rounded-list bg-[var(--color-bg-secondary)] border border-[var(--color-border)] space-y-2"
           >
             {/* 头部：折叠按钮 + 删除 */}
             <div className="flex items-center gap-1">
@@ -898,7 +898,7 @@ export function CustomModuleForm({ content, onChange, resumeId, moduleType }: Cu
               <button
                 onClick={() => removeEntry(index)}
                 className="shrink-0 p-1 rounded text-[var(--color-text-muted)]
-                  hover:text-red-400 hover:bg-red-500/10
+                  hover:text-danger hover:bg-danger/10
                   transition-all cursor-pointer"
                 aria-label={`删除板块 ${index + 1}`}
               >
@@ -939,7 +939,7 @@ export function CustomModuleForm({ content, onChange, resumeId, moduleType }: Cu
       <button
         onClick={addEntry}
         className="w-full flex items-center justify-center gap-1.5 py-2.5
-          rounded-xl text-xs font-medium text-[var(--color-text-secondary)]
+          rounded-list text-xs font-medium text-[var(--color-text-secondary)]
           border border-dashed border-[var(--color-border)]
           hover:text-brand hover:border-brand/30 hover:bg-brand/5
           active:scale-[0.98] motion-reduce:active:scale-100
@@ -999,7 +999,7 @@ export function CustomFieldsEditor({
     updateFields(fields.filter((_, i) => i !== index));
 
   const inputCls =
-    "px-2 py-1.5 rounded-lg text-xs bg-[#F2F2F7] border border-transparent " +
+    "px-2 py-1.5 rounded-action text-xs bg-[#F2F2F7] border border-transparent " +
     "focus:outline-none focus:bg-white focus:border-brand/40 focus:ring-4 focus:ring-brand/15 " +
     "text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] transition-all duration-150";
 
@@ -1012,7 +1012,7 @@ export function CustomFieldsEditor({
         <button
           onClick={addField}
           className="px-2 py-1 rounded-md text-[11px] text-brand
-            hover:text-[#0077ed] hover:bg-brand/10
+            hover:text-brand-hover hover:bg-brand/10
             transition-colors cursor-pointer"
           aria-label="添加自定义字段"
         >
@@ -1045,7 +1045,7 @@ export function CustomFieldsEditor({
               <button
                 onClick={() => removeField(i)}
                 className="shrink-0 p-1.5 rounded-md text-[11px] text-[var(--color-text-muted)]
-                  hover:text-red-400 hover:bg-red-500/10
+                  hover:text-danger hover:bg-danger/10
                   transition-colors cursor-pointer"
                 aria-label={`删除自定义字段 ${i + 1}`}
               >

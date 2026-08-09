@@ -23,9 +23,9 @@ export const BAND_META: Record<
   ScoreBand,
   { label: string; className: string; bar: string }
 > = {
-  excellent: { label: "优秀", className: "text-emerald-400", bar: "bg-emerald-400" },
+  excellent: { label: "优秀", className: "text-success", bar: "bg-success" },
   good: { label: "良好", className: "text-sky-400", bar: "bg-sky-400" },
-  medium: { label: "中等", className: "text-amber-400", bar: "bg-amber-400" },
+  medium: { label: "中等", className: "text-warning", bar: "bg-warning" },
   needsWork: { label: "待提升", className: "text-rose-400", bar: "bg-rose-400" },
 };
 
@@ -109,11 +109,11 @@ export default function ScoreCard({ scores }: { scores: ScoreDetail }) {
       </div>
 
       {/* 解读提示 */}
-      <div className="flex items-start gap-2 rounded-xl bg-[var(--color-bg-secondary)]/60 px-3.5 py-3">
+      <div className="flex items-start gap-2 rounded-list bg-[var(--color-bg-secondary)]/60 px-3.5 py-3">
         {overall >= 70 ? (
-          <CheckCircle size={15} className="text-emerald-400 mt-0.5 shrink-0" weight="fill" />
+          <CheckCircle size={15} className="text-success mt-0.5 shrink-0" weight="fill" />
         ) : (
-          <TrendUp size={15} className="text-amber-400 mt-0.5 shrink-0" />
+          <TrendUp size={15} className="text-warning mt-0.5 shrink-0" />
         )}
         <p className="text-xs text-[var(--color-text-muted)] leading-relaxed">
           {overall >= 85

@@ -33,7 +33,7 @@ export default function Tooltip({ label, children, side = "top", className }: To
         role="tooltip"
         className={twMerge(
           "pointer-events-none absolute z-50",
-          "whitespace-nowrap rounded-lg bg-[#1d1d1f]/90 text-white text-xs px-2.5 py-1.5",
+          "whitespace-nowrap rounded-action bg-[#1d1d1f]/90 text-white text-xs px-2.5 py-1.5",
           "opacity-0 scale-95 transition-all duration-150",
           "group-hover:opacity-100 group-hover:scale-100",
           "group-focus-within:opacity-100 group-focus-within:scale-100",

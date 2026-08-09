@@ -35,7 +35,7 @@ export default class ErrorBoundary extends Component<Props, State> {
 
       return (
         <div className="min-h-screen flex items-center justify-center bg-[var(--color-bg)] px-4">
-          <div className="max-w-md w-full bg-[var(--color-surface)] rounded-xl p-8 text-center shadow-lg">
+          <div className="max-w-md w-full bg-[var(--color-surface)] rounded-list p-8 text-center shadow-lg">
             <div className="text-5xl mb-4">💥</div>
             <h2 className="text-xl font-semibold text-[var(--color-text)] mb-2">
               页面出错了
@@ -45,7 +45,7 @@ export default class ErrorBoundary extends Component<Props, State> {
             </p>
             <button
               onClick={this.handleRetry}
-              className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium transition-colors"
+              className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-action text-sm font-medium transition-colors"
             >
               重试
             </button>

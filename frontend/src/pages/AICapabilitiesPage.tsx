@@ -274,7 +274,7 @@ function CapabilityCardView({ card, onTrigger }: { card: CapabilityCard; onTrigg
     >
       <span className="flex items-start gap-4">
         {/* 图标 */}
-        <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl bg-[var(--color-brand-soft)] text-brand">
+        <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-input bg-[var(--color-brand-soft)] text-brand">
           <card.icon size={22} weight="duotone" />
         </span>
 
@@ -331,7 +331,7 @@ export default function AICapabilitiesPage() {
         {/* ── 头部引导 ── */}
         <div className="mb-10 animate-fade-in-up">
           <div className="flex items-center gap-3">
-            <span className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-brand text-white shadow-lg shadow-brand/25">
+            <span className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-input bg-brand text-white shadow-lg shadow-brand/25">
               <Compass size={24} weight="fill" />
             </span>
             <div>

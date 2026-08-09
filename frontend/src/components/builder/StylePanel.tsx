@@ -36,7 +36,7 @@ interface StylePanelProps {
 
 /** 通用下拉框样式 */
 const SELECT_CLASS =
-  "w-full px-3 py-2 rounded-xl text-sm text-[var(--color-text)] " +
+  "w-full px-3 py-2 rounded-list text-sm text-[var(--color-text)] " +
   "bg-[#F2F2F7] border border-transparent " +
   "focus:outline-none focus:bg-white focus:ring-4 focus:ring-brand/15 " +
   "focus:border-brand/40 transition-all duration-200 " +
@@ -108,7 +108,7 @@ export function StylePanel({
                 <button
                   key={tpl.id}
                   onClick={() => updateStyle("template_id", tpl.id)}
-                  className={`flex flex-col items-center p-2 rounded-xl border transition-all cursor-pointer
+                  className={`flex flex-col items-center p-2 rounded-list border transition-all cursor-pointer
             ${isActive
               ? "bg-brand/10 border-brand/40 ring-1 ring-brand/30"
               : "border-[var(--color-border)] hover:border-brand/20 hover:bg-[var(--color-bg-secondary)]"
@@ -215,7 +215,7 @@ export function StylePanel({
                 <button
                   key={opt.value}
                   onClick={() => updateStyle("accent_color", opt.value)}
-                  className={`w-7 h-7 rounded-lg border-2 transition-all cursor-pointer
+                  className={`w-7 h-7 rounded-action border-2 transition-all cursor-pointer
                     ${isActive
                       ? "border-[var(--color-text)] scale-110"
                       : "border-transparent hover:scale-105"
@@ -247,7 +247,7 @@ export function StylePanel({
                 if (e.key === "Enter") handleCustomColor();
               }}
               placeholder="#000000"
-              className="flex-1 px-3 py-1.5 rounded-xl text-xs font-mono
+              className="flex-1 px-3 py-1.5 rounded-list text-xs font-mono
                 text-[var(--color-text)] bg-[#F2F2F7] border border-transparent
                 focus:outline-none focus:bg-white focus:ring-4 focus:ring-brand/15
                 focus:border-brand/40 transition-all duration-200"
@@ -350,7 +350,7 @@ export function StylePanel({
             value={style.custom_css}
             onChange={(e) => updateStyle("custom_css", e.target.value)}
             placeholder={"/* 输入自定义 CSS */\n.module-title { font-weight: 700; }"}
-            className="w-full min-h-[100px] px-3 py-2 rounded-xl text-xs font-mono
+            className="w-full min-h-[100px] px-3 py-2 rounded-list text-xs font-mono
               text-[var(--color-text)] bg-[#F2F2F7] border border-transparent
               focus:outline-none focus:bg-white focus:ring-4 focus:ring-brand/15
               focus:border-brand/40 transition-all duration-200

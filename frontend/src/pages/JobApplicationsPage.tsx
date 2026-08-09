@@ -69,8 +69,8 @@ const STATUS_STYLE: Record<string, { bg: string; fg: string }> = {
 
 const QUEUE_META: Record<DashboardQueueItem["kind"], { label: string; icon: typeof Bell; cls: string }> = {
   thank_you: { label: "致谢", icon: PaperPlaneTilt, cls: "text-[var(--color-brand)]" },
-  nudge: { label: "催办", icon: Bell, cls: "text-amber-500" },
-  ghost: { label: "失联", icon: Ghost, cls: "text-red-500" },
+  nudge: { label: "催办", icon: Bell, cls: "text-warning" },
+  ghost: { label: "失联", icon: Ghost, cls: "text-danger" },
 };
 
 /** ISO → "YYYY-MM-DD" */
@@ -93,10 +93,10 @@ function deadlineInfo(a: JobApplication): { cls: string; text: string } {
   const diff = Math.ceil(
     (new Date(a.deadline + "T00:00:00").getTime() - Date.now()) / 86400000
   );
-  if (diff < 0) return { cls: "text-red-600 font-semibold", text: `${fmtDate(a.deadline)} 已过期` };
-  if (diff <= 3) return { cls: "text-red-600 font-semibold", text: `${fmtDate(a.deadline)} (${diff}天)` };
-  if (diff <= 7) return { cls: "text-amber-500 font-medium", text: `${fmtDate(a.deadline)} (${diff}天)` };
-  return { cls: "text-green-600", text: fmtDate(a.deadline) };
+  if (diff < 0) return { cls: "text-danger font-semibold", text: `${fmtDate(a.deadline)} 已过期` };
+  if (diff <= 3) return { cls: "text-danger font-semibold", text: `${fmtDate(a.deadline)} (${diff}天)` };
+  if (diff <= 7) return { cls: "text-warning font-medium", text: `${fmtDate(a.deadline)} (${diff}天)` };
+  return { cls: "text-success", text: fmtDate(a.deadline) };
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -194,7 +194,7 @@ export default function JobApplicationsPage() {
         </div>
         <button
           onClick={() => setCreateOpen(true)}
-          className="flex items-center gap-1.5 rounded-full bg-brand text-white text-sm font-medium px-4 py-2 hover:bg-[#0077ed] active:scale-[0.98] transition-all cursor-pointer"
+          className="flex items-center gap-1.5 rounded-full bg-brand text-white text-sm font-medium px-4 py-2 hover:bg-brand-hover active:scale-[0.98] transition-all cursor-pointer"
         >
           <Plus size={16} weight="bold" />
           新建投递
@@ -204,7 +204,7 @@ export default function JobApplicationsPage() {
       {/* ── 统计 ── */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4">
         {stats.map((s) => (
-          <div key={s.label} className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-3.5">
+          <div key={s.label} className="rounded-input border border-[var(--color-border)] bg-[var(--color-card)] p-3.5">
             <p className="text-2xl font-semibold text-[var(--color-text)] tabular-nums">{s.value}</p>
             <p className="text-xs text-[var(--color-text-muted)] mt-0.5">{s.label}</p>
           </div>
@@ -215,7 +215,7 @@ export default function JobApplicationsPage() {
       {!inTrash && dash && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
           {/* 今日队列 */}
-          <div className="lg:col-span-2 rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-4">
+          <div className="lg:col-span-2 rounded-input border border-[var(--color-border)] bg-[var(--color-card)] p-4">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-sm font-semibold text-[var(--color-text)]">
                 今日队列
@@ -237,7 +237,7 @@ export default function JobApplicationsPage() {
                     <button
                       key={`${q.kind}-${q.application_id}`}
                       onClick={() => void openDetail(q.application_id)}
-                      className="flex items-start gap-3 rounded-xl border border-[var(--color-border)] p-3 text-left hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer"
+                      className="flex items-start gap-3 rounded-list border border-[var(--color-border)] p-3 text-left hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer"
                     >
                       <Icon size={18} className={`mt-0.5 shrink-0 ${meta.cls}`} />
                       <div className="min-w-0 flex-1">
@@ -252,14 +252,14 @@ export default function JobApplicationsPage() {
             )}
           </div>
           {/* 截止分布 */}
-          <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-4">
+          <div className="rounded-input border border-[var(--color-border)] bg-[var(--color-card)] p-4">
             <h2 className="text-sm font-semibold text-[var(--color-text)] mb-3">截止日期分布</h2>
             {dl && (
               <div className="flex flex-col gap-2">
-                <DeadlineBar label="过期" count={dl.overdue} cls="text-red-600" />
-                <DeadlineBar label="≤3 天（红）" count={dl.red} cls="text-red-500" />
-                <DeadlineBar label="≤7 天（黄）" count={dl.yellow} cls="text-amber-500" />
-                <DeadlineBar label=">7 天（绿）" count={dl.green} cls="text-green-600" />
+                <DeadlineBar label="过期" count={dl.overdue} cls="text-danger" />
+                <DeadlineBar label="≤3 天（红）" count={dl.red} cls="text-danger" />
+                <DeadlineBar label="≤7 天（黄）" count={dl.yellow} cls="text-warning" />
+                <DeadlineBar label=">7 天（绿）" count={dl.green} cls="text-success" />
                 <DeadlineBar label="未设截止" count={dl.none} cls="text-[var(--color-text-muted)]" />
               </div>
             )}
@@ -275,7 +275,7 @@ export default function JobApplicationsPage() {
         <select
           value={fStatus}
           onChange={(e) => setFStatus(e.target.value)}
-          className="rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-1.5 text-sm text-[var(--color-text)] outline-none cursor-pointer"
+          className="rounded-action border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-1.5 text-sm text-[var(--color-text)] outline-none cursor-pointer"
         >
           <option value="">全部状态</option>
           {APPLICATION_STATUSES.map((s) => (
@@ -285,7 +285,7 @@ export default function JobApplicationsPage() {
         <select
           value={fPriority}
           onChange={(e) => setFPriority(e.target.value)}
-          className="rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-1.5 text-sm text-[var(--color-text)] outline-none cursor-pointer"
+          className="rounded-action border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-1.5 text-sm text-[var(--color-text)] outline-none cursor-pointer"
         >
           <option value="">全部优先级</option>
           {APPLICATION_PRIORITIES.map((p) => (
@@ -298,14 +298,14 @@ export default function JobApplicationsPage() {
             value={fKeyword}
             onChange={(e) => setFKeyword(e.target.value)}
             placeholder="搜索公司 / 岗位 / 备注…"
-            className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] pl-8 pr-3 py-1.5 text-sm text-[var(--color-text)] outline-none focus:border-brand"
+            className="w-full rounded-action border border-[var(--color-border)] bg-[var(--color-card)] pl-8 pr-3 py-1.5 text-sm text-[var(--color-text)] outline-none focus:border-brand"
           />
         </div>
         <button
           onClick={() => setInTrash((v) => !v)}
-          className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm border transition-colors cursor-pointer ${
+          className={`flex items-center gap-1.5 rounded-action px-3 py-1.5 text-sm border transition-colors cursor-pointer ${
             inTrash
-              ? "bg-red-50 text-red-600 border-red-300"
+              ? "bg-danger text-danger border-danger"
               : "border-[var(--color-border)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)]"
           }`}
         >
@@ -320,11 +320,11 @@ export default function JobApplicationsPage() {
           <Spinner size={22} className="animate-spin text-[var(--color-text-muted)]" />
         </div>
       ) : items.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-[var(--color-border)] py-16 text-center text-sm text-[var(--color-text-muted)]">
+        <div className="rounded-input border border-dashed border-[var(--color-border)] py-16 text-center text-sm text-[var(--color-text-muted)]">
           {inTrash ? "垃圾箱为空" : "暂无投递记录，点击右上角「新建投递」开始追踪。"}
         </div>
       ) : (
-        <div className="rounded-2xl border border-[var(--color-border)] overflow-hidden">
+        <div className="rounded-input border border-[var(--color-border)] overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -351,14 +351,14 @@ export default function JobApplicationsPage() {
                     <td className="px-3 py-3"><StatusBadge status={a.status} /></td>
                     <td className="px-3 py-3 text-[var(--color-text-secondary)]">
                       <span className="flex items-center gap-1">
-                        <Flag size={13} weight="fill" className={a.priority === "高" ? "text-red-500" : a.priority === "中" ? "text-amber-500" : "text-[var(--color-text-muted)]"} />
+                        <Flag size={13} weight="fill" className={a.priority === "高" ? "text-danger" : a.priority === "中" ? "text-warning" : "text-[var(--color-text-muted)]"} />
                         {a.priority}
                       </span>
                     </td>
                     <td className={`px-3 py-3 ${deadlineInfo(a).cls}`}>{deadlineInfo(a).text}</td>
                     <td className="px-3 py-3">
                       {a.stay_days != null && a.stay_days > 14 ? (
-                        <span className="text-amber-500 font-medium">{a.stay_days} 天 ⚠</span>
+                        <span className="text-warning font-medium">{a.stay_days} 天 ⚠</span>
                       ) : (
                         <span className="text-[var(--color-text-muted)]">
                           {a.stay_days != null ? `${a.stay_days} 天` : "—"}
@@ -372,14 +372,14 @@ export default function JobApplicationsPage() {
                             onClick={() => setStatusTarget(a)}
                             disabled={APPLICATION_STATUS_FLOW[a.status]?.length === 0}
                             title={APPLICATION_STATUS_FLOW[a.status]?.length === 0 ? "终态不可流转" : "状态流转"}
-                            className="p-1.5 rounded-lg text-[var(--color-text-muted)] hover:text-brand hover:bg-brand/10 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                            className="p-1.5 rounded-action text-[var(--color-text-muted)] hover:text-brand hover:bg-brand/10 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                           >
                             <ArrowRight size={15} />
                           </button>
                         )}
                         <button
                           onClick={() => void openDetail(a.id)}
-                          className="p-1.5 rounded-lg text-[var(--color-text-muted)] hover:text-brand hover:bg-brand/10 transition-colors cursor-pointer"
+                          className="p-1.5 rounded-action text-[var(--color-text-muted)] hover:text-brand hover:bg-brand/10 transition-colors cursor-pointer"
                           title="详情"
                         >
                           <Eye size={15} />
@@ -395,10 +395,10 @@ export default function JobApplicationsPage() {
                               setDeleteTarget(a);
                             }
                           }}
-                          className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                          className={`p-1.5 rounded-action transition-colors cursor-pointer ${
                             inTrash
-                              ? "text-green-600 hover:bg-green-50"
-                              : "text-[var(--color-text-muted)] hover:text-red-500 hover:bg-red-50"
+                              ? "text-success hover:bg-success"
+                              : "text-[var(--color-text-muted)] hover:text-danger hover:bg-danger"
                           }`}
                           title={inTrash ? "恢复" : "删除（进垃圾箱）"}
                         >
@@ -590,13 +590,13 @@ function ApplicationFormModal({
         </Field>
       </div>
       <div className="flex justify-end gap-2 mt-5">
-        <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer">
+        <button onClick={onClose} className="px-4 py-2 rounded-action text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer">
           取消
         </button>
         <button
           onClick={() => void submit()}
           disabled={saving}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand text-white text-sm font-medium hover:bg-[#0077ed] transition-colors cursor-pointer disabled:opacity-50"
+          className="flex items-center gap-1.5 px-4 py-2 rounded-action bg-brand text-white text-sm font-medium hover:bg-brand-hover transition-colors cursor-pointer disabled:opacity-50"
         >
           {saving && <Spinner size={14} className="animate-spin" />}
           {isEdit ? "保存" : "创建"}
@@ -660,13 +660,13 @@ function StatusFlowModal({
         </Field>
       </div>
       <div className="flex justify-end gap-2 mt-5">
-        <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer">
+        <button onClick={onClose} className="px-4 py-2 rounded-action text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer">
           取消
         </button>
         <button
           onClick={() => void submit()}
           disabled={saving || !next}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand text-white text-sm font-medium hover:bg-[#0077ed] transition-colors cursor-pointer disabled:opacity-50"
+          className="flex items-center gap-1.5 px-4 py-2 rounded-action bg-brand text-white text-sm font-medium hover:bg-brand-hover transition-colors cursor-pointer disabled:opacity-50"
         >
           {saving && <Spinner size={14} className="animate-spin" />}
           确认流转
@@ -715,7 +715,7 @@ function ApplicationDetailModal({
               onClick={() => void handleArchive()}
               disabled={archiving}
               title="把 JD 文本归档为知识资产，Agent 可检索"
-              className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-brand/30 text-sm text-brand hover:bg-brand/10 transition-colors cursor-pointer disabled:opacity-50"
+              className="flex items-center gap-1.5 px-4 py-2 rounded-action border border-brand/30 text-sm text-brand hover:bg-brand/10 transition-colors cursor-pointer disabled:opacity-50"
             >
               {archiving && <Spinner size={14} className="animate-spin" />}
               归档到知识库
@@ -724,7 +724,7 @@ function ApplicationDetailModal({
           {!app.deleted_at && (
             <button
               onClick={() => setEditOpen(true)}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-[var(--color-border)] text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 px-4 py-2 rounded-action border border-[var(--color-border)] text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer"
             >
               <SuitcaseSimple size={14} />
               编辑
@@ -740,7 +740,7 @@ function ApplicationDetailModal({
                   })
                   .catch((e) => toast.error(e.message));
               }}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand text-white text-sm font-medium transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 px-4 py-2 rounded-action bg-brand text-white text-sm font-medium transition-colors cursor-pointer"
             >
               <ArrowUUpLeft size={14} />
               恢复
@@ -759,7 +759,7 @@ function ApplicationDetailModal({
           <InfoRow label="截止日期"><span className={dl.cls}>{dl.text}</span></InfoRow>
           <InfoRow label="停留">
             {app.stay_days != null && app.stay_days > 14 ? (
-              <span className="text-amber-500 font-medium">{app.stay_days} 天（&gt;14 天提醒）</span>
+              <span className="text-warning font-medium">{app.stay_days} 天（&gt;14 天提醒）</span>
             ) : (
               <span className="text-[var(--color-text)]">{app.stay_days != null ? `${app.stay_days} 天` : "—"}</span>
             )}
@@ -775,7 +775,7 @@ function ApplicationDetailModal({
 
         {/* JD 评分卡 */}
         {app.jd_scorecard && (
-          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3">
+          <div className="rounded-list border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3">
             <p className="text-xs font-medium text-[var(--color-text-muted)] mb-2">JD 评分卡</p>
             <div className="flex items-center gap-3 mb-1.5">
               <span className="text-2xl font-bold text-[var(--color-text)]">Grade {app.jd_scorecard.grade ?? "C"}</span>
@@ -844,7 +844,7 @@ function ApplicationDetailModal({
 // ── 通用小部件 ──
 
 const inputCls =
-  "w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-1.5 text-sm text-[var(--color-text)] outline-none focus:border-brand";
+  "w-full rounded-action border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-1.5 text-sm text-[var(--color-text)] outline-none focus:border-brand";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -878,12 +878,12 @@ function ModalShell({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
       <div
-        className="w-full max-w-lg rounded-2xl border border-[var(--color-border)] bg-white dark:bg-[#1c1c1e] shadow-2xl p-5 max-h-[88vh] overflow-y-auto"
+        className="w-full max-w-lg rounded-input border border-[var(--color-border)] bg-white dark:bg-[#1c1c1e] shadow-2xl p-5 max-h-[88vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-base font-semibold text-[var(--color-text)]">{title}</h3>
-          <button onClick={onClose} className="p-1 rounded-lg text-[var(--color-text-muted)] hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer" aria-label="关闭">
+          <button onClick={onClose} className="p-1 rounded-action text-[var(--color-text-muted)] hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer" aria-label="关闭">
             <X size={16} />
           </button>
         </div>

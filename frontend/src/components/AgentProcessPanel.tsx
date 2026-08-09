@@ -132,16 +132,16 @@ const StepItem = memo(function StepItem({
     },
     tool_result: {
       icon: CheckCircle,
-      color: "text-emerald-600",
-      bg: "bg-emerald-500/10",
-      border: "border-emerald-500/20",
+      color: "text-success",
+      bg: "bg-success/10",
+      border: "border-success/20",
       label: `${getToolLabel(step.name)} 完成`,
     },
     tool_error: {
       icon: WarningCircle,
-      color: "text-red-500",
-      bg: "bg-red-500/10",
-      border: "border-red-500/20",
+      color: "text-danger",
+      bg: "bg-danger/10",
+      border: "border-danger/20",
       label: `${getToolLabel(step.name)} 失败`,
     },
     agent_thought: {
@@ -213,7 +213,7 @@ const StepItem = memo(function StepItem({
             <StatusIcon
               size={10}
               weight="fill"
-              className={`ml-1 inline-block ${isRunning ? "animate-spin text-brand" : "text-red-500"}`}
+              className={`ml-1 inline-block ${isRunning ? "animate-spin text-brand" : "text-danger"}`}
               aria-hidden="true"
             />
           )}
@@ -228,7 +228,7 @@ const StepItem = memo(function StepItem({
           <div className="mt-1 space-y-1">
             {/* 参数展示（tool_call 时） */}
             {hasArgs && showArgs && (
-              <div className="p-2 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[11px] text-[var(--color-text-secondary)]">
+              <div className="p-2 rounded-action bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[11px] text-[var(--color-text-secondary)]">
                 <div className="flex items-center justify-between mb-1">
                   <span className="font-medium text-[var(--color-text-muted)]">参数</span>
                   <button
@@ -245,7 +245,7 @@ const StepItem = memo(function StepItem({
             )}
             {/* 结果展示（tool_result 时） */}
             {hasResult && showResult && (
-              <div className="p-2 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[11px] text-[var(--color-text-secondary)]">
+              <div className="p-2 rounded-action bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[11px] text-[var(--color-text-secondary)]">
                 <div className="flex items-center justify-between mb-1">
                   <span className="font-medium text-[var(--color-text-muted)]">结果</span>
                   <button
@@ -285,7 +285,7 @@ const StepItem = memo(function StepItem({
                     // 流式期间不设 max-h：思考内容完整展开，由外层 stepsContainerRef（60vh 封顶）
                     // 负责内部滚动，保证"最新思考"随实时滚动可见；完成后恢复 40 行截断便于复盘
                     <div
-                      className={`mt-1 p-2 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[11px] text-[var(--color-text-secondary)] leading-relaxed whitespace-pre-wrap break-words ${
+                      className={`mt-1 p-2 rounded-action bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[11px] text-[var(--color-text-secondary)] leading-relaxed whitespace-pre-wrap break-words ${
                         streaming ? "" : "max-h-40 overflow-y-auto"
                       }`}
                     >
@@ -297,7 +297,7 @@ const StepItem = memo(function StepItem({
             ) : hasDetail ? (
               /* detail 展示（原有逻辑，非思考步骤） */
               <div
-                className={`p-2 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[11px] text-[var(--color-text-secondary)] leading-relaxed whitespace-pre-wrap break-words ${
+                className={`p-2 rounded-action bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[11px] text-[var(--color-text-secondary)] leading-relaxed whitespace-pre-wrap break-words ${
                   streaming
                     ? ""
                     : "max-h-40 overflow-y-auto"

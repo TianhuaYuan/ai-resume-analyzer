@@ -81,7 +81,7 @@ function MarkdownRendererImpl({ children, className, maxChars }: MarkdownRendere
           ),
           a: ({ node, ...props }) => (
             <a
-              className="markdown-a text-brand hover:text-[#0077ed] underline-offset-2 hover:underline"
+              className="markdown-a text-brand hover:text-brand-hover underline-offset-2 hover:underline"
               target="_blank"
               rel="noopener noreferrer"
               {...props}
@@ -113,7 +113,7 @@ function MarkdownRendererImpl({ children, className, maxChars }: MarkdownRendere
           },
           pre: ({ node, ...props }) => (
             <pre
-              className="markdown-pre my-3 p-3 rounded-lg bg-black/40 border border-[var(--color-border)] overflow-x-auto text-xs"
+              className="markdown-pre my-3 p-3 rounded-action bg-black/40 border border-[var(--color-border)] overflow-x-auto text-xs"
               {...props}
             />
           ),

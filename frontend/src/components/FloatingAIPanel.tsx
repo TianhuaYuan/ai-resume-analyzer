@@ -139,7 +139,7 @@ export default function FloatingAIPanel({ isAgentPage }: FloatingAIPanelProps) {
               你好！我是你的 AI 助手，有什么可以帮你的吗？
             </p>
           </div>
-          <div className="flex items-center gap-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-2 py-1.5 transition-all focus-within:border-brand/40 focus-within:ring-4 focus-within:ring-brand/15">
+          <div className="flex items-center gap-2 rounded-list border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-2 py-1.5 transition-all focus-within:border-brand/40 focus-within:ring-4 focus-within:ring-brand/15">
             <input
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
@@ -207,7 +207,7 @@ export default function FloatingAIPanel({ isAgentPage }: FloatingAIPanelProps) {
 
       {/* 非 Agent 页：展开为浮动面板 */}
       {isOpen && (
-        <div className="fixed bottom-24 right-6 z-50 w-72 animate-fade-in-up overflow-hidden rounded-2xl border border-[var(--color-border)] bg-white/90 backdrop-blur-xl text-[var(--color-text)] shadow-2xl">
+        <div className="fixed bottom-24 right-6 z-50 w-72 animate-fade-in-up overflow-hidden rounded-input border border-[var(--color-border)] bg-white/90 backdrop-blur-xl text-[var(--color-text)] shadow-2xl">
           {/* 头部 */}
           <div className="flex items-center gap-2 border-b border-[var(--color-border)] px-4 py-3">
             <ChatCircleDots size={18} weight="fill" className="flex-shrink-0 text-brand" />

@@ -310,7 +310,7 @@ function ModuleCardEditorImpl({
       {/* 添加模块 */}
       <div className="shrink-0 p-2 border-t border-[var(--color-border)]">
         {showAddMenu ? (
-          <div className="border border-[var(--color-border)] rounded-lg p-1
+          <div className="border border-[var(--color-border)] rounded-action p-1
             bg-[var(--color-bg)]">
             <div className="flex items-center justify-between px-2 py-1 mb-1">
               <span className="text-[10px] font-medium text-[var(--color-text-muted)] uppercase tracking-wider">

@@ -201,12 +201,12 @@ export default function ForgotPasswordPage() {
 
             {/* 全局错误/成功提示 */}
             {error && (
-              <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+              <div className="mb-4 p-3 rounded-action bg-danger/10 border border-danger/20 text-danger text-sm">
                 {error}
               </div>
             )}
             {success && (
-              <div className="mb-4 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm">
+              <div className="mb-4 p-3 rounded-action bg-success/10 border border-success/20 text-success text-sm">
                 {success}
               </div>
             )}
@@ -220,7 +220,7 @@ export default function ForgotPasswordPage() {
                   focusedInput === "email" && "scale-[1.02]"
                 )}
               >
-                <div className="relative flex items-center overflow-hidden rounded-xl">
+                <div className="relative flex items-center overflow-hidden rounded-list">
                   <EnvelopeSimple
                     className={cn(
                       "absolute left-3 w-4 h-4 transition-colors duration-300",
@@ -237,7 +237,7 @@ export default function ForgotPasswordPage() {
                     onFocus={() => setFocusedInput("email")}
                     onBlur={() => setFocusedInput(null)}
                     placeholder="邮箱地址"
-                    className="w-full bg-[#F2F2F7] border-transparent focus:border-brand/40 text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] h-10 transition-all duration-300 pl-10 pr-3 focus:bg-white rounded-xl focus:ring-4 focus:ring-brand/15"
+                    className="w-full bg-[#F2F2F7] border-transparent focus:border-brand/40 text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] h-10 transition-all duration-300 pl-10 pr-3 focus:bg-white rounded-list focus:ring-4 focus:ring-brand/15"
                   />
                 </div>
               </div>
@@ -251,7 +251,7 @@ export default function ForgotPasswordPage() {
                       focusedInput === "code" && "scale-[1.02]"
                     )}
                   >
-                    <div className="relative flex items-center overflow-hidden rounded-xl">
+                    <div className="relative flex items-center overflow-hidden rounded-list">
                       <Hash
                         className={cn(
                           "absolute left-3 w-4 h-4 transition-colors duration-300",
@@ -269,7 +269,7 @@ export default function ForgotPasswordPage() {
                         onBlur={() => setFocusedInput(null)}
                         placeholder="6位数字"
                         maxLength={6}
-                        className="w-full bg-[#F2F2F7] border-transparent focus:border-brand/40 text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] h-10 transition-all duration-300 pl-10 pr-3 focus:bg-white rounded-xl focus:ring-4 focus:ring-brand/15"
+                        className="w-full bg-[#F2F2F7] border-transparent focus:border-brand/40 text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] h-10 transition-all duration-300 pl-10 pr-3 focus:bg-white rounded-list focus:ring-4 focus:ring-brand/15"
                       />
                     </div>
                   </div>
@@ -278,7 +278,7 @@ export default function ForgotPasswordPage() {
                   type="button"
                   disabled={sendCodeLoading || sendCodeCooldown > 0}
                   onClick={handleSendCode}
-                  className="px-4 py-2 bg-[#E5E5EA] hover:bg-[#D1D1D6] text-[var(--color-text)] text-sm rounded-full transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center self-end mt-0"
+                  className="px-4 py-2 bg-[#E5E5EA] hover:bg-[var(--color-bg-tertiary)] text-[var(--color-text)] text-sm rounded-full transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center self-end mt-0"
                 >
                   {sendCodeLoading ? (
                     <div className="w-4 h-4 border-2 border-[var(--color-text-muted)] border-t-transparent rounded-full animate-spin" />
@@ -297,7 +297,7 @@ export default function ForgotPasswordPage() {
                   focusedInput === "newPassword" && "scale-[1.02]"
                 )}
               >
-                <div className="relative flex items-center overflow-hidden rounded-xl">
+                <div className="relative flex items-center overflow-hidden rounded-list">
                   <LockSimple
                     className={cn(
                       "absolute left-3 w-4 h-4 transition-colors duration-300",
@@ -314,7 +314,7 @@ export default function ForgotPasswordPage() {
                     onFocus={() => setFocusedInput("newPassword")}
                     onBlur={() => setFocusedInput(null)}
                     placeholder="新密码"
-                    className="w-full bg-[#F2F2F7] border-transparent focus:border-brand/40 text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] h-10 transition-all duration-300 pl-10 pr-3 focus:bg-white rounded-xl focus:ring-4 focus:ring-brand/15"
+                    className="w-full bg-[#F2F2F7] border-transparent focus:border-brand/40 text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] h-10 transition-all duration-300 pl-10 pr-3 focus:bg-white rounded-list focus:ring-4 focus:ring-brand/15"
                   />
                 </div>
               </div>
@@ -326,7 +326,7 @@ export default function ForgotPasswordPage() {
                   focusedInput === "confirmPassword" && "scale-[1.02]"
                 )}
               >
-                <div className="relative flex items-center overflow-hidden rounded-xl">
+                <div className="relative flex items-center overflow-hidden rounded-list">
                   <LockSimple
                     className={cn(
                       "absolute left-3 w-4 h-4 transition-colors duration-300",
@@ -343,7 +343,7 @@ export default function ForgotPasswordPage() {
                     onFocus={() => setFocusedInput("confirmPassword")}
                     onBlur={() => setFocusedInput(null)}
                     placeholder="确认新密码"
-                    className="w-full bg-[#F2F2F7] border-transparent focus:border-brand/40 text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] h-10 transition-all duration-300 pl-10 pr-3 focus:bg-white rounded-xl focus:ring-4 focus:ring-brand/15"
+                    className="w-full bg-[#F2F2F7] border-transparent focus:border-brand/40 text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] h-10 transition-all duration-300 pl-10 pr-3 focus:bg-white rounded-list focus:ring-4 focus:ring-brand/15"
                   />
                 </div>
               </div>
@@ -357,7 +357,7 @@ export default function ForgotPasswordPage() {
               data-testid="forgot-password-submit"
               className="w-full relative mt-5"
             >
-              <div className="relative overflow-hidden bg-brand text-white font-medium h-10 rounded-full transition-all duration-300 flex items-center justify-center shadow-[0_8px_24px_rgba(0,113,227,0.25)] hover:bg-[#0077ed] hover:shadow-[0_12px_32px_rgba(0,113,227,0.35)]">
+              <div className="relative overflow-hidden bg-brand text-white font-medium h-10 rounded-full transition-all duration-300 flex items-center justify-center shadow-[0_8px_24px_rgba(0,113,227,0.25)] hover:bg-brand-hover hover:shadow-[0_12px_32px_rgba(0,113,227,0.35)]">
                 <AnimatePresence mode="wait">
                   {loading ? (
                     <motion.div
@@ -395,7 +395,7 @@ export default function ForgotPasswordPage() {
               <button
                 type="button"
                 onClick={() => openLoginModal()}
-                className="text-brand hover:text-[#0077ed] transition-colors duration-300 font-medium cursor-pointer"
+                className="text-brand hover:text-brand-hover transition-colors duration-300 font-medium cursor-pointer"
               >
                 返回登录
               </button>

@@ -123,7 +123,7 @@ function ToastEntry({ item, onDismiss }: { item: ToastItem; onDismiss: (id: numb
     <div
       role={role}
       aria-live={ariaLive}
-      className={`${BG_CLASS[item.type]} text-white px-4 py-3 rounded-lg shadow-lg
+      className={`${BG_CLASS[item.type]} text-white px-4 py-3 rounded-action shadow-lg
         flex items-center justify-between gap-3 min-w-[280px] max-w-[400px]
         animate-fade-in-up motion-reduce:animate-none relative overflow-hidden`}
     >

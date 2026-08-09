@@ -50,9 +50,9 @@ export default function UsageDialog({ open, onClose }: Props) {
   const isLow = !!quota && quota.remaining < quota.limit * 0.1;
   const isMedium = !!quota && quota.remaining < quota.limit * 0.3;
   const barColor = isLow
-    ? "bg-red-500"
+    ? "bg-danger"
     : isMedium
-      ? "bg-yellow-500"
+      ? "bg-warning"
       : "bg-brand";
 
   return (
@@ -70,7 +70,7 @@ export default function UsageDialog({ open, onClose }: Props) {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
             transition={{ duration: 0.2 }}
-            className="w-full max-w-sm bg-[var(--color-bg)] border border-[var(--color-border)] rounded-2xl shadow-2xl overflow-hidden"
+            className="w-full max-w-sm bg-[var(--color-bg)] border border-[var(--color-border)] rounded-input shadow-2xl overflow-hidden animate-fade-in-up motion-reduce:animate-none"
             data-testid="usage-dialog"
             onClick={(e) => e.stopPropagation()}
           >
@@ -129,13 +129,13 @@ export default function UsageDialog({ open, onClose }: Props) {
 
                   {/* 明细 */}
                   <div className="grid grid-cols-2 gap-3 text-center">
-                    <div className="p-3 rounded-xl bg-[var(--color-bg-secondary)]">
+                    <div className="p-3 rounded-list bg-[var(--color-bg-secondary)]">
                       <p className="text-base font-semibold text-[var(--color-text)] tabular-nums">
                         {quota.remaining.toLocaleString()}
                       </p>
                       <p className="text-[10px] text-[var(--color-text-muted)] mt-0.5">剩余额度</p>
                     </div>
-                    <div className="p-3 rounded-xl bg-[var(--color-bg-secondary)]">
+                    <div className="p-3 rounded-list bg-[var(--color-bg-secondary)]">
                       <p className="text-base font-semibold text-[var(--color-text)] tabular-nums">
                         {percent}%
                       </p>
@@ -155,7 +155,7 @@ export default function UsageDialog({ open, onClose }: Props) {
               <button
                 onClick={() => void fetchQuota()}
                 disabled={loading}
-                className="w-full flex items-center justify-center gap-1.5 h-9 bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] rounded-lg text-xs font-medium transition-colors hover:bg-[var(--color-border)] disabled:opacity-50 cursor-pointer"
+                className="w-full flex items-center justify-center gap-1.5 h-9 bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] rounded-action text-xs font-medium transition-colors hover:bg-[var(--color-border)] disabled:opacity-50 cursor-pointer"
               >
                 <ArrowsClockwise
                   className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`}

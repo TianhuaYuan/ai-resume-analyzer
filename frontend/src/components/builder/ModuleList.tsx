@@ -206,7 +206,7 @@ function ModuleListImpl({
                 }}
                 onDragEnd={handleDragEnd}
                 onClick={() => onSelect(type)}
-                className={`group flex items-center gap-1 px-2 py-2 mx-1 rounded-lg cursor-pointer
+                className={`group flex items-center gap-1 px-2 py-2 mx-1 rounded-action cursor-pointer
                   transition-all duration-150 border
                   ${isSelected
                     ? "bg-brand/10 border-brand/30"
@@ -253,7 +253,7 @@ function ModuleListImpl({
                 {/* 内容状态指示器 */}
                 {!isEmpty && (
                   <span
-                    className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"
+                    className="w-1.5 h-1.5 rounded-full bg-success shrink-0"
                     aria-label="已填写"
                   />
                 )}
@@ -265,7 +265,7 @@ function ModuleListImpl({
                     onRemove(type);
                   }}
                   className="shrink-0 p-1 rounded text-[var(--color-text-muted)]
-                    hover:text-red-400 hover:bg-red-500/10
+                    hover:text-danger hover:bg-danger/10
                     opacity-0 group-hover:opacity-100
                     active:scale-90 motion-reduce:active:scale-100
                     transition-all cursor-pointer"
@@ -283,7 +283,7 @@ function ModuleListImpl({
       {/* 添加模块 */}
       <div className="shrink-0 p-2 border-t border-[var(--color-border)]">
         {showAddMenu ? (
-          <div className="max-h-40 overflow-y-auto border border-[var(--color-border)] rounded-lg p-1">
+          <div className="max-h-40 overflow-y-auto border border-[var(--color-border)] rounded-action p-1">
             {availableTypes.length === 0 ? (
               <p className="px-2 py-1.5 text-[10px] text-[var(--color-text-muted)]">
                 全部模块已添加
@@ -311,7 +311,7 @@ function ModuleListImpl({
           <button
             onClick={() => setShowAddMenu(true)}
             disabled={availableTypes.length === 0}
-            className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg
+            className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-action
               text-xs font-medium text-[var(--color-text-secondary)]
               border border-dashed border-[var(--color-border)]
               hover:text-brand hover:border-brand/40 hover:bg-[var(--color-bg-secondary)]

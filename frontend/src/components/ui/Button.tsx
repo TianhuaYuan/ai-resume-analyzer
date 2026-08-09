@@ -30,14 +30,13 @@ const VARIANT_CLASSES: Record<ButtonVariant, string> = {
   // 无底幽灵：hover 出浅灰底
   ghost:
     "text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]",
-  // 危险：浅红底 + 红字
-  danger:
-    "bg-red-500/15 text-red-500 hover:bg-red-500/25 border border-red-500/30",
+  // 危险：浅红底 + 红字（语义 token）
+  danger: "bg-danger-soft text-danger hover:bg-danger/25 border border-danger/30",
 };
 
 const SIZE_CLASSES: Record<ButtonSize, string> = {
-  xs: "px-2 py-1 text-xs rounded-lg gap-1",
-  sm: "px-3 py-1.5 text-sm rounded-xl gap-1.5",
+  xs: "px-2 py-1 text-xs rounded-action gap-1",
+  sm: "px-3 py-1.5 text-sm rounded-list gap-1.5",
   md: "px-4 py-2 text-sm rounded-full gap-1.5",
   lg: "px-8 py-3.5 text-base rounded-full gap-2",
 };
@@ -81,7 +80,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
         "motion-reduce:hover:scale-100 motion-reduce:active:scale-100",
         "disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:active:scale-100",
         "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand/40",
-        pill ? "" : "rounded-2xl",
+        pill ? "" : "rounded-input",
         VARIANT_CLASSES[variant],
         SIZE_CLASSES[size],
         className,

@@ -3,7 +3,7 @@ import { twMerge } from "tailwind-merge";
 interface SpinnerProps {
   /** 尺寸（px），默认 16 */
   size?: number;
-  /** 附加类名（如颜色 text-brand / text-red-500） */
+  /** 附加类名（如颜色 text-brand / text-danger） */
   className?: string;
   /** 无障碍标签 */
   label?: string;

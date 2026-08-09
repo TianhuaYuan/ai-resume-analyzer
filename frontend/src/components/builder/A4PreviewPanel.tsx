@@ -100,7 +100,7 @@ export const A4PreviewPanel = memo(function A4PreviewPanel({
         border-l border-[var(--color-border)] bg-[var(--color-bg)] py-3 gap-3">
         <button
           onClick={onToggleCollapse}
-          className="p-2 rounded-lg text-[var(--color-text-muted)]
+          className="p-2 rounded-action text-[var(--color-text-muted)]
             hover:text-brand hover:bg-brand/10 transition-all cursor-pointer"
           aria-label="展开预览"
           title="展开预览"
@@ -186,7 +186,7 @@ export const A4PreviewPanel = memo(function A4PreviewPanel({
             onClick={() => handleExport("pdf")}
             disabled={exporting !== null}
             className="inline-flex items-center gap-1 px-2 py-1 rounded-md
-              text-[11px] text-[var(--color-text-muted)] hover:text-red-400 hover:bg-red-500/8
+              text-[11px] text-[var(--color-text-muted)] hover:text-danger hover:bg-danger/8
               disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer"
             aria-label="导出 PDF"
             title="导出 PDF（后端 WeasyPrint）"
@@ -229,16 +229,16 @@ export const A4PreviewPanel = memo(function A4PreviewPanel({
 
       {/* 导出错误提示 */}
       {exportError && (
-        <div className="shrink-0 px-3 py-1.5 bg-red-500/10 border-b border-red-500/20
-          text-[11px] text-red-400">
+        <div className="shrink-0 px-3 py-1.5 bg-danger/10 border-b border-danger/20
+          text-[11px] text-danger">
           {exportError}
         </div>
       )}
 
       {/* 压缩已达下限提示 */}
       {pageState.cannotFit && (
-        <div className="shrink-0 px-3 py-1.5 bg-amber-500/10 border-b border-amber-500/20
-          text-[11px] text-amber-600">
+        <div className="shrink-0 px-3 py-1.5 bg-warning/10 border-b border-warning/20
+          text-[11px] text-warning">
           内容过多，已压缩到最小缩放（75%）仍放不下，建议精简内容或调小字号
         </div>
       )}

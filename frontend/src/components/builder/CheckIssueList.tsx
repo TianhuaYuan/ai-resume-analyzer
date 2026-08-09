@@ -14,18 +14,18 @@ const SEVERITY_STYLE: Record<
   { border: string; badge: string; label: string }
 > = {
   high: {
-    border: "border-l-red-400",
-    badge: "bg-red-500/15 text-red-400 border border-red-500/20",
+    border: "border-l-danger",
+    badge: "bg-danger/15 text-danger border border-danger/20",
     label: "高优先级",
   },
   medium: {
-    border: "border-l-amber-400",
-    badge: "bg-amber-500/15 text-amber-400 border border-amber-500/20",
+    border: "border-l-warning",
+    badge: "bg-warning/15 text-warning border border-warning/20",
     label: "中优先级",
   },
   low: {
-    border: "border-l-emerald-400",
-    badge: "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20",
+    border: "border-l-success",
+    badge: "bg-success/15 text-success border border-success/20",
     label: "低优先级",
   },
 };
@@ -53,7 +53,7 @@ export function CheckIssueList({ issues, loading = false, error = "" }: CheckIss
 
   if (error) {
     return (
-      <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs">
+      <div className="p-2.5 rounded-action bg-danger/10 border border-danger/20 text-danger text-xs">
         {error}
       </div>
     );
@@ -61,7 +61,7 @@ export function CheckIssueList({ issues, loading = false, error = "" }: CheckIss
 
   if (issues.length === 0) {
     return (
-      <div className="flex items-center gap-2 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs">
+      <div className="flex items-center gap-2 p-3 rounded-action bg-success/10 border border-success/20 text-success text-xs">
         <Check size={14} weight="bold" aria-hidden="true" />
         未发现问题，内容质量良好
       </div>

@@ -18,12 +18,12 @@ export interface NegotiationBrief {
 
 export default function NegotiationBriefCard({ brief }: { brief: NegotiationBrief }) {
   return (
-    <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.03] overflow-hidden">
-      <div className="flex items-center gap-2 px-4 py-2.5 bg-emerald-500/10">
-        <Money size={15} weight="bold" className="text-emerald-600 shrink-0" />
+    <div className="rounded-list border border-success/20 bg-success/[0.03] overflow-hidden">
+      <div className="flex items-center gap-2 px-4 py-2.5 bg-success/10">
+        <Money size={15} weight="bold" className="text-success shrink-0" />
         <span className="text-sm font-medium text-[var(--color-text)]">谈薪简报</span>
         {brief.target_position && (
-          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 font-medium">
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-success/10 text-success font-medium">
             {brief.target_position}
           </span>
         )}
@@ -37,18 +37,18 @@ export default function NegotiationBriefCard({ brief }: { brief: NegotiationBrie
       <div className="px-4 py-3 space-y-3">
         {/* 总包锚定 + 底线 */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-          <div className="rounded-lg bg-[var(--color-bg-secondary)] p-2.5">
+          <div className="rounded-action bg-[var(--color-bg-secondary)] p-2.5">
             <div className="flex items-center gap-1 text-[10px] font-medium text-[var(--color-text-muted)] mb-1">
-              <ShieldCheck size={11} className="text-emerald-600" />
+              <ShieldCheck size={11} className="text-success" />
               总包锚定
             </div>
             <p className="text-sm font-semibold text-[var(--color-text)] leading-snug">
               {brief.anchor || "—"}
             </p>
           </div>
-          <div className="rounded-lg bg-[var(--color-bg-secondary)] p-2.5">
+          <div className="rounded-action bg-[var(--color-bg-secondary)] p-2.5">
             <div className="text-[10px] font-medium text-[var(--color-text-muted)] mb-1">谈判底线</div>
-            <p className="text-sm font-semibold text-emerald-600 leading-snug">
+            <p className="text-sm font-semibold text-success leading-snug">
               {brief.anchor_floor || "—"}
             </p>
           </div>
@@ -68,14 +68,14 @@ export default function NegotiationBriefCard({ brief }: { brief: NegotiationBrie
         {brief.scripts && brief.scripts.length > 0 && (
           <div>
             <div className="flex items-center gap-1.5 text-[11px] font-medium text-[var(--color-text-muted)] mb-1.5">
-              <ChatCircle size={12} className="text-emerald-600" />
+              <ChatCircle size={12} className="text-success" />
               谈薪话术
             </div>
             <div className="space-y-1.5">
               {brief.scripts.map((s, i) => (
                 <p
                   key={i}
-                  className="text-xs text-[var(--color-text-secondary)] leading-relaxed bg-[var(--color-bg-secondary)] rounded-lg px-3 py-2"
+                  className="text-xs text-[var(--color-text-secondary)] leading-relaxed bg-[var(--color-bg-secondary)] rounded-action px-3 py-2"
                 >
                   {s}
                 </p>

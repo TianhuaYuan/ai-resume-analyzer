@@ -16,7 +16,7 @@ export default function Skeleton({ className, circle = false, ...rest }: Skeleto
   return (
     <div
       aria-hidden="true"
-      className={twMerge("animate-skeleton", circle ? "rounded-full" : "rounded-lg", className)}
+      className={twMerge("animate-skeleton", circle ? "rounded-full" : "rounded-action", className)}
       {...rest}
     />
   );

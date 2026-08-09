@@ -71,9 +71,9 @@ function ProductMockup() {
         {/* 浏览器顶栏 */}
         <div className="flex items-center gap-2 px-4 py-2.5 bg-[var(--color-bg-secondary)] border-b border-[var(--color-border)]">
           <div className="flex gap-1.5">
-            <div className="w-2.5 h-2.5 rounded-full bg-red-400/70" />
-            <div className="w-2.5 h-2.5 rounded-full bg-yellow-400/70" />
-            <div className="w-2.5 h-2.5 rounded-full bg-green-400/70" />
+            <div className="w-2.5 h-2.5 rounded-full bg-danger/70" />
+            <div className="w-2.5 h-2.5 rounded-full bg-warning/70" />
+            <div className="w-2.5 h-2.5 rounded-full bg-success/70" />
           </div>
           <div className="flex-1 flex justify-center">
             <div className="flex items-center gap-3 text-[10px] text-[var(--color-text-muted)]">
@@ -93,13 +93,13 @@ function ProductMockup() {
               <div className="w-6 h-6 rounded-full bg-brand/10 flex items-center justify-center shrink-0">
                 <Compass size={12} weight="fill" className="text-brand" />
               </div>
-              <div className="bg-[var(--color-bg-secondary)] rounded-xl rounded-tl-sm px-3 py-2 text-xs text-[var(--color-text-secondary)] leading-relaxed max-w-[85%]">
+              <div className="bg-[var(--color-bg-secondary)] rounded-list rounded-tl-sm px-3 py-2 text-xs text-[var(--color-text-secondary)] leading-relaxed max-w-[85%]">
                 你好！我是你的 AI 简历助手。请先告诉我你的基本信息，我来帮你构建简历。
               </div>
             </div>
             {/* 用户消息 */}
             <div className="flex gap-2 justify-end">
-              <div className="bg-brand text-white rounded-xl rounded-tr-sm px-3 py-2 text-xs leading-relaxed max-w-[85%]">
+              <div className="bg-brand text-white rounded-list rounded-tr-sm px-3 py-2 text-xs leading-relaxed max-w-[85%]">
                 我是清华大学计算机专业的学生，GPA 3.7/4.0
               </div>
             </div>
@@ -108,7 +108,7 @@ function ProductMockup() {
               <div className="w-6 h-6 rounded-full bg-brand/10 flex items-center justify-center shrink-0">
                 <Compass size={12} weight="fill" className="text-brand" />
               </div>
-              <div className="flex-1 max-w-[85%] bg-white/70 dark:bg-white/5 border border-[var(--color-border)] rounded-xl p-3">
+              <div className="flex-1 max-w-[85%] bg-white/70 dark:bg-white/5 border border-[var(--color-border)] rounded-list p-3">
                 <div className="flex items-center justify-between text-[10px] mb-1.5">
                   <span className="text-[var(--color-text-muted)] font-medium">ATS 匹配度</span>
                   <span className="text-brand font-semibold tabular-nums">92%</span>
@@ -130,7 +130,7 @@ function ProductMockup() {
               <div className="w-6 h-6 rounded-full bg-brand/10 flex items-center justify-center shrink-0">
                 <Compass size={12} weight="fill" className="text-brand" />
               </div>
-              <div className="bg-[var(--color-bg-secondary)] rounded-xl rounded-tl-sm px-3 py-2 text-xs text-[var(--color-text-secondary)] leading-relaxed max-w-[85%]">
+              <div className="bg-[var(--color-bg-secondary)] rounded-list rounded-tl-sm px-3 py-2 text-xs text-[var(--color-text-secondary)] leading-relaxed max-w-[85%]">
                 太棒了！诊断完成，建议补充 2 个量化指标，我来帮你优化。
               </div>
             </div>
@@ -139,7 +139,7 @@ function ProductMockup() {
               <div className="w-6 h-6 rounded-full bg-brand/10 flex items-center justify-center shrink-0">
                 <Compass size={12} weight="fill" className="text-brand" />
               </div>
-              <div className="bg-[var(--color-bg-secondary)] rounded-xl rounded-tl-sm px-3 py-2.5">
+              <div className="bg-[var(--color-bg-secondary)] rounded-list rounded-tl-sm px-3 py-2.5">
                 <div className="flex gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-text-muted)] animate-pulse" />
                   <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-text-muted)] animate-pulse" style={{ animationDelay: "150ms" }} />
@@ -151,7 +151,7 @@ function ProductMockup() {
 
           {/* 右侧：简历预览（含 ATS 关键词高亮） */}
           <div className="hidden md:block flex-1 p-4 bg-[var(--color-bg)]">
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 h-full text-gray-800 text-[10px] leading-relaxed">
+            <div className="bg-white rounded-action shadow-sm border border-gray-200 p-5 h-full text-gray-800 text-[10px] leading-relaxed">
               {/* 简历头部 */}
               <div className="text-center mb-3">
                 <div className="text-sm font-bold text-gray-900">轻舟简历</div>
@@ -292,7 +292,7 @@ export default function HomePage() {
               className="group glass-card p-7 hover:-translate-y-1 hover:shadow-xl hover:shadow-black/5 transition-all duration-400 animate-fade-in-up"
               style={{ animationDelay: `${i * 80}ms` }}
             >
-              <div className={`w-11 h-11 rounded-2xl flex items-center justify-center mb-5 transition-transform duration-300 group-hover:scale-110 ${item.tint}`}>
+              <div className={`w-11 h-11 rounded-input flex items-center justify-center mb-5 transition-transform duration-300 group-hover:scale-110 ${item.tint}`}>
                 <item.icon size={20} weight="duotone" aria-hidden="true" />
               </div>
               <h3 className="text-base font-semibold text-[var(--color-text)] mb-2 display-tight">{item.title}</h3>

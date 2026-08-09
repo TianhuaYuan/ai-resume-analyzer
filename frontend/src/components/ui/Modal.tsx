@@ -109,7 +109,7 @@ export default function Modal({
                   <button
                     onClick={onClose}
                     aria-label="关闭"
-                    className="shrink-0 p-1.5 rounded-lg text-[var(--color-text-secondary)]
+                    className="shrink-0 p-1.5 rounded-action text-[var(--color-text-secondary)]
                       hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]
                       active:scale-[0.95] motion-reduce:active:scale-100
                       transition-all cursor-pointer"

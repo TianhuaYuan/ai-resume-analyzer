@@ -28,9 +28,9 @@ import {
 
 // ── 反馈类型标签颜色 ──
 const TYPE_STYLES: Record<string, string> = {
-  bug: "bg-red-500/10 text-red-600 border-red-500/20",
+  bug: "bg-danger/10 text-danger border-danger/20",
   feature: "bg-brand/10 text-brand border-brand/20",
-  ux: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
+  ux: "bg-success/10 text-success border-success/20",
   other: "bg-zinc-500/10 text-zinc-600 border-zinc-500/20",
 };
 
@@ -38,7 +38,7 @@ const TYPE_STYLES: Record<string, string> = {
 const STATUS_STYLES: Record<string, string> = {
   open: "bg-blue-500/10 text-blue-600",
   adopted: "bg-brand/10 text-brand",
-  resolved: "bg-emerald-500/10 text-emerald-600",
+  resolved: "bg-success/10 text-success",
   closed: "bg-zinc-500/10 text-zinc-600",
 };
 
@@ -78,7 +78,7 @@ function FeedbackPageHeader({ onOpenDialog }: { onOpenDialog: () => void }) {
         type="button"
         onClick={onOpenDialog}
         className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium
-          bg-brand text-white hover:bg-[#0077ed]
+          bg-brand text-white hover:bg-brand-hover
           hover:scale-[1.02] active:scale-[0.98] motion-reduce:active:scale-100
           transition-all duration-300 cursor-pointer shadow-sm shadow-brand/25"
       >
@@ -188,7 +188,7 @@ export default function FeedbackPage() {
           </div>
         ) : items.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center text-center">
-            <div className="w-14 h-14 rounded-2xl bg-[var(--color-bg-secondary)] border border-[var(--color-border)]
+            <div className="w-14 h-14 rounded-input bg-[var(--color-bg-secondary)] border border-[var(--color-border)]
               flex items-center justify-center text-[var(--color-text-muted)] mb-4">
               <Archive size={26} weight="duotone" aria-hidden="true" />
             </div>
@@ -272,7 +272,7 @@ export default function FeedbackPage() {
               <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--color-border)]">
                 <h3 className="text-base font-semibold text-[var(--color-text)]">反馈建议</h3>
                 <button onClick={() => setDialogOpen(false)} aria-label="关闭"
-                  className="p-1.5 rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)] transition-all cursor-pointer">
+                  className="p-1.5 rounded-action text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)] transition-all cursor-pointer">
                   <X size={18} weight="bold" />
                 </button>
               </div>
@@ -300,18 +300,18 @@ export default function FeedbackPage() {
                   </label>
                   <input type="text" value={title} onChange={(e) => setTitle(e.target.value)}
                     placeholder="一句话概括你的反馈"
-                    className="w-full px-3 py-2 rounded-xl bg-[#F2F2F7] border border-transparent
+                    className="w-full px-3 py-2 rounded-list bg-[#F2F2F7] border border-transparent
                       text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-muted)]
                       focus:outline-none focus:bg-white focus:border-brand/40 focus:ring-4 focus:ring-brand/15 transition-colors" />
                 </div>
 
                 <div>
                   <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1.5">
-                    详细描述 <span className="text-red-500">*</span>
+                    详细描述 <span className="text-danger">*</span>
                   </label>
                   <textarea value={content} onChange={(e) => setContent(e.target.value)}
                     placeholder="请详细描述你的问题或建议..." rows={5} maxLength={2000}
-                    className="w-full px-3 py-2 rounded-xl bg-[#F2F2F7] border border-transparent
+                    className="w-full px-3 py-2 rounded-list bg-[#F2F2F7] border border-transparent
                       text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-muted)]
                       focus:outline-none focus:bg-white focus:border-brand/40 focus:ring-4 focus:ring-brand/15 transition-colors resize-none" />
                   <p className="text-[10px] text-[var(--color-text-muted)] mt-1 text-right">{content.length}/2000</p>
@@ -321,12 +321,12 @@ export default function FeedbackPage() {
               <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-[var(--color-border)]">
                 <button onClick={() => setDialogOpen(false)}
                   className="px-4 py-2 rounded-full bg-[var(--color-bg-secondary)]
-                    text-xs text-[var(--color-text-secondary)] hover:bg-[#E5E5EA] transition-all cursor-pointer">
+                    text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] transition-all cursor-pointer">
                   取消
                 </button>
                 <button onClick={handleSubmit} disabled={submitting || !content.trim()}
                   className="px-4 py-2 rounded-full bg-brand text-white text-xs font-medium
-                    hover:bg-[#0077ed] hover:scale-[1.02] active:scale-[0.98] transition-all duration-300 cursor-pointer
+                    hover:bg-brand-hover hover:scale-[1.02] active:scale-[0.98] transition-all duration-300 cursor-pointer
                     disabled:opacity-40 disabled:cursor-not-allowed
                     inline-flex items-center gap-2">
                   {submitting && <Spinner size={12} className="animate-spin" weight="bold" />}

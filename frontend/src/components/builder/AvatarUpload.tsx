@@ -212,7 +212,7 @@ function AvatarUploadInner({
 
       {/* 错误提示 */}
       {error && (
-        <p className="text-xs text-red-400 max-w-[120px] text-center leading-tight">
+        <p className="text-xs text-danger max-w-[120px] text-center leading-tight">
           {error}
         </p>
       )}

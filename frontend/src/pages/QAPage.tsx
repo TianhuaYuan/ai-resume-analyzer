@@ -567,7 +567,7 @@ function EmptyState({
   if (searching) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center py-16">
-        <div className="w-16 h-16 rounded-2xl bg-brand/10 border border-brand/15
+        <div className="w-16 h-16 rounded-input bg-brand/10 border border-brand/15
           flex items-center justify-center text-brand mb-5">
           <ChatCircleDots size={28} weight="duotone" aria-hidden="true" />
         </div>
@@ -598,7 +598,7 @@ function EmptyState({
               key={card.label}
               onClick={() => onGuideClick(card)}
               disabled={disabled}
-              className={`group flex items-center gap-3.5 p-4 rounded-2xl border text-left
+              className={`group flex items-center gap-3.5 p-4 rounded-input border text-left
                 transition-all duration-300 cursor-pointer
                 hover:-translate-y-1 hover:shadow-xl hover:shadow-black/5
                 active:scale-[0.98] motion-reduce:active:scale-100
@@ -612,7 +612,7 @@ function EmptyState({
             >
               <div className={`shrink-0 flex items-center justify-center
                 ${isPrimary
-                  ? "w-11 h-11 rounded-xl bg-brand text-white shadow-sm shadow-brand/25"
+                  ? "w-11 h-11 rounded-list bg-brand text-white shadow-sm shadow-brand/25"
                   : "w-10 h-10 rounded-[10px] bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)]"
                 }`}>
                 <Icon size={isPrimary ? 20 : 18} weight="bold" aria-hidden="true" />
@@ -695,7 +695,7 @@ const MessageBubble = memo(function MessageBubble({ msg, deleting, onDelete, onF
       {/* 用户问题（P4-8 角色样式：右对齐 brand 底色） */}
       <div className="flex justify-end mb-4">
         <div className={`max-w-[75%] px-4 py-3 ${ROLE_STYLES.user.bg}
-          ${ROLE_STYLES.user.text} text-sm leading-relaxed rounded-2xl rounded-br-md`}>
+          ${ROLE_STYLES.user.text} text-sm leading-relaxed rounded-input rounded-br-md`}>
           {/* P4-10: 搜索词高亮（历史搜索命中时高亮） */}
           {searchTerm ? (
             <HighlightedText text={msg.question} terms={[searchTerm]} />
@@ -711,7 +711,7 @@ const MessageBubble = memo(function MessageBubble({ msg, deleting, onDelete, onF
           {/* G2: 消息动作栏（hover 气泡出现）— 复制 + 重新生成 */}
           {!msg.streaming && (
             <div className="absolute -top-2.5 right-2 z-10 flex items-center gap-0.5
-              px-1 py-0.5 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)]
+              px-1 py-0.5 rounded-action bg-[var(--color-bg)] border border-[var(--color-border)]
               shadow-sm opacity-0 group-hover/bubble:opacity-100
               transition-opacity duration-200">
               <button
@@ -740,7 +740,7 @@ const MessageBubble = memo(function MessageBubble({ msg, deleting, onDelete, onF
               </button>
             </div>
           )}
-          <div className={`px-4 py-3.5 rounded-2xl rounded-bl-md leading-relaxed text-sm
+          <div className={`px-4 py-3.5 rounded-input rounded-bl-md leading-relaxed text-sm
             ${ROLE_STYLES.assistant.bg} ${ROLE_STYLES.assistant.text}`}>
             {/* T18: Agent 推理过程面板（#11: streaming 开始即显示占位，用户立即看到反馈） */}
             {msg.streaming || (msg.agent_steps && msg.agent_steps.length > 0) ? (
@@ -864,8 +864,8 @@ const MessageBubble = memo(function MessageBubble({ msg, deleting, onDelete, onF
                       className={`inline-flex items-center gap-0.5 px-1.5 py-1
                         rounded-md text-xs transition-all cursor-pointer
                         ${msg.feedback === "negative"
-                          ? "text-red-500 bg-red-500/10"
-                          : "text-[var(--color-text-muted)] hover:text-red-500 hover:bg-red-500/10"
+                          ? "text-danger bg-danger/10"
+                          : "text-[var(--color-text-muted)] hover:text-danger hover:bg-danger/10"
                         }`}
                     >
                       <ThumbsDown size={12} weight={msg.feedback === "negative" ? "fill" : "regular"} aria-hidden="true" />
@@ -879,7 +879,7 @@ const MessageBubble = memo(function MessageBubble({ msg, deleting, onDelete, onF
                     aria-label="删除该问答"
                     className="inline-flex items-center gap-1 px-1.5 py-1
                       rounded-md text-xs text-[var(--color-text-muted)]
-                      hover:text-red-500 hover:bg-red-500/10
+                      hover:text-danger hover:bg-danger/10
                       active:scale-[0.95] motion-reduce:active:scale-100
                       transition-all cursor-pointer
                       opacity-0 group-hover:opacity-100 focus:opacity-100
@@ -2090,21 +2090,21 @@ export default function QAPage() {
 
           {/* Token 限额显示 */}
           {quota?.enabled && (
-            <div className="shrink-0 px-3 py-1.5 rounded-lg text-xs
+            <div className="shrink-0 px-3 py-1.5 rounded-action text-xs
               bg-[var(--color-bg-secondary)] border border-[var(--color-border)]
               flex items-center gap-2">
               <span className="text-[var(--color-text-muted)]">今日额度</span>
               <span className={`font-mono tabular-nums ${
                 quota.remaining < quota.limit * 0.1
-                  ? "text-red-500"
+                  ? "text-danger"
                   : quota.remaining < quota.limit * 0.3
-                  ? "text-yellow-600"
+                  ? "text-warning"
                   : "text-brand"
               }`}>
                 {quota.used}/{quota.limit}
               </span>
               {quota.remaining < quota.limit * 0.1 && (
-                <span className="text-red-500 text-[10px]">额度不足</span>
+                <span className="text-danger text-[10px]">额度不足</span>
               )}
             </div>
           )}
@@ -2123,7 +2123,7 @@ export default function QAPage() {
               onChange={(e) => setKeyword(e.target.value)}
               placeholder="搜索问答"
               disabled={asking}
-              className="w-40 sm:w-56 pl-8 pr-8 py-1.5 rounded-xl text-xs text-[var(--color-text)]
+              className="w-40 sm:w-56 pl-8 pr-8 py-1.5 rounded-list text-xs text-[var(--color-text)]
                 bg-[#F2F2F7] border border-transparent
                 placeholder:text-[var(--color-text-muted)]
                 focus:outline-none focus:ring-2 focus:ring-brand/40
@@ -2135,7 +2135,7 @@ export default function QAPage() {
                 onClick={() => setKeyword("")}
                 aria-label="清除搜索"
                 className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded
-                  text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-black/5
+                  text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]
                   active:scale-[0.95] motion-reduce:active:scale-100
                   transition-all cursor-pointer"
               >
@@ -2150,7 +2150,7 @@ export default function QAPage() {
             disabled={chat.length === 0 || clearing || asking}
             className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full
               text-xs font-medium border border-[var(--color-border)] text-[var(--color-text-secondary)]
-              hover:text-red-500 hover:border-red-500/30 hover:bg-red-500/10
+              hover:text-danger hover:border-danger/30 hover:bg-danger/10
               active:scale-[0.98] motion-reduce:active:scale-100
               transition-all duration-300 cursor-pointer
               disabled:opacity-40 disabled:cursor-not-allowed"
@@ -2281,7 +2281,7 @@ export default function QAPage() {
                     ))
                   )}
                   {error && (
-                    <div className="max-w-3xl mx-auto mb-4 p-3 rounded-xl bg-danger-soft border border-danger/30 text-danger text-sm animate-shake">
+                    <div className="max-w-3xl mx-auto mb-4 p-3 rounded-list bg-danger-soft border border-danger/30 text-danger text-sm animate-shake">
                       {error}
                     </div>
                   )}
@@ -2442,7 +2442,7 @@ export default function QAPage() {
           >
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
-                <div className="p-1.5 rounded-lg bg-brand/10 text-brand">
+                <div className="p-1.5 rounded-action bg-brand/10 text-brand">
                   <PencilSimple size={18} weight="bold" aria-hidden="true" />
                 </div>
                 <h3 className="text-base font-semibold text-[var(--color-text)]">
@@ -2452,7 +2452,7 @@ export default function QAPage() {
               <button
                 onClick={() => setRenameOpen(false)}
                 aria-label="关闭"
-                className="p-1.5 rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-black/5 active:scale-[0.95] motion-reduce:active:scale-100 transition-all cursor-pointer"
+                className="p-1.5 rounded-action text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)] active:scale-[0.95] motion-reduce:active:scale-100 transition-all cursor-pointer"
               >
                 <X size={16} weight="bold" aria-hidden="true" />
               </button>
@@ -2464,7 +2464,7 @@ export default function QAPage() {
               placeholder="输入对话标题"
               maxLength={100}
               autoFocus
-              className="w-full px-4 py-3 rounded-xl text-sm text-[var(--color-text)]
+              className="w-full px-4 py-3 rounded-list text-sm text-[var(--color-text)]
                 bg-[#F2F2F7] border border-transparent
                 placeholder:text-[var(--color-text-muted)]
                 focus:outline-none focus:ring-2 focus:ring-brand/40 focus:border-brand/50 focus:bg-white
@@ -2473,7 +2473,7 @@ export default function QAPage() {
             <div className="flex justify-end gap-2 mt-4">
               <button
                 onClick={() => setRenameOpen(false)}
-                className="px-3.5 py-1.5 text-sm font-medium rounded-full bg-[#E5E5EA] text-[var(--color-text)] hover:bg-[#D9D9DE] active:scale-[0.98] motion-reduce:active:scale-100 transition-all duration-300 cursor-pointer"
+                className="px-3.5 py-1.5 text-sm font-medium rounded-full bg-[#E5E5EA] text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)] active:scale-[0.98] motion-reduce:active:scale-100 transition-all duration-300 cursor-pointer"
               >
                 取消
               </button>
@@ -2504,7 +2504,7 @@ export default function QAPage() {
           >
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
-                <div className="p-1.5 rounded-lg bg-brand/10 text-brand">
+                <div className="p-1.5 rounded-action bg-brand/10 text-brand">
                   <Target size={18} weight="bold" aria-hidden="true" />
                 </div>
                 <h3 className="text-base font-semibold text-[var(--color-text)]">
@@ -2514,7 +2514,7 @@ export default function QAPage() {
               <button
                 onClick={() => setJdOpen(false)}
                 aria-label="关闭"
-                className="p-1.5 rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-black/5 active:scale-[0.95] motion-reduce:active:scale-100 transition-all cursor-pointer"
+                className="p-1.5 rounded-action text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)] active:scale-[0.95] motion-reduce:active:scale-100 transition-all cursor-pointer"
               >
                 <X size={16} weight="bold" aria-hidden="true" />
               </button>
@@ -2525,7 +2525,7 @@ export default function QAPage() {
               placeholder="粘贴目标岗位的 JD（Job Description），AI 将分析简历与岗位的匹配度..."
               rows={8}
               autoFocus
-              className="w-full px-4 py-3 rounded-xl text-sm text-[var(--color-text)]
+              className="w-full px-4 py-3 rounded-list text-sm text-[var(--color-text)]
                 bg-[#F2F2F7] border border-transparent
                 placeholder:text-[var(--color-text-muted)]
                 focus:outline-none focus:ring-2 focus:ring-brand/40 focus:border-brand/50 focus:bg-white
@@ -2534,7 +2534,7 @@ export default function QAPage() {
             <div className="flex justify-end gap-2 mt-4">
               <button
                 onClick={() => setJdOpen(false)}
-                className="px-3.5 py-1.5 text-sm font-medium rounded-full bg-[#E5E5EA] text-[var(--color-text)] hover:bg-[#D9D9DE] active:scale-[0.98] motion-reduce:active:scale-100 transition-all duration-300 cursor-pointer"
+                className="px-3.5 py-1.5 text-sm font-medium rounded-full bg-[#E5E5EA] text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)] active:scale-[0.98] motion-reduce:active:scale-100 transition-all duration-300 cursor-pointer"
               >
                 取消
               </button>
@@ -2596,14 +2596,14 @@ export default function QAPage() {
           onClick={() => setShowAtsAudit(false)}
         >
           <div
-            className="bg-[var(--color-bg)] rounded-xl shadow-2xl w-full max-w-lg max-h-[80vh] overflow-y-auto p-6 relative"
+            className="bg-[var(--color-bg)] rounded-list shadow-2xl w-full max-w-lg max-h-[80vh] overflow-y-auto p-6 relative"
             onClick={(e) => e.stopPropagation()}
           >
             {/* 右上角 X 关闭（对齐其他弹窗交互） */}
             <button
               onClick={() => setShowAtsAudit(false)}
               aria-label="关闭 ATS 审计"
-              className="absolute top-3 right-3 p-1.5 rounded-lg text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer"
+              className="absolute top-3 right-3 p-1.5 rounded-action text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer"
             >
               <X size={16} weight="bold" />
             </button>
@@ -2621,12 +2621,12 @@ export default function QAPage() {
               />
             ) : (
               <div className="text-center py-12">
-                <div className="text-sm text-red-400">
+                <div className="text-sm text-danger">
                   ATS 审计失败，请稍后重试
                 </div>
                 <button
                   onClick={() => setShowAtsAudit(false)}
-                  className="mt-4 px-4 py-2 rounded-lg bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] text-sm hover:bg-[var(--color-bg-tertiary)]"
+                  className="mt-4 px-4 py-2 rounded-action bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] text-sm hover:bg-[var(--color-bg-tertiary)]"
                 >
                   关闭
                 </button>
@@ -2643,12 +2643,12 @@ export default function QAPage() {
           onClick={() => setShowSaveCompleteDialog(false)}
         >
           <div
-            className="bg-[var(--color-bg)] rounded-xl shadow-2xl w-full max-w-sm p-6"
+            className="bg-[var(--color-bg)] rounded-list shadow-2xl w-full max-w-sm p-6"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="text-center">
-              <div className="w-12 h-12 mx-auto rounded-full bg-emerald-500/10 flex items-center justify-center mb-3">
-                <Check size={24} weight="bold" className="text-emerald-500" />
+              <div className="w-12 h-12 mx-auto rounded-full bg-success/10 flex items-center justify-center mb-3">
+                <Check size={24} weight="bold" className="text-success" />
               </div>
               <div className="text-base font-semibold text-[var(--color-text)]">
                 简历已保存并完成
@@ -2660,7 +2660,7 @@ export default function QAPage() {
             <div className="flex items-center gap-2 mt-5">
               <button
                 onClick={() => setShowSaveCompleteDialog(false)}
-                className="flex-1 px-4 py-2 rounded-lg bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] text-sm hover:bg-[var(--color-bg-tertiary)] transition-colors cursor-pointer"
+                className="flex-1 px-4 py-2 rounded-action bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] text-sm hover:bg-[var(--color-bg-tertiary)] transition-colors cursor-pointer"
               >
                 继续编辑
               </button>
@@ -2671,7 +2671,7 @@ export default function QAPage() {
                   setEditingModule(null);
                   setExpandedType(null);
                 }}
-                className="flex-1 px-4 py-2 rounded-lg bg-brand text-white text-sm hover:bg-[#0077ed] transition-colors cursor-pointer"
+                className="flex-1 px-4 py-2 rounded-action bg-brand text-white text-sm hover:bg-brand-hover transition-colors cursor-pointer"
               >
                 去问答
               </button>

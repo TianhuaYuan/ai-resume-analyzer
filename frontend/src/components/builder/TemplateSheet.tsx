@@ -103,7 +103,7 @@ export function TemplateSheet({
                 <button
                   key={t.id}
                   onClick={() => onSelect(t.id)}
-                  className={`group flex flex-col rounded-xl overflow-hidden border-2 transition-all cursor-pointer text-left
+                  className={`group flex flex-col rounded-list overflow-hidden border-2 transition-all cursor-pointer text-left
                     ${isActive
                       ? "border-brand ring-2 ring-brand/20"
                       : "border-[var(--color-border)] hover:border-brand/40 hover:shadow-lg"

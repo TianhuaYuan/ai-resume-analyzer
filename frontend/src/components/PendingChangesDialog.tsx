@@ -192,9 +192,9 @@ export default function PendingChangesDialog({
 
   const noticeColor =
     noticeType === "success"
-      ? "text-emerald-500 bg-emerald-500/10 border-emerald-500/20"
+      ? "text-success bg-success/10 border-success/20"
       : noticeType === "danger"
-        ? "text-red-400 bg-red-500/10 border-red-500/20"
+        ? "text-danger bg-danger/10 border-danger/20"
         : "text-sky-500 bg-sky-500/10 border-sky-500/20";
 
   return (
@@ -210,7 +210,7 @@ export default function PendingChangesDialog({
     >
       <div
         className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2
-          bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl
+          bg-[var(--color-surface)] border border-[var(--color-border)] rounded-input
           w-[calc(100vw-2rem)] sm:max-w-xl md:max-w-2xl
           shadow-2xl
           animate-fade-in-up motion-reduce:animate-none
@@ -239,7 +239,7 @@ export default function PendingChangesDialog({
           <button
             onClick={onClose}
             aria-label="关闭"
-            className="ml-3 p-1.5 rounded-lg text-[var(--color-text-secondary)]
+            className="ml-3 p-1.5 rounded-action text-[var(--color-text-secondary)]
               hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]
               active:scale-[0.95] motion-reduce:active:scale-100
               transition-all cursor-pointer shrink-0"
@@ -256,7 +256,7 @@ export default function PendingChangesDialog({
           {/* 内联提示（接受/拒绝/清空后的反馈，含保存引导） */}
           {notice && (
             <div
-              className={`px-3.5 py-2.5 rounded-xl border text-xs leading-relaxed ${noticeColor}`}
+              className={`px-3.5 py-2.5 rounded-list border text-xs leading-relaxed ${noticeColor}`}
               role="status"
             >
               {notice}
@@ -265,25 +265,25 @@ export default function PendingChangesDialog({
 
           {status === "loading" && (
             <div className="space-y-3" aria-busy="true" aria-live="polite">
-              <div className="h-16 rounded-lg animate-skeleton" />
-              <div className="h-16 rounded-lg animate-skeleton" />
-              <div className="h-16 rounded-lg animate-skeleton" />
+              <div className="h-16 rounded-action animate-skeleton" />
+              <div className="h-16 rounded-action animate-skeleton" />
+              <div className="h-16 rounded-action animate-skeleton" />
             </div>
           )}
 
           {status === "error" && (
             <div
-              className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400"
+              className="p-4 rounded-list bg-danger/10 border border-danger/20 text-danger"
               role="alert"
             >
               <p className="text-sm mb-3">{error}</p>
               <button
                 onClick={handleRetry}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5
-                  text-xs font-medium rounded-lg
-                  bg-red-500/15 hover:bg-red-500/25
-                  border border-red-500/30
-                  text-red-300
+                  text-xs font-medium rounded-action
+                  bg-danger/15 hover:bg-danger/25
+                  border border-danger/30
+                  text-danger
                   active:scale-[0.98] motion-reduce:active:scale-100
                   transition-all cursor-pointer"
               >
@@ -315,7 +315,7 @@ export default function PendingChangesDialog({
                 return (
                   <div
                     key={c.id}
-                    className="border border-[var(--color-border)] rounded-xl overflow-hidden bg-white/[0.03]"
+                    className="border border-[var(--color-border)] rounded-list overflow-hidden bg-white/[0.03]"
                   >
                     {/* 条目头：工具名 + 字段路径 */}
                     <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[var(--color-border)] bg-white/[0.02]">
@@ -345,8 +345,8 @@ export default function PendingChangesDialog({
                         <p className="text-[10px] font-medium text-[var(--color-text-muted)] mb-1.5">
                           原文
                         </p>
-                        <pre className="whitespace-pre-wrap break-words text-[11px] leading-relaxed text-red-400/90
-                          bg-red-500/[0.06] border border-red-500/15 rounded-lg px-3 py-2
+                        <pre className="whitespace-pre-wrap break-words text-[11px] leading-relaxed text-danger/90
+                          bg-danger/[0.06] border border-danger/15 rounded-action px-3 py-2
                           max-h-28 overflow-y-auto">
                           {formatValue(c.before)}
                         </pre>
@@ -355,8 +355,8 @@ export default function PendingChangesDialog({
                         <p className="text-[10px] font-medium text-[var(--color-text-muted)] mb-1.5">
                           AI 建议
                         </p>
-                        <pre className="whitespace-pre-wrap break-words text-[11px] leading-relaxed text-emerald-400/90
-                          bg-emerald-500/[0.06] border border-emerald-500/15 rounded-lg px-3 py-2
+                        <pre className="whitespace-pre-wrap break-words text-[11px] leading-relaxed text-success/90
+                          bg-success/[0.06] border border-success/15 rounded-action px-3 py-2
                           max-h-28 overflow-y-auto">
                           {formatValue(c.after)}
                         </pre>
@@ -380,9 +380,9 @@ export default function PendingChangesDialog({
                       <button
                         onClick={() => handleReject(c)}
                         disabled={busy || clearing}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-action
                           text-xs font-medium text-[var(--color-text-secondary)]
-                          bg-[var(--color-bg-secondary)] hover:bg-[#E5E5EA]
+                          bg-[var(--color-bg-secondary)] hover:bg-[var(--color-bg-secondary)]
                           active:scale-[0.98] motion-reduce:active:scale-100
                           transition-all cursor-pointer
                           disabled:opacity-50 disabled:cursor-not-allowed"
@@ -393,8 +393,8 @@ export default function PendingChangesDialog({
                       <button
                         onClick={() => handleAccept(c)}
                         disabled={busy || clearing}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg
-                          text-xs font-medium text-white bg-brand hover:bg-[#0077ed]
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-action
+                          text-xs font-medium text-white bg-brand hover:bg-brand-hover
                           active:scale-[0.98] motion-reduce:active:scale-100
                           transition-all cursor-pointer
                           disabled:opacity-50 disabled:cursor-not-allowed"
@@ -426,16 +426,16 @@ export default function PendingChangesDialog({
             </p>
             {confirmClear ? (
               <div className="flex items-center justify-between gap-3 flex-wrap">
-                <p className="text-xs text-red-400">
+                <p className="text-xs text-danger">
                   确定清除全部 {items.length} 条待审阅改动？此操作不可撤销。
                 </p>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setConfirmClear(false)}
                     disabled={clearing}
-                    className="px-3 py-1.5 rounded-lg text-xs font-medium
+                    className="px-3 py-1.5 rounded-action text-xs font-medium
                       text-[var(--color-text-secondary)] bg-[var(--color-bg-secondary)]
-                      hover:bg-[#E5E5EA] transition-all cursor-pointer
+                      hover:bg-[var(--color-bg-secondary)] transition-all cursor-pointer
                       disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     取消
@@ -443,9 +443,9 @@ export default function PendingChangesDialog({
                   <button
                     onClick={() => void handleClearAll()}
                     disabled={clearing}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg
-                      text-xs font-medium text-red-400
-                      bg-red-500/15 border border-red-500/30 hover:bg-red-500/25
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-action
+                      text-xs font-medium text-danger
+                      bg-danger/15 border border-danger/30 hover:bg-danger/25
                       active:scale-[0.98] motion-reduce:active:scale-100
                       transition-all cursor-pointer
                       disabled:opacity-50 disabled:cursor-not-allowed"
@@ -453,7 +453,7 @@ export default function PendingChangesDialog({
                     {clearing ? (
                       <span
                         className="inline-block w-3 h-3 rounded-full border-2
-                          border-red-400 border-t-transparent animate-spin"
+                          border-danger border-t-transparent animate-spin"
                         aria-hidden="true"
                       />
                     ) : (
@@ -468,9 +468,9 @@ export default function PendingChangesDialog({
                 <button
                   onClick={() => setConfirmClear(true)}
                   disabled={clearing || items.length === 0}
-                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg
-                    text-xs font-medium text-red-400
-                    bg-red-500/10 border border-red-500/25 hover:bg-red-500/20
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-action
+                    text-xs font-medium text-danger
+                    bg-danger/10 border border-danger/25 hover:bg-danger/20
                     active:scale-[0.98] motion-reduce:active:scale-100
                     transition-all cursor-pointer
                     disabled:opacity-40 disabled:cursor-not-allowed"

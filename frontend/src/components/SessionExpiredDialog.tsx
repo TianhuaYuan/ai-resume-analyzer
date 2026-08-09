@@ -65,12 +65,12 @@ export default function SessionExpiredDialog({
     >
       <div
         className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2
-          bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl
+          bg-[var(--color-surface)] border border-[var(--color-border)] rounded-input
           max-w-sm w-full mx-4 shadow-2xl
           animate-fade-in-up motion-reduce:animate-none"
       >
         <div className="flex flex-col items-center px-6 py-6 text-center">
-          <div className="shrink-0 p-3 rounded-xl mb-4 bg-red-500/15 text-red-400">
+          <div className="shrink-0 p-3 rounded-list mb-4 bg-danger/15 text-danger">
             <Warning size={28} weight="bold" aria-hidden="true" />
           </div>
 
@@ -87,7 +87,7 @@ export default function SessionExpiredDialog({
           <button
             onClick={onGoLogin}
             className="px-4 py-2 text-sm font-medium rounded-full
-              bg-brand hover:bg-[#0077ed] text-white
+              bg-brand hover:bg-brand-hover text-white
               active:scale-[0.98] motion-reduce:active:scale-100
               transition-all cursor-pointer
               flex items-center gap-1.5"

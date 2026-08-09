@@ -166,7 +166,7 @@ export default function LandingNav({ activeKey }: LandingNavProps) {
                   <CaretDown size={12} className={`text-[var(--color-text-muted)] transition-transform duration-300 ${userMenuOpen ? "rotate-180" : ""}`} />
                 </button>
                 {userMenuOpen && (
-                  <div className="absolute right-0 top-full mt-2 w-48 rounded-2xl bg-white/90 backdrop-blur-xl border border-[var(--color-border)] shadow-2xl shadow-black/10 py-1 z-50 animate-fade-in-down">
+                  <div className="absolute right-0 top-full mt-2 w-48 rounded-input bg-white/90 backdrop-blur-xl border border-[var(--color-border)] shadow-2xl shadow-black/10 py-1 z-50 animate-fade-in-down">
                     {/* Token 用量概览 */}
                     {quota?.enabled && (
                       <div className="px-3.5 py-2.5 border-b border-[var(--color-border)]">
@@ -248,7 +248,7 @@ export default function LandingNav({ activeKey }: LandingNavProps) {
                               key={opt.key}
                               onClick={() => setTheme(opt.key)}
                               aria-pressed={active}
-                              className={`flex flex-col items-center gap-1 py-1.5 rounded-lg text-[10px] transition-all cursor-pointer
+                              className={`flex flex-col items-center gap-1 py-1.5 rounded-action text-[10px] transition-all cursor-pointer
                                 ${active
                                   ? "bg-brand/10 text-brand"
                                   : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)]"
@@ -296,7 +296,7 @@ export default function LandingNav({ activeKey }: LandingNavProps) {
 
                     <button
                       onClick={handleLogout}
-                      className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs text-red-500 hover:bg-red-500/10 cursor-pointer transition-colors"
+                      className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs text-danger hover:bg-danger/10 cursor-pointer transition-colors"
                     >
                       <SignOut size={14} weight="regular" aria-hidden="true" />
                       退出登录
@@ -308,7 +308,7 @@ export default function LandingNav({ activeKey }: LandingNavProps) {
               <button
                 onClick={() => openLoginModal()}
                 className="px-4 py-1.5 rounded-full text-sm font-semibold bg-brand text-white
-                  hover:bg-[#0077ed] hover:scale-[1.02] active:scale-[0.98]
+                  hover:bg-brand-hover hover:scale-[1.02] active:scale-[0.98]
                   transition-all duration-300 cursor-pointer"
               >
                 登录

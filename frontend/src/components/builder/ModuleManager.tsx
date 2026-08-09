@@ -64,7 +64,7 @@ function ModuleManagerImpl({
           return (
             <div
               key={type}
-              className={`group flex items-center gap-1 px-2 py-1.5 rounded-lg border
+              className={`group flex items-center gap-1 px-2 py-1.5 rounded-action border
                 transition-all duration-150
                 ${isHidden ? "opacity-50" : "opacity-100"}
                 border-[var(--color-border)]/60 bg-[var(--color-bg-secondary)]`}

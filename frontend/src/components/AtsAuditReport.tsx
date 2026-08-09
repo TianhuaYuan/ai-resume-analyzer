@@ -8,9 +8,9 @@ interface AtsAuditReportProps {
 
 /** 根据分数返回颜色 class */
 function scoreColor(score: number): string {
-  if (score >= 80) return "text-emerald-400";
-  if (score >= 60) return "text-amber-400";
-  return "text-red-400";
+  if (score >= 80) return "text-success";
+  if (score >= 60) return "text-warning";
+  return "text-danger";
 }
 
 /** 根据分数返回描述 */
@@ -25,11 +25,11 @@ function scoreLabel(score: number): string {
 function severityStyle(severity: string) {
   switch (severity) {
     case "high":
-      return { badge: "bg-red-500/20 text-red-300", icon: "⚠", label: "严重" };
+      return { badge: "bg-danger/20 text-danger", icon: "⚠", label: "严重" };
     case "medium":
-      return { badge: "bg-amber-500/20 text-amber-300", icon: "●", label: "中等" };
+      return { badge: "bg-warning/20 text-warning", icon: "●", label: "中等" };
     case "low":
-      return { badge: "bg-emerald-500/20 text-emerald-300", icon: "ℹ", label: "轻微" };
+      return { badge: "bg-success/20 text-success", icon: "ℹ", label: "轻微" };
     default:
       return { badge: "bg-gray-500/20 text-gray-300", icon: "•", label: severity };
   }
@@ -52,7 +52,7 @@ function IssueCard({ issue }: { issue: AtsAuditIssue }) {
   const style = severityStyle(issue.severity);
 
   return (
-    <div className="border border-[var(--color-border)] rounded-lg p-3 hover:bg-[var(--color-bg-secondary)] transition-colors">
+    <div className="border border-[var(--color-border)] rounded-action p-3 hover:bg-[var(--color-bg-secondary)] transition-colors">
       <button
         onClick={() => setExpanded(!expanded)}
         className="w-full text-left flex items-start gap-2"
@@ -130,7 +130,7 @@ export default function AtsAuditReport({ result, onClose }: AtsAuditReportProps)
             检测方式：{result.method.toUpperCase()}
           </span>
           {!result.pdf_available && (
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400">
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-warning/10 text-warning">
               WeasyPrint 不可用
             </span>
           )}
@@ -139,17 +139,17 @@ export default function AtsAuditReport({ result, onClose }: AtsAuditReportProps)
         {/* 问题统计 */}
         <div className="flex items-center justify-center gap-4 mt-3 text-xs">
           {grouped.high.length > 0 && (
-            <span className="text-red-400">
+            <span className="text-danger">
               {grouped.high.length} 严重
             </span>
           )}
           {grouped.medium.length > 0 && (
-            <span className="text-amber-400">
+            <span className="text-warning">
               {grouped.medium.length} 中等
             </span>
           )}
           {grouped.low.length > 0 && (
-            <span className="text-emerald-400">
+            <span className="text-success">
               {grouped.low.length} 轻微
             </span>
           )}
@@ -158,9 +158,9 @@ export default function AtsAuditReport({ result, onClose }: AtsAuditReportProps)
 
       {/* Warnings */}
       {result.warnings.length > 0 && (
-        <div className="mb-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+        <div className="mb-4 p-3 rounded-action bg-warning/10 border border-warning/20">
           {result.warnings.map((w, idx) => (
-            <div key={idx} className="text-xs text-amber-400">
+            <div key={idx} className="text-xs text-warning">
               {w}
             </div>
           ))}
@@ -224,7 +224,7 @@ export default function AtsAuditReport({ result, onClose }: AtsAuditReportProps)
         <div className="mt-6 text-center">
           <button
             onClick={onClose}
-            className="px-6 py-2 rounded-lg bg-[var(--color-accent)] text-white text-sm hover:opacity-90 transition-opacity"
+            className="px-6 py-2 rounded-action bg-[var(--color-accent)] text-white text-sm hover:opacity-90 transition-opacity"
           >
             关闭
           </button>

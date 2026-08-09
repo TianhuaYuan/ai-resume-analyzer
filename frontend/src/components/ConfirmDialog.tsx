@@ -85,13 +85,13 @@ export default function ConfirmDialog({
     >
       <div
         className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2
-          bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl
+          bg-[var(--color-surface)] border border-[var(--color-border)] rounded-input
           max-w-md w-full mx-4 shadow-2xl
           animate-fade-in-up motion-reduce:animate-none"
       >
         <div className="flex items-start gap-3 px-6 py-5">
           <div
-            className={`shrink-0 mt-0.5 p-2 rounded-lg
+            className={`shrink-0 mt-0.5 p-2 rounded-action
               ${danger ? "bg-danger-soft text-danger" : "bg-warning-soft text-warning"}`}
           >
             <Warning size={20} weight="bold" aria-hidden="true" />
@@ -106,7 +106,7 @@ export default function ConfirmDialog({
             onClick={() => !loading && onCancel()}
             aria-label="关闭"
             disabled={loading}
-            className="p-1.5 rounded-lg text-[var(--color-text-secondary)]
+            className="p-1.5 rounded-action text-[var(--color-text-secondary)]
               hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]
               active:scale-[0.95] motion-reduce:active:scale-100
               transition-all cursor-pointer shrink-0
@@ -120,7 +120,7 @@ export default function ConfirmDialog({
           <button
             onClick={() => !loading && onCancel()}
             disabled={loading}
-            className="px-3.5 py-1.5 text-sm font-medium rounded-lg
+            className="px-3.5 py-1.5 text-sm font-medium rounded-action
               text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]
               active:scale-[0.98] motion-reduce:active:scale-100
               transition-all cursor-pointer
@@ -131,7 +131,7 @@ export default function ConfirmDialog({
           <button
             onClick={() => !loading && onConfirm()}
             disabled={loading}
-            className={`px-3.5 py-1.5 text-sm font-medium rounded-lg
+            className={`px-3.5 py-1.5 text-sm font-medium rounded-action
               ${confirmColor}
               active:scale-[0.98] motion-reduce:active:scale-100
               transition-all cursor-pointer

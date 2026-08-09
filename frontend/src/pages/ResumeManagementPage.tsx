@@ -109,7 +109,7 @@ function RoleScoreView({ result }: { result: RoleScoreResult }) {
       {roles.length > 0 && (
         <div className="space-y-2">
           {roles.map(([key, item]) => (
-            <div key={key} className="rounded-xl bg-[var(--color-bg-secondary)]/60 px-3.5 py-2.5">
+            <div key={key} className="rounded-list bg-[var(--color-bg-secondary)]/60 px-3.5 py-2.5">
               <p className="text-[11px] font-medium text-[var(--color-text-secondary)]">
                 {ROLE_LABELS[key] ?? key}
               </p>
@@ -123,7 +123,7 @@ function RoleScoreView({ result }: { result: RoleScoreResult }) {
 
       {/* 分析文本 */}
       {result.analysis && (
-        <div className="rounded-xl bg-[var(--color-bg-secondary)]/60 px-3.5 py-3 text-xs text-[var(--color-text-secondary)] leading-relaxed whitespace-pre-wrap max-h-48 overflow-y-auto">
+        <div className="rounded-list bg-[var(--color-bg-secondary)]/60 px-3.5 py-3 text-xs text-[var(--color-text-secondary)] leading-relaxed whitespace-pre-wrap max-h-48 overflow-y-auto">
           {result.analysis}
         </div>
       )}
@@ -422,7 +422,7 @@ export default function ResumeManagementPage() {
       const percent = prog?.percent ?? 0;
       const label = prog?.message ?? "正在解析...";
       return (
-        <div className="inline-flex flex-col gap-1 px-2 py-1 rounded-lg bg-sky-500/15 text-sky-600 border border-sky-500/30 min-w-[96px]">
+        <div className="inline-flex flex-col gap-1 px-2 py-1 rounded-action bg-sky-500/15 text-sky-600 border border-sky-500/30 min-w-[96px]">
           <span className="inline-flex items-center gap-1 text-[10px] font-medium">
             <Spinner size={10} className="animate-spin" aria-hidden="true" />
             <span className="truncate">{label}</span>
@@ -438,14 +438,14 @@ export default function ResumeManagementPage() {
     }
     if (r.status === "failed") {
       return (
-        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-red-500/15 text-red-500 border border-red-500/30">
+        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-danger/15 text-danger border border-danger/30">
           解析失败
         </span>
       );
     }
     if (r.status === "draft") {
       return (
-        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-amber-500/15 text-amber-600 border border-amber-500/30">
+        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-warning/15 text-warning border border-warning/30">
           草稿
         </span>
       );
@@ -463,7 +463,7 @@ export default function ResumeManagementPage() {
     if (r.is_stale) {
       return (
         <span
-          className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-amber-500/15 text-amber-600 border border-amber-500/30"
+          className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-warning/15 text-warning border border-warning/30"
           title="内容已更新，检索将自动重建"
         >
           索引待重建
@@ -471,7 +471,7 @@ export default function ResumeManagementPage() {
       );
     }
     return (
-      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-500/15 text-emerald-600 border border-emerald-500/30">
+      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-success/15 text-success border border-success/30">
         已就绪
       </span>
     );
@@ -517,9 +517,9 @@ export default function ResumeManagementPage() {
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploading || creating}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-action
                   text-sm font-medium text-[var(--color-text)]
-                  bg-[var(--color-bg-secondary)] hover:bg-[#E5E5EA]
+                  bg-[var(--color-bg-secondary)] hover:bg-[var(--color-bg-secondary)]
                   active:scale-[0.98] motion-reduce:active:scale-100
                   transition-all cursor-pointer
                   disabled:opacity-50 disabled:cursor-not-allowed"
@@ -542,9 +542,9 @@ export default function ResumeManagementPage() {
               <button
                 onClick={handleCreate}
                 disabled={uploading || creating}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-action
                   text-sm font-medium text-[var(--color-text)]
-                  bg-[var(--color-bg-secondary)] hover:bg-[#E5E5EA]
+                  bg-[var(--color-bg-secondary)] hover:bg-[var(--color-bg-secondary)]
                   active:scale-[0.98] motion-reduce:active:scale-100
                   transition-all cursor-pointer
                   disabled:opacity-50 disabled:cursor-not-allowed"
@@ -561,7 +561,7 @@ export default function ResumeManagementPage() {
                 className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full
                   text-sm font-medium text-white
                   bg-brand
-                  hover:bg-[#0077ed] hover:scale-[1.02] hover:shadow-lg hover:shadow-brand/25
+                  hover:bg-brand-hover hover:scale-[1.02] hover:shadow-lg hover:shadow-brand/25
                   active:scale-[0.98] motion-reduce:active:scale-100
                   transition-all duration-300 cursor-pointer
                   disabled:opacity-50 disabled:cursor-not-allowed"
@@ -614,7 +614,7 @@ export default function ResumeManagementPage() {
                     onClick={() => handleCardClick(r)}
                     className="cursor-pointer
                       bg-white/80 backdrop-blur-xl border border-[var(--color-border)]
-                      rounded-2xl overflow-hidden
+                      rounded-input overflow-hidden
                       hover:-translate-y-1 hover:border-brand/40 hover:shadow-xl hover:shadow-black/5
                       transition-all duration-300"
                     role="button"
@@ -743,7 +743,7 @@ export default function ResumeManagementPage() {
                     className="absolute top-2.5 right-2.5 z-10 p-1.5 rounded-md
                       bg-[var(--color-bg)]/80 backdrop-blur-sm
                       text-[var(--color-text-muted)]
-                      hover:text-red-400 hover:bg-red-500/10
+                      hover:text-danger hover:bg-danger/10
                       opacity-0 group-hover:opacity-100 focus:opacity-100
                       transition-all cursor-pointer"
                     aria-label={`删除 ${r.filename}`}
@@ -780,7 +780,7 @@ export default function ResumeManagementPage() {
           aria-label={`${scoreTarget.filename} 评分`}
         >
           <div
-            className="w-full max-w-md rounded-2xl bg-[var(--color-bg)] border border-[var(--color-border)] p-5 shadow-2xl"
+            className="w-full max-w-md rounded-input bg-[var(--color-bg)] border border-[var(--color-border)] p-5 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-4">
@@ -876,7 +876,7 @@ export default function ResumeManagementPage() {
           aria-label={`${jdTarget.filename} JD 匹配`}
         >
           <div
-            className="w-full max-w-lg rounded-2xl bg-[var(--color-bg)] border border-[var(--color-border)] p-5 shadow-2xl"
+            className="w-full max-w-lg rounded-input bg-[var(--color-bg)] border border-[var(--color-border)] p-5 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-4">
@@ -904,12 +904,12 @@ export default function ResumeManagementPage() {
                   onChange={(e) => setJdText(e.target.value)}
                   placeholder="粘贴 JD 文本（如岗位职责、任职要求）..."
                   rows={5}
-                  className="w-full px-3 py-2.5 rounded-xl text-sm bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] outline-none focus:border-brand/50 focus:ring-4 focus:ring-brand/15 transition-all resize-none"
+                  className="w-full px-3 py-2.5 rounded-list text-sm bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] outline-none focus:border-brand/50 focus:ring-4 focus:ring-brand/15 transition-all resize-none"
                 />
                 <button
                   onClick={() => void handleJDMatch()}
                   disabled={jdLoading || !jdText.trim()}
-                  className="mt-3 w-full inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium text-white bg-brand hover:bg-[#0077ed] active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="mt-3 w-full inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-action text-sm font-medium text-white bg-brand hover:bg-brand-hover active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {jdLoading ? (
                     <>
@@ -941,7 +941,7 @@ export default function ResumeManagementPage() {
                     setJdResult(null);
                     setJdText("");
                   }}
-                  className="mt-4 w-full px-3.5 py-2 rounded-lg text-sm font-medium text-[var(--color-text)] bg-[var(--color-bg-secondary)] hover:bg-[#E5E5EA] active:scale-[0.98] transition-all cursor-pointer"
+                  className="mt-4 w-full px-3.5 py-2 rounded-action text-sm font-medium text-[var(--color-text)] bg-[var(--color-bg-secondary)] hover:bg-[var(--color-bg-secondary)] active:scale-[0.98] transition-all cursor-pointer"
                 >
                   重新匹配
                 </button>

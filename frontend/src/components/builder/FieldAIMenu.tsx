@@ -106,7 +106,7 @@ export function FieldAIMenu({
           onClick={handleCheck}
           disabled={disabled || loading}
           className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium
-            bg-emerald-500/10 text-emerald-600 border border-emerald-500/30 hover:brightness-110
+            bg-success/10 text-success border border-success/30 hover:brightness-110
             disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer"
           aria-label="检查此条内容"
         >
@@ -145,7 +145,7 @@ export function FieldAIMenu({
               placeholder="输入改写指令，或点下方标签..."
               rows={2}
               disabled={loading}
-              className="flex-1 px-2.5 py-1.5 rounded-lg text-xs text-[var(--color-text)]
+              className="flex-1 px-2.5 py-1.5 rounded-action text-xs text-[var(--color-text)]
                 bg-white border border-[var(--color-border)]
                 placeholder:text-[var(--color-text-muted)]
                 focus:outline-none focus:border-brand/40 focus:ring-2 focus:ring-brand/15
@@ -155,8 +155,8 @@ export function FieldAIMenu({
             <button
               onClick={() => handleRewrite()}
               disabled={loading || !instruction.trim()}
-              className="shrink-0 h-[30px] px-2.5 rounded-lg text-white text-[10px] font-medium
-                inline-flex items-center gap-1 bg-brand hover:bg-[#0077ed]
+              className="shrink-0 h-[30px] px-2.5 rounded-action text-white text-[10px] font-medium
+                inline-flex items-center gap-1 bg-brand hover:bg-brand-hover
                 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer"
               aria-label="执行改写"
             >
@@ -193,7 +193,7 @@ export function FieldAIMenu({
         </div>
       )}
       {!loading && error && (
-        <div className="p-2 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs">
+        <div className="p-2 rounded-action bg-danger/10 border border-danger/20 text-danger text-xs">
           {error}
         </div>
       )}
@@ -201,7 +201,7 @@ export function FieldAIMenu({
       {/* 结果 + 使用/取消（固定高度，避免内容长度变化导致布局跳动） */}
       {!loading && result && (
         <div className="space-y-2">
-          <div className="p-2.5 rounded-lg bg-white border border-[var(--color-border)]
+          <div className="p-2.5 rounded-action bg-white border border-[var(--color-border)]
             text-xs text-[var(--color-text)] leading-relaxed whitespace-pre-wrap break-words h-44 overflow-y-auto">
             {result}
           </div>
@@ -213,7 +213,7 @@ export function FieldAIMenu({
                 setIssues([]);
                 setChecked(false);
               }}
-              className="px-2.5 py-1 rounded-lg text-[10px] font-medium border border-[var(--color-border)]
+              className="px-2.5 py-1 rounded-action text-[10px] font-medium border border-[var(--color-border)]
                 text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-white
                 transition-all cursor-pointer"
               aria-label="取消"
@@ -223,7 +223,7 @@ export function FieldAIMenu({
             </button>
             <button
               onClick={handleApply}
-              className="px-2.5 py-1 rounded-lg text-[10px] font-medium text-white bg-brand hover:bg-[#0077ed]
+              className="px-2.5 py-1 rounded-action text-[10px] font-medium text-white bg-brand hover:bg-brand-hover
                 inline-flex items-center gap-1 transition-all cursor-pointer"
               aria-label="使用 AI 结果"
             >

@@ -128,7 +128,7 @@ export default function ChangePasswordDialog({ open, onClose, currentEmail }: Pr
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
             transition={{ duration: 0.2 }}
-            className="w-full max-w-md bg-[var(--color-bg)] border border-[var(--color-border)] rounded-2xl shadow-2xl overflow-hidden"
+            className="w-full max-w-md bg-[var(--color-bg)] border border-[var(--color-border)] rounded-input shadow-2xl overflow-hidden animate-fade-in-up motion-reduce:animate-none"
             data-testid="change-password-dialog"
             onClick={(e) => e.stopPropagation()}
           >
@@ -144,7 +144,7 @@ export default function ChangePasswordDialog({ open, onClose, currentEmail }: Pr
 
             <form onSubmit={handleSubmit} className="p-5 space-y-4">
               {/* Tab切换 */}
-              <div className="flex gap-2 p-1 bg-[var(--color-bg-secondary)] rounded-lg">
+              <div className="flex gap-2 p-1 bg-[var(--color-bg-secondary)] rounded-action">
                 <button
                   type="button"
                   onClick={() => { setTab("password"); setError(""); }}
@@ -172,12 +172,12 @@ export default function ChangePasswordDialog({ open, onClose, currentEmail }: Pr
               </div>
 
               {error && (
-                <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+                <div className="p-3 rounded-action bg-danger/10 border border-danger/20 text-danger text-sm">
                   {error}
                 </div>
               )}
               {success && (
-                <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm">
+                <div className="p-3 rounded-action bg-success/10 border border-success/20 text-success text-sm">
                   {success}
                 </div>
               )}
@@ -196,7 +196,7 @@ export default function ChangePasswordDialog({ open, onClose, currentEmail }: Pr
                     onFocus={() => setFocusedInput("oldPassword")}
                     onBlur={() => setFocusedInput(null)}
                     placeholder="旧密码"
-                    className="w-full h-10 pl-10 pr-10 bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:border-[var(--color-primary)] transition-colors"
+                    className="w-full h-10 pl-10 pr-10 bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-action text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:border-[var(--color-primary)] transition-colors"
                   />
                   <button
                     type="button"
@@ -224,14 +224,14 @@ export default function ChangePasswordDialog({ open, onClose, currentEmail }: Pr
                       onBlur={() => setFocusedInput(null)}
                       placeholder="6位验证码"
                       maxLength={6}
-                      className="w-full h-10 pl-10 pr-3 bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:border-[var(--color-primary)] transition-colors"
+                      className="w-full h-10 pl-10 pr-3 bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-action text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:border-[var(--color-primary)] transition-colors"
                     />
                   </div>
                   <button
                     type="button"
                     disabled={sendCodeLoading || sendCodeCooldown > 0}
                     onClick={handleSendCode}
-                    className="px-4 py-2 bg-[var(--color-bg-secondary)] hover:bg-[var(--color-bg-tertiary)] text-[var(--color-text)] text-sm rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="px-4 py-2 bg-[var(--color-bg-secondary)] hover:bg-[var(--color-bg-tertiary)] text-[var(--color-text)] text-sm rounded-action transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {sendCodeLoading ? "发送中..." : sendCodeCooldown > 0 ? `${sendCodeCooldown}s` : "发送"}
                   </button>
@@ -251,7 +251,7 @@ export default function ChangePasswordDialog({ open, onClose, currentEmail }: Pr
                   onFocus={() => setFocusedInput("newPassword")}
                   onBlur={() => setFocusedInput(null)}
                   placeholder="新密码（至少8位，含字母和数字）"
-                  className="w-full h-10 pl-10 pr-10 bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:border-[var(--color-primary)] transition-colors"
+                  className="w-full h-10 pl-10 pr-10 bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-action text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:border-[var(--color-primary)] transition-colors"
                 />
                 <button
                   type="button"
@@ -275,7 +275,7 @@ export default function ChangePasswordDialog({ open, onClose, currentEmail }: Pr
                   onFocus={() => setFocusedInput("confirmPassword")}
                   onBlur={() => setFocusedInput(null)}
                   placeholder="确认新密码"
-                  className="w-full h-10 pl-10 pr-10 bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:border-[var(--color-primary)] transition-colors"
+                  className="w-full h-10 pl-10 pr-10 bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-action text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:border-[var(--color-primary)] transition-colors"
                 />
                 <button
                   type="button"
@@ -291,7 +291,7 @@ export default function ChangePasswordDialog({ open, onClose, currentEmail }: Pr
                 whileTap={{ scale: 0.98 }}
                 type="submit"
                 disabled={loading}
-                className="w-full h-10 bg-[var(--color-primary)] text-white font-medium rounded-lg transition-colors hover:opacity-90 disabled:opacity-50"
+                className="w-full h-10 bg-[var(--color-primary)] text-white font-medium rounded-action transition-colors hover:opacity-90 disabled:opacity-50"
               >
                 {loading ? "提交中..." : "确认修改"}
               </motion.button>

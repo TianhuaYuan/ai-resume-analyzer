@@ -95,7 +95,7 @@ export default function PasteResumeDialog({ open, onClose, onParsed }: PasteResu
           <button
             onClick={onClose}
             aria-label="关闭"
-            className="p-1.5 rounded-lg text-[var(--color-text-secondary)]
+            className="p-1.5 rounded-action text-[var(--color-text-secondary)]
               hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)] transition-all cursor-pointer"
           >
             <X size={18} weight="bold" />
@@ -114,7 +114,7 @@ export default function PasteResumeDialog({ open, onClose, onParsed }: PasteResu
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="张三-Java开发工程师"
-              className="w-full px-3 py-2 rounded-xl bg-[#F2F2F7] border border-transparent
+              className="w-full px-3 py-2 rounded-list bg-[#F2F2F7] border border-transparent
                 text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-muted)]
                 focus:outline-none focus:bg-white focus:border-brand/40
                 focus:ring-4 focus:ring-brand/15 transition-all duration-150"
@@ -133,7 +133,7 @@ export default function PasteResumeDialog({ open, onClose, onParsed }: PasteResu
               placeholder={`请将简历内容粘贴到这里...\n支持直接从PDF、Word或其他地方复制的文本\n系统会自动格式化并解析`}
               rows={12}
               maxLength={50000}
-              className="w-full px-3 py-2 rounded-xl bg-[#F2F2F7] border border-transparent
+              className="w-full px-3 py-2 rounded-list bg-[#F2F2F7] border border-transparent
                 text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-muted)]
                 focus:outline-none focus:bg-white focus:border-brand/40
                 focus:ring-4 focus:ring-brand/15 transition-all duration-150 resize-none"
@@ -144,7 +144,7 @@ export default function PasteResumeDialog({ open, onClose, onParsed }: PasteResu
           </div>
 
           {/* 提示 */}
-          <div className="flex gap-3 p-3 rounded-lg bg-brand/5 border border-brand/10">
+          <div className="flex gap-3 p-3 rounded-action bg-brand/5 border border-brand/10">
             <Warning size={16} weight="duotone" className="text-brand shrink-0 mt-0.5" />
             <div className="text-xs text-[var(--color-text-secondary)] space-y-1">
               <p className="font-medium text-[var(--color-text)]">粘贴提示</p>
@@ -157,7 +157,7 @@ export default function PasteResumeDialog({ open, onClose, onParsed }: PasteResu
           </div>
 
           {error && (
-            <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-xs text-red-400">
+            <div className="p-3 rounded-action bg-danger/10 border border-danger/20 text-xs text-danger">
               {error}
             </div>
           )}
@@ -167,8 +167,8 @@ export default function PasteResumeDialog({ open, onClose, onParsed }: PasteResu
         <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-[var(--color-border)]">
           <button
             onClick={onClose}
-            className="px-4 py-2 rounded-lg bg-[var(--color-bg-secondary)]
-              text-xs text-[var(--color-text-secondary)] hover:bg-[#E5E5EA] transition-colors cursor-pointer"
+            className="px-4 py-2 rounded-action bg-[var(--color-bg-secondary)]
+              text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer"
           >
             取消
           </button>
@@ -176,7 +176,7 @@ export default function PasteResumeDialog({ open, onClose, onParsed }: PasteResu
             onClick={handleParse}
             disabled={parsing || !content.trim()}
             className="px-4 py-2 rounded-full bg-brand text-white text-xs font-medium
-              hover:bg-[#0077ed] hover:scale-[1.02] transition-all duration-300 cursor-pointer
+              hover:bg-brand-hover hover:scale-[1.02] transition-all duration-300 cursor-pointer
               disabled:opacity-40 disabled:cursor-not-allowed
               inline-flex items-center gap-2"
           >

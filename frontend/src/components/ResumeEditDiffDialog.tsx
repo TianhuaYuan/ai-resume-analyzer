@@ -486,9 +486,9 @@ function FieldDiffRow({
   onToggleRevert: () => void;
 }) {
   const statusConfig = {
-    added: { color: "text-emerald-600", label: "新增" },
-    removed: { color: "text-red-600", label: "删除" },
-    modified: { color: "text-amber-600", label: "修改" },
+    added: { color: "text-success", label: "新增" },
+    removed: { color: "text-danger", label: "删除" },
+    modified: { color: "text-warning", label: "修改" },
   };
   const cfg = statusConfig[fd.status];
 
@@ -509,9 +509,9 @@ function FieldDiffRow({
         </div>
         <button
           onClick={onToggleRevert}
-          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-medium shrink-0 cursor-pointer transition-all active:scale-[0.97] ${
+          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-action text-[10px] font-medium shrink-0 cursor-pointer transition-all active:scale-[0.97] ${
             reverted
-              ? "text-emerald-600 bg-emerald-500/10"
+              ? "text-success bg-success/10"
               : "text-[var(--color-text-secondary)] hover:text-brand hover:bg-brand/5"
           }`}
         >
@@ -530,11 +530,11 @@ function FieldDiffRow({
       </div>
       <div className="grid grid-cols-2 gap-2 px-4 pb-2">
         <div className="min-w-0">
-          <div className="text-[10px] font-medium text-red-600/70 mb-1">修改前</div>
+          <div className="text-[10px] font-medium text-danger/70 mb-1">修改前</div>
           <DiffValue value={fd.before} muted />
         </div>
         <div className="min-w-0">
-          <div className="text-[10px] font-medium text-emerald-600/70 mb-1">修改后</div>
+          <div className="text-[10px] font-medium text-success/70 mb-1">修改后</div>
           <DiffValue value={fd.after} />
         </div>
       </div>
@@ -561,23 +561,23 @@ function DiffCard({
   const statusConfig = {
     added: {
       icon: Plus,
-      color: "text-emerald-600",
-      bg: "bg-emerald-500/10",
-      border: "border-emerald-500/20",
+      color: "text-success",
+      bg: "bg-success/10",
+      border: "border-success/20",
       label: "新增模块",
     },
     removed: {
       icon: Minus,
-      color: "text-red-600",
-      bg: "bg-red-500/10",
-      border: "border-red-500/20",
+      color: "text-danger",
+      bg: "bg-danger/10",
+      border: "border-danger/20",
       label: "删除模块",
     },
     modified: {
       icon: PencilSimple,
-      color: "text-amber-600",
-      bg: "bg-amber-500/10",
-      border: "border-amber-500/20",
+      color: "text-warning",
+      bg: "bg-warning/10",
+      border: "border-warning/20",
       label: "修改",
     },
   };
@@ -600,7 +600,7 @@ function DiffCard({
     : "已整模块还原";
 
   return (
-    <div className={`rounded-xl border ${config.border} overflow-hidden`}>
+    <div className={`rounded-list border ${config.border} overflow-hidden`}>
       {/* 模块标题栏 */}
       <div className={`flex items-center gap-2 px-4 py-2.5 ${config.bg}`}>
         <StatusIcon size={14} weight="bold" className={config.color} aria-hidden="true" />
@@ -617,7 +617,7 @@ function DiffCard({
         {/* 可信度联动：AI 推断/补充内容（source≠fact）才显示徽标 */}
         {entry.source !== "fact" && !moduleReverted && (
           <span
-            className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-600 font-medium"
+            className="text-[10px] px-1.5 py-0.5 rounded-full bg-warning/10 border border-warning/30 text-warning font-medium"
             title="该模块含 AI 推断/补充内容，请核对是否属实后再使用"
           >
             AI 推断内容
@@ -643,13 +643,13 @@ function DiffCard({
           ) : (
             <div className="grid grid-cols-2 divide-x divide-[var(--color-border)]">
               <div className="p-3">
-                <div className="text-[10px] font-medium text-red-600/70 mb-1">修改前</div>
+                <div className="text-[10px] font-medium text-danger/70 mb-1">修改前</div>
                 <pre className="text-xs text-[var(--color-text-secondary)] whitespace-pre-wrap break-words leading-relaxed max-h-64 overflow-y-auto font-mono">
                   {entry.beforeContent}
                 </pre>
               </div>
-              <div className="p-3 bg-emerald-500/10">
-                <div className="text-[10px] font-medium text-emerald-600/70 mb-1">修改后</div>
+              <div className="p-3 bg-success/10">
+                <div className="text-[10px] font-medium text-success/70 mb-1">修改后</div>
                 <pre className="text-xs text-[var(--color-text-secondary)] whitespace-pre-wrap break-words leading-relaxed max-h-64 overflow-y-auto font-mono">
                   {entry.afterContent}
                 </pre>
@@ -672,7 +672,7 @@ function DiffCard({
                   {entry.beforeContent}
                 </pre>
               </div>
-              <div className="p-3 bg-emerald-500/10">
+              <div className="p-3 bg-success/10">
                 <pre className="text-xs text-[var(--color-text-secondary)] whitespace-pre-wrap break-words leading-relaxed max-h-64 overflow-y-auto font-mono">
                   {entry.afterContent}
                 </pre>
@@ -681,13 +681,13 @@ function DiffCard({
           )}
         </>
       ) : entry.status === "added" ? (
-        <div className="p-3 bg-emerald-500/10">
+        <div className="p-3 bg-success/10">
           <pre className="text-xs text-[var(--color-text-secondary)] whitespace-pre-wrap break-words leading-relaxed max-h-64 overflow-y-auto font-mono">
             {entry.afterContent}
           </pre>
         </div>
       ) : (
-        <div className="p-3 bg-red-500/10">
+        <div className="p-3 bg-danger/10">
           <pre className="text-xs text-[var(--color-text-secondary)] whitespace-pre-wrap break-words leading-relaxed max-h-64 overflow-y-auto font-mono line-through opacity-60">
             {entry.beforeContent}
           </pre>
@@ -697,7 +697,7 @@ function DiffCard({
       {/* 操作区 */}
       <div className="flex items-center justify-between gap-2 px-4 py-2 border-t border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
         {moduleReverted ? (
-          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-600">
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-success">
             <CheckCircle size={13} weight="fill" aria-hidden="true" />
             {revertedLabel}
           </span>
@@ -712,7 +712,7 @@ function DiffCard({
         )}
         <button
           onClick={onToggleModuleRevert}
-          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-action text-xs font-medium
             text-[var(--color-text-secondary)] hover:text-brand hover:bg-brand/5
             active:scale-[0.97] motion-reduce:active:scale-100 transition-all cursor-pointer"
         >
@@ -783,7 +783,7 @@ function SaveFooter({
         <button
           onClick={onClose}
           className="px-4 py-1.5 text-sm font-medium rounded-full
-            bg-[#E5E5EA] text-[var(--color-text)] hover:bg-[#D9D9DE]
+            bg-[#E5E5EA] text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]
             active:scale-[0.98] motion-reduce:active:scale-100
             transition-all duration-300 cursor-pointer"
         >
@@ -943,7 +943,7 @@ export default function ResumeEditDiffDialog({
       >
         {/* 头部 */}
         <div className="flex items-center gap-3 px-6 py-4 border-b border-[var(--color-border)] shrink-0">
-          <div className="shrink-0 p-2 rounded-lg bg-brand/10 text-brand">
+          <div className="shrink-0 p-2 rounded-action bg-brand/10 text-brand">
             <GitDiff size={18} weight="fill" aria-hidden="true" />
           </div>
           <div className="flex-1 min-w-0">
@@ -955,11 +955,11 @@ export default function ResumeEditDiffDialog({
               {!loading && stats.total > 0 && (
                 <span className="ml-2">
                   · 共 {stats.total} 处模块变更
-                  {stats.modified > 0 && <span className="text-amber-600">（{stats.modified} 修改</span>}
-                  {stats.added > 0 && <span className="text-emerald-600"> {stats.added} 新增</span>}
-                  {stats.removed > 0 && <span className="text-red-600"> {stats.removed} 删除</span>}
+                  {stats.modified > 0 && <span className="text-warning">（{stats.modified} 修改</span>}
+                  {stats.added > 0 && <span className="text-success"> {stats.added} 新增</span>}
+                  {stats.removed > 0 && <span className="text-danger"> {stats.removed} 删除</span>}
                   {stats.fields > 0 && <span className="text-[var(--color-text-muted)]"> · {stats.fields} 处字段</span>}
-                  {stats.inferred > 0 && <span className="text-amber-600"> · {stats.inferred} 含 AI 推断</span>}
+                  {stats.inferred > 0 && <span className="text-warning"> · {stats.inferred} 含 AI 推断</span>}
                   {stats.modified > 0 && <span>）</span>}
                 </span>
               )}
@@ -968,8 +968,8 @@ export default function ResumeEditDiffDialog({
           <button
             onClick={onClose}
             aria-label="关闭"
-            className="p-1.5 rounded-lg text-[var(--color-text-secondary)]
-              hover:text-[var(--color-text)] hover:bg-black/5
+            className="p-1.5 rounded-action text-[var(--color-text-secondary)]
+              hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]
               active:scale-[0.95] motion-reduce:active:scale-100
               transition-all cursor-pointer shrink-0"
           >
@@ -986,7 +986,7 @@ export default function ResumeEditDiffDialog({
             </div>
           ) : diffs.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-center">
-              <div className="w-12 h-12 rounded-xl bg-[var(--color-bg-tertiary)] flex items-center justify-center text-[var(--color-text-muted)] mb-3">
+              <div className="w-12 h-12 rounded-list bg-[var(--color-bg-tertiary)] flex items-center justify-center text-[var(--color-text-muted)] mb-3">
                 <ArrowRight size={20} weight="duotone" aria-hidden="true" />
               </div>
               <p className="text-sm text-[var(--color-text-muted)]">未检测到模块内容变化</p>

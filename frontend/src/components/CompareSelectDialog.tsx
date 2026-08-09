@@ -87,13 +87,13 @@ export function CompareSelectDialog({
       onClick={onCancel}
     >
       <div
-        className="w-full max-w-md mx-4 p-6 rounded-2xl glass-card shadow-2xl animate-fade-in-up motion-reduce:animate-none"
+        className="w-full max-w-md mx-4 p-6 rounded-input glass-card shadow-2xl animate-fade-in-up motion-reduce:animate-none"
         onClick={(e) => e.stopPropagation()}
       >
         {/* ── 标题栏 ── */}
         <div className="flex items-center justify-between mb-1">
           <div className="flex items-center gap-2">
-            <div className="p-1.5 rounded-lg bg-brand/15 text-brand">
+            <div className="p-1.5 rounded-action bg-brand/15 text-brand">
               <Checks size={18} weight="bold" aria-hidden="true" />
             </div>
             <h3 className="text-base font-semibold text-[var(--color-text)]">
@@ -103,7 +103,7 @@ export function CompareSelectDialog({
           <button
             onClick={onCancel}
             aria-label="关闭"
-            className="p-1.5 rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)] active:scale-[0.95] motion-reduce:active:scale-100 transition-all cursor-pointer"
+            className="p-1.5 rounded-action text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)] active:scale-[0.95] motion-reduce:active:scale-100 transition-all cursor-pointer"
           >
             <X size={16} weight="bold" aria-hidden="true" />
           </button>
@@ -126,10 +126,10 @@ export function CompareSelectDialog({
           </div>
         ) : error ? (
           <div className="flex flex-col items-center justify-center py-12 gap-2">
-            <div className="p-2 rounded-lg bg-red-500/15 text-red-400">
+            <div className="p-2 rounded-action bg-danger/15 text-danger">
               <Warning size={20} weight="bold" aria-hidden="true" />
             </div>
-            <span className="text-sm text-red-400">{error}</span>
+            <span className="text-sm text-danger">{error}</span>
           </div>
         ) : resumes.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 gap-1">
@@ -149,7 +149,7 @@ export function CompareSelectDialog({
                 return (
                   <label
                     key={r.id}
-                    className={`flex items-center gap-3 p-3 rounded-xl border transition-all
+                    className={`flex items-center gap-3 p-3 rounded-list border transition-all
                       ${checked
                         ? "bg-brand/10 border-brand/40"
                         : "bg-[var(--color-bg-secondary)] border-[var(--color-border)] hover:border-brand/30"}
@@ -200,13 +200,13 @@ export function CompareSelectDialog({
                 </span>
                 /{MAX_SELECT}
                 {isFull && (
-                  <span className="ml-1.5 text-xs text-amber-400">已达上限</span>
+                  <span className="ml-1.5 text-xs text-warning">已达上限</span>
                 )}
               </span>
               <div className="flex items-center gap-2">
                 <button
                   onClick={onCancel}
-                  className="px-3.5 py-1.5 text-sm font-medium rounded-lg bg-[var(--color-bg-secondary)] hover:bg-[#E5E5EA] border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:text-[var(--color-text)] active:scale-[0.98] motion-reduce:active:scale-100 transition-all cursor-pointer"
+                  className="px-3.5 py-1.5 text-sm font-medium rounded-action bg-[var(--color-bg-secondary)] hover:bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:text-[var(--color-text)] active:scale-[0.98] motion-reduce:active:scale-100 transition-all cursor-pointer"
                 >
                   取消
                 </button>

@@ -80,7 +80,7 @@ export default function ChangeUsernameDialog({ open, onClose, currentUsername, o
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
             transition={{ duration: 0.2 }}
-            className="w-full max-w-md bg-[var(--color-bg)] border border-[var(--color-border)] rounded-2xl shadow-2xl overflow-hidden"
+            className="w-full max-w-md bg-[var(--color-bg)] border border-[var(--color-border)] rounded-input shadow-2xl overflow-hidden animate-fade-in-up motion-reduce:animate-none"
             data-testid="change-username-dialog"
             onClick={(e) => e.stopPropagation()}
           >
@@ -100,12 +100,12 @@ export default function ChangeUsernameDialog({ open, onClose, currentUsername, o
               </div>
 
               {error && (
-                <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+                <div className="p-3 rounded-action bg-danger/10 border border-danger/20 text-danger text-sm">
                   {error}
                 </div>
               )}
               {success && (
-                <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm">
+                <div className="p-3 rounded-action bg-success/10 border border-success/20 text-success text-sm">
                   {success}
                 </div>
               )}
@@ -123,7 +123,7 @@ export default function ChangeUsernameDialog({ open, onClose, currentUsername, o
                   onFocus={() => setFocusedInput("newUsername")}
                   onBlur={() => setFocusedInput(null)}
                   placeholder="新用户名"
-                  className="w-full h-10 pl-10 pr-3 bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:border-[var(--color-primary)] transition-colors"
+                  className="w-full h-10 pl-10 pr-3 bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-action text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:border-[var(--color-primary)] transition-colors"
                 />
               </div>
 
@@ -132,7 +132,7 @@ export default function ChangeUsernameDialog({ open, onClose, currentUsername, o
                 whileTap={{ scale: 0.98 }}
                 type="submit"
                 disabled={loading}
-                className="w-full h-10 bg-[var(--color-primary)] text-white font-medium rounded-lg transition-colors hover:opacity-90 disabled:opacity-50"
+                className="w-full h-10 bg-[var(--color-primary)] text-white font-medium rounded-action transition-colors hover:opacity-90 disabled:opacity-50"
               >
                 {loading ? "提交中..." : "确认修改"}
               </motion.button>

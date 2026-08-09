@@ -626,8 +626,8 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
   if (error && !resume) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center bg-[var(--color-bg)] px-6">
-        <div className="w-16 h-16 rounded-2xl bg-red-500/10 border border-red-500/15
-          flex items-center justify-center text-red-400 mb-5">
+        <div className="w-16 h-16 rounded-input bg-danger/10 border border-danger/15
+          flex items-center justify-center text-danger mb-5">
           <Warning size={28} weight="duotone" aria-hidden="true" />
         </div>
         <p className="text-base text-[var(--color-text-secondary)] mb-1.5">
@@ -638,7 +638,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
         </p>
         <button
           onClick={loadResume}
-          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm
+          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-list text-sm
             font-medium bg-brand/15 text-brand border border-brand/30
             hover:bg-brand/25 active:scale-[0.98] motion-reduce:active:scale-100
             transition-all cursor-pointer"
@@ -694,7 +694,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
             </button>
 
             {showLangMenu && (
-              <div className="absolute left-0 top-full mt-1.5 z-30 min-w-[230px] rounded-xl
+              <div className="absolute left-0 top-full mt-1.5 z-30 min-w-[230px] rounded-list
                 bg-white shadow-lg border border-[var(--color-border)] overflow-hidden animate-fade-in-up motion-reduce:animate-none">
                 <div className="px-3 py-2 text-[10px] font-medium text-[var(--color-text-muted)] uppercase tracking-wider">
                   语言版本
@@ -714,7 +714,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
                           setShowLangMenu(false);
                         }}
                         className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-left
-                          text-xs hover:bg-[#F2F2F7] transition-colors cursor-pointer
+                          text-xs hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer
                           ${v.id === resumeId ? "text-brand font-medium" : "text-[var(--color-text-secondary)]"}`}
                       >
                         <span className="truncate">{v.filename}</span>
@@ -739,7 +739,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
                       onClick={() => handleCreateLangVersion(lang)}
                       disabled={langBusy}
                       className="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs
-                        text-[var(--color-text-secondary)] hover:text-brand hover:bg-[#F2F2F7]
+                        text-[var(--color-text-secondary)] hover:text-brand hover:bg-[var(--color-bg-secondary)]
                         disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
                     >
                       <Plus size={12} weight="bold" aria-hidden="true" />
@@ -763,14 +763,14 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
             </span>
           )}
           {saveStatus === "error" && (
-            <span className="flex items-center gap-1 text-[11px] text-red-400">
+            <span className="flex items-center gap-1 text-[11px] text-danger">
               <Warning size={11} weight="bold" aria-hidden="true" />
               保存失败
             </span>
           )}
           {isDirty && saveStatus !== "saving" && saveStatus !== "error" && (
             <span
-              className="flex items-center gap-1 text-[11px] text-amber-500"
+              className="flex items-center gap-1 text-[11px] text-warning"
               title="有未保存的修改，点击「草稿」或「完成」保存"
             >
               <Warning size={11} weight="bold" aria-hidden="true" />
@@ -779,7 +779,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
           )}
           {!isDirty && saveStatus === "saved" && (
             <span
-              className="flex items-center gap-1 text-[11px] text-emerald-400"
+              className="flex items-center gap-1 text-[11px] text-success"
               title={lastSaveMode === "complete" ? "已保存并完成，可开始问答/检索" : "草稿已保存"}
             >
               <Check size={11} weight="bold" aria-hidden="true" />
@@ -803,8 +803,8 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
           {resume.status !== "draft" && indexInfo && indexInfo.is_indexed && indexInfo.is_stale && (
             <span
               className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full
-                text-[10px] font-medium bg-amber-500/15 text-amber-600
-                border border-amber-500/30 shrink-0"
+                text-[10px] font-medium bg-warning/15 text-warning
+                border border-warning/30 shrink-0"
               title="内容已更新，检索将自动重建"
             >
               索引待重建
@@ -813,8 +813,8 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
           {resume.status !== "draft" && indexInfo && indexInfo.is_indexed && !indexInfo.is_stale && (
             <span
               className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full
-                text-[10px] font-medium bg-emerald-500/15 text-emerald-600
-                border border-emerald-500/30 shrink-0"
+                text-[10px] font-medium bg-success/15 text-success
+                border border-success/30 shrink-0"
               title="检索索引已就绪"
             >
               索引已就绪
@@ -867,7 +867,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
             disabled={saving}
             className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full
               text-xs font-medium text-[var(--color-text-secondary)]
-              bg-[var(--color-bg-secondary)] hover:bg-[#E5E5EA]
+              bg-[var(--color-bg-secondary)] hover:bg-[var(--color-bg-secondary)]
               disabled:opacity-40 disabled:cursor-not-allowed
               active:scale-[0.98] motion-reduce:active:scale-100
               transition-all cursor-pointer"
@@ -883,7 +883,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
             disabled={saving}
             className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full
               text-xs font-semibold text-white bg-brand
-              hover:bg-[#0077ed] hover:scale-[1.02]
+              hover:bg-brand-hover hover:scale-[1.02]
               disabled:opacity-40 disabled:cursor-not-allowed
               active:scale-[0.98] motion-reduce:active:scale-100
               transition-all duration-300 cursor-pointer"
@@ -962,7 +962,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
             {pendingCount !== null && pendingCount > 0 && (
               <span
                 className="absolute -top-1 -right-1 min-w-4 h-4 px-0.5 rounded-full
-                  bg-red-500 text-white text-[9px] font-bold
+                  bg-danger text-white text-[9px] font-bold
                   flex items-center justify-center"
               >
                 {pendingCount > 99 ? "99+" : pendingCount}
@@ -974,12 +974,12 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
 
       {/* 错误提示条 */}
       {error && resume && (
-        <div className="shrink-0 px-4 py-1.5 bg-red-500/10 border-b border-red-500/20
-          text-xs text-red-400 flex items-center justify-between">
+        <div className="shrink-0 px-4 py-1.5 bg-danger/10 border-b border-danger/20
+          text-xs text-danger flex items-center justify-between">
           <span>{error}</span>
           <button
             onClick={() => setError("")}
-            className="text-red-400 hover:text-red-300 cursor-pointer"
+            className="text-danger hover:text-danger cursor-pointer"
             aria-label="关闭错误提示"
           >
             ×
@@ -989,8 +989,8 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
 
       {/* 上传简历物化失败提示：解析结果未能自动转为模块，引导粘贴导入 */}
       {materialized === false && (
-        <div className="shrink-0 px-4 py-2 bg-amber-500/10 border-b border-amber-500/20
-          text-xs text-amber-600 flex items-center justify-between gap-3">
+        <div className="shrink-0 px-4 py-2 bg-warning/10 border-b border-warning/20
+          text-xs text-warning flex items-center justify-between gap-3">
           <span>简历解析结果未能自动转为可编辑模块。</span>
           <button
             onClick={() => setShowPasteDialog(true)}
@@ -1067,7 +1067,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
         {/* P0-A: ATS 审计弹窗 */}
         {showAtsAudit && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            <div className="bg-[var(--color-bg)] rounded-xl shadow-2xl w-full max-w-lg max-h-[80vh] overflow-y-auto p-6">
+            <div className="bg-[var(--color-bg)] rounded-list shadow-2xl w-full max-w-lg max-h-[80vh] overflow-y-auto p-6">
               {atsAuditLoading ? (
                 <div className="text-center py-12">
                   <div className="animate-spin w-8 h-8 border-2 border-[var(--color-accent)] border-t-transparent rounded-full mx-auto mb-4" />
@@ -1082,12 +1082,12 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
                 />
               ) : (
                 <div className="text-center py-12">
-                  <div className="text-sm text-red-400">
+                  <div className="text-sm text-danger">
                     ATS 审计失败，请稍后重试
                   </div>
                   <button
                     onClick={() => setShowAtsAudit(false)}
-                    className="mt-4 px-4 py-2 rounded-lg bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] text-sm hover:bg-[var(--color-bg-tertiary)]"
+                    className="mt-4 px-4 py-2 rounded-action bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] text-sm hover:bg-[var(--color-bg-tertiary)]"
                   >
                     关闭
                   </button>

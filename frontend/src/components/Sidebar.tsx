@@ -253,7 +253,7 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
                 key={item.path}
                 onClick={() => navigate(item.path)}
                 title={collapsed ? item.label : undefined}
-                className={`w-full flex items-center gap-2.5 rounded-lg text-xs font-medium transition-all cursor-pointer
+                className={`w-full flex items-center gap-2.5 rounded-action text-xs font-medium transition-all cursor-pointer
                   ${collapsed ? "justify-center px-1 py-2" : "px-3 py-2"}
                   ${active
                     ? "bg-brand/10 text-brand border border-brand/30"
@@ -326,7 +326,7 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
                           </div>
                         ) : (
                           <div
-                            className={`flex items-center rounded-lg transition-all
+                            className={`flex items-center rounded-action transition-all
                               ${active
                                 ? "bg-brand/10 border border-brand/20"
                                 : "border border-transparent hover:bg-[var(--color-bg-secondary)]"
@@ -397,7 +397,7 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
           <div className="relative">
             <button
               onClick={() => setUserMenuOpen(!userMenuOpen)}
-              className={`w-full flex items-center gap-2 rounded-lg p-1.5 transition-all cursor-pointer hover:bg-[var(--color-bg-secondary)]
+              className={`w-full flex items-center gap-2 rounded-action p-1.5 transition-all cursor-pointer hover:bg-[var(--color-bg-secondary)]
                 ${collapsed ? "justify-center" : ""}`}
               aria-label="用户菜单"
               aria-expanded={userMenuOpen}
@@ -431,7 +431,7 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 5, scale: 0.95 }}
                   transition={{ duration: 0.15 }}
-                  className={`absolute z-50 w-48 rounded-2xl border border-[var(--color-border)] bg-white/90 backdrop-blur-xl shadow-2xl py-1
+                  className={`absolute z-50 w-48 rounded-input border border-[var(--color-border)] bg-white/90 backdrop-blur-xl shadow-2xl py-1
                     ${collapsed ? "left-full ml-2 bottom-0" : "bottom-full mb-2 left-0"}`}
                 >
                   {/* Token 用量概览 */}
@@ -447,9 +447,9 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
                         <div
                           className={`h-full rounded-full transition-all ${
                             quota.remaining < quota.limit * 0.1
-                              ? "bg-red-500"
+                              ? "bg-danger"
                               : quota.remaining < quota.limit * 0.3
-                                ? "bg-yellow-500"
+                                ? "bg-warning"
                                 : "bg-brand"
                           }`}
                           style={{

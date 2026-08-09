@@ -24,7 +24,7 @@ function escapeRegExp(s: string): string {
 export default function HighlightedText({
   text,
   terms,
-  className = "bg-amber-200/70 text-amber-900 rounded-[2px] px-0.5 font-medium",
+  className = "bg-warning/70 text-warning rounded-[2px] px-0.5 font-medium",
   caseInsensitive = true,
 }: HighlightedTextProps) {
   const parts = useMemo(() => {

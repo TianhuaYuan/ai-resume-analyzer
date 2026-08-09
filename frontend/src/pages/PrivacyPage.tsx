@@ -83,7 +83,7 @@ export default function PrivacyPage() {
             </ul>
 
             {/* 导出数据按钮组（E4：export-data 三种格式，需登录后使用） */}
-            <div className="mt-5 rounded-xl border border-slate-200 bg-white/70 p-5">
+            <div className="mt-5 rounded-list border border-slate-200 bg-white/70 p-5">
               <p className="text-sm font-semibold text-slate-800">导出你的全部数据</p>
               <p className="mt-1 text-xs text-slate-500">
                 以三种格式下载当前账号下的全部简历数据（需登录后使用）
@@ -94,7 +94,7 @@ export default function PrivacyPage() {
                     key={b.fmt}
                     onClick={() => void handleExport(b.fmt)}
                     disabled={exporting !== null}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-action
                       text-sm font-medium text-blue-600 bg-blue-50 border border-blue-200
                       hover:bg-blue-100 active:scale-[0.98] motion-reduce:active:scale-100
                       transition-all cursor-pointer
@@ -113,7 +113,7 @@ export default function PrivacyPage() {
                 ))}
               </div>
               {exportError && (
-                <p className="mt-3 text-xs text-red-500" role="alert">
+                <p className="mt-3 text-xs text-danger" role="alert">
                   导出失败：{exportError}
                 </p>
               )}

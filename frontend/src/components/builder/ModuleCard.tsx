@@ -323,7 +323,7 @@ function ModuleCardImpl({
 
   return (
     <div
-      className={`group rounded-xl border transition-all duration-200
+      className={`group rounded-list border transition-all duration-200
         ${expanded
           ? "bg-brand/5 border-brand/30 shadow-lg shadow-brand/5"
           : "bg-[var(--color-bg-secondary)] border-[var(--color-border)] hover:border-[var(--color-border)] hover:bg-[var(--color-bg-secondary)]"
@@ -369,7 +369,7 @@ function ModuleCardImpl({
 
         {/* 图标 tile（参考 Magic FormSection：展开 brand 底色 / 折叠次级灰） */}
         <span
-          className={`shrink-0 flex h-7 w-7 items-center justify-center rounded-lg transition-colors duration-150
+          className={`shrink-0 flex h-7 w-7 items-center justify-center rounded-action transition-colors duration-150
             ${expanded
               ? "bg-brand/10 text-brand"
               : "bg-[var(--color-bg-secondary)] text-[var(--color-text-muted)] group-hover:text-[var(--color-text-secondary)]"}`}
@@ -435,7 +435,7 @@ function ModuleCardImpl({
         {/* 内容状态指示器 */}
         {!isEmpty && (
           <span
-            className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"
+            className="w-1.5 h-1.5 rounded-full bg-success shrink-0"
             aria-label="已填写"
           />
         )}
@@ -447,7 +447,7 @@ function ModuleCardImpl({
             onRemove(moduleType);
           }}
           className="shrink-0 p-1 rounded text-[var(--color-text-muted)]
-            hover:text-red-400 hover:bg-red-500/10
+            hover:text-danger hover:bg-danger/10
             opacity-0 group-hover:opacity-100
             active:scale-90 motion-reduce:active:scale-100
             transition-all cursor-pointer"

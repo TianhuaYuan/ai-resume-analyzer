@@ -367,7 +367,7 @@ export function RichTextEditor({
       {ai && rewrite && (
         <div
           style={{ position: "fixed", left: floatPos?.x ?? 0, top: (floatPos?.y ?? 0) - 4, zIndex: 50 }}
-          className="w-72 rounded-xl border border-[var(--color-border)] bg-white p-3 shadow-xl"
+          className="w-72 rounded-list border border-[var(--color-border)] bg-white p-3 shadow-xl"
         >
           {rewrite.loading ? (
             <div className="flex items-center gap-2 text-sm text-[var(--color-text-secondary)]">

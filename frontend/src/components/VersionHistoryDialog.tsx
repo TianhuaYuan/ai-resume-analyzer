@@ -129,7 +129,7 @@ export default function VersionHistoryDialog({
     >
       <div
         className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2
-          bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl
+          bg-[var(--color-surface)] border border-[var(--color-border)] rounded-input
           w-[calc(100vw-2rem)] sm:max-w-lg md:max-w-xl
           shadow-2xl
           animate-fade-in-up motion-reduce:animate-none
@@ -162,7 +162,7 @@ export default function VersionHistoryDialog({
           <button
             onClick={onClose}
             aria-label="关闭"
-            className="ml-3 p-1.5 rounded-lg text-[var(--color-text-secondary)]
+            className="ml-3 p-1.5 rounded-action text-[var(--color-text-secondary)]
               hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]
               active:scale-[0.95] motion-reduce:active:scale-100
               transition-all cursor-pointer shrink-0"
@@ -178,24 +178,24 @@ export default function VersionHistoryDialog({
         >
           {status === "loading" && (
             <div className="space-y-3" aria-busy="true" aria-live="polite">
-              <div className="h-14 rounded-lg animate-skeleton" />
-              <div className="h-14 rounded-lg animate-skeleton" />
+              <div className="h-14 rounded-action animate-skeleton" />
+              <div className="h-14 rounded-action animate-skeleton" />
             </div>
           )}
 
           {status === "error" && (
             <div
-              className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400"
+              className="p-4 rounded-list bg-danger/10 border border-danger/20 text-danger"
               role="alert"
             >
               <p className="text-sm mb-3">{error}</p>
               <button
                 onClick={handleRetry}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5
-                  text-xs font-medium rounded-lg
-                  bg-red-500/15 hover:bg-red-500/25
-                  border border-red-500/30
-                  text-red-300
+                  text-xs font-medium rounded-action
+                  bg-danger/15 hover:bg-danger/25
+                  border border-danger/30
+                  text-danger
                   active:scale-[0.98] motion-reduce:active:scale-100
                   transition-all cursor-pointer"
               >
@@ -228,7 +228,7 @@ export default function VersionHistoryDialog({
                 return (
                   <div
                     key={v.version}
-                    className="bg-white/[0.03] border border-[var(--color-border)] rounded-lg overflow-hidden"
+                    className="bg-white/[0.03] border border-[var(--color-border)] rounded-action overflow-hidden"
                   >
                     <button
                       onClick={() => handleToggle(v.version)}
@@ -258,8 +258,8 @@ export default function VersionHistoryDialog({
                           {v.is_latest && (
                             <span
                               className="inline-flex items-center px-1.5 py-0.5 rounded
-                                text-[10px] font-medium bg-emerald-500/15 text-emerald-300
-                                border border-emerald-500/30"
+                                text-[10px] font-medium bg-success/15 text-success
+                                border border-success/30"
                             >
                               最新
                             </span>

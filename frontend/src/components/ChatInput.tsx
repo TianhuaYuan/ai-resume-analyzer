@@ -217,7 +217,7 @@ export default function ChatInput({
 
             {/* P4-3: 斜杠命令弹出层（输入 / 前缀时出现） */}
             {slashActive && slashMatches.length > 0 && (
-              <div className="absolute z-30 mt-1 w-64 max-h-56 overflow-y-auto rounded-xl
+              <div className="absolute z-30 mt-1 w-64 max-h-56 overflow-y-auto rounded-list
                 bg-[var(--color-surface)] border border-[var(--color-border)] shadow-xl
                 animate-fade-in-up motion-reduce:animate-none">
                 <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider
@@ -323,7 +323,7 @@ export default function ChatInput({
                   type="button"
                   onClick={handleCancel}
                   className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center
-                    text-white bg-red-500/80 hover:bg-red-500
+                    text-white bg-danger/80 hover:bg-danger
                     active:scale-90 motion-reduce:active:scale-100
                     transition-all cursor-pointer"
                   aria-label="取消"

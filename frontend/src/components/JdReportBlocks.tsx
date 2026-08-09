@@ -22,9 +22,9 @@ import {
 import type { JdReport } from "../api/resumes";
 
 const CRED_TIER_META: Record<string, { label: string; cls: string; icon: string }> = {
-  high_confidence: { label: "高可信", cls: "text-emerald-600 bg-emerald-500/10 border-emerald-500/30", icon: "🟢" },
-  proceed_with_caution: { label: "谨慎投递", cls: "text-amber-600 bg-amber-500/10 border-amber-500/30", icon: "🟡" },
-  suspicious: { label: "疑似风险", cls: "text-red-600 bg-red-500/10 border-red-500/30", icon: "🔴" },
+  high_confidence: { label: "高可信", cls: "text-success bg-success/10 border-success/30", icon: "🟢" },
+  proceed_with_caution: { label: "谨慎投递", cls: "text-warning bg-warning/10 border-warning/30", icon: "🟡" },
+  suspicious: { label: "疑似风险", cls: "text-danger bg-danger/10 border-danger/30", icon: "🔴" },
 };
 
 function Block({
@@ -40,10 +40,10 @@ function Block({
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="rounded-xl border border-[var(--color-border)] overflow-hidden">
+    <div className="rounded-list border border-[var(--color-border)] overflow-hidden">
       <button
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center gap-2 px-4 py-2.5 bg-[var(--color-bg-secondary)] hover:bg-[#E9E9EE] transition-colors cursor-pointer"
+        className="w-full flex items-center gap-2 px-4 py-2.5 bg-[var(--color-bg-secondary)] hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer"
       >
         <Icon size={15} weight="bold" className="text-brand shrink-0" aria-hidden="true" />
         <span className="text-sm font-medium text-[var(--color-text)] flex-1 text-left">{title}</span>
@@ -70,9 +70,9 @@ function Field({ k, v }: { k: string; v?: string | number }) {
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, { label: string; cls: string }> = {
-    matched: { label: "匹配", cls: "bg-emerald-500/10 text-emerald-600" },
-    partial: { label: "部分", cls: "bg-amber-500/10 text-amber-600" },
-    missing: { label: "缺失", cls: "bg-red-500/10 text-red-600" },
+    matched: { label: "匹配", cls: "bg-success/10 text-success" },
+    partial: { label: "部分", cls: "bg-warning/10 text-warning" },
+    missing: { label: "缺失", cls: "bg-danger/10 text-danger" },
   };
   const cfg = map[status] ?? { label: status, cls: "bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)]" };
   return (
@@ -135,7 +135,7 @@ export default function JdReportBlocks({ report }: { report: JdReport }) {
             <div className="text-[11px] font-medium text-[var(--color-text-muted)]">差距</div>
             {cv.gaps.map((g, i) => (
               <div key={i} className="text-xs text-[var(--color-text-secondary)] leading-relaxed">
-                <span className="text-amber-600">{g.type}</span>
+                <span className="text-warning">{g.type}</span>
                 {g.adjacent ? ` · 邻近经验：${g.adjacent}` : ""}
                 {g.mitigation ? ` · 缓解：${g.mitigation}` : ""}
               </div>
@@ -186,7 +186,7 @@ export default function JdReportBlocks({ report }: { report: JdReport }) {
               <div key={i} className="text-xs space-y-0.5">
                 <div className="font-medium text-[var(--color-text)]">{c.section}</div>
                 <div className="text-[var(--color-text-muted)]">现状：{c.current || "—"}</div>
-                <div className="text-emerald-600/80">建议：{c.proposed || "—"}</div>
+                <div className="text-success/80">建议：{c.proposed || "—"}</div>
                 {c.why && <div className="text-[var(--color-text-muted)]">为什么：{c.why}</div>}
               </div>
             ))}
@@ -209,7 +209,7 @@ export default function JdReportBlocks({ report }: { report: JdReport }) {
         {stories.length ? (
           <div className="space-y-2">
             {stories.map((st, i) => (
-              <div key={i} className="rounded-lg bg-[var(--color-bg-secondary)] p-2.5 text-xs space-y-1">
+              <div key={i} className="rounded-action bg-[var(--color-bg-secondary)] p-2.5 text-xs space-y-1">
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-medium text-[var(--color-text)]">{st.story_title || `故事 ${i + 1}`}</span>
                   <span className="text-[var(--color-text-muted)] shrink-0 text-[10px]">{st.jd_requirement}</span>
@@ -218,7 +218,7 @@ export default function JdReportBlocks({ report }: { report: JdReport }) {
                 {st.t && <div><span className="text-[var(--color-text-muted)]">T </span>{st.t}</div>}
                 {st.a && <div><span className="text-[var(--color-text-muted)]">A </span>{st.a}</div>}
                 {st.r && <div><span className="text-[var(--color-text-muted)]">R </span>{st.r}</div>}
-                {st.reflection && <div className="text-emerald-600/80">反思：{st.reflection}</div>}
+                {st.reflection && <div className="text-success/80">反思：{st.reflection}</div>}
               </div>
             ))}
           </div>
@@ -247,9 +247,9 @@ export default function JdReportBlocks({ report }: { report: JdReport }) {
                   <span
                     className={`shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-medium ${
                       s.risk === "high"
-                        ? "bg-red-500/10 text-red-600"
+                        ? "bg-danger/10 text-danger"
                         : s.risk === "medium"
-                          ? "bg-amber-500/10 text-amber-600"
+                          ? "bg-warning/10 text-warning"
                           : "bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)]"
                     }`}
                   >

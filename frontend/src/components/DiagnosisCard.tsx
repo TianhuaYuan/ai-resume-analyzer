@@ -164,11 +164,11 @@ function SourceBlock({ sources }: { sources: DiagnosisSource[] }) {
   if (items.length === 0) return null;
 
   return (
-    <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/40 overflow-hidden">
+    <div className="rounded-list border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/40 overflow-hidden">
       <button
         onClick={() => setOpen((v) => !v)}
         className="w-full flex items-center justify-between gap-2 px-3.5 py-2.5 text-xs font-medium
-          text-[var(--color-text-secondary)] hover:bg-black/[0.03] transition-colors cursor-pointer"
+          text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer"
       >
         <span className="inline-flex items-center gap-1.5 min-w-0">
           <span className="text-brand shrink-0">📎</span>
@@ -191,7 +191,7 @@ function SourceBlock({ sources }: { sources: DiagnosisSource[] }) {
               <button
                 key={i}
                 onClick={() => setExpandedIdx(expanded ? null : i)}
-                className="w-full text-left rounded-lg border border-[var(--color-border)]
+                className="w-full text-left rounded-action border border-[var(--color-border)]
                   bg-white/60 p-2.5 transition-colors cursor-pointer hover:border-brand/30"
               >
                 <div className="flex items-center gap-1.5 flex-wrap">
@@ -260,7 +260,7 @@ function DiagnosisCardImpl({
   return (
     <div className="space-y-3">
       {/* 四维评分卡 */}
-      <div className="rounded-xl border border-[var(--color-border)] bg-white/70 p-3.5">
+      <div className="rounded-list border border-[var(--color-border)] bg-white/70 p-3.5">
         <ScoreCard scores={scores} />
       </div>
 

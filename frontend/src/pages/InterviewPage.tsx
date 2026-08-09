@@ -92,11 +92,11 @@ function formatDay(dateStr?: string): string {
 const STATUS_META: Record<string, { label: string; className: string }> = {
   completed: {
     label: "已完成",
-    className: "bg-emerald-500/15 text-emerald-600 border-emerald-500/30",
+    className: "bg-success/15 text-success border-success/30",
   },
   pending: {
     label: "待复盘",
-    className: "bg-amber-500/15 text-amber-600 border-amber-500/30",
+    className: "bg-warning/15 text-warning border-warning/30",
   },
   scored: {
     label: "已评分",
@@ -147,16 +147,16 @@ const EMPTY_FORM: CreateFormState = {
 
 /** 输入类 className（与其他页面一致的表单样式） */
 const INPUT_CLS =
-  "w-full px-3 py-2.5 rounded-xl text-sm bg-[var(--color-bg-secondary)] border border-[var(--color-border)] " +
+  "w-full px-3 py-2.5 rounded-list text-sm bg-[var(--color-bg-secondary)] border border-[var(--color-border)] " +
   "text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] outline-none " +
   "focus:border-brand/50 focus:ring-4 focus:ring-brand/15 transition-all";
 
 /** 评分卡分数颜色 */
 function scoreColor(score: number): string {
-  if (score >= 80) return "bg-emerald-500";
-  if (score >= 70) return "bg-amber-500";
+  if (score >= 80) return "bg-success";
+  if (score >= 70) return "bg-warning";
   if (score >= 60) return "bg-orange-500";
-  return "bg-red-500";
+  return "bg-danger";
 }
 
 function scoreLabel(score: number): string {
@@ -189,12 +189,12 @@ function ScorecardView({ scorecard }: { scorecard: Record<string, unknown> }) {
   const notes = typeof scorecard.notes === "string" ? scorecard.notes : "";
 
   return (
-    <div className="rounded-xl bg-[var(--color-bg-secondary)]/60 border border-[var(--color-border)] p-4 mb-3 space-y-4">
+    <div className="rounded-list bg-[var(--color-bg-secondary)]/60 border border-[var(--color-border)] p-4 mb-3 space-y-4">
       {/* 总分 */}
       <div className="flex items-center gap-3">
         {overall !== null && (
           <div
-            className={`w-16 h-16 rounded-2xl ${scoreColor(overall)} text-white flex flex-col items-center justify-center shrink-0`}
+            className={`w-16 h-16 rounded-input ${scoreColor(overall)} text-white flex flex-col items-center justify-center shrink-0`}
           >
             <span className="text-xl font-bold leading-none">{overall}</span>
             <span className="text-[9px] mt-1 opacity-90">总分</span>
@@ -561,7 +561,7 @@ export default function InterviewPage() {
               className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-full
                 text-sm font-medium text-white
                 bg-brand
-                hover:bg-[#0077ed] hover:scale-[1.02] hover:shadow-lg hover:shadow-brand/25
+                hover:bg-brand-hover hover:scale-[1.02] hover:shadow-lg hover:shadow-brand/25
                 active:scale-[0.98] motion-reduce:active:scale-100
                 transition-all duration-300 cursor-pointer"
               aria-label="新建面试记录"
@@ -630,7 +630,7 @@ export default function InterviewPage() {
                   {review.training_plan.modules.slice(0, 4).map((p) => (
                     <li
                       key={p.id + p.title}
-                      className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/60 px-3 py-2.5"
+                      className="rounded-list border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/60 px-3 py-2.5"
                     >
                       <div className="flex items-center justify-between gap-2">
                         <span
@@ -658,7 +658,7 @@ export default function InterviewPage() {
             {/* 面试次数趋势 */}
             <div className="glass-card p-5">
               <div className="flex items-center gap-2 mb-4">
-                <TrendUp size={16} weight="duotone" className="text-emerald-400" aria-hidden="true" />
+                <TrendUp size={16} weight="duotone" className="text-success" aria-hidden="true" />
                 <h2 className="text-sm font-semibold text-[var(--color-text)]">
                   面试次数趋势
                 </h2>
@@ -742,7 +742,7 @@ export default function InterviewPage() {
               {interviews.map((it) => (
                 <div
                   key={it.id}
-                  className="group rounded-2xl bg-white/80 backdrop-blur-xl border border-[var(--color-border)]
+                  className="group rounded-input bg-white/80 backdrop-blur-xl border border-[var(--color-border)]
                     p-4 hover:border-brand/40 hover:shadow-lg hover:shadow-black/5
                     transition-all duration-300"
                 >
@@ -801,7 +801,7 @@ export default function InterviewPage() {
                       </button>
                       <button
                         onClick={() => setDeleteTarget(it)}
-                        className="p-1.5 rounded-md text-[var(--color-text-muted)] hover:text-red-400 hover:bg-red-500/10 transition-all cursor-pointer"
+                        className="p-1.5 rounded-md text-[var(--color-text-muted)] hover:text-danger hover:bg-danger/10 transition-all cursor-pointer"
                         aria-label={`删除 ${it.company} ${it.position}`}
                         title="删除"
                       >
@@ -831,7 +831,7 @@ export default function InterviewPage() {
                 <button
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                   disabled={page <= 1}
-                  className="p-2 rounded-full bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:bg-[#E5E5EA] disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+                  className="p-2 rounded-full bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
                   aria-label="上一页"
                 >
                   <CaretLeft size={14} weight="bold" aria-hidden="true" />
@@ -850,7 +850,7 @@ export default function InterviewPage() {
                       className={`w-8 h-8 rounded-full text-xs font-medium transition-all cursor-pointer
                         ${p === page
                           ? "bg-brand/10 text-brand border border-brand/30"
-                          : "bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:bg-[#E5E5EA]"
+                          : "bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)]"
                         }`}
                       aria-label={`第 ${p} 页`}
                     >
@@ -861,7 +861,7 @@ export default function InterviewPage() {
                 <button
                   onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                   disabled={page >= totalPages}
-                  className="p-2 rounded-full bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:bg-[#E5E5EA] disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+                  className="p-2 rounded-full bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
                   aria-label="下一页"
                 >
                   <CaretRight size={14} weight="bold" aria-hidden="true" />
@@ -882,7 +882,7 @@ export default function InterviewPage() {
           aria-label="新建面试记录"
         >
           <div
-            className="w-full max-w-xl rounded-2xl bg-[var(--color-bg)] border border-[var(--color-border)] p-5 shadow-2xl max-h-[88vh] overflow-y-auto"
+            className="w-full max-w-xl rounded-input bg-[var(--color-bg)] border border-[var(--color-border)] p-5 shadow-2xl max-h-[88vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-5">
@@ -1035,14 +1035,14 @@ export default function InterviewPage() {
               <button
                 onClick={closeCreate}
                 disabled={saving}
-                className="px-3.5 py-2 rounded-lg text-sm font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)] active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-3.5 py-2 rounded-action text-sm font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)] active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 取消
               </button>
               <button
                 onClick={() => void handleCreate()}
                 disabled={saving}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium text-white bg-brand hover:bg-[#0077ed] active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-action text-sm font-medium text-white bg-brand hover:bg-brand-hover active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {saving && (
                   <Spinner size={14} className="animate-spin" aria-hidden="true" />
@@ -1064,7 +1064,7 @@ export default function InterviewPage() {
           aria-label="面试详情"
         >
           <div
-            className="w-full max-w-2xl rounded-2xl bg-[var(--color-bg)] border border-[var(--color-border)] p-5 shadow-2xl max-h-[88vh] overflow-y-auto"
+            className="w-full max-w-2xl rounded-input bg-[var(--color-bg)] border border-[var(--color-border)] p-5 shadow-2xl max-h-[88vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-3 mb-4">
@@ -1135,14 +1135,14 @@ export default function InterviewPage() {
                 </div>
 
                 {/* 归档到知识库 */}
-                <div className="flex items-center justify-between gap-3 mb-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/60 px-3 py-2.5">
+                <div className="flex items-center justify-between gap-3 mb-4 rounded-list border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/60 px-3 py-2.5">
                   <span className="text-xs text-[var(--color-text-muted)]">
                     归档后进入知识库，Agent 可检索到本次复盘
                   </span>
                   <button
                     onClick={() => void handleArchive()}
                     disabled={archiving}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-action text-xs font-medium
                       text-brand border border-brand/30 hover:bg-brand/10 active:scale-[0.98]
                       transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
                   >
@@ -1163,7 +1163,7 @@ export default function InterviewPage() {
                       {qaQuestions.map((q, i) => (
                         <li
                           key={i}
-                          className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/60 px-3 py-2.5"
+                          className="rounded-list border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/60 px-3 py-2.5"
                         >
                           <p className="text-sm text-[var(--color-text)] break-words">
                             <span className="font-medium text-brand mr-1.5">
@@ -1188,7 +1188,7 @@ export default function InterviewPage() {
                     <h4 className="text-xs font-medium text-[var(--color-text-secondary)] mb-2">
                       JD 文本
                     </h4>
-                    <pre className="whitespace-pre-wrap break-words text-xs text-[var(--color-text-secondary)] leading-relaxed bg-[var(--color-bg-secondary)]/60 rounded-xl px-3 py-2.5 max-h-40 overflow-y-auto font-sans">
+                    <pre className="whitespace-pre-wrap break-words text-xs text-[var(--color-text-secondary)] leading-relaxed bg-[var(--color-bg-secondary)]/60 rounded-list px-3 py-2.5 max-h-40 overflow-y-auto font-sans">
                       {detail.jd_text}
                     </pre>
                   </div>
@@ -1200,7 +1200,7 @@ export default function InterviewPage() {
                     <h4 className="text-xs font-medium text-[var(--color-text-secondary)] mb-2">
                       备注
                     </h4>
-                    <p className="text-xs text-[var(--color-text-secondary)] leading-relaxed break-words whitespace-pre-wrap bg-[var(--color-bg-secondary)]/60 rounded-xl px-3 py-2.5">
+                    <p className="text-xs text-[var(--color-text-secondary)] leading-relaxed break-words whitespace-pre-wrap bg-[var(--color-bg-secondary)]/60 rounded-list px-3 py-2.5">
                       {detail.notes}
                     </p>
                   </div>
@@ -1260,8 +1260,8 @@ export default function InterviewPage() {
                   <button
                     onClick={() => void handleSaveScorecard()}
                     disabled={scorecardSaving}
-                    className="mt-3 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium
-                      text-white bg-brand hover:bg-[#0077ed] active:scale-[0.98]
+                    className="mt-3 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-action text-sm font-medium
+                      text-white bg-brand hover:bg-brand-hover active:scale-[0.98]
                       transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {scorecardSaving && (

@@ -45,7 +45,7 @@ function AppleInput({
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         maxLength={maxLength}
-        className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-[#F2F2F7] text-sm text-[var(--color-text)]
+        className="w-full pl-9 pr-3 py-2.5 rounded-list bg-[#F2F2F7] text-sm text-[var(--color-text)]
           placeholder:text-[var(--color-text-muted)] outline-none border border-transparent
           focus:bg-white focus:border-brand/40 focus:ring-4 focus:ring-brand/15
           transition-all duration-200"
@@ -217,7 +217,7 @@ export function LoginModal({
 
         {/* 标题 */}
         <div className="px-6 pt-7 pb-4 text-center">
-          <div className="mx-auto w-14 h-14 rounded-2xl bg-brand/10 flex items-center justify-center mb-4">
+          <div className="mx-auto w-14 h-14 rounded-input bg-brand/10 flex items-center justify-center mb-4">
             <ChatCircleDots size={26} weight="fill" className="text-brand" />
           </div>
           <h2 className="text-xl font-bold text-[var(--color-text)] display-tight">
@@ -247,12 +247,12 @@ export function LoginModal({
 
         {/* 错误/成功提示 */}
         {error && (
-          <div className="mx-6 mb-3 p-2.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 text-xs">
+          <div className="mx-6 mb-3 p-2.5 rounded-list bg-danger/10 border border-danger/20 text-danger text-xs">
             {error}
           </div>
         )}
         {success && (
-          <div className="mx-6 mb-3 p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 text-xs">
+          <div className="mx-6 mb-3 p-2.5 rounded-list bg-success/10 border border-success/20 text-success text-xs">
             {success}
           </div>
         )}
@@ -279,7 +279,7 @@ export function LoginModal({
                 type="submit"
                 disabled={loading}
                 className="w-full py-2.5 rounded-full bg-brand text-white text-sm font-semibold
-                  hover:bg-[#0077ed] hover:scale-[1.02] active:scale-[0.98]
+                  hover:bg-brand-hover hover:scale-[1.02] active:scale-[0.98]
                   transition-all duration-300 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {loading ? (
@@ -313,8 +313,8 @@ export function LoginModal({
                   type="button"
                   disabled={sendCodeLoading || cooldown > 0}
                   onClick={handleSendCode}
-                  className="px-4 py-2.5 rounded-xl bg-[var(--color-bg-secondary)] text-xs font-medium text-[var(--color-text-secondary)]
-                    hover:bg-[#E5E5EA] transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed shrink-0"
+                  className="px-4 py-2.5 rounded-list bg-[var(--color-bg-secondary)] text-xs font-medium text-[var(--color-text-secondary)]
+                    hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed shrink-0"
                 >
                   {sendCodeLoading ? (
                     <span className="inline-block w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
@@ -329,7 +329,7 @@ export function LoginModal({
                 type="submit"
                 disabled={loading}
                 className="w-full py-2.5 rounded-full bg-brand text-white text-sm font-semibold
-                  hover:bg-[#0077ed] hover:scale-[1.02] active:scale-[0.98]
+                  hover:bg-brand-hover hover:scale-[1.02] active:scale-[0.98]
                   transition-all duration-300 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {loading ? (

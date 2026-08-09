@@ -39,7 +39,7 @@ const TABS: Array<{ key: KnowledgeAssetType | "all"; label: string; icon: typeof
 const TYPE_META: Record<KnowledgeAssetType, { label: string; color: string; bg: string }> = {
   jd: { label: "JD", color: "text-sky-600", bg: "bg-sky-500/15 border-sky-500/30" },
   interview: { label: "面试记录", color: "text-violet-500", bg: "bg-violet-500/15 border-violet-500/30" },
-  note: { label: "笔记", color: "text-amber-600", bg: "bg-amber-500/15 border-amber-500/30" },
+  note: { label: "笔记", color: "text-warning", bg: "bg-warning/15 border-warning/30" },
 };
 
 /** 新建/编辑表单状态 */
@@ -206,12 +206,12 @@ export default function AssetsPage() {
 
   const indexBadge = (a: KnowledgeAsset) =>
     a.indexed ? (
-      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-500/15 text-emerald-600 border border-emerald-500/30">
+      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-success/15 text-success border border-success/30">
         已索引
       </span>
     ) : (
       <span
-        className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-amber-500/15 text-amber-600 border border-amber-500/30"
+        className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-warning/15 text-warning border border-warning/30"
         title="向量索引尚未就绪，更新后会自动重建"
       >
         待索引
@@ -236,7 +236,7 @@ export default function AssetsPage() {
               className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-full
                 text-sm font-medium text-white
                 bg-brand
-                hover:bg-[#0077ed] hover:scale-[1.02] hover:shadow-lg hover:shadow-brand/25
+                hover:bg-brand-hover hover:scale-[1.02] hover:shadow-lg hover:shadow-brand/25
                 active:scale-[0.98] motion-reduce:active:scale-100
                 transition-all duration-300 cursor-pointer"
               aria-label="新建笔记"
@@ -307,7 +307,7 @@ export default function AssetsPage() {
                 return (
                   <div
                     key={a.id}
-                    className="group rounded-2xl bg-white/80 backdrop-blur-xl border border-[var(--color-border)]
+                    className="group rounded-input bg-white/80 backdrop-blur-xl border border-[var(--color-border)]
                       p-4 hover:border-brand/40 hover:shadow-lg hover:shadow-black/5
                       transition-all duration-300"
                   >
@@ -348,7 +348,7 @@ export default function AssetsPage() {
                         </button>
                         <button
                           onClick={() => setDeleteTarget(a)}
-                          className="p-1.5 rounded-md text-[var(--color-text-muted)] hover:text-red-400 hover:bg-red-500/10 transition-all cursor-pointer"
+                          className="p-1.5 rounded-md text-[var(--color-text-muted)] hover:text-danger hover:bg-danger/10 transition-all cursor-pointer"
                           aria-label={`删除 ${a.title}`}
                           title="删除"
                         >
@@ -383,7 +383,7 @@ export default function AssetsPage() {
                 <button
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                   disabled={page <= 1}
-                  className="p-2 rounded-full bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:bg-[#E5E5EA] disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+                  className="p-2 rounded-full bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
                   aria-label="上一页"
                 >
                   <CaretLeft size={14} weight="bold" aria-hidden="true" />
@@ -399,7 +399,7 @@ export default function AssetsPage() {
                       className={`w-8 h-8 rounded-full text-xs font-medium transition-all cursor-pointer
                         ${p === page
                           ? "bg-brand/10 text-brand border border-brand/30"
-                          : "bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:bg-[#E5E5EA]"
+                          : "bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)]"
                         }`}
                       aria-label={`第 ${p} 页`}
                     >
@@ -410,7 +410,7 @@ export default function AssetsPage() {
                 <button
                   onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                   disabled={page >= totalPages}
-                  className="p-2 rounded-full bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:bg-[#E5E5EA] disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+                  className="p-2 rounded-full bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
                   aria-label="下一页"
                 >
                   <CaretRight size={14} weight="bold" aria-hidden="true" />
@@ -431,7 +431,7 @@ export default function AssetsPage() {
           aria-label={editing ? "编辑知识资产" : "新建知识资产"}
         >
           <div
-            className="w-full max-w-lg rounded-2xl bg-[var(--color-bg)] border border-[var(--color-border)] p-5 shadow-2xl"
+            className="w-full max-w-lg rounded-input bg-[var(--color-bg)] border border-[var(--color-border)] p-5 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-4">
@@ -491,7 +491,7 @@ export default function AssetsPage() {
                 onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
                 placeholder="输入标题，如「字节后端一面」"
                 maxLength={200}
-                className="w-full px-3 py-2.5 rounded-xl text-sm bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] outline-none focus:border-brand/50 focus:ring-4 focus:ring-brand/15 transition-all"
+                className="w-full px-3 py-2.5 rounded-list text-sm bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] outline-none focus:border-brand/50 focus:ring-4 focus:ring-brand/15 transition-all"
               />
             </div>
 
@@ -505,7 +505,7 @@ export default function AssetsPage() {
                 onChange={(e) => setForm((f) => ({ ...f, content: e.target.value }))}
                 placeholder="粘贴 JD 文本、面试复盘或学习笔记..."
                 rows={8}
-                className="w-full px-3 py-2.5 rounded-xl text-sm bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] outline-none focus:border-brand/50 focus:ring-4 focus:ring-brand/15 transition-all resize-none"
+                className="w-full px-3 py-2.5 rounded-list text-sm bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] outline-none focus:border-brand/50 focus:ring-4 focus:ring-brand/15 transition-all resize-none"
               />
             </div>
 
@@ -533,14 +533,14 @@ export default function AssetsPage() {
               <button
                 onClick={closeModal}
                 disabled={saving}
-                className="px-3.5 py-2 rounded-lg text-sm font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)] active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-3.5 py-2 rounded-action text-sm font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)] active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 取消
               </button>
               <button
                 onClick={() => void handleSave()}
                 disabled={saving}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium text-white bg-brand hover:bg-[#0077ed] active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-action text-sm font-medium text-white bg-brand hover:bg-brand-hover active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {saving && (
                   <Spinner size={14} className="animate-spin" aria-hidden="true" />

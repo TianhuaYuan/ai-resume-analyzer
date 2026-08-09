@@ -94,9 +94,9 @@ function StatsSection() {
 
   const cards = [
     { label: "用户总数", value: stats.total_users, icon: Users, color: "text-brand" },
-    { label: "简历总数", value: stats.total_resumes, icon: Database, color: "text-emerald-500" },
+    { label: "简历总数", value: stats.total_resumes, icon: Database, color: "text-success" },
     { label: "问答记录", value: stats.total_qa_history, icon: ChatCircleDots, color: "text-sky-500" },
-    { label: "用户反馈", value: stats.total_feedback, icon: ChatTeardropText, color: "text-amber-500" },
+    { label: "用户反馈", value: stats.total_feedback, icon: ChatTeardropText, color: "text-warning" },
   ];
 
   return (
@@ -159,10 +159,10 @@ function TrendsSection() {
             <button
               key={d}
               onClick={() => setDays(d)}
-              className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
+              className={`px-2.5 py-1 rounded-action transition-colors cursor-pointer ${
                 days === d
                   ? "bg-brand text-white"
-                  : "bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:bg-black/5"
+                  : "bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)]"
               }`}
             >
               {d}天
@@ -225,10 +225,10 @@ function LLMUsageSection() {
             <button
               key={d}
               onClick={() => setDays(d)}
-              className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
+              className={`px-2.5 py-1 rounded-action transition-colors cursor-pointer ${
                 days === d
                   ? "bg-brand text-white"
-                  : "bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:bg-black/5"
+                  : "bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)]"
               }`}
             >
               {d}天
@@ -331,7 +331,7 @@ function AuditSection() {
               setOffset(0);
             }}
             placeholder="按 action 过滤，如 login"
-            className="w-52 pl-8 pr-3 py-1.5 rounded-xl text-xs text-[var(--color-text)]
+            className="w-52 pl-8 pr-3 py-1.5 rounded-list text-xs text-[var(--color-text)]
               bg-[#F2F2F7] border border-transparent
               placeholder:text-[var(--color-text-muted)]
               focus:outline-none focus:bg-white focus:border-brand/40 focus:ring-4 focus:ring-brand/15"
@@ -345,7 +345,7 @@ function AuditSection() {
       {error ? (
         <ErrorBox message={error} />
       ) : (
-        <div className="overflow-x-auto rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)]">
+        <div className="overflow-x-auto rounded-input border border-[var(--color-border)] bg-[var(--color-card)]">
           <table className="w-full text-xs">
             <thead className="bg-[var(--color-bg-secondary)] text-[var(--color-text-muted)]">
               <tr>
@@ -423,8 +423,8 @@ function FeedbackSection() {
   }, [offset]);
 
   const typeColor: Record<string, string> = {
-    bug: "bg-red-500/10 text-red-600",
-    feature: "bg-emerald-500/10 text-emerald-600",
+    bug: "bg-danger/10 text-danger",
+    feature: "bg-success/10 text-success",
     other: "bg-sky-500/10 text-sky-600",
   };
 
@@ -439,7 +439,7 @@ function FeedbackSection() {
       {error ? (
         <ErrorBox message={error} />
       ) : (
-        <div className="overflow-x-auto rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)]">
+        <div className="overflow-x-auto rounded-input border border-[var(--color-border)] bg-[var(--color-card)]">
           <table className="w-full text-xs">
             <thead className="bg-[var(--color-bg-secondary)] text-[var(--color-text-muted)]">
               <tr>
@@ -527,9 +527,9 @@ function QaQualitySection() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
           { label: "总反馈", value: stats.total_feedback, color: "text-sky-500" },
-          { label: "有帮助", value: stats.positive, color: "text-emerald-500" },
-          { label: "没帮助", value: stats.negative, color: "text-red-500" },
-          { label: "负向率", value: `${(stats.negative_rate * 100).toFixed(1)}%`, color: "text-amber-500" },
+          { label: "有帮助", value: stats.positive, color: "text-success" },
+          { label: "没帮助", value: stats.negative, color: "text-danger" },
+          { label: "负向率", value: `${(stats.negative_rate * 100).toFixed(1)}%`, color: "text-warning" },
         ].map((c) => (
           <div key={c.label} className="glass-card p-4">
             <div className="text-xs text-[var(--color-text-muted)] mb-1">{c.label}</div>
@@ -543,8 +543,8 @@ function QaQualitySection() {
         <div className="glass-card p-4">
           <h3 className="text-sm font-semibold text-[var(--color-text)] mb-3">反馈正负比例</h3>
           <div className="flex h-3 rounded-full overflow-hidden bg-[var(--color-bg-secondary)]">
-            <div className="bg-emerald-500" style={{ width: `${posPct}%` }} title={`有帮助 ${posPct}%`} />
-            <div className="bg-red-500" style={{ width: `${negPct}%` }} title={`没帮助 ${negPct}%`} />
+            <div className="bg-success" style={{ width: `${posPct}%` }} title={`有帮助 ${posPct}%`} />
+            <div className="bg-danger" style={{ width: `${negPct}%` }} title={`没帮助 ${negPct}%`} />
           </div>
           <div className="flex items-center justify-between mt-2 text-xs text-[var(--color-text-muted)]">
             <span>👍 有帮助 {posPct}%（{stats.positive}）</span>
@@ -573,8 +573,8 @@ function QaQualitySection() {
                 {stats.by_resume.map((r) => (
                   <tr key={r.resume_id} className="border-t border-[var(--color-border)] text-[var(--color-text-secondary)]">
                     <td className="px-2 py-2 max-w-xs truncate" title={r.resume_title}>{r.resume_title}</td>
-                    <td className="px-2 py-2 tabular-nums text-emerald-600">{r.positive}</td>
-                    <td className="px-2 py-2 tabular-nums text-red-600">{r.negative}</td>
+                    <td className="px-2 py-2 tabular-nums text-success">{r.positive}</td>
+                    <td className="px-2 py-2 tabular-nums text-danger">{r.negative}</td>
                     <td className="px-2 py-2 tabular-nums">{(r.negative_rate * 100).toFixed(1)}%</td>
                   </tr>
                 ))}
@@ -595,7 +595,7 @@ function QaQualitySection() {
               const trace = s.process_trace as Record<string, unknown> | null;
               const toolSeq = trace?.tool_sequence as string[] | undefined;
               return (
-                <div key={s.qa_id} className="rounded-xl border border-[var(--color-border)] p-3">
+                <div key={s.qa_id} className="rounded-list border border-[var(--color-border)] p-3">
                   <div className="flex items-center justify-between gap-2 mb-1">
                     <span className="text-xs font-medium text-[var(--color-text)] truncate">
                       Q: {s.question}
@@ -685,7 +685,7 @@ function GrafanaSection() {
       <p className="text-xs text-[var(--color-text-muted)]">
         若已部署 Grafana 并在反向代理中将 <code className="font-mono">/grafana</code> 指向它，则下方将显示监控面板；未配置时为空白。
       </p>
-      <div className="rounded-2xl border border-[var(--color-border)] overflow-hidden bg-[var(--color-bg-secondary)]">
+      <div className="rounded-input border border-[var(--color-border)] overflow-hidden bg-[var(--color-bg-secondary)]">
         <iframe
           src="/grafana"
           className="w-full h-[560px] border-0"
@@ -709,7 +709,7 @@ function Loading() {
 
 function ErrorBox({ message }: { message: string }) {
   return (
-    <div className="flex items-start gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-600 text-sm">
+    <div className="flex items-start gap-2 p-3 rounded-list bg-danger/10 border border-danger/20 text-danger text-sm">
       <Warning size={16} weight="bold" className="mt-0.5 shrink-0" aria-hidden="true" />
       <span>{message}</span>
     </div>
@@ -735,7 +735,7 @@ function Pagination({
         disabled={!hasPrev}
         onClick={() => onChange(Math.max(0, offset - limit))}
         className="px-2.5 py-1 rounded-full bg-[var(--color-bg-secondary)]
-          text-[var(--color-text-secondary)] hover:bg-[#E5E5EA]
+          text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)]
           disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer"
       >
         上一页
@@ -747,7 +747,7 @@ function Pagination({
         disabled={!hasNext}
         onClick={() => onChange(offset + limit)}
         className="px-2.5 py-1 rounded-full bg-[var(--color-bg-secondary)]
-          text-[var(--color-text-secondary)] hover:bg-[#E5E5EA]
+          text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)]
           disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer"
       >
         下一页
@@ -775,8 +775,8 @@ export default function AdminPage() {
   if (forbidden) {
     return (
       <div className="max-w-2xl mx-auto px-6 py-16 text-center">
-        <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl
-          bg-red-500/10 border border-red-500/15 text-red-500 mb-4">
+        <div className="inline-flex items-center justify-center w-14 h-14 rounded-input
+          bg-danger/10 border border-danger/15 text-danger mb-4">
           <Warning size={26} weight="duotone" aria-hidden="true" />
         </div>
         <h2 className="text-base font-semibold text-[var(--color-text)] mb-1.5">无访问权限</h2>
@@ -787,7 +787,7 @@ export default function AdminPage() {
           to="/"
           className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-medium
             bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)]
-            hover:bg-[#E5E5EA] transition-all cursor-pointer"
+            hover:bg-[var(--color-bg-secondary)] transition-all cursor-pointer"
         >
           <ArrowLeft size={14} weight="regular" aria-hidden="true" />
           返回首页

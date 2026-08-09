@@ -124,7 +124,7 @@ export default function JDMatchReport({ result, resumeName, jdSnippet }: JDMatch
       {matched.length > 0 && (
         <div>
           <div className="flex items-center gap-1.5 mb-1.5">
-            <CheckCircle size={13} className="text-emerald-400" weight="fill" />
+            <CheckCircle size={13} className="text-success" weight="fill" />
             <span className="text-xs font-medium text-[var(--color-text-secondary)]">
               已匹配 ({matched.length})
             </span>
@@ -133,7 +133,7 @@ export default function JDMatchReport({ result, resumeName, jdSnippet }: JDMatch
             {matched.map((k) => (
               <span
                 key={k}
-                className="px-2 py-0.5 rounded-md text-[11px] bg-emerald-500/10 text-emerald-600 border border-emerald-500/20"
+                className="px-2 py-0.5 rounded-md text-[11px] bg-success/10 text-success border border-success/20"
               >
                 {k}
               </span>
@@ -167,7 +167,7 @@ export default function JDMatchReport({ result, resumeName, jdSnippet }: JDMatch
       {gaps.length > 0 && (
         <div>
           <div className="flex items-center gap-1.5 mb-1.5">
-            <TrendUp size={13} className="text-amber-400" />
+            <TrendUp size={13} className="text-warning" />
             <span className="text-xs font-medium text-[var(--color-text-secondary)]">
               改进建议
             </span>
@@ -175,7 +175,7 @@ export default function JDMatchReport({ result, resumeName, jdSnippet }: JDMatch
           <ul className="space-y-1.5">
             {gaps.map((g) => (
               <li key={g} className="flex gap-2 text-xs text-[var(--color-text-secondary)] leading-relaxed">
-                <span className="text-amber-400 shrink-0">›</span>
+                <span className="text-warning shrink-0">›</span>
                 <span>{g}</span>
               </li>
             ))}
@@ -185,9 +185,9 @@ export default function JDMatchReport({ result, resumeName, jdSnippet }: JDMatch
           <div className="mt-3 pt-3 border-t border-[var(--color-border)]">
             <button
               onClick={() => void handleCopyGapList()}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-action text-xs font-medium
                 text-[var(--color-text-secondary)] bg-[var(--color-bg-secondary)]
-                hover:bg-[#E5E5EA] active:scale-[0.98] transition-all cursor-pointer"
+                hover:bg-[var(--color-bg-secondary)] active:scale-[0.98] transition-all cursor-pointer"
             >
               <Export size={12} weight="bold" aria-hidden="true" />
               {copied ? "已复制" : "导出差距清单"}
