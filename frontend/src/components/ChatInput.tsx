@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
   FileText,
   Translate,
@@ -58,6 +58,45 @@ export default function ChatInput({
   const [value, setValue] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // P4-3 斜杠命令自动补全（借鉴 Hermes SlashPopover）：输入以 / 开头时弹出命令列表
+  const [slashActive, setSlashActive] = useState(false);
+  const [slashIndex, setSlashIndex] = useState(0);
+
+  // 斜杠命令候选：基于快捷标签派生（label → 命令别名，question → 填充文本）
+  const slashCommands = useMemo(() => {
+    const aliases: Record<string, string> = {
+      简历诊断: "diagnose",
+      简历翻译: "translate",
+      校招推荐: "jobs",
+      面试指导: "interview",
+      职业规划: "career",
+    };
+    return QUICK_TAGS.map((tag) => ({
+      alias: aliases[tag.label] ?? tag.label.toLowerCase(),
+      label: tag.label,
+      question: tag.question,
+    }));
+  }, []);
+
+  // 当前匹配的 slash 命令（输入 "/xxx" 时过滤）
+  const slashMatches = useMemo(() => {
+    if (!slashActive) return [];
+    const query = value.slice(1).trim().toLowerCase();
+    if (!query) return slashCommands;
+    return slashCommands.filter(
+      (c) =>
+        c.alias.includes(query) ||
+        c.label.toLowerCase().includes(query) ||
+        c.question.toLowerCase().includes(query),
+    );
+  }, [slashActive, value, slashCommands]);
+
+  // 输入变化时：检测是否触发斜杠命令模式（输入框开头是 / 且非连续）
+  useEffect(() => {
+    const isSlash = value.startsWith("/") && !value.startsWith("//") && value.length > 0;
+    setSlashActive(isSlash);
+    setSlashIndex(0);
+  }, [value]);
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setValue(e.target.value);
@@ -94,6 +133,19 @@ export default function ChatInput({
     textareaRef.current?.focus();
   };
 
+  /** P4-3: 应用选中的斜杠命令（填充问题文本 + 关闭弹出层） */
+  const applySlashCommand = (question: string) => {
+    setValue(question);
+    setSlashActive(false);
+    setSlashIndex(0);
+    if (textareaRef.current) {
+      textareaRef.current.focus();
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height =
+        Math.min(textareaRef.current.scrollHeight, 128) + "px";
+    }
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -115,6 +167,34 @@ export default function ChatInput({
               value={value}
               onChange={handleChange}
               onKeyDown={(e) => {
+                // P4-3: 斜杠命令弹出层键盘导航
+                if (slashActive && slashMatches.length > 0) {
+                  if (e.key === "ArrowDown") {
+                    e.preventDefault();
+                    setSlashIndex((i) => (i + 1) % slashMatches.length);
+                    return;
+                  }
+                  if (e.key === "ArrowUp") {
+                    e.preventDefault();
+                    setSlashIndex(
+                      (i) => (i - 1 + slashMatches.length) % slashMatches.length,
+                    );
+                    return;
+                  }
+                  if (e.key === "Tab" || e.key === "Enter") {
+                    e.preventDefault();
+                    const cmd = slashMatches[Math.min(slashIndex, slashMatches.length - 1)];
+                    if (cmd) {
+                      applySlashCommand(cmd.question);
+                      return;
+                    }
+                  }
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    setSlashActive(false);
+                    return;
+                  }
+                }
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
                   handleSubmit(e);
@@ -125,7 +205,7 @@ export default function ChatInput({
                   ? "请先创建或上传简历开始对话..."
                   : asking
                   ? "AI 思考中，可输入补充信息（发送给正在思考的 AI）..."
-                  : "告诉 AI 助手你的需求..."
+                  : "告诉 AI 助手你的需求...（输入 / 唤起快捷命令）"
               }
               disabled={disabled}
               rows={1}
@@ -134,6 +214,35 @@ export default function ChatInput({
                 py-1.5 max-h-32"
               aria-label="输入问题"
             />
+
+            {/* P4-3: 斜杠命令弹出层（输入 / 前缀时出现） */}
+            {slashActive && slashMatches.length > 0 && (
+              <div className="absolute z-30 mt-1 w-64 max-h-56 overflow-y-auto rounded-xl
+                bg-[var(--color-surface)] border border-[var(--color-border)] shadow-xl
+                animate-fade-in-up motion-reduce:animate-none">
+                <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider
+                  text-[var(--color-text-muted)] border-b border-[var(--color-border)]">
+                  快捷命令
+                </div>
+                {slashMatches.map((cmd, i) => (
+                  <button
+                    key={cmd.alias}
+                    type="button"
+                    onMouseEnter={() => setSlashIndex(i)}
+                    onClick={() => applySlashCommand(cmd.question)}
+                    className={`w-full flex items-center gap-2 px-3 py-2 text-left text-xs transition-colors cursor-pointer
+                      ${i === slashIndex
+                        ? "bg-brand/10 text-brand"
+                        : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)]"}`}
+                  >
+                    <span className="font-mono text-[var(--color-text-muted)] shrink-0">
+                      /{cmd.alias}
+                    </span>
+                    <span className="truncate">{cmd.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* 底部：工具栏（附件 + 快捷标签 + 发送） */}

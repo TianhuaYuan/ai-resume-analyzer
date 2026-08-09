@@ -63,6 +63,7 @@ import { ModuleCardEditor } from "../components/builder/ModuleCardEditor";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { CompareSelectDialog } from "../components/CompareSelectDialog";
 import MarkdownRenderer from "../components/MarkdownRenderer";
+import HighlightedText from "../components/HighlightedText";
 import AgentProcessPanel, { getToolLabel } from "../components/AgentProcessPanel";
 // E1: 简历诊断结构化卡片（四维评分 + 诊断结论 + 可溯源来源）
 import DiagnosisCard, { isDiagnosisMessage } from "../components/DiagnosisCard";
@@ -638,6 +639,8 @@ interface MessageBubbleProps {
   onRegenerate: (msg: ChatMessage) => void;
   /** G2: 是否正在等待 AI 回复（流式期间禁用重新生成） */
   asking: boolean;
+  /** P4-10: 历史搜索关键词（非空时高亮命中文本） */
+  searchTerm?: string;
 }
 
 /** G2: 复制文本到剪贴板（Clipboard API + 非安全上下文降级 textarea 方案） */
@@ -659,7 +662,7 @@ async function copyToClipboard(text: string): Promise<void> {
   }
 }
 
-const MessageBubble = memo(function MessageBubble({ msg, deleting, onDelete, onFeedback, onRegenerate, asking }: MessageBubbleProps) {
+const MessageBubble = memo(function MessageBubble({ msg, deleting, onDelete, onFeedback, onRegenerate, asking, searchTerm }: MessageBubbleProps) {
   // 流式消息（id 仍是字符串 tempId）不显示删除按钮和反馈按钮
   const canDelete = !msg.streaming && typeof msg.id === "number";
   const canFeedback = !msg.streaming && typeof msg.id === "number";
@@ -683,7 +686,12 @@ const MessageBubble = memo(function MessageBubble({ msg, deleting, onDelete, onF
       <div className="flex justify-end mb-4">
         <div className="max-w-[75%] px-4 py-3 bg-brand
           text-white text-sm leading-relaxed rounded-2xl rounded-br-md">
-          {msg.question}
+          {/* P4-10: 搜索词高亮（历史搜索命中时高亮） */}
+          {searchTerm ? (
+            <HighlightedText text={msg.question} terms={[searchTerm]} />
+          ) : (
+            msg.question
+          )}
         </div>
       </div>
 
@@ -2208,6 +2216,7 @@ export default function QAPage() {
                         onFeedback={handleFeedback}
                         onRegenerate={handleRegenerate}
                         asking={asking}
+                        searchTerm={debouncedKeyword}
                       />
                     ))
                   )}
