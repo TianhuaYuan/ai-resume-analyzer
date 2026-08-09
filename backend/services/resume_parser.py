@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 _MAX_RETRIES: int = 1
 
 # LLM 输出最大 token 数（简历反解析需要足够空间输出完整 JSON）
-# 诊断实测确认：reasoning 模型（deepseek-v4-flash / mimo-v2.5）
+# 诊断实测确认：reasoning 模型（deepseek-v4-flash / qwen 深度思考）
 # 会先消耗大量 token 思考再输出 content，4000 会被推理吃光导致 content 为空；
 # 16000 实测可完整输出（推理 + JSON 约 7500 tokens），真实简历稳定反解析。
 _MAX_TOKENS: int = 16000

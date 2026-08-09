@@ -210,7 +210,7 @@ def _build_llm_kwargs(
     - OpenAI SDK 需经 `extra_body={"thinking": {"type": "enabled|disabled"}}`
       传开关，思考强度用顶层 `reasoning_effort`（low/high/max）控制。
     - 思考模式下 temperature/top_p 等参数不生效（设置不报错）。
-    - 仅主 chat 模型（deepseek-v4-flash）支持该参数；judge（mimo-v2.5）跳过，
+    - 仅主 chat 模型（DeepSeek 风格 thinking）支持该参数；judge（评审模型）跳过，
       避免未知参数报错。
 
     语义：`thinking_enabled=False`（默认）→ 显式关闭思考；True → 开启 + effort。
@@ -482,7 +482,7 @@ async def llm_generate(
             {"role": "user", "content": user},
         ],
     }
-    # temperature=None → 不传该参数（推理模型如 deepseek-reasoner/mimo-v2.5
+    # temperature=None → 不传该参数（推理模型如 deepseek-v4-flash / qwen 深度思考
     # 对 temperature 会 400 拒绝或忽略；None 时让服务端用模型默认值）
     if temperature is not None:
         kwargs["temperature"] = temperature
@@ -491,7 +491,7 @@ async def llm_generate(
     # thinking 模式治理：DeepSeek 思考模式默认打开（effort=high），本函数是
     # 结构化任务（反解析/改写/翻译/检查/意图识别等）主力，纯格式化输出无需
     # 思考，显式关闭以提速降 token（详见 _build_llm_kwargs 注释）。
-    # judge 模型（mimo-v2.5）不支持该参数，跳过。
+    # judge 模型（评审模型）不支持该参数，跳过。
     if model_name != settings.JUDGE_MODEL:
         kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
     # P0-2：接入 with_retry（Full Jitter + 错误分类）+ 熔断器。

@@ -906,7 +906,7 @@ class CoverLetterTool(Tool):
 
 
 # builder 工具内部 function calling 使用的模型：judge=DeepSeek v4 flash。
-# 注意：本代码库中 CHAT_MODEL（MiMo）从未被传过 tools，function calling 支持未验证；
+# 注意：本代码库中 CHAT_MODEL 从未被传过 tools，function calling 支持未验证；
 # DeepSeek 是唯一被实战验证能出 tool_calls 的模型。如需切回 CHAT_MODEL 设 None 即可。
 _BUILDER_GEN_MODEL = "judge"
 
@@ -1060,7 +1060,7 @@ class _RewriteResumeOutput(BaseModel):
 def _coerce_modules(raw) -> list | None:
     """宽容解析 LLM 返回的 modules 参数（多种错误形状 → 标准 list）。
 
-    小模型（mimo-v2.5）输出整份 modules 数组时常见的错误形状：
+    小模型（轻量档 judge）输出整份 modules 数组时常见的错误形状：
     1. dict 且含 "modules" key（套娃）→ 递归取内层
     2. dict 按 module_type 作 key、value 为 content
        （如 {"work_experience": {...}}）→ 转 [{module_type, content, sort_order}]
