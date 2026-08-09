@@ -201,7 +201,20 @@ def _build_llm_kwargs(
     thinking_effort: str,
     stream: bool = False,
 ) -> dict:
-    """组装 LLM 请求 kwargs（非流式和流式共用）。"""
+    """组装 LLM 请求 kwargs（非流式和流式共用）。
+
+    thinking 模式治理（DeepSeek 官方文档）：
+    - 思考模式**默认打开**且 effort 默认 high —— 代码不传参数 = 每次调用都在
+      high effort 思考，结构化任务（反解析/改写/检查/意图识别）纯格式化输出
+      烧大量 reasoning token 且显著变慢。
+    - OpenAI SDK 需经 `extra_body={"thinking": {"type": "enabled|disabled"}}`
+      传开关，思考强度用顶层 `reasoning_effort`（low/high/max）控制。
+    - 思考模式下 temperature/top_p 等参数不生效（设置不报错）。
+    - 仅主 chat 模型（deepseek-v4-flash）支持该参数；judge（mimo-v2.5）跳过，
+      避免未知参数报错。
+
+    语义：`thinking_enabled=False`（默认）→ 显式关闭思考；True → 开启 + effort。
+    """
     kwargs: dict = {
         "model": model_name,
         "messages": messages,
@@ -211,8 +224,12 @@ def _build_llm_kwargs(
         kwargs["max_tokens"] = max_tokens
     if tools:
         kwargs["tools"] = tools
-    if thinking_enabled:
-        kwargs["thinking"] = {"enabled": True, "effort": thinking_effort}
+    if model_name != settings.JUDGE_MODEL:
+        kwargs["extra_body"] = {
+            "thinking": {"type": "enabled" if thinking_enabled else "disabled"}
+        }
+        if thinking_enabled:
+            kwargs["reasoning_effort"] = thinking_effort
     if stream:
         kwargs["stream"] = True
         kwargs["stream_options"] = {"include_usage": True}
@@ -457,8 +474,9 @@ async def llm_generate(
         回答文本（字符串）
     """
     client = get_chat_client()
+    model_name = model or settings.CHAT_MODEL
     kwargs = {
-        "model": model or settings.CHAT_MODEL,
+        "model": model_name,
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
@@ -470,6 +488,12 @@ async def llm_generate(
         kwargs["temperature"] = temperature
     if max_tokens is not None:
         kwargs["max_tokens"] = max_tokens
+    # thinking 模式治理：DeepSeek 思考模式默认打开（effort=high），本函数是
+    # 结构化任务（反解析/改写/翻译/检查/意图识别等）主力，纯格式化输出无需
+    # 思考，显式关闭以提速降 token（详见 _build_llm_kwargs 注释）。
+    # judge 模型（mimo-v2.5）不支持该参数，跳过。
+    if model_name != settings.JUDGE_MODEL:
+        kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
     # P0-2：接入 with_retry（Full Jitter + 错误分类）+ 熔断器。
     # max_retries=1 提供一次重试保护；调用方若另有 with_retry 包裹（如
     # rewrite_query），外层仍会兜底，不构成有害的双重重试（内层先耗尽）。

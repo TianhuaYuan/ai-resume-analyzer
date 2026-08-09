@@ -26,7 +26,10 @@ _ACTION_TO_TOOL = {
 _ACTION_KEYWORDS = [
     ("generate", ["生成", "帮我写", "编写", "起草", "创建", "新增", "补全"]),
     ("modify", ["修改", "改一下", "改成", "润色", "完善", "改进", "调整", "更新", "优化"]),
-    ("check", ["检查", "看看", "审阅", "评估", "诊断", "建议"]),
+    (
+        "check",
+        ["检查", "看看", "审阅", "评估", "诊断", "建议", "缺失", "缺少", "缺什么", "还差", "不足"],
+    ),
 ]
 
 # 模块中文别名 → module_type（长词优先，避免「教育背景」误命中「教育」的粗匹配）
@@ -50,7 +53,12 @@ _VALID_MODULE_TYPES = {mt for mt, _ in _MODULE_ALIASES}
 
 
 def _resolve_by_keywords(query: str) -> tuple[str, dict] | None:
-    """关键词快路径：返回 (tool_name, args)；无法解析返回 None。"""
+    """关键词快路径：返回 (tool_name, args)；无法解析返回 None。
+
+    特殊路由：check 动作但未命中具体模块（如「检查一下缺哪些模块」）
+    → 路由 ask_info（缺失项诊断 + 追问引导），避免模型误选
+    rewrite_resume/generate_module 编造内容（与系统 prompt 禁编造冲突）。
+    """
     action = None
     for act, kws in _ACTION_KEYWORDS:
         if any(k in query for k in kws):
@@ -65,6 +73,8 @@ def _resolve_by_keywords(query: str) -> tuple[str, dict] | None:
             module_type = mt
             break
     if module_type is None:
+        if action == "check":
+            return "ask_info", {"question": query}
         return None
 
     tool = _ACTION_TO_TOOL[action]
@@ -78,9 +88,12 @@ def _resolve_by_keywords(query: str) -> tuple[str, dict] | None:
 
 _INTENT_SYSTEM = (
     "你是简历编辑命令解析器。从用户的编辑指令中提取意图，严格输出 JSON：\n"
-    '{"action": "generate|check|modify", "module_type": "<有效模块类型>", "instruction": "<修改/补充指令>"}\n'
+    '{"action": "generate|check|modify|ask_info", "module_type": "<有效模块类型或空>", "instruction": "<修改/补充指令>"}\n'
     "有效 module_type：" + "、".join(sorted(_VALID_MODULE_TYPES)) + "\n"
-    "若指令不是编辑简历模块，输出 {\"action\": \"none\"}。不要输出其他文字。"
+    "规则：\n"
+    "- 生成/修改/检查**具体模块** → generate|modify|check + module_type\n"
+    "- 检查「缺哪些模块/还差什么信息」（无具体模块）→ ask_info（诊断缺失 + 追问引导，绝不编造内容）\n"
+    "- 不是编辑简历模块 → {\"action\": \"none\"}。不要输出其他文字。"
 )
 
 
@@ -100,6 +113,8 @@ async def _resolve_by_llm(query: str, user_id: int | None = None) -> tuple[str, 
         return None
 
     action = data.get("action")
+    if action == "ask_info":
+        return "ask_info", {"question": query}
     if action not in _ACTION_TO_TOOL:
         return None
     module_type = data.get("module_type", "")

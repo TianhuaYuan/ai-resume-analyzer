@@ -535,3 +535,15 @@ export async function deleteConversation(
     `/api/v1/qa/conversations/${conversationId}`,
   ) as Promise<{ deleted_count: number }>;
 }
+
+/** P1-2: 注入消息到当前活跃的 agent 回合（asking 期间补充信息，不排队新回合）。 */
+export async function injectToActiveTurn(
+  resumeId: number,
+  content: string,
+  conversationId?: number,
+): Promise<{ injected: boolean }> {
+  return api.post(`/api/v1/qa/${resumeId}/inject`, {
+    content,
+    conversation_id: conversationId ?? null,
+  }) as Promise<{ injected: boolean }>;
+}

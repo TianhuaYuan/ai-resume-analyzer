@@ -28,7 +28,7 @@ import {
   ListNumbers,
   LinkSimple,
   Code,
-  Sparkle,
+  Lightning,
 } from "@phosphor-icons/react";
 import { aiRewrite } from "../../api/builder";
 
@@ -361,7 +361,7 @@ export function RichTextEditor({
           onClick={handleFloatRewrite}
           title="AI 改写选中文本"
         >
-          <Sparkle size={12} weight="fill" /> AI 改写
+          <Lightning size={12} weight="fill" /> AI 改写
         </button>
       )}
       {ai && rewrite && (
@@ -371,7 +371,7 @@ export function RichTextEditor({
         >
           {rewrite.loading ? (
             <div className="flex items-center gap-2 text-sm text-[var(--color-text-secondary)]">
-              <Sparkle size={14} className="animate-pulse text-brand" /> AI 改写中…
+              <Lightning size={14} className="animate-pulse text-brand" /> AI 改写中…
             </div>
           ) : (
             <>

@@ -11,7 +11,7 @@
  */
 
 import { useCallback, useState } from "react";
-import { Check, X, PaperPlaneTilt, PencilSimple, MagicWand, Eyeglasses } from "@phosphor-icons/react";
+import { Check, X, PaperPlaneTilt, PencilSimple, TrendUp, Eyeglasses } from "@phosphor-icons/react";
 import { useInlineAI } from "./useInlineAI";
 import { REWRITE_PRESETS } from "./rewritePresets";
 import { CheckIssueList } from "./CheckIssueList";
@@ -99,7 +99,7 @@ export function FieldAIMenu({
             disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer"
           aria-label="优化此条内容"
         >
-          <MagicWand size={10} weight="bold" aria-hidden="true" />
+          <TrendUp size={10} weight="bold" aria-hidden="true" />
           优化
         </button>
         <button
@@ -198,11 +198,11 @@ export function FieldAIMenu({
         </div>
       )}
 
-      {/* 结果 + 使用/取消 */}
+      {/* 结果 + 使用/取消（固定高度，避免内容长度变化导致布局跳动） */}
       {!loading && result && (
         <div className="space-y-2">
           <div className="p-2.5 rounded-lg bg-white border border-[var(--color-border)]
-            text-xs text-[var(--color-text)] leading-relaxed whitespace-pre-wrap break-words max-h-40 overflow-y-auto">
+            text-xs text-[var(--color-text)] leading-relaxed whitespace-pre-wrap break-words h-44 overflow-y-auto">
             {result}
           </div>
           <div className="flex items-center justify-end gap-1.5">

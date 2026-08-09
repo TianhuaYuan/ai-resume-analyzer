@@ -12,7 +12,7 @@
 
 import { useState, useEffect, type FormEvent } from "react";
 import { useAuth } from "../context/AuthContext";
-import { Sparkle, EnvelopeSimple, LockSimple, User, Hash } from "@phosphor-icons/react";
+import { ChatCircleDots, EnvelopeSimple, LockSimple, User, Hash } from "@phosphor-icons/react";
 
 // ── Apple 风格输入框 ──
 
@@ -203,7 +203,7 @@ export function LoginModal({
         {/* 标题 */}
         <div className="px-6 pt-7 pb-4 text-center">
           <div className="mx-auto w-14 h-14 rounded-2xl bg-brand/10 flex items-center justify-center mb-4">
-            <Sparkle size={26} weight="fill" className="text-brand" />
+            <ChatCircleDots size={26} weight="fill" className="text-brand" />
           </div>
           <h2 className="text-xl font-bold text-[var(--color-text)] display-tight">
             {tab === "login" ? "欢迎回来" : "创建账号"}

@@ -134,13 +134,35 @@ async def orphan_scan() -> dict[str, list[str]]:
         result = await db.execute(select(User.id))
         db_user_ids = {row[0] for row in result.all()}
 
-    # 1. 扫描磁盘孤儿文件
+        # 收集所有被引用的头像文件名（basic_info 模块 content.avatar）
+        # 头像 UUID 文件名无用户关联，只能按「是否被任何简历引用」判定孤儿
+        from models.resume_module import ResumeModule
+
+        result = await db.execute(
+            select(ResumeModule.content).where(
+                ResumeModule.module_type == "basic_info"
+            )
+        )
+        referenced_avatars: set[str] = set()
+        for (content,) in result.all():
+            if isinstance(content, dict) and content.get("avatar"):
+                referenced_avatars.add(Path(str(content["avatar"])).name)
+
+    # 1. 扫描磁盘孤儿文件（uploads/ 根目录 + uploads/avatars/ 子目录）
     if UPLOAD_DIR.exists():
         try:
             for entry in os.listdir(UPLOAD_DIR):
                 full_path = UPLOAD_DIR / entry
                 if full_path.is_file() and entry not in db_file_names:
                     orphans["files"].append(entry)
+            # avatars 子目录：未被任何简历 basic_info.avatar 引用的文件为孤儿
+            avatars_dir = UPLOAD_DIR / "avatars"
+            if avatars_dir.is_dir():
+                for entry in os.listdir(avatars_dir):
+                    full_path = avatars_dir / entry
+                    if full_path.is_file() and entry not in referenced_avatars:
+                        # 用相对路径标识，auto_cleanup 按目录删除
+                        orphans["files"].append(f"avatars/{entry}")
         except Exception as e:
             logger.warning("Failed to scan upload directory: %s", e)
 

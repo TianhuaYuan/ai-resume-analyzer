@@ -49,12 +49,21 @@ async def save_qa(
     return record
 
 
-async def mark_qa_interrupted(db: AsyncSession, qa_id: int) -> None:
-    """标记中断的 QA 记录（会话断连）为 failed，避免 status=streaming 空记录污染历史。"""
+async def mark_qa_interrupted(
+    db: AsyncSession, qa_id: int, answer: str | None = None
+) -> None:
+    """标记中断/失败的 QA 记录为 failed，避免 status=streaming 空记录污染历史。
+
+    Args:
+        answer: 可选失败原因文本（写入 answer 字段，供前端展示「重试」入口）。
+    """
+    values: dict = {"status": "failed"}
+    if answer is not None:
+        values["answer"] = answer
     await db.execute(
         update(QAHistory)
         .where(QAHistory.id == qa_id, QAHistory.status == "streaming")
-        .values(status="failed")
+        .values(**values)
     )
     await db.commit()
 

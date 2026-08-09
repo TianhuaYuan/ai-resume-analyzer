@@ -4,6 +4,7 @@ import {
 } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAppChat } from "../context/AppChatContext";
+import { useToast } from "../components/Toast";
 // D1 工具审批门：决议经独立端点回传（SSE 单向流无法在流内回传）
 import { api } from "../api/client";
 import {
@@ -37,6 +38,7 @@ import {
   createConversation,
   renameConversation,
   deleteConversation,
+  injectToActiveTurn,
   type AgentSSEEvent,
   type AgentStep,
   type QuotaResponse,
@@ -661,6 +663,8 @@ const MessageBubble = memo(function MessageBubble({ msg, deleting, onDelete, onF
   // 流式消息（id 仍是字符串 tempId）不显示删除按钮和反馈按钮
   const canDelete = !msg.streaming && typeof msg.id === "number";
   const canFeedback = !msg.streaming && typeof msg.id === "number";
+  // 失败/中断消息：非流式且 id 仍是临时字符串（未落库）→ 红色提示 + 常显重试
+  const isFailed = !msg.streaming && typeof msg.id === "string";
   // G2: 复制动作反馈（"已复制"短暂提示）
   const [copied, setCopied] = useState(false);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -745,6 +749,26 @@ const MessageBubble = memo(function MessageBubble({ msg, deleting, onDelete, onF
               </MarkdownRenderer>
             )}
             {msg.streaming && msg.answer && <StreamingCursor />}
+
+            {/* 失败/中断消息：视觉区分 + 常显重试按钮（不依赖 hover） */}
+            {isFailed && (
+              <div className="mt-2 flex items-center gap-2">
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/10 text-red-500 border border-red-500/30 shrink-0">
+                  未完成
+                </span>
+                <button
+                  onClick={() => onRegenerate(msg)}
+                  disabled={asking}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium
+                    text-brand bg-brand/10 border border-brand/30 hover:brightness-125
+                    disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer"
+                  aria-label="重试此问题"
+                >
+                  <ArrowsClockwise size={10} weight="bold" aria-hidden="true" />
+                  重试
+                </button>
+              </div>
+            )}
           </div>
 
           {/* 来源引用 + 反馈 + 删除按钮 */}
@@ -917,6 +941,9 @@ export default function QAPage() {
   const [showVersionHistory, setShowVersionHistory] = useState(false);
   const [showPasteDialog, setShowPasteDialog] = useState(false);
   const [showStylePanel, setShowStylePanel] = useState(false);
+  // 保存并完成后的确认弹窗（用户反馈：保存后无任何反馈/弹窗）
+  const [showSaveCompleteDialog, setShowSaveCompleteDialog] = useState(false);
+  const toast = useToast();
 
   // P0-A: ATS 审计弹窗
   const [showAtsAudit, setShowAtsAudit] = useState(false);
@@ -965,7 +992,12 @@ export default function QAPage() {
     }),
     [previewModules, previewStyle],
   );
-  const handleToggleCollapse = useCallback(() => setShowPreview(false), []);
+  const handleToggleCollapse = useCallback(() => {
+    setShowPreview(false);
+    // 关闭预览同时退出模块编辑态：不残留编辑板块，直接回到聊天（用户反馈）
+    setEditingModule(null);
+    setExpandedType(null);
+  }, []);
   const handleSelectSection = useCallback((moduleType: ModuleType) => {
     setEditingModule(moduleType);
     setExpandedType(moduleType);
@@ -1068,6 +1100,27 @@ export default function QAPage() {
       window.removeEventListener("chat:rename-conversation", handleRename as EventListener);
     };
   }, [resumeId, activeConversationId, creatingConv]);
+
+  // ── 改写类工具（rewrite_star/translate/rewrite_resume）写库后：QAPage 自身也刷新 ──
+  // 本页是 dispatch 方（agent_done 时），但内嵌编辑面板（previewModules）不监听
+  // 刷新事件 → 「整份改写不回填表单」根因。监听后延迟拉取最新模块回填预览面板。
+  useEffect(() => {
+    const syncPreview = () => {
+      if (!resumeId || resumeId <= 0) return;
+      // 延迟 500ms 等待 DB 提交完成（与 dispatch 侧注释同模式）
+      setTimeout(() => {
+        getBuilderResume(resumeId)
+          .then((data) => {
+            const mods = data.modules ?? [];
+            setPreviewModules(mods);
+            modulesRef.current = mods;
+          })
+          .catch(() => {});
+      }, 500);
+    };
+    window.addEventListener("resume:modules-refresh", syncPreview);
+    return () => window.removeEventListener("resume:modules-refresh", syncPreview);
+  }, [resumeId]);
 
   // ── 接收来自简历列表 / AI 能力入口 / 侧边栏会话的导航状态（resumeId / question / conversationId） ──
   useEffect(() => {
@@ -1375,12 +1428,14 @@ export default function QAPage() {
       setVersion(result.version);
       setSaveStatus("saved");
       setLastSaveMode("draft");
-    } catch {
+      toast.success("草稿已保存"); // 用户反馈：保存无任何反馈
+    } catch (e) {
       setSaveStatus("error");
+      toast.error(e instanceof Error ? e.message : "保存草稿失败");
     } finally {
       setSaving(false);
     }
-  }, [resume, resumeId]);
+  }, [resume, resumeId, toast]);
 
   // v2: 保存并完成
   const handleSaveComplete = useCallback(async () => {
@@ -1398,12 +1453,16 @@ export default function QAPage() {
       setVersion(result.version);
       setSaveStatus("saved");
       setLastSaveMode("complete");
-    } catch {
+      toast.success("已保存并完成，可开始问答/检索");
+      // 完成弹窗：确认保存成功 + 引导下一步（用户反馈：完成后应有弹窗）
+      setShowSaveCompleteDialog(true);
+    } catch (e) {
       setSaveStatus("error");
+      toast.error(e instanceof Error ? e.message : "保存失败");
     } finally {
       setSaving(false);
     }
-  }, [resume, resumeId, version]);
+  }, [resume, resumeId, version, toast]);
 
   // v2: 粘贴简历回调
   const handlePasteParsed = useCallback((parsedModules: ResumeModuleInput[]) => {
@@ -1654,6 +1713,12 @@ export default function QAPage() {
     if (activeConversationId == null) return; // 会话未就绪，等待
     const q = pendingTriggerQuestion;
     setPendingTriggerQuestion(null);
+    // 特殊指令拦截：__COMPARE__ → 打开「多选简历」选择器，而非发给 Agent
+    // （用户反馈：简历对比不应要求输入简历 id）
+    if (q === "__COMPARE__") {
+      setCompareOpen(true);
+      return;
+    }
     sendQuestion(q);
   }, [resumeId, pendingTriggerQuestion, asking, activeConversationId, sendQuestion]);
 
@@ -1794,6 +1859,23 @@ export default function QAPage() {
       sendQuestion(msg.question);
     },
     [asking, sendQuestion]
+  );
+
+  // ── P1-2: asking 期间补充信息 → 注入当前活跃回合（而非排队新回合） ──
+  const handleInjectMessage = useCallback(
+    (text: string) => {
+      if (!resumeId || resumeId <= 0) return;
+      const content = text.trim();
+      if (!content) return;
+      injectToActiveTurn(resumeId, content, activeConversationId ?? undefined)
+        .then(() => {
+          toast.success("已补充给正在思考的 AI");
+        })
+        .catch((e) => {
+          toast.error(e instanceof Error ? e.message : "补充信息失败");
+        });
+    },
+    [resumeId, activeConversationId, toast]
   );
 
   // ── 对话会话操作 ──────────────────────────────────────────
@@ -2010,8 +2092,9 @@ export default function QAPage() {
             清除历史
           </button>
 
-          {/* v2: 预览面板切换 */}
-          {resumeId > 0 && (
+          {/* v2: 预览面板切换 — 仅当简历有模块内容（LLM 已填入表单）时才显示，
+              避免空表单时预览空白面板（用户反馈：等 LLM 填完且可正确预览再显示按钮） */}
+          {resumeId > 0 && previewModules.length > 0 && (
             <button
               onClick={() => setShowPreview((v) => !v)}
               className={`shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full
@@ -2143,6 +2226,7 @@ export default function QAPage() {
                   uploading={uploading}
                   disabled={!resumeId || resumeId === 0}
                   onSend={handleSendText}
+                  onInject={handleInjectMessage}
                   onCancel={handleCancel}
                   onQuickTag={(q) => {
                     if (!asking) sendQuestion(q);
@@ -2425,8 +2509,22 @@ export default function QAPage() {
 
       {/* ── P0-A: ATS 审计弹窗 ── */}
       {showAtsAudit && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-[var(--color-bg)] rounded-xl shadow-2xl w-full max-w-lg max-h-[80vh] overflow-y-auto p-6">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+          onClick={() => setShowAtsAudit(false)}
+        >
+          <div
+            className="bg-[var(--color-bg)] rounded-xl shadow-2xl w-full max-w-lg max-h-[80vh] overflow-y-auto p-6 relative"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* 右上角 X 关闭（对齐其他弹窗交互） */}
+            <button
+              onClick={() => setShowAtsAudit(false)}
+              aria-label="关闭 ATS 审计"
+              className="absolute top-3 right-3 p-1.5 rounded-lg text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer"
+            >
+              <X size={16} weight="bold" />
+            </button>
             {atsAuditLoading ? (
               <div className="text-center py-12">
                 <div className="animate-spin w-8 h-8 border-2 border-[var(--color-accent)] border-t-transparent rounded-full mx-auto mb-4" />
@@ -2452,6 +2550,50 @@ export default function QAPage() {
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── 保存并完成确认弹窗 ── */}
+      {showSaveCompleteDialog && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+          onClick={() => setShowSaveCompleteDialog(false)}
+        >
+          <div
+            className="bg-[var(--color-bg)] rounded-xl shadow-2xl w-full max-w-sm p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-center">
+              <div className="w-12 h-12 mx-auto rounded-full bg-emerald-500/10 flex items-center justify-center mb-3">
+                <Check size={24} weight="bold" className="text-emerald-500" />
+              </div>
+              <div className="text-base font-semibold text-[var(--color-text)]">
+                简历已保存并完成
+              </div>
+              <div className="text-xs text-[var(--color-text-secondary)] mt-1.5 leading-relaxed">
+                内容已合并并重建索引，Agent 问答与检索将使用最新简历内容。
+              </div>
+            </div>
+            <div className="flex items-center gap-2 mt-5">
+              <button
+                onClick={() => setShowSaveCompleteDialog(false)}
+                className="flex-1 px-4 py-2 rounded-lg bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] text-sm hover:bg-[var(--color-bg-tertiary)] transition-colors cursor-pointer"
+              >
+                继续编辑
+              </button>
+              <button
+                onClick={() => {
+                  setShowSaveCompleteDialog(false);
+                  setShowPreview(false);
+                  setEditingModule(null);
+                  setExpandedType(null);
+                }}
+                className="flex-1 px-4 py-2 rounded-lg bg-brand text-white text-sm hover:bg-[#0077ed] transition-colors cursor-pointer"
+              >
+                去问答
+              </button>
+            </div>
           </div>
         </div>
       )}

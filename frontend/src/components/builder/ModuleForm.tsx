@@ -304,6 +304,9 @@ const AI_ENTRY_MODULE_TYPES: ReadonlySet<ModuleType> = new Set([
   "project_experience",
   "honors",
   "club_activities",
+  "certificates",
+  "publications",
+  "interests",
 ]);
 
 interface EntriesEditorProps {

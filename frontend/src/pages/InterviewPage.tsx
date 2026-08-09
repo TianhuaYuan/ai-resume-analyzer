@@ -151,6 +151,118 @@ const INPUT_CLS =
   "text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] outline-none " +
   "focus:border-brand/50 focus:ring-4 focus:ring-brand/15 transition-all";
 
+/** 评分卡分数颜色 */
+function scoreColor(score: number): string {
+  if (score >= 80) return "bg-emerald-500";
+  if (score >= 70) return "bg-amber-500";
+  if (score >= 60) return "bg-orange-500";
+  return "bg-red-500";
+}
+
+function scoreLabel(score: number): string {
+  if (score >= 80) return "优秀";
+  if (score >= 70) return "良好";
+  if (score >= 60) return "及格";
+  return "待加强";
+}
+
+/**
+ * ScorecardView — 面试评分卡结构化展示（替代 JSON 原样，普通用户可读）。
+ *
+ * 支持标准形状：
+ *   { overall_score: 72, competency_scores: [{competency, score}], weak_competencies: [...], notes }
+ * 兼容简写 { overall: 72, weak: [...], strong: [...] }；未知形状兜底 JSON 折叠展示。
+ */
+function ScorecardView({ scorecard }: { scorecard: Record<string, unknown> }) {
+  const overall =
+    (typeof scorecard.overall_score === "number" && scorecard.overall_score) ||
+    (typeof scorecard.overall === "number" && (scorecard.overall as number)) ||
+    null;
+  const competencies = Array.isArray(scorecard.competency_scores)
+    ? (scorecard.competency_scores as Record<string, unknown>[])
+    : [];
+  const weak = Array.isArray(scorecard.weak_competencies)
+    ? (scorecard.weak_competencies as string[])
+    : Array.isArray(scorecard.weak)
+    ? (scorecard.weak as string[])
+    : [];
+  const notes = typeof scorecard.notes === "string" ? scorecard.notes : "";
+
+  return (
+    <div className="rounded-xl bg-[var(--color-bg-secondary)]/60 border border-[var(--color-border)] p-4 mb-3 space-y-4">
+      {/* 总分 */}
+      <div className="flex items-center gap-3">
+        {overall !== null && (
+          <div
+            className={`w-16 h-16 rounded-2xl ${scoreColor(overall)} text-white flex flex-col items-center justify-center shrink-0`}
+          >
+            <span className="text-xl font-bold leading-none">{overall}</span>
+            <span className="text-[9px] mt-1 opacity-90">总分</span>
+          </div>
+        )}
+        <div className="min-w-0">
+          {overall !== null && (
+            <div className="text-sm font-medium text-[var(--color-text)]">
+              总体评价：{scoreLabel(overall)}
+            </div>
+          )}
+          {weak.length > 0 && (
+            <div className="text-xs text-rose-500 mt-0.5">
+              待加强维度：{weak.join("、")}
+            </div>
+          )}
+          {competencies.length > 0 && (
+            <div className="text-[10px] text-[var(--color-text-muted)] mt-0.5">
+              {competencies.length} 个评分维度
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 各维度进度条 */}
+      {competencies.length > 0 && (
+        <div className="space-y-2">
+          {competencies.map((c, idx) => {
+            const name = (c.competency ?? c.name ?? `维度 ${idx + 1}`) as string;
+            const score = c.score as number | undefined;
+            if (typeof score !== "number") return null;
+            return (
+              <div key={idx}>
+                <div className="flex items-center justify-between text-xs mb-1">
+                  <span className="text-[var(--color-text)] truncate pr-2">{name}</span>
+                  <span className="text-[var(--color-text-secondary)] shrink-0">{score}</span>
+                </div>
+                <div className="h-1.5 rounded-full bg-[var(--color-bg-tertiary)] overflow-hidden">
+                  <div
+                    className={`h-full rounded-full ${scoreColor(score)} transition-all`}
+                    style={{ width: `${Math.min(100, Math.max(0, score))}%` }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {notes && (
+        <p className="text-xs text-[var(--color-text-secondary)] leading-relaxed whitespace-pre-wrap">
+          {notes}
+        </p>
+      )}
+
+      {/* 未知字段兜底（高级用户可展开原始 JSON） */}
+      {overall === null && competencies.length === 0 && (
+        <details className="text-[11px] text-[var(--color-text-muted)]">
+          <summary className="cursor-pointer text-[var(--color-text-secondary)]">查看原始评分数据</summary>
+          <pre className="mt-2 whitespace-pre-wrap break-words font-mono max-h-40 overflow-y-auto">
+            {JSON.stringify(scorecard, null, 2)}
+          </pre>
+        </details>
+      )}
+    </div>
+  );
+}
+
 /**
  * 面试记录 + 复盘页 — 主组件。
  */
@@ -1122,11 +1234,9 @@ export default function InterviewPage() {
                     </div>
                   )}
 
-                  {/* 已有评分卡 JSON 预览 */}
+                  {/* 已有评分卡：结构化视图（普通用户可读，非 JSON 原样） */}
                   {detail.scorecard && (
-                    <pre className="whitespace-pre-wrap break-words text-[11px] text-[var(--color-text-secondary)] leading-relaxed bg-[var(--color-bg-secondary)]/60 rounded-xl px-3 py-2.5 max-h-48 overflow-y-auto font-mono mb-3">
-                      {JSON.stringify(detail.scorecard, null, 2)}
-                    </pre>
+                    <ScorecardView scorecard={detail.scorecard} />
                   )}
 
                   {/* 录入评分卡 */}

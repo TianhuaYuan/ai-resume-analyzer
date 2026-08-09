@@ -8,7 +8,7 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import LandingNav from "../components/LandingNav";
-import { Sparkle, ArrowRight, Robot, FileText, Target } from "@phosphor-icons/react";
+import { Compass, ArrowRight, ChatCircleDots, FileText, Target } from "@phosphor-icons/react";
 
 // ── 产品展示模型 ──
 
@@ -39,7 +39,7 @@ function ProductMockup() {
             {/* 系统消息 */}
             <div className="flex gap-2">
               <div className="w-6 h-6 rounded-full bg-brand/10 flex items-center justify-center shrink-0">
-                <Sparkle size={12} weight="fill" className="text-brand" />
+                <Compass size={12} weight="fill" className="text-brand" />
               </div>
               <div className="bg-[var(--color-bg-secondary)] rounded-xl rounded-tl-sm px-3 py-2 text-xs text-[var(--color-text-secondary)] leading-relaxed max-w-[85%]">
                 你好！我是你的 AI 简历助手。请先告诉我你的基本信息，我来帮你构建简历。
@@ -54,7 +54,7 @@ function ProductMockup() {
             {/* 系统回复 */}
             <div className="flex gap-2">
               <div className="w-6 h-6 rounded-full bg-brand/10 flex items-center justify-center shrink-0">
-                <Sparkle size={12} weight="fill" className="text-brand" />
+                <Compass size={12} weight="fill" className="text-brand" />
               </div>
               <div className="bg-[var(--color-bg-secondary)] rounded-xl rounded-tl-sm px-3 py-2 text-xs text-[var(--color-text-secondary)] leading-relaxed max-w-[85%]">
                 太棒了！第一段教育经历填写完成。要不要添加更多教育经历？
@@ -176,7 +176,7 @@ export default function HomePage() {
         </p>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           {[
-            { icon: Robot, title: "AI 智能对话", desc: "与 AI Agent 实时对话，一步步引导你完成简历构建与优化" },
+            { icon: ChatCircleDots, title: "AI 智能对话", desc: "与 AI Agent 实时对话，一步步引导你完成简历构建与优化" },
             { icon: FileText, title: "专业简历编辑器", desc: "模板化编辑器，模块自由增删排序，一键预览与导出" },
             { icon: Target, title: "求职全程护航", desc: "校招信息、投递跟踪、面试模拟，求职链路一站打通" },
           ].map((item, i) => (

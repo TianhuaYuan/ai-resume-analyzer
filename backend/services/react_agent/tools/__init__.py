@@ -226,19 +226,37 @@ class GetResumeContentTool(Tool):
         if resume is None:
             return "⚠️ 简历不存在或无权访问。"
 
-        text = (resume.parsed_text or "").strip()
-        if text:
-            return f"简历《{resume.filename}》内容（约 {len(text)} 字）：\n{text[:8000]}"
-
-        # 草稿/未合并：读模块内容兜底（实时工作区）
+        # 优先读实时模块（resume_modules 表 = 最新编辑态）。
+        # 修复：之前优先 parsed_text —— 草稿编辑后（未 complete）parsed_text 是旧快照，
+        # 工具读到过期内容（「检索的简历不是最新的」根因）。modules 为空才落 parsed_text。
         from services.resume_builder import get_resume_with_modules
 
         _, modules = await get_resume_with_modules(self.db, self.user_id, resume_id)
         if modules:
-            lines = [f"【{m.module_type}】{m.content}" for m in modules if m.content]
+            lines = []
+            for m in modules:
+                if not m.content:
+                    continue
+                sanitized = (
+                    sanitize_for_ai(m.content)
+                    if isinstance(m.content, dict)
+                    else m.content
+                )
+                lines.append(
+                    f"【{m.module_type}】{_json.dumps(sanitized, ensure_ascii=False)}"
+                )
             body = "\n".join(lines)
             if body:
-                return f"简历《{resume.filename}》内容（模块视图，未合并渲染）：\n{body[:8000]}"
+                truncated = body[:16000]
+                suffix = "\n…（内容较长已截断）" if len(body) > 16000 else ""
+                return (
+                    f"简历《{resume.filename}》内容（实时模块视图，含草稿编辑态）：\n"
+                    f"{truncated}{suffix}"
+                )
+
+        text = (resume.parsed_text or "").strip()
+        if text:
+            return f"简历《{resume.filename}》内容（约 {len(text)} 字）：\n{text[:16000]}"
         return "⚠️ 简历内容为空。"
 
 
@@ -1039,6 +1057,54 @@ class _RewriteResumeOutput(BaseModel):
     )
 
 
+def _coerce_modules(raw) -> list | None:
+    """宽容解析 LLM 返回的 modules 参数（多种错误形状 → 标准 list）。
+
+    小模型（mimo-v2.5）输出整份 modules 数组时常见的错误形状：
+    1. dict 且含 "modules" key（套娃）→ 递归取内层
+    2. dict 按 module_type 作 key、value 为 content
+       （如 {"work_experience": {...}}）→ 转 [{module_type, content, sort_order}]
+    3. str 内含 JSON → 解析后递归
+    4. list → 标准形状，原样返回
+
+    Returns:
+        标准化 list；无法识别返回 None（由调用方抛 ToolRetryError 回灌 LLM 修正）。
+    """
+    if isinstance(raw, list):
+        return raw
+    if isinstance(raw, dict):
+        # 套娃：{"modules": [...]} 或 {"modules": {...}}
+        inner = raw.get("modules")
+        if inner is not None:
+            return _coerce_modules(inner)
+        # module_type 作 key：{module_type: content} / {module_type: [entries]}
+        items: list[dict] = []
+        for key, value in raw.items():
+            if not isinstance(key, str) or not key:
+                return None
+            if isinstance(value, dict):
+                items.append(
+                    {"module_type": key, "content": value, "sort_order": len(items)}
+                )
+            elif isinstance(value, list):
+                items.append(
+                    {
+                        "module_type": key,
+                        "content": {"entries": value},
+                        "sort_order": len(items),
+                    }
+                )
+            else:
+                return None
+        return items
+    if isinstance(raw, str):
+        try:
+            return _coerce_modules(_json.loads(raw))
+        except (_json.JSONDecodeError, TypeError):
+            return None
+    return None
+
+
 async def _read_modules_context(db, user_id: int, resume_id: int):
     """读简历 + 模块上下文。返回 (resume, input_context)。
 
@@ -1052,13 +1118,15 @@ async def _read_modules_context(db, user_id: int, resume_id: int):
     if resume is None:
         return None, ""
     if modules:
+        # 每模块截断 300 → 2000：原 300 只够 work_experience 等长模块第一个 entry 的
+        # 一小部分，LLM 看到的是残缺内容（「工作经历无法正确识别」根因之一）。
         parts = [
-            f"- {m.module_type}: {_json.dumps(sanitize_for_ai(m.content) if isinstance(m.content, dict) else m.content, ensure_ascii=False)[:300]}"
+            f"- {m.module_type}: {_json.dumps(sanitize_for_ai(m.content) if isinstance(m.content, dict) else m.content, ensure_ascii=False)[:2000]}"
             for m in modules
         ]
         return resume, "\n".join(parts)
     if resume.parsed_text:
-        return resume, f"（无模块，原始文本）\n{resume.parsed_text[:8000]}"
+        return resume, f"（无模块，原始文本）\n{resume.parsed_text[:16000]}"
     return resume, ""
 
 
@@ -1069,7 +1137,7 @@ async def _submit_modules_via_llm(
     user_msg: str,
     *,
     tool_desc: str = "提交整份重写后的简历模块数组。modules 每项为 {module_type, content, sort_order}。",
-    max_tokens: int = 4000,
+    max_tokens: int = 8000,
     fail_prefix: str = "AI 重写失败",
     emit=None,
     usage_target: dict | None = None,
@@ -1121,8 +1189,9 @@ async def _submit_modules_via_llm(
     except Exception as e:
         return f"⚠️ {fail_prefix}：{e}"
 
-    raw_modules = args.get("modules")
-    if not isinstance(raw_modules, list):
+    raw_modules = _coerce_modules(args.get("modules"))
+    if raw_modules is None:
+        # 宽容解析（dict/str/套娃→list）仍失败才回灌 LLM 修正重试
         raise ToolRetryError("AI 重写结果格式错误：modules 应为数组。")
 
     from schemas.resume_module import validate_module_content, ModuleType
@@ -1702,7 +1771,9 @@ class RewriteResumeTool(Tool):
                 "可选模块：project_experience、language、honors、certificates 等。\n"
                 "必须通过调用 submit_rewritten_resume 工具提交，modules 参数为模块数组，"
                 "每个元素含 module_type、content、sort_order、source；source 标注内容来源："
-                "fact=简历事实/inferred=AI 推断补充/mixed=混合，不得把推断标为 fact。"
+                "fact=简历事实/inferred=AI 推断补充/mixed=混合，不得把推断标为 fact。\n"
+                "【重要】用户信息不完整时不得编造：若缺少教育背景/工作经历等核心信息，"
+                "不要虚构经历，而是明确列出缺失项并建议用户先补充（或引导用户使用信息追问）。"
             )
         else:
             system_prompt = (

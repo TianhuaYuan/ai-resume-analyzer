@@ -1,7 +1,7 @@
 import { useEffect, useRef, useMemo, useState, useCallback } from "react";
 import {
   X,
-  Sparkle,
+  GitDiff,
   ArrowRight,
   Plus,
   Minus,
@@ -944,7 +944,7 @@ export default function ResumeEditDiffDialog({
         {/* 头部 */}
         <div className="flex items-center gap-3 px-6 py-4 border-b border-[var(--color-border)] shrink-0">
           <div className="shrink-0 p-2 rounded-lg bg-brand/10 text-brand">
-            <Sparkle size={18} weight="fill" aria-hidden="true" />
+            <GitDiff size={18} weight="fill" aria-hidden="true" />
           </div>
           <div className="flex-1 min-w-0">
             <h3 className="text-base font-semibold text-[var(--color-text)]">

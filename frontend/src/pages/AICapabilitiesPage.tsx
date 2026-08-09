@@ -20,7 +20,7 @@ import {
   Briefcase,
   FileText,
   FilePlus,
-  Star,
+  TextAa,
   Translate,
   PencilSimple,
   Question,
@@ -34,7 +34,7 @@ import {
   ChatCircleText,
   BookmarkSimple,
   ClockCounterClockwise,
-  Sparkle,
+  Compass,
   ArrowRight,
   PaperPlaneRight,
 } from "@phosphor-icons/react";
@@ -77,7 +77,9 @@ const CAPABILITY_GROUPS: CapabilityGroup[] = [
         name: "简历对比",
         desc: "横向对比多份简历的优劣势，给出综合裁决",
         icon: Scales,
-        question: "帮我对比我选中的几份简历，分析各自的优劣势",
+        // __COMPARE__ 特殊指令：QAPage 收到后弹出「多选简历」选择器
+        // （而不是让 Agent 要求用户输入简历 id —— 用户反馈不符合使用逻辑）
+        question: "__COMPARE__",
       },
       {
         tool: "check_module",
@@ -85,6 +87,13 @@ const CAPABILITY_GROUPS: CapabilityGroup[] = [
         desc: "检查简历各模块的完整性和 ATS 兼容性，不修改内容",
         icon: CheckCircle,
         question: "帮我检查简历各模块的完整性和 ATS 兼容性",
+      },
+      {
+        tool: "ask_info",
+        name: "信息追问",
+        desc: "分析简历缺失项，提醒你还差哪些信息需要补充",
+        icon: Question,
+        question: "根据简历现状，帮我梳理还需要补充哪些信息",
       },
     ],
   },
@@ -137,9 +146,22 @@ const CAPABILITY_GROUPS: CapabilityGroup[] = [
         tool: "rewrite_star",
         name: "STAR 改写",
         desc: "用 STAR 法则改写经历描述，让表达更专业、更有说服力",
-        icon: Star,
+        icon: TextAa,
         question: "用 STAR 法则改写我简历里的经历描述，让它们更有说服力",
       },
+      {
+        tool: "modify_module",
+        name: "定向修改",
+        desc: "按指令定向修改某个模块，改完直接保存到简历",
+        icon: PencilSimple,
+        question: "帮我定向修改简历中的某个模块，比如把项目描述改得更量化",
+      },
+    ],
+  },
+  {
+    title: "文档输出",
+    subtitle: "翻译与求职文书",
+    cards: [
       {
         tool: "translate",
         name: "翻译",
@@ -153,20 +175,6 @@ const CAPABILITY_GROUPS: CapabilityGroup[] = [
         desc: "针对目标岗位一键生成求职信或打招呼语，贴合 JD 关键词",
         icon: PaperPlaneRight,
         question: "帮我在这个简历的基础上，针对目标岗位写一封求职信",
-      },
-      {
-        tool: "modify_module",
-        name: "定向修改",
-        desc: "按指令定向修改某个模块，改完直接保存到简历",
-        icon: PencilSimple,
-        question: "帮我定向修改简历中的某个模块，比如把项目描述改得更量化",
-      },
-      {
-        tool: "ask_info",
-        name: "信息追问",
-        desc: "分析简历缺失项，提醒你还差哪些信息需要补充",
-        icon: Question,
-        question: "根据简历现状，帮我梳理还需要补充哪些信息",
       },
     ],
   },
@@ -283,7 +291,7 @@ function CapabilityCardView({ card, onTrigger }: { card: CapabilityCard; onTrigg
           </span>
           {/* 触发问题 */}
           <span className="mt-3 flex items-start gap-1.5 text-xs text-brand/90">
-            <Sparkle size={13} weight="fill" className="mt-0.5 flex-shrink-0" />
+            <Compass size={13} weight="fill" className="mt-0.5 flex-shrink-0" />
             <span className="line-clamp-2 leading-relaxed">{card.question}</span>
           </span>
         </span>
@@ -324,7 +332,7 @@ export default function AICapabilitiesPage() {
         <div className="mb-10 animate-fade-in-up">
           <div className="flex items-center gap-3">
             <span className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-brand text-white shadow-lg shadow-brand/25">
-              <Sparkle size={24} weight="fill" />
+              <Compass size={24} weight="fill" />
             </span>
             <div>
               <h1 className="text-2xl font-bold text-[var(--color-text)]">AI 能力目录</h1>

@@ -46,13 +46,14 @@ interface NavItem {
   match: "exact" | "prefix";
 }
 
+// 排序按用户要求：Agent → 简历（核心资源）→ AI 能力 → 投递 → 面试复盘 → 知识资产 → 用户反馈
 const NAV_ITEMS: NavItem[] = [
   { path: "/qa", label: "Agent", icon: ChatCircleDots, match: "exact" },
   { path: "/resumes", label: "简历", icon: FileText, match: "prefix" },
-  { path: "/assets", label: "知识资产", icon: Books, match: "exact" },
   { path: "/capabilities", label: "AI 能力", icon: Sparkle, match: "exact" },
-  { path: "/interviews", label: "面试复盘", icon: Microphone, match: "exact" },
   { path: "/applications", label: "投递看板", icon: PaperPlaneTilt, match: "exact" },
+  { path: "/interviews", label: "面试复盘", icon: Microphone, match: "exact" },
+  { path: "/assets", label: "知识资产", icon: Books, match: "exact" },
   { path: "/feedback", label: "用户反馈", icon: ChatCircle, match: "exact" },
 ];
 

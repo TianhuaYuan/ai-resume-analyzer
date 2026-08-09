@@ -407,6 +407,9 @@ async def analyze_resume(
                     {"role": "user", "content": user_prompt},
                 ],
                 temperature=0.3,
+                # 结构化分析任务：显式关闭思考模式（模型默认 high effort 思考，
+                # 纯格式化输出无需思考，提速降 token）
+                extra_body={"thinking": {"type": "disabled"}},
             )
 
         # 超时护栏（DeepInterview _guarded 对照）：LLM 挂起时返回明确错误而非无限等待
@@ -585,6 +588,8 @@ async def analyze_resume_roles(
                     {"role": "user", "content": user_prompt},
                 ],
                 temperature=0.3,
+                # 结构化评分任务：显式关闭思考模式（同上，纯 JSON 契约输出）
+                extra_body={"thinking": {"type": "disabled"}},
             )
 
         response = await asyncio.wait_for(_call(), timeout=settings.ANALYZE_LLM_TIMEOUT)

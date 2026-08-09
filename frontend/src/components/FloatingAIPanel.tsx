@@ -1,7 +1,7 @@
 import { useState, useCallback, type ReactNode } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
-  Sparkle,
+  ChatCircleDots,
   X,
   PaperPlaneRight,
   FileText,
@@ -134,7 +134,7 @@ export default function FloatingAIPanel({ isAgentPage }: FloatingAIPanelProps) {
       return (
         <div className="flex flex-col gap-3 p-2">
           <div className="flex items-start gap-2">
-            <Sparkle size={18} weight="fill" className="mt-0.5 flex-shrink-0 text-brand" />
+            <ChatCircleDots size={18} weight="fill" className="mt-0.5 flex-shrink-0 text-brand" />
             <p className="text-sm leading-relaxed text-[var(--color-text-secondary)]">
               你好！我是你的 AI 助手，有什么可以帮你的吗？
             </p>
@@ -185,7 +185,7 @@ export default function FloatingAIPanel({ isAgentPage }: FloatingAIPanelProps) {
             onClick={() => handleQuickAction("请介绍一下你还能帮我做哪些事情？")}
             className="mt-1 flex items-center justify-center gap-2 rounded-[10px] border border-dashed border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-secondary)]"
           >
-            <Sparkle size={16} weight="fill" className="text-brand" />
+            <ChatCircleDots size={16} weight="fill" className="text-brand" />
             更多AI用法
           </button>
         )}
@@ -202,7 +202,7 @@ export default function FloatingAIPanel({ isAgentPage }: FloatingAIPanelProps) {
         aria-label={isOpen ? "关闭 AI 助手" : "打开 AI 助手"}
         className="fixed bottom-6 right-6 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-brand text-white shadow-lg shadow-brand/25 transition-all hover:scale-105 hover:shadow-xl hover:shadow-brand/30 active:scale-95"
       >
-        {isOpen ? <X size={22} weight="bold" /> : <Sparkle size={22} weight="fill" />}
+        {isOpen ? <X size={22} weight="bold" /> : <ChatCircleDots size={22} weight="fill" />}
       </button>
 
       {/* 非 Agent 页：展开为浮动面板 */}
@@ -210,7 +210,7 @@ export default function FloatingAIPanel({ isAgentPage }: FloatingAIPanelProps) {
         <div className="fixed bottom-24 right-6 z-50 w-72 animate-fade-in-up overflow-hidden rounded-2xl border border-[var(--color-border)] bg-white/90 backdrop-blur-xl text-[var(--color-text)] shadow-2xl">
           {/* 头部 */}
           <div className="flex items-center gap-2 border-b border-[var(--color-border)] px-4 py-3">
-            <Sparkle size={18} weight="fill" className="flex-shrink-0 text-brand" />
+            <ChatCircleDots size={18} weight="fill" className="flex-shrink-0 text-brand" />
             <div className="flex flex-col leading-tight">
               <span className="text-sm font-semibold">AI 助手</span>
               <span className="text-xs text-[var(--color-text-muted)]">{contextLabel}</span>

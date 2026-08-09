@@ -88,6 +88,10 @@ async def _load_conversation_history(
     for r in records:
         history.append({"role": "user", "content": r.question or ""})
         ans = (r.answer or "").strip()
+        # 历史来自 DB（未存思考过程），且这些是完整问答轮（无工具调用）。
+        # DeepSeek 文档：无工具调用的 assistant 轮次 reasoning_content 无需
+        # 参与上下文拼接（传入会被忽略）；且 thinking 已显式关闭（pipeline 治理），
+        # 不需要也不应该塞占位文本——占位会被模型误读为真实思考内容展示给用户。
         history.append({"role": "assistant", "content": ans[: _HISTORY_ANSWER_MAX]})
     return history
 
@@ -268,19 +272,8 @@ async def react_loop_stream(
                 # 历史加载失败（如测试用 mock db / 查询异常）降级为空，不阻断主流程
                 logger.warning("多轮历史加载失败，降级为空（不影响回答）", exc_info=True)
                 history = []
-            # P1-3：回合 checkpoint（崩溃/断连恢复续答）。仅 agent 模式启用；
-            # builder 意图直达是一次性工具调用，无需断点续跑。
-            # P1-2：回合注入队列（用户在 agent 思考期间追加消息）用同 key 结构。
-            checkpoint_key = None
-            inject_key = None
-            if tool_mode == "agent":
-                conv_suffix = conversation_id if conversation_id else "all"
-                checkpoint_key = (
-                    f"react:checkpoint:{user_id}:{resume_id}:{conv_suffix}"
-                )
-                inject_key = (
-                    f"react:inject:{user_id}:{resume_id}:{conv_suffix}"
-                )
+            # 注：checkpoint_key / inject_key 在生成器作用域计算（见函数入口），
+            # 此处通过闭包读取后透传给 react_loop，保持 key 结构与注入端点一致。
             loop_result = await react_loop(
                 db=db,
                 user_id=user_id,
@@ -297,6 +290,20 @@ async def react_loop_stream(
             logger.error("react_loop 异常: %s", e, exc_info=True)
         finally:
             await queue.put(_SENTINEL)
+
+    # P1-3 回合 checkpoint + P1-2 回合注入队列共用 key 结构。
+    # 定义在生成器作用域（而非 run_loop）——run_loop 的局部变量对外层不可见，
+    # 若在 run_loop 内赋值，下方回合结束清理注入队列时会抛 NameError。
+    checkpoint_key = None
+    inject_key = None
+    if tool_mode == "agent":
+        conv_suffix = conversation_id if conversation_id else "all"
+        checkpoint_key = (
+            f"react:checkpoint:{user_id}:{resume_id}:{conv_suffix}"
+        )
+        inject_key = (
+            f"react:inject:{user_id}:{resume_id}:{conv_suffix}"
+        )
 
     task = asyncio.create_task(run_loop())
 
@@ -363,10 +370,28 @@ async def react_loop_stream(
 
         # ── 检查异常 ──────────────────────────────────────────
         if loop_error:
+            # 失败也落库（status=failed + 错误信息），前端可展示重试入口
+            # （用户反馈：失败/错误的聊天记录不存库、无聊天记录）
+            try:
+                from services.qa_service import mark_qa_interrupted
+
+                await mark_qa_interrupted(
+                    db, qa_id, answer=f"⚠️ Agent 执行出错：{loop_error}"
+                )
+            except Exception:
+                logger.warning("标记失败 QA 记录失败: qa_id=%s", qa_id)
             yield {"type": "error", "message": f"Agent 执行出错: {loop_error}"}
             return
 
         if loop_result is None:
+            try:
+                from services.qa_service import mark_qa_interrupted
+
+                await mark_qa_interrupted(
+                    db, qa_id, answer="⚠️ Agent 未返回结果，请重试"
+                )
+            except Exception:
+                logger.warning("标记失败 QA 记录失败: qa_id=%s", qa_id)
             yield {"type": "error", "message": "Agent 未返回结果"}
             return
 
@@ -421,13 +446,17 @@ async def react_loop_stream(
             "degraded": _has_tool_error(loop_result.process_trace),
         }
 
-    except asyncio.CancelledError:
+    except (asyncio.CancelledError, GeneratorExit) as e:
         # 客户端断连 — 取消后台 task，占位记录标记为 failed（生成中断），
         # 不再保留 status=streaming 的空记录（否则返回后历史会加载出"空记录"污染聊天）。
+        # GeneratorExit：浏览器关闭/切页断开 SSE 时 async generator 收到的是
+        # GeneratorExit 而非 CancelledError——漏处理会残留 status=streaming 记录
+        # （实测浏览器断连残留，用户反馈「中途切换页面不会继续输出」的落库侧根因）。
         logger.info(
-            "Client disconnected from agent stream: user=%d, resume=%d",
+            "Client disconnected from agent stream: user=%d, resume=%d, exc=%s",
             user_id,
             resume_id,
+            type(e).__name__,
         )
         if not task.done():
             task.cancel()
@@ -443,6 +472,9 @@ async def react_loop_stream(
                 await mark_qa_interrupted(db, qa_id)
             except Exception:
                 logger.warning("标记中断 QA 记录失败: qa_id=%s", qa_id)
+        # GeneratorExit 必须继续传播（不能吞掉生成器关闭信号）
+        if isinstance(e, GeneratorExit):
+            raise
         raise
 
 

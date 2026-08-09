@@ -79,6 +79,27 @@ async def delete_user_account(db: AsyncSession, user: User) -> None:
         except Exception:
             logger.warning("Failed to delete file: %s", fp, exc_info=True)
 
+    # 5.5 删头像文件（basic_info 模块 content.avatar，uploads/avatars/）
+    #     DB 级联只删记录不删磁盘文件，否则头像成为孤儿文件
+    if resumes:
+        from services.avatar_service import delete_avatar
+        from services.resume_builder import get_resume_with_modules
+
+        for r in resumes:
+            try:
+                _, mods = await get_resume_with_modules(db, user_id, r.id)
+                for m in mods or []:
+                    if (
+                        m.module_type == "basic_info"
+                        and isinstance(m.content, dict)
+                        and m.content.get("avatar")
+                    ):
+                        delete_avatar(str(m.content["avatar"]))
+            except Exception:
+                logger.warning(
+                    "Failed to clean avatar for resume %s", r.id, exc_info=True
+                )
+
     # 6. 删用户（DB 级联删除关联记录）
     await db.delete(user)
     await db.commit()

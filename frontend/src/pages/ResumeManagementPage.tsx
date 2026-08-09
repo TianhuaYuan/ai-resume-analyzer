@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback, type ChangeEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { Upload, FileText, Sparkle, Trash, Plus, Spinner, TrendUp, X, ClipboardText, Copy } from "@phosphor-icons/react";
+import { Upload, FileText, Lightning, Trash, Plus, Spinner, TrendUp, X, ClipboardText, Copy } from "@phosphor-icons/react";
 import { listResumes, uploadResume, deleteResume, copyResume, generateIdempotencyKey, analyzeResume, matchJD, roleScore, type ResumeItem, type AnalyzeResult, type MatchJDResult, type RoleScoreResult } from "../api/resumes";
 import { createBuilderResume } from "../api/builder";
 import { useToast } from "../components/Toast";
@@ -574,7 +574,7 @@ export default function ResumeManagementPage() {
                   </>
                 ) : (
                   <>
-                    <Sparkle size={14} weight="fill" aria-hidden="true" />
+                    <Lightning size={14} weight="fill" aria-hidden="true" />
                     AI 创建简历
                   </>
                 )}

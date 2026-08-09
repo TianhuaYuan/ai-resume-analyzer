@@ -11,8 +11,8 @@ import {
   Wrench,
   CheckCircle,
   WarningCircle,
-  Robot,
-  Brain,
+  ChatCircleDots,
+  DotsThreeCircle,
   CaretRight,
   CaretDown,
   Spinner,
@@ -145,7 +145,7 @@ const StepItem = memo(function StepItem({
       label: `${getToolLabel(step.name)} 失败`,
     },
     agent_thought: {
-      icon: Brain,
+      icon: DotsThreeCircle,
       color: "text-brand",
       bg: "bg-brand/10",
       border: "border-brand/20",
@@ -441,7 +441,7 @@ export default function AgentProcessPanel({
             <span className="text-xs font-medium text-[var(--color-text-secondary)]">思考过程</span>
           ) : (
             <>
-              <Robot size={14} weight="duotone" className="text-brand" aria-hidden="true" />
+              <ChatCircleDots size={14} weight="duotone" className="text-brand" aria-hidden="true" />
               <span className="text-xs font-semibold text-[var(--color-text-secondary)]">Agent 推理过程</span>
             </>
           )}

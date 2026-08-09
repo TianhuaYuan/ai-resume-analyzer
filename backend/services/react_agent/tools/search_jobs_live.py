@@ -365,6 +365,8 @@ class BochaEngine(_SearchEngine):
                 },
                 json=payload,
                 timeout=self._timeout,
+                # BOCHA_PROXY：网络环境直连超时需显式代理（httpx 不走 Windows 注册表代理）
+                proxy=getattr(settings, "BOCHA_PROXY", "") or None,
             )
             resp.raise_for_status()
             data = resp.json()

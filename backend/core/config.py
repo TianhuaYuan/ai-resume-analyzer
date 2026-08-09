@@ -171,6 +171,10 @@ class Settings(BaseSettings):
     # 博查 Web Search API key（https://open.bochaai.com）；空则不启用联网搜索，
     # 相关工具返回友好降级提示 / 引擎返回空列表走兜底链。
     BOCHA_API_KEY: str = ""
+    # 博查专用代理（如 "http://127.0.0.1:7890"）。某些网络环境下 api.bocha.cn
+    # 直连超时需走代理（httpx 只读环境变量代理、不走 Windows 注册表代理）；
+    # 空 = 直连。DeepSeek/百炼等主模型 API 不需要代理，勿全局设置。
+    BOCHA_PROXY: str = ""
 
     # ── Thinking 配置 ──
     THINKING_ENABLED: bool = True

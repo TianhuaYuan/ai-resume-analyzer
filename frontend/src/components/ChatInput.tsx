@@ -18,7 +18,7 @@ import {
  */
 
 interface ChatInputProps {
-  /** 是否正在等待 AI 回复（禁用输入与快捷标签） */
+  /** 是否正在等待 AI 回复（asking 时输入仍可用，走 inject 补充通道） */
   asking: boolean;
   /** 是否正在上传附件 */
   uploading: boolean;
@@ -26,6 +26,8 @@ interface ChatInputProps {
   disabled?: boolean;
   /** 发送文本（父组件处理真实发送） */
   onSend: (text: string) => void;
+  /** P1-2: asking 期间补充消息 → 注入当前回合（而非排队新回合） */
+  onInject?: (text: string) => void;
   /** 取消当前流式回复 */
   onCancel: () => void;
   /** 点击快捷标签发送预置问题 */
@@ -48,6 +50,7 @@ export default function ChatInput({
   uploading,
   disabled = false,
   onSend,
+  onInject,
   onCancel,
   onQuickTag,
   onFile,
@@ -67,7 +70,18 @@ export default function ChatInput({
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     const q = value.trim();
-    if (!q || asking) return;
+    if (!q) return;
+    // P1-2: asking 期间 → 注入当前回合（用户随时补充信息），而非排队新回合
+    if (asking) {
+      if (onInject) {
+        onInject(q);
+        setValue("");
+        if (textareaRef.current) {
+          textareaRef.current.style.height = "auto";
+        }
+      }
+      return;
+    }
     setValue("");
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
@@ -106,8 +120,14 @@ export default function ChatInput({
                   handleSubmit(e);
                 }
               }}
-              placeholder={disabled ? "请先创建或上传简历开始对话..." : "告诉 AI 助手你的需求..."}
-              disabled={asking || disabled}
+              placeholder={
+                disabled
+                  ? "请先创建或上传简历开始对话..."
+                  : asking
+                  ? "AI 思考中，可输入补充信息（发送给正在思考的 AI）..."
+                  : "告诉 AI 助手你的需求..."
+              }
+              disabled={disabled}
               rows={1}
               className="w-full bg-transparent border-0 outline-none resize-none
                 text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-muted)]
@@ -171,19 +191,37 @@ export default function ChatInput({
 
             <div className="flex-1" />
 
-            {/* 发送/取消按钮（圆形） */}
+            {/* 发送/补充/取消按钮（圆形） */}
             {asking ? (
-              <button
-                type="button"
-                onClick={handleCancel}
-                className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center
-                  text-white bg-red-500/80 hover:bg-red-500
-                  active:scale-90 motion-reduce:active:scale-100
-                  transition-all cursor-pointer"
-                aria-label="取消"
-              >
-                <Stop size={16} weight="fill" aria-hidden="true" />
-              </button>
+              <>
+                {onInject && (
+                  <button
+                    type="submit"
+                    disabled={!value.trim()}
+                    className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center
+                      text-white bg-brand
+                      hover:brightness-110 hover:shadow-lg hover:shadow-brand/25
+                      active:scale-90 motion-reduce:active:scale-100
+                      disabled:opacity-40 disabled:cursor-not-allowed
+                      transition-all cursor-pointer"
+                    aria-label="补充信息（发送给正在思考的 AI）"
+                    title="补充信息"
+                  >
+                    <PaperPlaneRight size={16} weight="fill" aria-hidden="true" />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleCancel}
+                  className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center
+                    text-white bg-red-500/80 hover:bg-red-500
+                    active:scale-90 motion-reduce:active:scale-100
+                    transition-all cursor-pointer"
+                  aria-label="取消"
+                >
+                  <Stop size={16} weight="fill" aria-hidden="true" />
+                </button>
+              </>
             ) : (
               <button
                 type="submit"

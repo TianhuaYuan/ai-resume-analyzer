@@ -32,10 +32,12 @@ interface ToastContextValue {
 const ToastContext = createContext<ToastContextValue | null>(null);
 
 // ── Auto-dismiss timing（null 表示不自动消失，需手动关闭）──
-// error 不自动消失：避免用户没看清错误就消失，必须手动关闭
+// error 自动关闭（10s）：WS 推送的失败提示（如简历分析失败）之前永不消失
+// 一直挂在界面（用户反馈「缺失的 websocket 提示不会自动关闭」）；
+// 10s 足够阅读且仍保留 X 手动关闭
 const AUTO_DISMISS_MS: Record<ToastType, number | null> = {
   success: 3000,
-  error: null,
+  error: 10000,
   info: 4000,
 };
 

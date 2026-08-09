@@ -162,7 +162,10 @@ class WebSearchTool(Tool):
         include = _resolve_site_domains(site)
         if include:
             payload["include"] = include
-        async with httpx.AsyncClient(timeout=_BOCHA_TIMEOUT) as client:
+        # BOCHA_PROXY：某些网络环境 api.bocha.cn 直连超时（httpx 只读环境变量代理、
+        # 不走 Windows 注册表代理），需显式指定代理；空则直连。
+        proxy = getattr(settings, "BOCHA_PROXY", "") or None
+        async with httpx.AsyncClient(timeout=_BOCHA_TIMEOUT, proxy=proxy) as client:
             resp = await client.post(BOCHA_SEARCH_URL, headers=headers, json=payload)
             resp.raise_for_status()
             data = resp.json()

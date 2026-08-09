@@ -31,26 +31,49 @@ _LOCK_BUSY_RETRIES = 5
 _LOCK_BUSY_INTERVAL = 0.5
 
 
+def _text_hash(text: str) -> str:
+    """源文本 sha256（用于就绪判定；与 resume_builder 的 content_hash 语义一致）。"""
+    import hashlib
+
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
 async def _load_asset(
     db: AsyncSession, asset_type: str, asset_id: int
 ) -> tuple[object | None, str]:
-    """加载资产行 + 源文本；不存在返回 (None, "")。"""
+    """加载资产行 + 源文本；不存在返回 (None, "")。
+
+    简历源文本优先最新模块（resume_modules 表 = 草稿编辑态实时同步）：
+    草稿保存（T6 设计）不更新 parsed_text/content_hash，若只读 parsed_text
+    会在用户编辑后检索到旧内容（「检索的简历不是最新的」根因）。
+    modules 为空才用 parsed_text。
+    """
     if asset_type == ASSET_TYPE_RESUME:
         row = await db.get(Resume, asset_id)
-        return row, (row.parsed_text if row else "")
+        if row is None:
+            return None, ""
+        from services.resume_builder import _merge_modules_to_text, get_resume_with_modules
+
+        _, modules = await get_resume_with_modules(db, row.user_id, asset_id)
+        if modules:
+            return row, _merge_modules_to_text(modules)
+        return row, (row.parsed_text or "")
     # 知识资产创建/更新路径（asset_service）会写 content_hash（sha256(content)），
     # 脏标记（content_hash != indexed_hash）驱动懒重建；旧资产无 hash 时每次检索重建。
     row = await db.get(KnowledgeAsset, asset_id)
     return row, (row.content if row else "")
 
 
-async def _is_ready(row: object, collection: str, asset_id: int) -> bool:
-    """索引就绪判定（T8 兜底）：脏标记干净 AND collection 确有该资产最新 chunks。
+async def _is_ready(row: object, text: str, collection: str, asset_id: int) -> bool:
+    """索引就绪判定（T8 兜底）：源文本 hash == indexed_hash AND collection 确有该资产最新 chunks。
 
-    只有 DB 脏标记一致还不够——若向量集合被删/未建成（崩溃窗口、手动清理），
+    用源文本（modules 合并文本）的 hash 而非 row.content_hash 判定：
+    content_hash 只随 complete 更新，草稿编辑后不反映 modules 变化，用它判定
+    会误判「就绪」导致索引永不重建（检索旧数据）。
+    只有 hash 一致还不够——若向量集合被删/未建成（崩溃窗口、手动清理），
     会误判就绪导致检索空结果。此时返回 False 走强制重建。
     """
-    if not (bool(row.content_hash) and row.content_hash == row.indexed_hash):
+    if not (text and _text_hash(text) == row.indexed_hash):
         return False
     existing = await get_vector_store().get(
         collection,
@@ -77,7 +100,7 @@ async def ensure_indexed(
     row, text = await _load_asset(db, asset_type, asset_id)
     if row is None:
         return False
-    if await _is_ready(row, collection, asset_id):
+    if await _is_ready(row, text, collection, asset_id):
         return True
     if not text:
         logger.warning("ensure_indexed: asset %s 无内容，跳过", asset_id)
@@ -89,8 +112,10 @@ async def ensure_indexed(
         # 另一请求正在重建：轮询等待其完成
         for _ in range(_LOCK_BUSY_RETRIES):
             await asyncio.sleep(_LOCK_BUSY_INTERVAL)
-            fresh_row, _ = await _load_asset(db, asset_type, asset_id)
-            if fresh_row is not None and await _is_ready(fresh_row, collection, asset_id):
+            fresh_row, fresh_text = await _load_asset(db, asset_type, asset_id)
+            if fresh_row is not None and await _is_ready(
+                fresh_row, fresh_text, collection, asset_id
+            ):
                 return True
         logger.info(
             "ensure_indexed: 锁忙等待超时，返回就绪（可能有短暂陈旧索引）asset=%s", asset_id
@@ -102,7 +127,7 @@ async def ensure_indexed(
         row, text = await _load_asset(db, asset_type, asset_id)
         if row is None:
             return False
-        if await _is_ready(row, collection, asset_id):
+        if await _is_ready(row, text, collection, asset_id):
             return True
 
         # ── 4. 版本化重建（version 单调递增，独立于 document version）──

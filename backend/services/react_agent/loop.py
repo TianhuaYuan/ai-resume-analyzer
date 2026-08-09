@@ -1031,8 +1031,13 @@ async def _stream_final_round(
 
 
 def _build_assistant_message(response: LLMToolResponse) -> dict:
-    """构造 assistant 消息（含 tool_calls，OpenAI 格式）。"""
-    return {
+    """构造 assistant 消息（含 tool_calls，OpenAI 格式）。
+
+    thinking/reasoning 模型（如 deepseek-v4-flash）在 tool 轮会返回 reasoning_content，
+    多轮请求必须把该字段原样回传，否则 DeepSeek 报 400
+    "reasoning_content in the thinking mode must be passed back to the API"。
+    """
+    msg = {
         "role": "assistant",
         "content": response.content or "",
         "tool_calls": [
@@ -1044,6 +1049,9 @@ def _build_assistant_message(response: LLMToolResponse) -> dict:
             for tc in response.tool_calls
         ],
     }
+    if response.reasoning_content:
+        msg["reasoning_content"] = response.reasoning_content
+    return msg
 
 
 async def _execute_tool_call(
