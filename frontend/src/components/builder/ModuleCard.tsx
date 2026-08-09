@@ -10,27 +10,8 @@
  */
 
 import { memo, useRef, useEffect, useState, useCallback, useMemo } from "react";
-import {
-  DotsSixVertical,
-  TrashSimple,
-  CaretDown,
-  User,
-  GraduationCap,
-  Briefcase,
-  FolderOpen,
-  Wrench,
-  Globe,
-  Trophy,
-  Certificate,
-  Palette,
-  UsersThree,
-  Article,
-  ChatCircleText,
-  ShareNetwork,
-  DotsThree,
-  PlusSquare,
-} from "@phosphor-icons/react";
-import type { Icon } from "@phosphor-icons/react";
+import { GripVertical, Trash, ChevronDown, User, GraduationCap, Briefcase, FolderOpen, Wrench, Globe, Trophy, Award, Palette, Users, FileText, MessageSquareText, Share2, Ellipsis, SquarePlus } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import type { ModuleType, ModuleContent } from "../../api/builder";
 import { getModuleTitle } from "../../api/builder";
 import { isModuleEmpty } from "./ModuleList";
@@ -53,7 +34,7 @@ import { AvatarUpload } from "./AvatarUpload";
 // ── 模块图标映射（参考 Magic FormSection 图标 tile） ──────────
 
 /** 各模块类型的 Phosphor 图标（美化头部用） */
-const MODULE_ICONS: Record<ModuleType, Icon> = {
+const MODULE_ICONS: Record<ModuleType, LucideIcon> = {
   basic_info: User,
   education: GraduationCap,
   work_experience: Briefcase,
@@ -61,14 +42,14 @@ const MODULE_ICONS: Record<ModuleType, Icon> = {
   skills: Wrench,
   language: Globe,
   honors: Trophy,
-  certificates: Certificate,
+  certificates: Award,
   interests: Palette,
-  club_activities: UsersThree,
-  publications: Article,
-  recommendation: ChatCircleText,
-  social_links: ShareNetwork,
-  other: DotsThree,
-  custom: PlusSquare,
+  club_activities: Users,
+  publications: FileText,
+  recommendation: MessageSquareText,
+  social_links: Share2,
+  other: Ellipsis,
+  custom: SquarePlus,
 };
 
 // ── Props ──────────────────────────────────────────────────────
@@ -364,7 +345,7 @@ function ModuleCardImpl({
             hover:text-[var(--color-text-secondary)] transition-colors"
           title="拖拽排序"
         >
-          <DotsSixVertical size={14} weight="bold" aria-hidden="true" />
+          <GripVertical size={14} strokeWidth={2.25} aria-hidden="true" />
         </span>
 
         {/* 图标 tile（参考 Magic FormSection：展开 brand 底色 / 折叠次级灰） */}
@@ -377,7 +358,7 @@ function ModuleCardImpl({
         >
           {(() => {
             const MIcon = MODULE_ICONS[moduleType];
-            return MIcon ? <MIcon size={14} weight={expanded ? "duotone" : "regular"} /> : null;
+            return MIcon ? <MIcon size={14} fill={expanded ? "currentColor" : "none"} /> : null;
           })()}
         </span>
 
@@ -454,13 +435,13 @@ function ModuleCardImpl({
           aria-label={`删除${label}`}
           title="删除模块"
         >
-          <TrashSimple size={12} weight="regular" aria-hidden="true" />
+          <Trash size={12} aria-hidden="true" />
         </button>
 
         {/* 展开/折叠箭头 */}
-        <CaretDown
+        <ChevronDown
           size={12}
-          weight="bold"
+          strokeWidth={2.25}
           className={`shrink-0 text-[var(--color-text-muted)] transition-transform duration-200
             ${expanded ? "rotate-180" : ""}`}
           aria-hidden="true"

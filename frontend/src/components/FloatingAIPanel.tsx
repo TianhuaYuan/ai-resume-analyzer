@@ -1,15 +1,6 @@
 import { useState, useCallback, type ReactNode } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import {
-  ChatCircleDots,
-  X,
-  PaperPlaneRight,
-  FileText,
-  PencilSimple,
-  Target,
-  Microphone,
-  Translate,
-} from "@phosphor-icons/react";
+import { MessagesSquare, X, SendHorizontal, FileText, Pencil, Target, Mic, Languages } from "lucide-react";
 
 interface FloatingAIPanelProps {
   /** 是否在 Agent 聊天页（路由 /qa 时不显示展开面板） */
@@ -27,17 +18,17 @@ interface QuickAction {
 
 // /resumes：简历管理
 const RESUMES_ACTIONS: QuickAction[] = [
-  { icon: <FileText size={18} weight="duotone" />, label: "帮我写简历", question: "帮我写一份专业的简历" },
-  { icon: <PencilSimple size={18} weight="duotone" />, label: "帮我优化简历", question: "帮我优化我的简历" },
-  { icon: <Target size={18} weight="duotone" />, label: "帮我分析职业发展方向", question: "帮我分析我的职业发展方向" },
-  { icon: <Microphone size={18} weight="duotone" />, label: "帮我做模拟面试", question: "帮我做一次模拟面试" },
+  { icon: <FileText size={18} fill="currentColor" />, label: "帮我写简历", question: "帮我写一份专业的简历" },
+  { icon: <Pencil size={18} fill="currentColor" />, label: "帮我优化简历", question: "帮我优化我的简历" },
+  { icon: <Target size={18} fill="currentColor" />, label: "帮我分析职业发展方向", question: "帮我分析我的职业发展方向" },
+  { icon: <Mic size={18} fill="currentColor" />, label: "帮我做模拟面试", question: "帮我做一次模拟面试" },
 ];
 
 // /resumes/:id/edit：简历编辑
 const RESUME_EDIT_ACTIONS: QuickAction[] = [
-  { icon: <PencilSimple size={18} weight="duotone" />, label: "优化当前模块", question: "帮我优化当前正在编辑的简历模块" },
-  { icon: <FileText size={18} weight="duotone" />, label: "检查简历格式", question: "帮我检查这份简历的格式是否规范" },
-  { icon: <Translate size={18} weight="duotone" />, label: "改写薄弱部分", question: "帮我改写简历中表达薄弱的部分" },
+  { icon: <Pencil size={18} fill="currentColor" />, label: "优化当前模块", question: "帮我优化当前正在编辑的简历模块" },
+  { icon: <FileText size={18} fill="currentColor" />, label: "检查简历格式", question: "帮我检查这份简历的格式是否规范" },
+  { icon: <Languages size={18} fill="currentColor" />, label: "改写薄弱部分", question: "帮我改写简历中表达薄弱的部分" },
 ];
 
 // /qa（Agent 聊天页）：不展示悬浮面板（Agent 页已有完整对话界面）
@@ -134,7 +125,7 @@ export default function FloatingAIPanel({ isAgentPage }: FloatingAIPanelProps) {
       return (
         <div className="flex flex-col gap-3 p-2">
           <div className="flex items-start gap-2">
-            <ChatCircleDots size={18} weight="fill" className="mt-0.5 flex-shrink-0 text-brand" />
+            <MessagesSquare size={18} fill="currentColor" className="mt-0.5 flex-shrink-0 text-brand" />
             <p className="text-sm leading-relaxed text-[var(--color-text-secondary)]">
               你好！我是你的 AI 助手，有什么可以帮你的吗？
             </p>
@@ -156,7 +147,7 @@ export default function FloatingAIPanel({ isAgentPage }: FloatingAIPanelProps) {
               aria-label="发送"
               className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-brand text-white transition-transform hover:scale-105 active:scale-95"
             >
-              <PaperPlaneRight size={15} weight="bold" />
+              <SendHorizontal size={15} strokeWidth={2.25} />
             </button>
           </div>
         </div>
@@ -185,7 +176,7 @@ export default function FloatingAIPanel({ isAgentPage }: FloatingAIPanelProps) {
             onClick={() => handleQuickAction("请介绍一下你还能帮我做哪些事情？")}
             className="mt-1 flex items-center justify-center gap-2 rounded-[10px] border border-dashed border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-secondary)]"
           >
-            <ChatCircleDots size={16} weight="fill" className="text-brand" />
+            <MessagesSquare size={16} fill="currentColor" className="text-brand" />
             更多AI用法
           </button>
         )}
@@ -202,7 +193,7 @@ export default function FloatingAIPanel({ isAgentPage }: FloatingAIPanelProps) {
         aria-label={isOpen ? "关闭 AI 助手" : "打开 AI 助手"}
         className="fixed bottom-6 right-6 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-brand text-white shadow-lg shadow-brand/25 transition-all hover:scale-105 hover:shadow-xl hover:shadow-brand/30 active:scale-95"
       >
-        {isOpen ? <X size={22} weight="bold" /> : <ChatCircleDots size={22} weight="fill" />}
+        {isOpen ? <X size={22} strokeWidth={2.25} /> : <MessagesSquare size={22} fill="currentColor" />}
       </button>
 
       {/* 非 Agent 页：展开为浮动面板 */}
@@ -210,7 +201,7 @@ export default function FloatingAIPanel({ isAgentPage }: FloatingAIPanelProps) {
         <div className="fixed bottom-24 right-6 z-50 w-72 animate-fade-in-up overflow-hidden rounded-input border border-[var(--color-border)] bg-white/90 backdrop-blur-xl text-[var(--color-text)] shadow-2xl">
           {/* 头部 */}
           <div className="flex items-center gap-2 border-b border-[var(--color-border)] px-4 py-3">
-            <ChatCircleDots size={18} weight="fill" className="flex-shrink-0 text-brand" />
+            <MessagesSquare size={18} fill="currentColor" className="flex-shrink-0 text-brand" />
             <div className="flex flex-col leading-tight">
               <span className="text-sm font-semibold">AI 助手</span>
               <span className="text-xs text-[var(--color-text-muted)]">{contextLabel}</span>

@@ -16,7 +16,7 @@
  */
 
 import { memo, useCallback, useState } from "react";
-import { Plus, Trash, CaretUp, CaretDown, Eye, EyeSlash } from "@phosphor-icons/react";
+import { Plus, Trash2, ChevronUp, ChevronDown, Eye, EyeOff } from "lucide-react";
 import type { ModuleType, ModuleContent } from "../../api/builder";
 import { MODULE_LABELS } from "./ModuleList";
 import { RichTextEditor } from "./RichTextEditor";
@@ -418,7 +418,7 @@ export function EntriesEditor({
                   transition-all cursor-pointer"
                 aria-label="上移"
               >
-                <CaretUp size={14} weight="bold" aria-hidden="true" />
+                <ChevronUp size={14} strokeWidth={2.25} aria-hidden="true" />
               </button>
               <button
                 onClick={() => handleMoveDown(index)}
@@ -429,7 +429,7 @@ export function EntriesEditor({
                   transition-all cursor-pointer"
                 aria-label="下移"
               >
-                <CaretDown size={14} weight="bold" aria-hidden="true" />
+                <ChevronDown size={14} strokeWidth={2.25} aria-hidden="true" />
               </button>
               <button
                 onClick={() => handleRemove(index)}
@@ -438,7 +438,7 @@ export function EntriesEditor({
                   transition-all cursor-pointer"
                 aria-label="删除条目"
               >
-                <Trash size={14} weight="regular" aria-hidden="true" />
+                <Trash2 size={14} aria-hidden="true" />
               </button>
               {/* 条目隐藏切换 */}
               <button
@@ -456,9 +456,9 @@ export function EntriesEditor({
                 aria-label={entry.hidden ? "显示条目" : "隐藏条目"}
               >
                 {entry.hidden ? (
-                  <EyeSlash size={14} weight="regular" aria-hidden="true" />
+                  <EyeOff size={14} aria-hidden="true" />
                 ) : (
-                  <Eye size={14} weight="regular" aria-hidden="true" />
+                  <Eye size={14} aria-hidden="true" />
                 )}
               </button>
             </div>
@@ -509,7 +509,7 @@ export function EntriesEditor({
           active:scale-[0.98] motion-reduce:active:scale-100
           transition-all cursor-pointer"
       >
-        <Plus size={14} weight="bold" aria-hidden="true" />
+        <Plus size={14} strokeWidth={2.25} aria-hidden="true" />
         添加{moduleLabel}
       </button>
     </div>
@@ -630,7 +630,7 @@ export function SkillsForm({ content, onChange }: SkillsFormProps) {
                 onClick={() => handleRemoveSkill(i)}
                 className="p-1 rounded text-[var(--color-text-muted)] hover:text-danger hover:bg-danger/10 transition-all cursor-pointer"
               >
-                <Trash size={12} />
+                <Trash2 size={12} />
               </button>
             </div>
           ))}
@@ -646,7 +646,7 @@ export function SkillsForm({ content, onChange }: SkillsFormProps) {
           active:scale-[0.98] motion-reduce:active:scale-100
           transition-all cursor-pointer"
       >
-        <Plus size={14} weight="bold" aria-hidden="true" />
+        <Plus size={14} strokeWidth={2.25} aria-hidden="true" />
         添加技能
       </button>
     </div>
@@ -883,9 +883,9 @@ export function CustomModuleForm({ content, onChange, resumeId, moduleType }: Cu
                 aria-label={isCollapsed ? `展开板块 ${index + 1}` : `折叠板块 ${index + 1}`}
                 aria-expanded={!isCollapsed}
               >
-                <CaretDown
+                <ChevronDown
                   size={14}
-                  weight="bold"
+                  strokeWidth={2.25}
                   className={`shrink-0 transition-transform duration-200 ${
                     isCollapsed ? "-rotate-90" : ""
                   }`}
@@ -902,7 +902,7 @@ export function CustomModuleForm({ content, onChange, resumeId, moduleType }: Cu
                   transition-all cursor-pointer"
                 aria-label={`删除板块 ${index + 1}`}
               >
-                <Trash size={14} weight="regular" aria-hidden="true" />
+                <Trash2 size={14} aria-hidden="true" />
               </button>
             </div>
 
@@ -945,7 +945,7 @@ export function CustomModuleForm({ content, onChange, resumeId, moduleType }: Cu
           active:scale-[0.98] motion-reduce:active:scale-100
           transition-all cursor-pointer"
       >
-        <Plus size={14} weight="bold" aria-hidden="true" />
+        <Plus size={14} strokeWidth={2.25} aria-hidden="true" />
         添加板块
       </button>
     </div>

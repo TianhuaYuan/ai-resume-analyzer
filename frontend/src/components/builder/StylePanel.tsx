@@ -11,7 +11,7 @@
  */
 
 import { useCallback, useState } from "react";
-import { PaintBrush, X, Check } from "@phosphor-icons/react";
+import { Paintbrush, X, Check } from "lucide-react";
 import type { ResumeStyle } from "../../api/builder";
 import {
   TEMPLATE_OPTIONS,
@@ -79,7 +79,7 @@ export function StylePanel({
       <div className="shrink-0 flex items-center justify-between px-4 py-3
         border-b border-[var(--color-border)]">
         <div className="flex items-center gap-2">
-          <PaintBrush size={14} weight="duotone" className="text-brand" aria-hidden="true" />
+          <Paintbrush size={14} fill="currentColor" className="text-brand" aria-hidden="true" />
           <h3 className="text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">
             样式配置
           </h3>
@@ -91,7 +91,7 @@ export function StylePanel({
             transition-all cursor-pointer"
           aria-label="关闭样式面板"
         >
-          <X size={14} weight="bold" aria-hidden="true" />
+          <X size={14} strokeWidth={2.25} aria-hidden="true" />
         </button>
       </div>
 
@@ -228,7 +228,7 @@ export function StylePanel({
                   {isActive && (
                     <Check
                       size={12}
-                      weight="bold"
+                      strokeWidth={2.25}
                       className="text-white mx-auto"
                       aria-hidden="true"
                     />

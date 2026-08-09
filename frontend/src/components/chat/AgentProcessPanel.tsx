@@ -7,17 +7,8 @@
  */
 
 import { memo, useState, useEffect, useRef, useMemo } from "react";
-import {
-  Wrench,
-  CheckCircle,
-  WarningCircle,
-  ChatCircleDots,
-  DotsThreeCircle,
-  CaretRight,
-  CaretDown,
-  Spinner,
-} from "@phosphor-icons/react";
-import type { AgentStep } from "../api/qa";
+import { Wrench, CircleCheck, CircleAlert, MessagesSquare, BrainCircuit, ChevronRight, ChevronDown, LoaderCircle } from "lucide-react";
+import type { AgentStep } from "../../api/qa";
 
 interface AgentProcessPanelProps {
   steps: AgentStep[];
@@ -131,21 +122,21 @@ const StepItem = memo(function StepItem({
         : `调用 ${getToolLabel(step.name)}`,
     },
     tool_result: {
-      icon: CheckCircle,
+      icon: CircleCheck,
       color: "text-success",
       bg: "bg-success/10",
       border: "border-success/20",
       label: `${getToolLabel(step.name)} 完成`,
     },
     tool_error: {
-      icon: WarningCircle,
+      icon: CircleAlert,
       color: "text-danger",
       bg: "bg-danger/10",
       border: "border-danger/20",
       label: `${getToolLabel(step.name)} 失败`,
     },
     agent_thought: {
-      icon: DotsThreeCircle,
+      icon: BrainCircuit,
       color: "text-brand",
       bg: "bg-brand/10",
       border: "border-brand/20",
@@ -165,7 +156,7 @@ const StepItem = memo(function StepItem({
   const showToggle = (hasDetail || hasArgs || hasResult) && !streaming;
 
   // 状态图标：running 时旋转，done 时勾，error 时叉
-  const StatusIcon = isRunning ? Spinner : step.status === "error" ? WarningCircle : null;
+  const StatusIcon = isRunning ? LoaderCircle : step.status === "error" ? CircleAlert : null;
 
   return (
     <div className="flex gap-2.5">
@@ -175,9 +166,9 @@ const StepItem = memo(function StepItem({
           className={`w-5 h-5 rounded-full ${config.bg} ${config.border} border flex items-center justify-center`}
         >
           {isRunning ? (
-            <Spinner size={11} weight="bold" className={`${config.color} animate-spin`} aria-hidden="true" />
+            <LoaderCircle size={11} strokeWidth={2.25} className={`${config.color} animate-spin`} aria-hidden="true" />
           ) : (
-            <Icon size={11} weight="fill" className={config.color} aria-hidden="true" />
+            <Icon size={11} fill="currentColor" className={config.color} aria-hidden="true" />
           )}
         </div>
         {index > 0 && (
@@ -212,7 +203,7 @@ const StepItem = memo(function StepItem({
           {StatusIcon && (
             <StatusIcon
               size={10}
-              weight="fill"
+              fill="currentColor"
               className={`ml-1 inline-block ${isRunning ? "animate-spin text-brand" : "text-danger"}`}
               aria-hidden="true"
             />
@@ -274,9 +265,9 @@ const StepItem = memo(function StepItem({
                     aria-expanded={showThought}
                   >
                     {showThought ? "收起思考" : "展开思考"}
-                    <CaretDown
+                    <ChevronDown
                       size={10}
-                      weight="bold"
+                      strokeWidth={2.25}
                       className={`transition-transform ${showThought ? "" : "-rotate-90"}`}
                       aria-hidden="true"
                     />
@@ -415,7 +406,7 @@ export default function AgentProcessPanel({
           onClick={() => setExpanded(true)}
           className="flex items-center gap-2 text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] transition-colors cursor-pointer"
         >
-          <CaretRight size={12} weight="bold" className="shrink-0" />
+          <ChevronRight size={12} strokeWidth={2.25} className="shrink-0" />
           <span className="font-medium">思考过程</span>
           <span className="text-[10px] tabular-nums text-[var(--color-text-muted)]">
             {displaySteps.length} 步{elapsedSeconds > 0 ? ` · ${formatDuration(elapsedSeconds)}` : ""}
@@ -435,13 +426,13 @@ export default function AgentProcessPanel({
           className={`flex items-center gap-2 ${!streaming && steps.length > 0 ? "cursor-pointer hover:opacity-80 transition-opacity" : ""}`}
         >
           {!streaming && steps.length > 0 && (
-            <CaretDown size={12} weight="bold" className="text-[var(--color-text-muted)]" />
+            <ChevronDown size={12} strokeWidth={2.25} className="text-[var(--color-text-muted)]" />
           )}
           {!streaming && steps.length > 0 ? (
             <span className="text-xs font-medium text-[var(--color-text-secondary)]">思考过程</span>
           ) : (
             <>
-              <ChatCircleDots size={14} weight="duotone" className="text-brand" aria-hidden="true" />
+              <MessagesSquare size={14} fill="currentColor" className="text-brand" aria-hidden="true" />
               <span className="text-xs font-semibold text-[var(--color-text-secondary)]">Agent 推理过程</span>
             </>
           )}

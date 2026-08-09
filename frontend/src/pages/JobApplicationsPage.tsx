@@ -16,22 +16,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  Plus,
-  Spinner,
-  Trash,
-  X,
-  Eye,
-  PaperPlaneTilt,
-  Bell,
-  Ghost,
-  ArrowUUpLeft,
-  ArrowRight,
-  CalendarBlank,
-  Flag,
-  MagnifyingGlass,
-  SuitcaseSimple,
-} from "@phosphor-icons/react";
+import { Plus, LoaderCircle, Trash2, X, Eye, Send, Bell, Ghost, CornerUpLeft, ArrowRight, CalendarDays, Flag, Search, Luggage } from "lucide-react";
 import {
   listJobApplications,
   getJobDashboard,
@@ -68,7 +53,7 @@ const STATUS_STYLE: Record<string, { bg: string; fg: string }> = {
 };
 
 const QUEUE_META: Record<DashboardQueueItem["kind"], { label: string; icon: typeof Bell; cls: string }> = {
-  thank_you: { label: "致谢", icon: PaperPlaneTilt, cls: "text-[var(--color-brand)]" },
+  thank_you: { label: "致谢", icon: Send, cls: "text-[var(--color-brand)]" },
   nudge: { label: "催办", icon: Bell, cls: "text-warning" },
   ghost: { label: "失联", icon: Ghost, cls: "text-danger" },
 };
@@ -196,7 +181,7 @@ export default function JobApplicationsPage() {
           onClick={() => setCreateOpen(true)}
           className="flex items-center gap-1.5 rounded-full bg-brand text-white text-sm font-medium px-4 py-2 hover:bg-brand-hover active:scale-[0.98] transition-all cursor-pointer"
         >
-          <Plus size={16} weight="bold" />
+          <Plus size={16} strokeWidth={2.25} />
           新建投递
         </button>
       </div>
@@ -293,7 +278,7 @@ export default function JobApplicationsPage() {
           ))}
         </select>
         <div className="relative flex-1 min-w-[180px]">
-          <MagnifyingGlass size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]" />
+          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]" />
           <input
             value={fKeyword}
             onChange={(e) => setFKeyword(e.target.value)}
@@ -309,7 +294,7 @@ export default function JobApplicationsPage() {
               : "border-[var(--color-border)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)]"
           }`}
         >
-          <Trash size={14} />
+          <Trash2 size={14} />
           {inTrash ? "垃圾箱（查看中）" : "垃圾箱"}
         </button>
       </div>
@@ -317,7 +302,7 @@ export default function JobApplicationsPage() {
       {/* ── 列表 ── */}
       {loading ? (
         <div className="flex justify-center py-16">
-          <Spinner size={22} className="animate-spin text-[var(--color-text-muted)]" />
+          <LoaderCircle size={22} className="animate-spin text-[var(--color-text-muted)]" />
         </div>
       ) : items.length === 0 ? (
         <div className="rounded-input border border-dashed border-[var(--color-border)] py-16 text-center text-sm text-[var(--color-text-muted)]">
@@ -351,7 +336,7 @@ export default function JobApplicationsPage() {
                     <td className="px-3 py-3"><StatusBadge status={a.status} /></td>
                     <td className="px-3 py-3 text-[var(--color-text-secondary)]">
                       <span className="flex items-center gap-1">
-                        <Flag size={13} weight="fill" className={a.priority === "高" ? "text-danger" : a.priority === "中" ? "text-warning" : "text-[var(--color-text-muted)]"} />
+                        <Flag size={13} fill="currentColor" className={a.priority === "高" ? "text-danger" : a.priority === "中" ? "text-warning" : "text-[var(--color-text-muted)]"} />
                         {a.priority}
                       </span>
                     </td>
@@ -402,7 +387,7 @@ export default function JobApplicationsPage() {
                           }`}
                           title={inTrash ? "恢复" : "删除（进垃圾箱）"}
                         >
-                          {inTrash ? <ArrowUUpLeft size={15} /> : <Trash size={15} />}
+                          {inTrash ? <CornerUpLeft size={15} /> : <Trash2 size={15} />}
                         </button>
                       </div>
                     </td>
@@ -598,7 +583,7 @@ function ApplicationFormModal({
           disabled={saving}
           className="flex items-center gap-1.5 px-4 py-2 rounded-action bg-brand text-white text-sm font-medium hover:bg-brand-hover transition-colors cursor-pointer disabled:opacity-50"
         >
-          {saving && <Spinner size={14} className="animate-spin" />}
+          {saving && <LoaderCircle size={14} className="animate-spin" />}
           {isEdit ? "保存" : "创建"}
         </button>
       </div>
@@ -668,7 +653,7 @@ function StatusFlowModal({
           disabled={saving || !next}
           className="flex items-center gap-1.5 px-4 py-2 rounded-action bg-brand text-white text-sm font-medium hover:bg-brand-hover transition-colors cursor-pointer disabled:opacity-50"
         >
-          {saving && <Spinner size={14} className="animate-spin" />}
+          {saving && <LoaderCircle size={14} className="animate-spin" />}
           确认流转
         </button>
       </div>
@@ -717,7 +702,7 @@ function ApplicationDetailModal({
               title="把 JD 文本归档为知识资产，Agent 可检索"
               className="flex items-center gap-1.5 px-4 py-2 rounded-action border border-brand/30 text-sm text-brand hover:bg-brand/10 transition-colors cursor-pointer disabled:opacity-50"
             >
-              {archiving && <Spinner size={14} className="animate-spin" />}
+              {archiving && <LoaderCircle size={14} className="animate-spin" />}
               归档到知识库
             </button>
           )}
@@ -726,7 +711,7 @@ function ApplicationDetailModal({
               onClick={() => setEditOpen(true)}
               className="flex items-center gap-1.5 px-4 py-2 rounded-action border border-[var(--color-border)] text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer"
             >
-              <SuitcaseSimple size={14} />
+              <Luggage size={14} />
               编辑
             </button>
           )}
@@ -742,7 +727,7 @@ function ApplicationDetailModal({
               }}
               className="flex items-center gap-1.5 px-4 py-2 rounded-action bg-brand text-white text-sm font-medium transition-colors cursor-pointer"
             >
-              <ArrowUUpLeft size={14} />
+              <CornerUpLeft size={14} />
               恢复
             </button>
           )}
@@ -805,7 +790,7 @@ function ApplicationDetailModal({
           <div className="flex flex-col gap-1.5">
             {(app.timeline ?? []).map((t, i) => (
               <div key={i} className="flex items-start gap-2 text-sm">
-                <CalendarBlank size={14} className="mt-0.5 shrink-0 text-[var(--color-text-muted)]" />
+                <CalendarDays size={14} className="mt-0.5 shrink-0 text-[var(--color-text-muted)]" />
                 <div className="min-w-0">
                   <span className="text-xs text-[var(--color-text-muted)]">{fmtDate(t.at)}</span>
                   <span className="mx-1.5 text-[var(--color-text)]">

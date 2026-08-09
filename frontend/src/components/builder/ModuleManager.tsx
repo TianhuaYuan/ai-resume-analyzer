@@ -3,7 +3,7 @@
  *
  * 职责：
  * - 列出当前简历的全部模块（按 sort_order 排序）
- * - 每行显示模块名 + 显隐开关（Eye / EyeSlash）
+ * - 每行显示模块名 + 显隐开关（Eye / EyeOff）
  * - 显隐通过 onToggleHidden(type) 回调，由父组件写入 style.hidden_modules
  *
  * 排序已移除：模块顺序在左侧编辑器拖拽调整（ModuleCardEditor），
@@ -13,7 +13,7 @@
  */
 
 import { memo, useMemo } from "react";
-import { Eye, EyeSlash } from "@phosphor-icons/react";
+import { Eye, EyeOff } from "lucide-react";
 import { MODULE_TITLES } from "../templates/shared/sections";
 
 /** StylePanel.modules 的条目形状（与 ResumeModule 结构兼容） */
@@ -91,9 +91,9 @@ function ModuleManagerImpl({
                 title={isHidden ? "显示模块" : "隐藏模块"}
               >
                 {isHidden ? (
-                  <EyeSlash size={14} weight="regular" aria-hidden="true" />
+                  <EyeOff size={14} aria-hidden="true" />
                 ) : (
-                  <Eye size={14} weight="regular" aria-hidden="true" />
+                  <Eye size={14} aria-hidden="true" />
                 )}
               </button>
             </div>

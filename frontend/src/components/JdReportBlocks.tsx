@@ -8,17 +8,7 @@
  * Block G（岗位可信度）用 tier 着色：high_confidence 绿 / proceed_with_caution 黄 / suspicious 红。
  */
 import { useState } from "react";
-import {
-  UserCircle,
-  Table,
-  Target,
-  Money,
-  ListChecks,
-  ChatsCircle,
-  ShieldWarning,
-  CaretDown,
-  CaretRight,
-} from "@phosphor-icons/react";
+import { CircleUser, Table, Target, Banknote, ListChecks, MessagesSquare, ShieldAlert, ChevronDown, ChevronRight } from "lucide-react";
 import type { JdReport } from "../api/resumes";
 
 const CRED_TIER_META: Record<string, { label: string; cls: string; icon: string }> = {
@@ -45,12 +35,12 @@ function Block({
         onClick={() => setOpen(!open)}
         className="w-full flex items-center gap-2 px-4 py-2.5 bg-[var(--color-bg-secondary)] hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer"
       >
-        <Icon size={15} weight="bold" className="text-brand shrink-0" aria-hidden="true" />
+        <Icon size={15} strokeWidth={2.25} className="text-brand shrink-0" aria-hidden="true" />
         <span className="text-sm font-medium text-[var(--color-text)] flex-1 text-left">{title}</span>
         {open ? (
-          <CaretDown size={13} weight="bold" className="text-[var(--color-text-muted)] shrink-0" />
+          <ChevronDown size={13} strokeWidth={2.25} className="text-[var(--color-text-muted)] shrink-0" />
         ) : (
-          <CaretRight size={13} weight="bold" className="text-[var(--color-text-muted)] shrink-0" />
+          <ChevronRight size={13} strokeWidth={2.25} className="text-[var(--color-text-muted)] shrink-0" />
         )}
       </button>
       {open && <div className="px-4 py-3 space-y-2">{children}</div>}
@@ -96,12 +86,12 @@ export default function JdReportBlocks({ report }: { report: JdReport }) {
   return (
     <div className="space-y-2.5 mt-4 pt-4 border-t border-[var(--color-border)]">
       <div className="flex items-center gap-2">
-        <Target size={15} weight="bold" className="text-brand" />
+        <Target size={15} strokeWidth={2.25} className="text-brand" />
         <span className="text-sm font-semibold text-[var(--color-text)]">6-block 求职评估报告</span>
       </div>
 
       {/* Block A: 角色摘要 */}
-      <Block title="角色摘要" icon={UserCircle} defaultOpen>
+      <Block title="角色摘要" icon={CircleUser} defaultOpen>
         <Field k="类型" v={rs?.archetype} />
         <Field k="领域" v={rs?.domain} />
         <Field k="职能" v={rs?.function} />
@@ -163,7 +153,7 @@ export default function JdReportBlocks({ report }: { report: JdReport }) {
       </Block>
 
       {/* Block D: 薪酬市场 */}
-      <Block title="薪酬市场" icon={Money}>
+      <Block title="薪酬市场" icon={Banknote}>
         <Field k="市场区间" v={cm?.market_range} />
         <Field k="锚定建议" v={cm?.base_hint} />
         {cm?.sources?.length ? (
@@ -205,7 +195,7 @@ export default function JdReportBlocks({ report }: { report: JdReport }) {
       </Block>
 
       {/* Block F: 面试故事映射 */}
-      <Block title="面试故事映射" icon={ChatsCircle}>
+      <Block title="面试故事映射" icon={MessagesSquare}>
         {stories.length ? (
           <div className="space-y-2">
             {stories.map((st, i) => (
@@ -229,7 +219,7 @@ export default function JdReportBlocks({ report }: { report: JdReport }) {
 
       {/* Block G: 岗位可信度防坑 */}
       {cred && (
-        <Block title="Block G · 岗位可信度防坑" icon={ShieldWarning} defaultOpen={cred.tier === "suspicious"}>
+        <Block title="Block G · 岗位可信度防坑" icon={ShieldAlert} defaultOpen={cred.tier === "suspicious"}>
           <div className="flex items-center gap-2">
             <span
               className={`px-2 py-0.5 rounded-full text-[11px] font-medium border ${

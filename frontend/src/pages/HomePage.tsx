@@ -13,18 +13,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import LandingNav from "../components/LandingNav";
 import { Button, Badge } from "../components/ui";
-import {
-  Sparkle,
-  ArrowRight,
-  ChatCircleDots,
-  FileText,
-  Target,
-  SealCheck,
-  Briefcase,
-  Microphone,
-  UploadSimple,
-  Compass,
-} from "@phosphor-icons/react";
+import { Sparkles, ArrowRight, MessagesSquare, FileText, Target, BadgeCheck, Briefcase, Mic, Upload, Compass } from "lucide-react";
 
 // ── Hero 信任数据 ──
 
@@ -37,7 +26,7 @@ const HERO_STATS = [
 // ── Bento 功能卡 ──
 
 interface Feature {
-  icon: typeof ChatCircleDots;
+  icon: typeof MessagesSquare;
   title: string;
   desc: string;
   /** icon 底色 + 文字色（浅色 alpha，双主题可读） */
@@ -45,19 +34,19 @@ interface Feature {
 }
 
 const FEATURES: Feature[] = [
-  { icon: ChatCircleDots, title: "AI 智能对话", desc: "与 AI Agent 实时对话，一步步引导完成简历构建与优化", tint: "bg-brand/10 text-brand" },
+  { icon: MessagesSquare, title: "AI 智能对话", desc: "与 AI Agent 实时对话，一步步引导完成简历构建与优化", tint: "bg-brand/10 text-brand" },
   { icon: FileText, title: "专业简历编辑器", desc: "Tiptap 所见即所得，模块自由增删排序，一键预览与导出", tint: "bg-sky-500/10 text-sky-500" },
-  { icon: SealCheck, title: "ATS 深度诊断", desc: "多维度评分定位简历短板，关键词命中与结构优化一目了然", tint: "bg-success-soft text-success" },
+  { icon: BadgeCheck, title: "ATS 深度诊断", desc: "多维度评分定位简历短板，关键词命中与结构优化一目了然", tint: "bg-success-soft text-success" },
   { icon: Briefcase, title: "校招情报实时同步", desc: "校招/社招岗位信息聚合，投递跟踪与截止提醒一站掌握", tint: "bg-warning-soft text-warning" },
-  { icon: Microphone, title: "面试模拟指导", desc: "基于你的简历生成模拟面试，针对性提问并给出回答建议", tint: "bg-purple-500/10 text-purple-500" },
+  { icon: Mic, title: "面试模拟指导", desc: "基于你的简历生成模拟面试，针对性提问并给出回答建议", tint: "bg-purple-500/10 text-purple-500" },
   { icon: Target, title: "求职全程护航", desc: "从简历到投递到复盘，求职链路完整闭环，Offer 尽在掌握", tint: "bg-rose-500/10 text-rose-500" },
 ];
 
 // ── 三步工作流 ──
 
 const STEPS = [
-  { icon: UploadSimple, step: "01", title: "上传简历", desc: "PDF / DOCX 一键上传，自动解析为结构化内容" },
-  { icon: Sparkle, step: "02", title: "AI 诊断优化", desc: "多维度评分 + 针对性建议，逐条接受或拒绝" },
+  { icon: Upload, step: "01", title: "上传简历", desc: "PDF / DOCX 一键上传，自动解析为结构化内容" },
+  { icon: Sparkles, step: "02", title: "AI 诊断优化", desc: "多维度评分 + 针对性建议，逐条接受或拒绝" },
   { icon: Briefcase, step: "03", title: "投递校招", desc: "匹配校招岗位，跟踪投递进度，备战面试" },
 ];
 
@@ -91,7 +80,7 @@ function ProductMockup() {
             {/* 系统消息 */}
             <div className="flex gap-2">
               <div className="w-6 h-6 rounded-full bg-brand/10 flex items-center justify-center shrink-0">
-                <Compass size={12} weight="fill" className="text-brand" />
+                <Compass size={12} fill="currentColor" className="text-brand" />
               </div>
               <div className="bg-[var(--color-bg-secondary)] rounded-list rounded-tl-sm px-3 py-2 text-xs text-[var(--color-text-secondary)] leading-relaxed max-w-[85%]">
                 你好！我是你的 AI 简历助手。请先告诉我你的基本信息，我来帮你构建简历。
@@ -106,7 +95,7 @@ function ProductMockup() {
             {/* ATS 诊断卡（模拟实时分析结果） */}
             <div className="flex gap-2">
               <div className="w-6 h-6 rounded-full bg-brand/10 flex items-center justify-center shrink-0">
-                <Compass size={12} weight="fill" className="text-brand" />
+                <Compass size={12} fill="currentColor" className="text-brand" />
               </div>
               <div className="flex-1 max-w-[85%] bg-white/70 dark:bg-white/5 border border-[var(--color-border)] rounded-list p-3">
                 <div className="flex items-center justify-between text-[10px] mb-1.5">
@@ -128,7 +117,7 @@ function ProductMockup() {
             {/* 系统回复 */}
             <div className="flex gap-2">
               <div className="w-6 h-6 rounded-full bg-brand/10 flex items-center justify-center shrink-0">
-                <Compass size={12} weight="fill" className="text-brand" />
+                <Compass size={12} fill="currentColor" className="text-brand" />
               </div>
               <div className="bg-[var(--color-bg-secondary)] rounded-list rounded-tl-sm px-3 py-2 text-xs text-[var(--color-text-secondary)] leading-relaxed max-w-[85%]">
                 太棒了！诊断完成，建议补充 2 个量化指标，我来帮你优化。
@@ -137,7 +126,7 @@ function ProductMockup() {
             {/* 打字指示器（Open WebUI 风格两粒圆点） */}
             <div className="flex gap-2">
               <div className="w-6 h-6 rounded-full bg-brand/10 flex items-center justify-center shrink-0">
-                <Compass size={12} weight="fill" className="text-brand" />
+                <Compass size={12} fill="currentColor" className="text-brand" />
               </div>
               <div className="bg-[var(--color-bg-secondary)] rounded-list rounded-tl-sm px-3 py-2.5">
                 <div className="flex gap-1">
@@ -235,7 +224,7 @@ export default function HomePage() {
           {/* 徽章 */}
           <div className="animate-fade-in-up">
             <Badge variant="brand" className="mb-6">
-              <Sparkle size={12} weight="fill" aria-hidden="true" />
+              <Sparkles size={12} fill="currentColor" aria-hidden="true" />
               AI 驱动 · 校招/社招数据实时同步
             </Badge>
           </div>
@@ -256,7 +245,7 @@ export default function HomePage() {
 
           {/* 双 CTA */}
           <div className="flex items-center justify-center gap-3 animate-fade-in-up" style={{ animationDelay: "240ms" }}>
-            <Button size="lg" onClick={handlePrimaryCta} iconRight={<ArrowRight size={18} weight="bold" aria-hidden="true" />}>
+            <Button size="lg" onClick={handlePrimaryCta} iconRight={<ArrowRight size={18} strokeWidth={2.25} aria-hidden="true" />}>
               {user ? "我的简历" : "开始使用"}
             </Button>
             <Button size="lg" variant="secondary" onClick={scrollToFeatures}>
@@ -293,7 +282,7 @@ export default function HomePage() {
               style={{ animationDelay: `${i * 80}ms` }}
             >
               <div className={`w-11 h-11 rounded-input flex items-center justify-center mb-5 transition-transform duration-300 group-hover:scale-110 ${item.tint}`}>
-                <item.icon size={20} weight="duotone" aria-hidden="true" />
+                <item.icon size={20} fill="currentColor" aria-hidden="true" />
               </div>
               <h3 className="text-base font-semibold text-[var(--color-text)] mb-2 display-tight">{item.title}</h3>
               <p className="text-sm text-[var(--color-text-muted)] leading-relaxed">{item.desc}</p>
@@ -313,7 +302,7 @@ export default function HomePage() {
           {STEPS.map((item, i) => (
             <div key={item.step} className="relative text-center animate-fade-in-up" style={{ animationDelay: `${i * 120}ms` }}>
               <div className="relative mx-auto w-16 h-16 rounded-full bg-white/80 dark:bg-[var(--color-bg-secondary)] border border-[var(--color-border)] shadow-lg shadow-black/5 flex items-center justify-center mb-5">
-                <item.icon size={22} weight="duotone" className="text-brand" aria-hidden="true" />
+                <item.icon size={22} fill="currentColor" className="text-brand" aria-hidden="true" />
                 <span className="absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full bg-brand text-white text-[10px] font-semibold flex items-center justify-center shadow-sm">
                   {item.step}
                 </span>
@@ -340,7 +329,7 @@ export default function HomePage() {
               size="lg"
               onClick={handlePrimaryCta}
               className="!bg-white !text-[#0071e3] hover:!bg-white/90 hover:!shadow-white/30"
-              iconRight={<ArrowRight size={18} weight="bold" aria-hidden="true" />}
+              iconRight={<ArrowRight size={18} strokeWidth={2.25} aria-hidden="true" />}
             >
               {user ? "进入工作台" : "免费开始使用"}
             </Button>

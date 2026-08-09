@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Check, Checks, Spinner, Warning, X } from "@phosphor-icons/react";
+import { Check, CheckCheck, LoaderCircle, TriangleAlert, X } from "lucide-react";
 import { listResumes, type ResumeItem } from "../api/resumes";
 
 interface CompareSelectDialogProps {
@@ -94,7 +94,7 @@ export function CompareSelectDialog({
         <div className="flex items-center justify-between mb-1">
           <div className="flex items-center gap-2">
             <div className="p-1.5 rounded-action bg-brand/15 text-brand">
-              <Checks size={18} weight="bold" aria-hidden="true" />
+              <CheckCheck size={18} strokeWidth={2.25} aria-hidden="true" />
             </div>
             <h3 className="text-base font-semibold text-[var(--color-text)]">
               选择对比简历
@@ -105,7 +105,7 @@ export function CompareSelectDialog({
             aria-label="关闭"
             className="p-1.5 rounded-action text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)] active:scale-[0.95] motion-reduce:active:scale-100 transition-all cursor-pointer"
           >
-            <X size={16} weight="bold" aria-hidden="true" />
+            <X size={16} strokeWidth={2.25} aria-hidden="true" />
           </button>
         </div>
         <p className="text-sm text-[var(--color-text-secondary)] mb-4">
@@ -115,7 +115,7 @@ export function CompareSelectDialog({
         {/* ── 内容区 ── */}
         {loading ? (
           <div className="flex flex-col items-center justify-center py-12 gap-2">
-            <Spinner
+            <LoaderCircle
               size={24}
               className="animate-spin text-brand"
               aria-hidden="true"
@@ -127,7 +127,7 @@ export function CompareSelectDialog({
         ) : error ? (
           <div className="flex flex-col items-center justify-center py-12 gap-2">
             <div className="p-2 rounded-action bg-danger/15 text-danger">
-              <Warning size={20} weight="bold" aria-hidden="true" />
+              <TriangleAlert size={20} strokeWidth={2.25} aria-hidden="true" />
             </div>
             <span className="text-sm text-danger">{error}</span>
           </div>
@@ -172,7 +172,7 @@ export function CompareSelectDialog({
                       {checked && (
                         <Check
                           size={14}
-                          weight="bold"
+                          strokeWidth={2.25}
                           className="text-white"
                           aria-hidden="true"
                         />

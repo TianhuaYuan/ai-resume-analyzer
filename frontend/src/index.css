@@ -598,3 +598,11 @@ button, a, input, select, textarea {
 [data-theme="oled-dark"] .ProseMirror a {
   color: var(--color-primary);
 }
+
+/* ── 欢迎页瀑布动画（M5：fade-in-up + 45ms 递增延迟，both 保留 delay 期初始帧） ── */
+.welcome-item {
+  animation: fade-in-up 600ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .welcome-item { animation: none; }
+}

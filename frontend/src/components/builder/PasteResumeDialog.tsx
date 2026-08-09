@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect, useRef } from "react";
-import { X, ClipboardText, Spinner, Warning } from "@phosphor-icons/react";
+import { X, ClipboardList, LoaderCircle, TriangleAlert } from "lucide-react";
 import { parseToModules } from "../../api/builder";
 import type { ResumeModuleInput } from "../../api/builder";
 
@@ -89,7 +89,7 @@ export default function PasteResumeDialog({ open, onClose, onParsed }: PasteResu
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--color-border)]">
           <div className="flex items-center gap-2">
-            <ClipboardText size={18} weight="duotone" className="text-brand" />
+            <ClipboardList size={18} fill="currentColor" className="text-brand" />
             <h3 className="text-base font-semibold text-[var(--color-text)]">粘贴简历文本</h3>
           </div>
           <button
@@ -98,7 +98,7 @@ export default function PasteResumeDialog({ open, onClose, onParsed }: PasteResu
             className="p-1.5 rounded-action text-[var(--color-text-secondary)]
               hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)] transition-all cursor-pointer"
           >
-            <X size={18} weight="bold" />
+            <X size={18} strokeWidth={2.25} />
           </button>
         </div>
 
@@ -145,7 +145,7 @@ export default function PasteResumeDialog({ open, onClose, onParsed }: PasteResu
 
           {/* 提示 */}
           <div className="flex gap-3 p-3 rounded-action bg-brand/5 border border-brand/10">
-            <Warning size={16} weight="duotone" className="text-brand shrink-0 mt-0.5" />
+            <TriangleAlert size={16} fill="currentColor" className="text-brand shrink-0 mt-0.5" />
             <div className="text-xs text-[var(--color-text-secondary)] space-y-1">
               <p className="font-medium text-[var(--color-text)]">粘贴提示</p>
               <ul className="list-disc list-inside space-y-0.5 text-[var(--color-text-muted)]">
@@ -180,7 +180,7 @@ export default function PasteResumeDialog({ open, onClose, onParsed }: PasteResu
               disabled:opacity-40 disabled:cursor-not-allowed
               inline-flex items-center gap-2"
           >
-            {parsing && <Spinner size={12} className="animate-spin" weight="bold" />}
+            {parsing && <LoaderCircle size={12} className="animate-spin" strokeWidth={2.25} />}
             {parsing ? "解析中..." : "导入简历"}
           </button>
         </div>

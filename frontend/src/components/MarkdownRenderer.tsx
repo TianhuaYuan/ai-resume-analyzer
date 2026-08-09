@@ -3,6 +3,9 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import rehypeSanitize from "rehype-sanitize";
+import rehypeHighlight from "rehype-highlight";
+import "highlight.js/styles/github-dark.min.css";
+import CodeBlock from "./CodeBlock";
 
 interface MarkdownRendererProps {
   children: string;
@@ -36,7 +39,7 @@ function MarkdownRendererImpl({ children, className, maxChars }: MarkdownRendere
     >
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkBreaks]}
-        rehypePlugins={[rehypeSanitize]}
+        rehypePlugins={[rehypeHighlight, rehypeSanitize]}
         components={{
           h1: ({ node, ...props }) => (
             <h1 className="markdown-h1 text-lg font-semibold mt-4 mb-2 text-[var(--color-text)]" {...props} />
@@ -111,11 +114,8 @@ function MarkdownRendererImpl({ children, className, maxChars }: MarkdownRendere
               </code>
             );
           },
-          pre: ({ node, ...props }) => (
-            <pre
-              className="markdown-pre my-3 p-3 rounded-action bg-black/40 border border-[var(--color-border)] overflow-x-auto text-xs"
-              {...props}
-            />
+          pre: ({ children }) => (
+            <CodeBlock>{children}</CodeBlock>
           ),
           table: ({ node, ...props }) => (
             <div className="markdown-table-wrap my-3 overflow-x-auto">

@@ -1,14 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import {
-  FileText,
-  Translate,
-  Briefcase,
-  Microphone,
-  MapTrifold,
-  Paperclip,
-  PaperPlaneRight,
-  Stop,
-} from "@phosphor-icons/react";
+import { FileText, Languages, Briefcase, Mic, Map, Paperclip, ArrowUp, Square } from "lucide-react";
 
 /**
  * ChatInput — Agent 聊天页输入区（独立组件，本地管理输入状态）。
@@ -39,10 +30,10 @@ interface ChatInputProps {
 // 输入框底部工具栏快捷标签
 const QUICK_TAGS = [
   { icon: FileText, label: "简历诊断", question: "请全面诊断这份简历的优点和不足" },
-  { icon: Translate, label: "简历翻译", question: "请将这份简历翻译为英文" },
+  { icon: Languages, label: "简历翻译", question: "请将这份简历翻译为英文" },
   { icon: Briefcase, label: "校招推荐", question: "请实时搜索最近的校招和社招岗位机会" },
-  { icon: Microphone, label: "面试指导", question: "请根据这份简历模拟一场面试" },
-  { icon: MapTrifold, label: "职业规划", question: "请帮我分析我的职业发展方向" },
+  { icon: Mic, label: "面试指导", question: "请根据这份简历模拟一场面试" },
+  { icon: Map, label: "职业规划", question: "请帮我分析我的职业发展方向" },
 ] as const;
 
 export default function ChatInput({
@@ -155,8 +146,8 @@ export default function ChatInput({
 
   return (
     <div className="shrink-0 px-4 sm:px-6 py-4 border-t border-[var(--color-border)]">
-      <form onSubmit={handleSubmit} className="max-w-3xl mx-auto">
-        <div className="rounded-input bg-white/80 backdrop-blur-xl border border-[var(--color-border)]
+      <form onSubmit={handleSubmit} className="max-w-[58rem] mx-auto">
+        <div className="rounded-3xl bg-white/80 backdrop-blur-xl border border-[var(--color-border)]
           shadow-sm
           focus-within:ring-4 focus-within:ring-brand/15 focus-within:border-brand/40
           transition-all duration-200 overflow-hidden">
@@ -269,7 +260,7 @@ export default function ChatInput({
               {uploading ? (
                 <span className="inline-block w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" aria-hidden="true" />
               ) : (
-                <Paperclip size={16} weight="regular" aria-hidden="true" />
+                <Paperclip size={16} aria-hidden="true" />
               )}
             </button>
 
@@ -291,7 +282,7 @@ export default function ChatInput({
                       whitespace-nowrap"
                     aria-label={tag.label}
                   >
-                    <Icon size={13} weight="regular" aria-hidden="true" />
+                    <Icon size={13} aria-hidden="true" />
                     {tag.label}
                   </button>
                 );
@@ -316,7 +307,7 @@ export default function ChatInput({
                     aria-label="补充信息（发送给正在思考的 AI）"
                     title="补充信息"
                   >
-                    <PaperPlaneRight size={16} weight="fill" aria-hidden="true" />
+                    <ArrowUp size={16} strokeWidth={2.25} aria-hidden="true" />
                   </button>
                 )}
                 <button
@@ -328,7 +319,7 @@ export default function ChatInput({
                     transition-all cursor-pointer"
                   aria-label="取消"
                 >
-                  <Stop size={16} weight="fill" aria-hidden="true" />
+                  <Square size={16} fill="currentColor" aria-hidden="true" />
                 </button>
               </>
             ) : (
@@ -343,7 +334,7 @@ export default function ChatInput({
                   transition-all cursor-pointer"
                 aria-label="发送"
               >
-                <PaperPlaneRight size={16} weight="fill" aria-hidden="true" />
+                <ArrowUp size={16} strokeWidth={2.25} aria-hidden="true" />
               </button>
             )}
           </div>

@@ -6,7 +6,7 @@
  * - SCORE_DIMENSIONS：四维固定色序（Magic-Resume FIT_DIMENSIONS L30-35 对照）
  * - 总分 hero 大数字（DeepInterview score-bento 风格）+ 四维彩条进度（ArtifactCanvas ScoreView）
  */
-import { CheckCircle, TrendUp } from "@phosphor-icons/react";
+import { CircleCheck, TrendingUp } from "lucide-react";
 import type { ScoreDetail } from "../api/resumes";
 
 export type ScoreBand = "excellent" | "good" | "medium" | "needsWork";
@@ -111,9 +111,9 @@ export default function ScoreCard({ scores }: { scores: ScoreDetail }) {
       {/* 解读提示 */}
       <div className="flex items-start gap-2 rounded-list bg-[var(--color-bg-secondary)]/60 px-3.5 py-3">
         {overall >= 70 ? (
-          <CheckCircle size={15} className="text-success mt-0.5 shrink-0" weight="fill" />
+          <CircleCheck size={15} className="text-success mt-0.5 shrink-0" fill="currentColor" />
         ) : (
-          <TrendUp size={15} className="text-warning mt-0.5 shrink-0" />
+          <TrendingUp size={15} className="text-warning mt-0.5 shrink-0" />
         )}
         <p className="text-xs text-[var(--color-text-muted)] leading-relaxed">
           {overall >= 85

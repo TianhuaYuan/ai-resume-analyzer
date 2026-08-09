@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Gauge, ArrowsClockwise } from "@phosphor-icons/react";
+import { X, Gauge, RefreshCw } from "lucide-react";
 import type { QuotaResponse } from "../api/qa";
 
 interface Props {
@@ -76,7 +76,7 @@ export default function UsageDialog({ open, onClose }: Props) {
           >
             <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--color-border)]">
               <h2 className="text-lg font-semibold text-[var(--color-text)] flex items-center gap-2">
-                <Gauge className="w-5 h-5 text-brand" weight="duotone" aria-hidden="true" />
+                <Gauge className="w-5 h-5 text-brand" fill="currentColor" aria-hidden="true" />
                 Token 用量
               </h2>
               <button
@@ -157,7 +157,7 @@ export default function UsageDialog({ open, onClose }: Props) {
                 disabled={loading}
                 className="w-full flex items-center justify-center gap-1.5 h-9 bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] rounded-action text-xs font-medium transition-colors hover:bg-[var(--color-border)] disabled:opacity-50 cursor-pointer"
               >
-                <ArrowsClockwise
+                <RefreshCw
                   className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`}
                   aria-hidden="true"
                 />

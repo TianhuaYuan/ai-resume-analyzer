@@ -1,17 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import {
-  Plus,
-  Spinner,
-  Trash,
-  PencilSimple,
-  X,
-  Books,
-  Briefcase,
-  ChatCircle,
-  NotePencil,
-  CaretLeft,
-  CaretRight,
-} from "@phosphor-icons/react";
+import { Plus, LoaderCircle, Trash2, Pencil, X, Library, Briefcase, MessageCircle, SquarePen, ChevronLeft, ChevronRight } from "lucide-react";
 import {
   listAssets,
   createAsset,
@@ -28,11 +16,11 @@ import ConfirmDialog from "../components/ConfirmDialog";
 const PAGE_SIZE = 10;
 
 /** 类型 Tab 配置 */
-const TABS: Array<{ key: KnowledgeAssetType | "all"; label: string; icon: typeof Books }> = [
-  { key: "all", label: "全部", icon: Books },
+const TABS: Array<{ key: KnowledgeAssetType | "all"; label: string; icon: typeof Library }> = [
+  { key: "all", label: "全部", icon: Library },
   { key: "jd", label: "JD", icon: Briefcase },
-  { key: "interview", label: "面试记录", icon: ChatCircle },
-  { key: "note", label: "笔记", icon: NotePencil },
+  { key: "interview", label: "面试记录", icon: MessageCircle },
+  { key: "note", label: "笔记", icon: SquarePen },
 ];
 
 /** 类型徽章配色 */
@@ -241,7 +229,7 @@ export default function AssetsPage() {
                 transition-all duration-300 cursor-pointer"
               aria-label="新建笔记"
             >
-              <Plus size={14} weight="bold" aria-hidden="true" />
+              <Plus size={14} strokeWidth={2.25} aria-hidden="true" />
               新建笔记
             </button>
           </header>
@@ -263,7 +251,7 @@ export default function AssetsPage() {
                   aria-selected={active}
                   role="tab"
                 >
-                  <Icon size={13} weight={active ? "fill" : "regular"} aria-hidden="true" />
+                  <Icon size={13} fill={active ? "currentColor" : "none"} aria-hidden="true" />
                   {t.label}
                 </button>
               );
@@ -280,7 +268,7 @@ export default function AssetsPage() {
           {/* ── 列表 ── */}
           {loading ? (
             <div className="flex items-center justify-center py-32">
-              <Spinner
+              <LoaderCircle
                 size={24}
                 className="animate-spin text-[var(--color-text-muted)] mr-2"
                 aria-hidden="true"
@@ -289,9 +277,9 @@ export default function AssetsPage() {
             </div>
           ) : assets.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-32 text-center">
-              <Books
+              <Library
                 size={48}
-                weight="duotone"
+                fill="currentColor"
                 className="text-[var(--color-text-muted)] mb-4"
                 aria-hidden="true"
               />
@@ -344,7 +332,7 @@ export default function AssetsPage() {
                           aria-label={`编辑 ${a.title}`}
                           title="编辑"
                         >
-                          <PencilSimple size={14} weight="bold" aria-hidden="true" />
+                          <Pencil size={14} strokeWidth={2.25} aria-hidden="true" />
                         </button>
                         <button
                           onClick={() => setDeleteTarget(a)}
@@ -352,7 +340,7 @@ export default function AssetsPage() {
                           aria-label={`删除 ${a.title}`}
                           title="删除"
                         >
-                          <Trash size={14} weight="bold" aria-hidden="true" />
+                          <Trash2 size={14} strokeWidth={2.25} aria-hidden="true" />
                         </button>
                       </div>
                     </div>
@@ -386,7 +374,7 @@ export default function AssetsPage() {
                   className="p-2 rounded-full bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
                   aria-label="上一页"
                 >
-                  <CaretLeft size={14} weight="bold" aria-hidden="true" />
+                  <ChevronLeft size={14} strokeWidth={2.25} aria-hidden="true" />
                 </button>
                 {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
                   const start = Math.max(1, Math.min(page - 2, totalPages - 4));
@@ -413,7 +401,7 @@ export default function AssetsPage() {
                   className="p-2 rounded-full bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
                   aria-label="下一页"
                 >
-                  <CaretRight size={14} weight="bold" aria-hidden="true" />
+                  <ChevronRight size={14} strokeWidth={2.25} aria-hidden="true" />
                 </button>
               </div>
             </div>
@@ -449,7 +437,7 @@ export default function AssetsPage() {
                 className="p-1.5 rounded-md text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 aria-label="关闭"
               >
-                <X size={16} weight="bold" aria-hidden="true" />
+                <X size={16} strokeWidth={2.25} aria-hidden="true" />
               </button>
             </div>
 
@@ -543,7 +531,7 @@ export default function AssetsPage() {
                 className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-action text-sm font-medium text-white bg-brand hover:bg-brand-hover active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {saving && (
-                  <Spinner size={14} className="animate-spin" aria-hidden="true" />
+                  <LoaderCircle size={14} className="animate-spin" aria-hidden="true" />
                 )}
                 {editing ? "保存修改" : "创建"}
               </button>

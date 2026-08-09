@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Warning, SignIn } from "@phosphor-icons/react";
+import { TriangleAlert, LogIn } from "lucide-react";
 
 interface SessionExpiredDialogProps {
   open: boolean;
@@ -71,7 +71,7 @@ export default function SessionExpiredDialog({
       >
         <div className="flex flex-col items-center px-6 py-6 text-center">
           <div className="shrink-0 p-3 rounded-list mb-4 bg-danger/15 text-danger">
-            <Warning size={28} weight="bold" aria-hidden="true" />
+            <TriangleAlert size={28} strokeWidth={2.25} aria-hidden="true" />
           </div>
 
           <h3 className="text-base font-semibold text-[var(--color-text)]">
@@ -92,7 +92,7 @@ export default function SessionExpiredDialog({
               transition-all cursor-pointer
               flex items-center gap-1.5"
           >
-            <SignIn size={14} weight="regular" aria-hidden="true" />
+            <LogIn size={14} aria-hidden="true" />
             去登录
           </button>
         </div>

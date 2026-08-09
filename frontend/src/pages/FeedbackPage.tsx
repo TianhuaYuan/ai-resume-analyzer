@@ -7,15 +7,7 @@
  */
 
 import { useEffect, useState, useCallback } from "react";
-import {
-  Plus,
-  Archive,
-  X,
-  Spinner,
-  ThumbsUp,
-  CalendarBlank,
-  User,
-} from "@phosphor-icons/react";
+import { Plus, Archive, X, LoaderCircle, ThumbsUp, CalendarDays, User } from "lucide-react";
 import { useToast } from "../components/Toast";
 import PageHeaderProvider, { usePageHeader } from "../components/PageHeaderProvider";
 import {
@@ -82,7 +74,7 @@ function FeedbackPageHeader({ onOpenDialog }: { onOpenDialog: () => void }) {
           hover:scale-[1.02] active:scale-[0.98] motion-reduce:active:scale-100
           transition-all duration-300 cursor-pointer shadow-sm shadow-brand/25"
       >
-        <Plus size={16} weight="bold" aria-hidden="true" />
+        <Plus size={16} strokeWidth={2.25} aria-hidden="true" />
         反馈建议
       </button>,
     );
@@ -183,14 +175,14 @@ export default function FeedbackPage() {
         {/* 反馈列表 */}
         {loading ? (
           <div className="flex-1 flex flex-col items-center justify-center text-center">
-            <Spinner size={24} className="animate-spin text-brand mb-3" />
+            <LoaderCircle size={24} className="animate-spin text-brand mb-3" />
             <p className="text-xs text-[var(--color-text-muted)]">加载中...</p>
           </div>
         ) : items.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center text-center">
             <div className="w-14 h-14 rounded-input bg-[var(--color-bg-secondary)] border border-[var(--color-border)]
               flex items-center justify-center text-[var(--color-text-muted)] mb-4">
-              <Archive size={26} weight="duotone" aria-hidden="true" />
+              <Archive size={26} fill="currentColor" aria-hidden="true" />
             </div>
             <h2 className="text-base font-semibold text-[var(--color-text)] mb-1.5">暂无反馈</h2>
             <p className="text-sm text-[var(--color-text-muted)] text-center max-w-sm">
@@ -227,11 +219,11 @@ export default function FeedbackPage() {
                   <div className="flex items-center justify-between pt-3 border-t border-[var(--color-border)]">
                     <div className="flex items-center gap-3 text-[10px] text-[var(--color-text-muted)]">
                       <span className="inline-flex items-center gap-1">
-                        <CalendarBlank size={10} weight="duotone" />
+                        <CalendarDays size={10} fill="currentColor" />
                         {formatTimestamp(item.created_at)}
                       </span>
                       <span className="inline-flex items-center gap-1">
-                        <User size={10} weight="duotone" />
+                        <User size={10} fill="currentColor" />
                         {item.user_display}
                       </span>
                     </div>
@@ -245,7 +237,7 @@ export default function FeedbackPage() {
                         }
                         disabled:opacity-40`}
                     >
-                      <ThumbsUp size={11} weight={item.is_liked ? "fill" : "regular"} />
+                      <ThumbsUp size={11} fill={item.is_liked ? "currentColor" : "none"} />
                       <span className="tabular-nums">{item.likes_count}</span>
                     </button>
                   </div>
@@ -273,7 +265,7 @@ export default function FeedbackPage() {
                 <h3 className="text-base font-semibold text-[var(--color-text)]">反馈建议</h3>
                 <button onClick={() => setDialogOpen(false)} aria-label="关闭"
                   className="p-1.5 rounded-action text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)] transition-all cursor-pointer">
-                  <X size={18} weight="bold" />
+                  <X size={18} strokeWidth={2.25} />
                 </button>
               </div>
 
@@ -329,7 +321,7 @@ export default function FeedbackPage() {
                     hover:bg-brand-hover hover:scale-[1.02] active:scale-[0.98] transition-all duration-300 cursor-pointer
                     disabled:opacity-40 disabled:cursor-not-allowed
                     inline-flex items-center gap-2">
-                  {submitting && <Spinner size={12} className="animate-spin" weight="bold" />}
+                  {submitting && <LoaderCircle size={12} className="animate-spin" strokeWidth={2.25} />}
                   {submitting ? "提交中..." : "提交反馈"}
                 </button>
               </div>

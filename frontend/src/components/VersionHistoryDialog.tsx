@@ -12,13 +12,7 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import {
-  X,
-  ArrowClockwise,
-  GitBranch,
-  CaretDown,
-  CaretUp,
-} from "@phosphor-icons/react";
+import { X, RotateCw, GitBranch, ChevronDown, ChevronUp } from "lucide-react";
 import {
   getResumeVersions,
   type ResumeVersionsResult,
@@ -167,7 +161,7 @@ export default function VersionHistoryDialog({
               active:scale-[0.95] motion-reduce:active:scale-100
               transition-all cursor-pointer shrink-0"
           >
-            <X size={18} weight="bold" aria-hidden="true" />
+            <X size={18} strokeWidth={2.25} aria-hidden="true" />
           </button>
         </div>
 
@@ -199,7 +193,7 @@ export default function VersionHistoryDialog({
                   active:scale-[0.98] motion-reduce:active:scale-100
                   transition-all cursor-pointer"
               >
-                <ArrowClockwise size={14} weight="bold" aria-hidden="true" />
+                <RotateCw size={14} strokeWidth={2.25} aria-hidden="true" />
                 重试
               </button>
             </div>
@@ -209,7 +203,7 @@ export default function VersionHistoryDialog({
             <div className="text-center py-12 text-[var(--color-text-muted)] text-sm">
               <GitBranch
                 size={28}
-                weight="duotone"
+                fill="currentColor"
                 className="mx-auto mb-3 opacity-60"
                 aria-hidden="true"
               />
@@ -281,16 +275,16 @@ export default function VersionHistoryDialog({
                         </span>
                       </span>
                       {expanded ? (
-                        <CaretUp
+                        <ChevronUp
                           size={14}
-                          weight="bold"
+                          strokeWidth={2.25}
                           aria-hidden="true"
                           className="text-[var(--color-text-muted)] shrink-0"
                         />
                       ) : (
-                        <CaretDown
+                        <ChevronDown
                           size={14}
-                          weight="bold"
+                          strokeWidth={2.25}
                           aria-hidden="true"
                           className="text-[var(--color-text-muted)] shrink-0"
                         />

@@ -8,7 +8,7 @@ import {
   useMemo,
   type ReactNode,
 } from "react";
-import { X } from "@phosphor-icons/react";
+import { X } from "lucide-react";
 
 // ── Types ──
 
@@ -136,7 +136,7 @@ function ToastEntry({ item, onDismiss }: { item: ToastItem; onDismiss: (id: numb
         aria-label="关闭"
         className="p-1 rounded hover:bg-white/20 transition-colors cursor-pointer"
       >
-        <X size={16} weight="bold" aria-hidden="true" />
+        <X size={16} strokeWidth={2.25} aria-hidden="true" />
       </button>
       {duration !== null && (
         <div

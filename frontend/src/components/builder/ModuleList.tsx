@@ -9,12 +9,7 @@
  */
 
 import { memo, useState, useMemo } from "react";
-import {
-  DotsSixVertical,
-  Plus,
-  TrashSimple,
-  CaretDown,
-} from "@phosphor-icons/react";
+import { GripVertical, Plus, Trash, ChevronDown } from "lucide-react";
 import type { ModuleType, ResumeModule, ModuleContent } from "../../api/builder";
 import { MODULE_LABELS } from "../../api/builder";
 
@@ -231,9 +226,9 @@ function ModuleListImpl({
                   className="shrink-0 cursor-grab active:cursor-grabbing"
                   title="拖拽排序"
                 >
-                  <DotsSixVertical
+                  <GripVertical
                     size={14}
-                    weight="bold"
+                    strokeWidth={2.25}
                     className="text-[var(--color-text-muted)] opacity-0 group-hover:opacity-100 transition-opacity"
                     aria-label={MODULE_ICONS[type]}
                   />
@@ -272,7 +267,7 @@ function ModuleListImpl({
                   aria-label={`删除${MODULE_LABELS[type]}`}
                   title="删除模块"
                 >
-                  <TrashSimple size={12} weight="regular" aria-hidden="true" />
+                  <Trash size={12} aria-hidden="true" />
                 </button>
               </div>
             );
@@ -301,7 +296,7 @@ function ModuleListImpl({
                     transition-colors cursor-pointer text-left"
                   aria-label={`添加${MODULE_LABELS[type]}`}
                 >
-                  <Plus size={12} weight="bold" aria-hidden="true" />
+                  <Plus size={12} strokeWidth={2.25} aria-hidden="true" />
                   {MODULE_LABELS[type]}
                 </button>
               ))
@@ -319,9 +314,9 @@ function ModuleListImpl({
               transition-all cursor-pointer"
             aria-label="添加模块"
           >
-            <Plus size={13} weight="bold" aria-hidden="true" />
+            <Plus size={13} strokeWidth={2.25} aria-hidden="true" />
             添加模块
-            <CaretDown size={11} weight="fill" className="opacity-60" aria-hidden="true" />
+            <ChevronDown size={11} fill="currentColor" className="opacity-60" aria-hidden="true" />
           </button>
         )}
       </div>

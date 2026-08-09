@@ -1,19 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
-import {
-  ChartBar,
-  Gauge,
-  ListChecks,
-  ChatTeardropText,
-  FileText,
-  Monitor,
-  ArrowLeft,
-  Users,
-  Database,
-  ChatCircleDots,
-  MagnifyingGlass,
-  Warning,
-} from "@phosphor-icons/react";
+import { ChartColumn, Gauge, ListChecks, MessageSquareText, FileText, Monitor, ArrowLeft, Users, Database, MessagesSquare, Search, TriangleAlert } from "lucide-react";
 import {
   getSystemStats,
   getAuditLogs,
@@ -46,11 +33,11 @@ import {
 
 type TabId = "stats" | "audit" | "feedback" | "qa-quality" | "templates" | "grafana";
 
-const TABS: { id: TabId; label: string; icon: typeof ChartBar }[] = [
+const TABS: { id: TabId; label: string; icon: typeof ChartColumn }[] = [
   { id: "stats", label: "系统概览", icon: Gauge },
   { id: "audit", label: "审计日志", icon: ListChecks },
-  { id: "feedback", label: "用户反馈", icon: ChatTeardropText },
-  { id: "qa-quality", label: "问答质量", icon: ChatCircleDots },
+  { id: "feedback", label: "用户反馈", icon: MessageSquareText },
+  { id: "qa-quality", label: "问答质量", icon: MessagesSquare },
   { id: "templates", label: "简历模板", icon: FileText },
   { id: "grafana", label: "监控面板", icon: Monitor },
 ];
@@ -95,8 +82,8 @@ function StatsSection() {
   const cards = [
     { label: "用户总数", value: stats.total_users, icon: Users, color: "text-brand" },
     { label: "简历总数", value: stats.total_resumes, icon: Database, color: "text-success" },
-    { label: "问答记录", value: stats.total_qa_history, icon: ChatCircleDots, color: "text-sky-500" },
-    { label: "用户反馈", value: stats.total_feedback, icon: ChatTeardropText, color: "text-warning" },
+    { label: "问答记录", value: stats.total_qa_history, icon: MessagesSquare, color: "text-sky-500" },
+    { label: "用户反馈", value: stats.total_feedback, icon: MessageSquareText, color: "text-warning" },
   ];
 
   return (
@@ -110,7 +97,7 @@ function StatsSection() {
           >
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs text-[var(--color-text-muted)]">{c.label}</span>
-              <Icon size={16} weight="duotone" className={c.color} aria-hidden="true" />
+              <Icon size={16} fill="currentColor" className={c.color} aria-hidden="true" />
             </div>
             <div className="text-2xl font-semibold text-[var(--color-text)] tabular-nums">
               {c.value}
@@ -317,9 +304,9 @@ function AuditSection() {
     <div className="space-y-3">
       <div className="flex items-center gap-2 flex-wrap">
         <div className="relative">
-          <MagnifyingGlass
+          <Search
             size={14}
-            weight="bold"
+            strokeWidth={2.25}
             aria-hidden="true"
             className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] pointer-events-none"
           />
@@ -663,7 +650,7 @@ function TemplatesSection() {
           className="glass-card p-4 hover:-translate-y-1 hover:shadow-xl hover:shadow-black/5 transition-all duration-300"
         >
           <div className="flex items-center gap-2 mb-2">
-            <FileText size={18} weight="duotone" className="text-brand" aria-hidden="true" />
+            <FileText size={18} fill="currentColor" className="text-brand" aria-hidden="true" />
             <span className="text-sm font-semibold text-[var(--color-text)]">{t.name}</span>
             <span className="text-[10px] text-[var(--color-text-muted)] font-mono">{t.id}</span>
           </div>
@@ -710,7 +697,7 @@ function Loading() {
 function ErrorBox({ message }: { message: string }) {
   return (
     <div className="flex items-start gap-2 p-3 rounded-list bg-danger/10 border border-danger/20 text-danger text-sm">
-      <Warning size={16} weight="bold" className="mt-0.5 shrink-0" aria-hidden="true" />
+      <TriangleAlert size={16} strokeWidth={2.25} className="mt-0.5 shrink-0" aria-hidden="true" />
       <span>{message}</span>
     </div>
   );
@@ -777,7 +764,7 @@ export default function AdminPage() {
       <div className="max-w-2xl mx-auto px-6 py-16 text-center">
         <div className="inline-flex items-center justify-center w-14 h-14 rounded-input
           bg-danger/10 border border-danger/15 text-danger mb-4">
-          <Warning size={26} weight="duotone" aria-hidden="true" />
+          <TriangleAlert size={26} fill="currentColor" aria-hidden="true" />
         </div>
         <h2 className="text-base font-semibold text-[var(--color-text)] mb-1.5">无访问权限</h2>
         <p className="text-sm text-[var(--color-text-muted)] mb-5">
@@ -789,7 +776,7 @@ export default function AdminPage() {
             bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)]
             hover:bg-[var(--color-bg-secondary)] transition-all cursor-pointer"
         >
-          <ArrowLeft size={14} weight="regular" aria-hidden="true" />
+          <ArrowLeft size={14} aria-hidden="true" />
           返回首页
         </Link>
       </div>
@@ -800,14 +787,14 @@ export default function AdminPage() {
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6">
       {/* 标题 */}
       <div className="flex items-center gap-2 mb-5">
-        <ChartBar size={22} weight="duotone" className="text-brand" aria-hidden="true" />
+        <ChartColumn size={22} fill="currentColor" className="text-brand" aria-hidden="true" />
         <h1 className="text-lg font-semibold text-[var(--color-text)]">管理员后台</h1>
         <Link
           to="/"
           className="ml-auto inline-flex items-center gap-1 text-xs text-[var(--color-text-muted)]
             hover:text-brand transition-colors"
         >
-          <ArrowLeft size={12} weight="regular" aria-hidden="true" />
+          <ArrowLeft size={12} aria-hidden="true" />
           返回首页
         </Link>
       </div>
@@ -830,7 +817,7 @@ export default function AdminPage() {
               aria-selected={isActive}
               role="tab"
             >
-              <Icon size={14} weight={isActive ? "fill" : "regular"} aria-hidden="true" />
+              <Icon size={14} fill={isActive ? "currentColor" : "none"} aria-hidden="true" />
               {t.label}
             </button>
           );

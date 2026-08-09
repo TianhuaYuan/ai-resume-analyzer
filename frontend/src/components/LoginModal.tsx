@@ -13,7 +13,7 @@
 import { useState, useEffect, type FormEvent } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useAuth } from "../context/AuthContext";
-import { ChatCircleDots, EnvelopeSimple, LockSimple, User, Hash } from "@phosphor-icons/react";
+import { MessagesSquare, Mail, Lock, User, Hash } from "lucide-react";
 import { overlayVariants, panelVariants } from "./useModalMotion";
 
 // ── Apple 风格输入框 ──
@@ -218,7 +218,7 @@ export function LoginModal({
         {/* 标题 */}
         <div className="px-6 pt-7 pb-4 text-center">
           <div className="mx-auto w-14 h-14 rounded-input bg-brand/10 flex items-center justify-center mb-4">
-            <ChatCircleDots size={26} weight="fill" className="text-brand" />
+            <MessagesSquare size={26} fill="currentColor" className="text-brand" />
           </div>
           <h2 className="text-xl font-bold text-[var(--color-text)] display-tight">
             {tab === "login" ? "欢迎回来" : "创建账号"}
@@ -266,14 +266,14 @@ export function LoginModal({
                 value={email}
                 onChange={setEmail}
                 placeholder="邮箱"
-                icon={EnvelopeSimple}
+                icon={Mail}
               />
               <AppleInput
                 type="password"
                 value={password}
                 onChange={setPassword}
                 placeholder="密码"
-                icon={LockSimple}
+                icon={Lock}
               />
               <button
                 type="submit"
@@ -302,9 +302,9 @@ export function LoginModal({
           ) : (
             <form onSubmit={handleRegister} className="space-y-3">
               <AppleInput value={regUsername} onChange={setRegUsername} placeholder="用户名（至少2个字符）" icon={User} />
-              <AppleInput type="email" value={regEmail} onChange={setRegEmail} placeholder="邮箱" icon={EnvelopeSimple} />
-              <AppleInput type="password" value={regPassword} onChange={setRegPassword} placeholder="密码（至少8位）" icon={LockSimple} />
-              <AppleInput type="password" value={regConfirm} onChange={setRegConfirm} placeholder="确认密码" icon={LockSimple} />
+              <AppleInput type="email" value={regEmail} onChange={setRegEmail} placeholder="邮箱" icon={Mail} />
+              <AppleInput type="password" value={regPassword} onChange={setRegPassword} placeholder="密码（至少8位）" icon={Lock} />
+              <AppleInput type="password" value={regConfirm} onChange={setRegConfirm} placeholder="确认密码" icon={Lock} />
               <div className="flex gap-2">
                 <div className="flex-1">
                   <AppleInput value={regCode} onChange={setRegCode} placeholder="6位验证码" icon={Hash} maxLength={6} />

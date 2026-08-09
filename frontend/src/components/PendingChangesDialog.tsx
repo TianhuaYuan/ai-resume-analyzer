@@ -15,14 +15,7 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import {
-  X,
-  Check,
-  Prohibit,
-  Trash,
-  ClipboardText,
-  ArrowClockwise,
-} from "@phosphor-icons/react";
+import { X, Check, Ban, Trash2, ClipboardList, RotateCw } from "lucide-react";
 import {
   listPendingChanges,
   acceptPendingChange,
@@ -244,7 +237,7 @@ export default function PendingChangesDialog({
               active:scale-[0.95] motion-reduce:active:scale-100
               transition-all cursor-pointer shrink-0"
           >
-            <X size={18} weight="bold" aria-hidden="true" />
+            <X size={18} strokeWidth={2.25} aria-hidden="true" />
           </button>
         </div>
 
@@ -287,7 +280,7 @@ export default function PendingChangesDialog({
                   active:scale-[0.98] motion-reduce:active:scale-100
                   transition-all cursor-pointer"
               >
-                <ArrowClockwise size={14} weight="bold" aria-hidden="true" />
+                <RotateCw size={14} strokeWidth={2.25} aria-hidden="true" />
                 重试
               </button>
             </div>
@@ -295,9 +288,9 @@ export default function PendingChangesDialog({
 
           {status === "success" && items.length === 0 && (
             <div className="text-center py-12 text-[var(--color-text-muted)] text-sm">
-              <ClipboardText
+              <ClipboardList
                 size={28}
-                weight="duotone"
+                fill="currentColor"
                 className="mx-auto mb-3 opacity-60"
                 aria-hidden="true"
               />
@@ -387,7 +380,7 @@ export default function PendingChangesDialog({
                           transition-all cursor-pointer
                           disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        <Prohibit size={13} weight="bold" aria-hidden="true" />
+                        <Ban size={13} strokeWidth={2.25} aria-hidden="true" />
                         拒绝
                       </button>
                       <button
@@ -406,7 +399,7 @@ export default function PendingChangesDialog({
                             aria-hidden="true"
                           />
                         ) : (
-                          <Check size={13} weight="bold" aria-hidden="true" />
+                          <Check size={13} strokeWidth={2.25} aria-hidden="true" />
                         )}
                         接受
                       </button>
@@ -457,7 +450,7 @@ export default function PendingChangesDialog({
                         aria-hidden="true"
                       />
                     ) : (
-                      <Trash size={13} weight="bold" aria-hidden="true" />
+                      <Trash2 size={13} strokeWidth={2.25} aria-hidden="true" />
                     )}
                     确认清除
                   </button>
@@ -475,7 +468,7 @@ export default function PendingChangesDialog({
                     transition-all cursor-pointer
                     disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  <Trash size={13} weight="bold" aria-hidden="true" />
+                  <Trash2 size={13} strokeWidth={2.25} aria-hidden="true" />
                   全部清除
                 </button>
               </div>

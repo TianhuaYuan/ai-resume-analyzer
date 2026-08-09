@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, type ReactNode } from "react";
-import { X } from "@phosphor-icons/react";
+import { X } from "lucide-react";
 import { twMerge } from "tailwind-merge";
 import { overlayVariants, panelVariants } from "../useModalMotion";
 
@@ -114,7 +114,7 @@ export default function Modal({
                       active:scale-[0.95] motion-reduce:active:scale-100
                       transition-all cursor-pointer"
                   >
-                    <X size={16} weight="bold" aria-hidden="true" />
+                    <X size={16} strokeWidth={2.25} aria-hidden="true" />
                   </button>
                 )}
               </div>

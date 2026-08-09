@@ -12,7 +12,7 @@
  */
 
 import { memo, useRef, useState, useCallback } from "react";
-import { User, TrashSimple, PencilSimple, Spinner } from "@phosphor-icons/react";
+import { User, Trash, Pencil, LoaderCircle } from "lucide-react";
 import { uploadAvatar } from "../../api/builder";
 
 // ── Props ──────────────────────────────────────────────────────
@@ -154,9 +154,9 @@ function AvatarUploadInner({
         {uploading ? (
           // 上传中：spinner + 文字
           <div className="w-full h-full flex flex-col items-center justify-center bg-[var(--color-bg)] border border-[var(--color-border)]">
-            <Spinner
+            <LoaderCircle
               size={20}
-              weight="duotone"
+              fill="currentColor"
               className="text-[var(--color-text-secondary)] animate-spin"
               aria-hidden="true"
             />
@@ -181,7 +181,7 @@ function AvatarUploadInner({
                 aria-label="编辑头像"
                 title="编辑"
               >
-                <PencilSimple size={16} weight="duotone" />
+                <Pencil size={16} fill="currentColor" />
               </button>
               <button
                 type="button"
@@ -190,7 +190,7 @@ function AvatarUploadInner({
                 aria-label="删除头像"
                 title="删除"
               >
-                <TrashSimple size={16} weight="duotone" />
+                <Trash size={16} fill="currentColor" />
               </button>
             </div>
           </>
@@ -199,7 +199,7 @@ function AvatarUploadInner({
           <div className="w-full h-full flex flex-col items-center justify-center border-2 border-dashed border-[var(--color-border)] bg-[var(--color-bg)] group-hover:border-brand/50 transition-colors">
             <User
               size={24}
-              weight="duotone"
+              fill="currentColor"
               className="text-[var(--color-text-secondary)]"
               aria-hidden="true"
             />

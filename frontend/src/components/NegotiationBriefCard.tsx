@@ -4,7 +4,7 @@
  * 渲染 negotiation_brief 工具输出的 <negotiation_brief> JSON 块：
  * 总包锚定 / 谈判底线 / 地理折扣 / 谈薪话术。
  */
-import { Money, ShieldCheck, MapPin, ChatCircle } from "@phosphor-icons/react";
+import { Banknote, ShieldCheck, MapPin, MessageCircle } from "lucide-react";
 
 export interface NegotiationBrief {
   target_position?: string;
@@ -20,7 +20,7 @@ export default function NegotiationBriefCard({ brief }: { brief: NegotiationBrie
   return (
     <div className="rounded-list border border-success/20 bg-success/[0.03] overflow-hidden">
       <div className="flex items-center gap-2 px-4 py-2.5 bg-success/10">
-        <Money size={15} weight="bold" className="text-success shrink-0" />
+        <Banknote size={15} strokeWidth={2.25} className="text-success shrink-0" />
         <span className="text-sm font-medium text-[var(--color-text)]">谈薪简报</span>
         {brief.target_position && (
           <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-success/10 text-success font-medium">
@@ -68,7 +68,7 @@ export default function NegotiationBriefCard({ brief }: { brief: NegotiationBrie
         {brief.scripts && brief.scripts.length > 0 && (
           <div>
             <div className="flex items-center gap-1.5 text-[11px] font-medium text-[var(--color-text-muted)] mb-1.5">
-              <ChatCircle size={12} className="text-success" />
+              <MessageCircle size={12} className="text-success" />
               谈薪话术
             </div>
             <div className="space-y-1.5">

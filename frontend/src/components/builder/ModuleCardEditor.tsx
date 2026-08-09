@@ -10,7 +10,7 @@
  */
 
 import { memo, useState, useMemo, useRef, useCallback, useEffect, useLayoutEffect } from "react";
-import { Plus, CaretDown, MagnifyingGlass } from "@phosphor-icons/react";
+import { Plus, ChevronDown, Search } from "lucide-react";
 import type { ModuleType, ResumeModule, ModuleContent } from "../../api/builder";
 import { MODULE_ORDER, MODULE_LABELS } from "./ModuleList";
 import { ModuleCard } from "./ModuleCard";
@@ -329,9 +329,9 @@ function ModuleCardEditorImpl({
             </div>
             {/* 搜索框 */}
             <div className="relative mb-1.5">
-              <MagnifyingGlass
+              <Search
                 size={11}
-                weight="bold"
+                strokeWidth={2.25}
                 className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] pointer-events-none"
                 aria-hidden="true"
               />
@@ -365,7 +365,7 @@ function ModuleCardEditorImpl({
                         transition-colors cursor-pointer text-left"
                       aria-label={`添加${MODULE_LABELS[type]}`}
                     >
-                      <Plus size={11} weight="bold" aria-hidden="true" />
+                      <Plus size={11} strokeWidth={2.25} aria-hidden="true" />
                       {MODULE_LABELS[type]}
                     </button>
                   ))}
@@ -380,9 +380,9 @@ function ModuleCardEditorImpl({
             className="btn-tool w-full justify-center border-dashed text-[var(--color-text-secondary)]"
             aria-label="添加模块"
           >
-            <Plus size={13} weight="bold" aria-hidden="true" />
+            <Plus size={13} strokeWidth={2.25} aria-hidden="true" />
             添加模块
-            <CaretDown size={11} weight="fill" className="opacity-60" aria-hidden="true" />
+            <ChevronDown size={11} fill="currentColor" className="opacity-60" aria-hidden="true" />
           </button>
         )}
       </div>

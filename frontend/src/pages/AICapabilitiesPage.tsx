@@ -12,32 +12,7 @@
 
 import { useNavigate } from "react-router-dom";
 import { useAppChat } from "../context/AppChatContext";
-import {
-  FirstAidKit,
-  Scales,
-  CheckCircle,
-  Crosshair,
-  Briefcase,
-  FileText,
-  FilePlus,
-  TextAa,
-  Translate,
-  PencilSimple,
-  Question,
-  Microphone,
-  MagnifyingGlass,
-  FolderOpen,
-  GlobeSimple,
-  HandCoins,
-  Books,
-  ReadCvLogo,
-  ChatCircleText,
-  BookmarkSimple,
-  ClockCounterClockwise,
-  Compass,
-  ArrowRight,
-  PaperPlaneRight,
-} from "@phosphor-icons/react";
+import { BriefcaseMedical, Scale, CircleCheck, Crosshair, Briefcase, FileText, FilePlus, Type, Languages, Pencil, CircleHelp, Mic, Search, FolderOpen, Globe, HandCoins, Library, FileUser, MessageSquareText, Bookmark, History, Compass, ArrowRight, SendHorizontal } from "lucide-react";
 
 interface CapabilityCard {
   /** 后端工具名（TOOL_REGISTRY 中的 name） */
@@ -69,14 +44,14 @@ const CAPABILITY_GROUPS: CapabilityGroup[] = [
         tool: "diagnose_resume",
         name: "简历诊断",
         desc: "从招聘者视角诊断简历的完整性与质量，给出改进建议",
-        icon: FirstAidKit,
+        icon: BriefcaseMedical,
         question: "帮我诊断这份简历的完整性和质量，给出改进建议",
       },
       {
         tool: "compare_resumes",
         name: "简历对比",
         desc: "横向对比多份简历的优劣势，给出综合裁决",
-        icon: Scales,
+        icon: Scale,
         // __COMPARE__ 特殊指令：QAPage 收到后弹出「多选简历」选择器
         // （而不是让 Agent 要求用户输入简历 id —— 用户反馈不符合使用逻辑）
         question: "__COMPARE__",
@@ -85,14 +60,14 @@ const CAPABILITY_GROUPS: CapabilityGroup[] = [
         tool: "check_module",
         name: "模块检查",
         desc: "检查简历各模块的完整性和 ATS 兼容性，不修改内容",
-        icon: CheckCircle,
+        icon: CircleCheck,
         question: "帮我检查简历各模块的完整性和 ATS 兼容性",
       },
       {
         tool: "ask_info",
         name: "信息追问",
         desc: "分析简历缺失项，提醒你还差哪些信息需要补充",
-        icon: Question,
+        icon: CircleHelp,
         question: "根据简历现状，帮我梳理还需要补充哪些信息",
       },
     ],
@@ -119,7 +94,7 @@ const CAPABILITY_GROUPS: CapabilityGroup[] = [
         tool: "web_search",
         name: "联网搜索",
         desc: "实时搜索面经 / 薪资 / 公司评价等信息，弥补离线知识库的时效性缺口",
-        icon: GlobeSimple,
+        icon: Globe,
         question: "搜索一下最近的 AI 岗位面经",
       },
     ],
@@ -146,14 +121,14 @@ const CAPABILITY_GROUPS: CapabilityGroup[] = [
         tool: "rewrite_star",
         name: "STAR 改写",
         desc: "用 STAR 法则改写经历描述，让表达更专业、更有说服力",
-        icon: TextAa,
+        icon: Type,
         question: "用 STAR 法则改写我简历里的经历描述，让它们更有说服力",
       },
       {
         tool: "modify_module",
         name: "定向修改",
         desc: "按指令定向修改某个模块，改完直接保存到简历",
-        icon: PencilSimple,
+        icon: Pencil,
         question: "帮我定向修改简历中的某个模块，比如把项目描述改得更量化",
       },
     ],
@@ -166,14 +141,14 @@ const CAPABILITY_GROUPS: CapabilityGroup[] = [
         tool: "translate",
         name: "翻译",
         desc: "把整份简历翻译为英文 / 日文等多语言版本",
-        icon: Translate,
+        icon: Languages,
         question: "帮我把这份简历翻译成英文",
       },
       {
         tool: "cover_letter",
         name: "求职信",
         desc: "针对目标岗位一键生成求职信或打招呼语，贴合 JD 关键词",
-        icon: PaperPlaneRight,
+        icon: SendHorizontal,
         question: "帮我在这个简历的基础上，针对目标岗位写一封求职信",
       },
     ],
@@ -186,7 +161,7 @@ const CAPABILITY_GROUPS: CapabilityGroup[] = [
         tool: "interview_coach",
         name: "多轮模拟面试",
         desc: "一问一答逐题推进：生成题单 → 逐题提问与追问 → 完成自动评分出评分卡",
-        icon: Microphone,
+        icon: Mic,
         question: "请根据我的简历，帮我做一次目标岗位的模拟面试",
       },
       {
@@ -206,7 +181,7 @@ const CAPABILITY_GROUPS: CapabilityGroup[] = [
         tool: "search_resume",
         name: "简历检索",
         desc: "在简历中检索与问题相关的段落，返回带分节的结构化结果",
-        icon: MagnifyingGlass,
+        icon: Search,
         question: "帮我检索这份简历里关于项目经历的内容",
       },
       {
@@ -220,21 +195,21 @@ const CAPABILITY_GROUPS: CapabilityGroup[] = [
         tool: "search_corpus",
         name: "面经知识库",
         desc: "检索离线面经 / 真题 / 范文库，快速定位可参考的面试素材",
-        icon: Books,
+        icon: Library,
         question: "检索面经库里的后端面试题",
       },
       {
         tool: "get_resume_content",
         name: "整文读取",
         desc: "读取简历当前完整内容（含草稿编辑态），事实性问题优先用它",
-        icon: ReadCvLogo,
+        icon: FileUser,
         question: "把这份简历的完整内容读取出来给我看看",
       },
       {
         tool: "answer_from_index",
         name: "深度问答",
         desc: "对知识库做深度检索回答（改写 → 检索 → 重排 → 生成 → 反思）",
-        icon: ChatCircleText,
+        icon: MessageSquareText,
         question: "基于我的简历和知识库，深度回答一个问题并给出依据",
       },
     ],
@@ -247,14 +222,14 @@ const CAPABILITY_GROUPS: CapabilityGroup[] = [
         tool: "save_memory",
         name: "记住",
         desc: "把你在对话中透露的重要偏好、目标、决定沉淀为长期记忆",
-        icon: BookmarkSimple,
+        icon: Bookmark,
         question: "请记住我的求职偏好：优先考虑一线大厂的后端岗位",
       },
       {
         tool: "recall_memory",
         name: "回忆",
         desc: "按语义召回过往对话中的记忆，保持跨会话一致",
-        icon: ClockCounterClockwise,
+        icon: History,
         question: "回忆一下我们之前聊过的关于我求职方向的内容",
       },
     ],
@@ -275,7 +250,7 @@ function CapabilityCardView({ card, onTrigger }: { card: CapabilityCard; onTrigg
       <span className="flex items-start gap-4">
         {/* 图标 */}
         <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-input bg-[var(--color-brand-soft)] text-brand">
-          <card.icon size={22} weight="duotone" />
+          <card.icon size={22} fill="currentColor" />
         </span>
 
         {/* 文案 */}
@@ -291,7 +266,7 @@ function CapabilityCardView({ card, onTrigger }: { card: CapabilityCard; onTrigg
           </span>
           {/* 触发问题 */}
           <span className="mt-3 flex items-start gap-1.5 text-xs text-brand/90">
-            <Compass size={13} weight="fill" className="mt-0.5 flex-shrink-0" />
+            <Compass size={13} fill="currentColor" className="mt-0.5 flex-shrink-0" />
             <span className="line-clamp-2 leading-relaxed">{card.question}</span>
           </span>
         </span>
@@ -332,7 +307,7 @@ export default function AICapabilitiesPage() {
         <div className="mb-10 animate-fade-in-up">
           <div className="flex items-center gap-3">
             <span className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-input bg-brand text-white shadow-lg shadow-brand/25">
-              <Compass size={24} weight="fill" />
+              <Compass size={24} fill="currentColor" />
             </span>
             <div>
               <h1 className="text-2xl font-bold text-[var(--color-text)]">AI 能力目录</h1>

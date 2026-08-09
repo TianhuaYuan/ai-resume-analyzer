@@ -1,29 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  ChatCircleDots,
-  FileText,
-  ChatCircle,
-  Books,
-  Plus,
-  Trash,
-  PencilSimple,
-  CaretLeft,
-  Gear,
-  SignOut,
-  Key,
-  EnvelopeSimple,
-  User,
-  CaretDown,
-  Spinner,
-  Gauge,
-  Sun,
-  Sparkle,
-  Microphone,
-  UserMinus,
-  PaperPlaneTilt,
-} from "@phosphor-icons/react";
+import { MessagesSquare, FileText, MessageCircle, Library, Plus, Trash2, Pencil, ChevronLeft, Settings, LogOut, KeyRound, Mail, User, ChevronDown, LoaderCircle, Gauge, Sun, Sparkles, Mic, UserMinus, Send } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { deleteAccount } from "../api/auth";
 import { useToast } from "./Toast";
@@ -41,20 +19,20 @@ import type { QuotaResponse } from "../api/qa";
 interface NavItem {
   path: string;
   label: string;
-  icon: typeof ChatCircleDots;
+  icon: typeof MessagesSquare;
   /** 路由匹配模式：exact 或 prefix */
   match: "exact" | "prefix";
 }
 
 // 排序按用户要求：Agent → 简历（核心资源）→ AI 能力 → 投递 → 面试复盘 → 知识资产 → 用户反馈
 const NAV_ITEMS: NavItem[] = [
-  { path: "/qa", label: "Agent", icon: ChatCircleDots, match: "exact" },
+  { path: "/qa", label: "Agent", icon: MessagesSquare, match: "exact" },
   { path: "/resumes", label: "简历", icon: FileText, match: "prefix" },
-  { path: "/capabilities", label: "AI 能力", icon: Sparkle, match: "exact" },
-  { path: "/applications", label: "投递看板", icon: PaperPlaneTilt, match: "exact" },
-  { path: "/interviews", label: "面试复盘", icon: Microphone, match: "exact" },
-  { path: "/assets", label: "知识资产", icon: Books, match: "exact" },
-  { path: "/feedback", label: "用户反馈", icon: ChatCircle, match: "exact" },
+  { path: "/capabilities", label: "AI 能力", icon: Sparkles, match: "exact" },
+  { path: "/applications", label: "投递看板", icon: Send, match: "exact" },
+  { path: "/interviews", label: "面试复盘", icon: Mic, match: "exact" },
+  { path: "/assets", label: "知识资产", icon: Library, match: "exact" },
+  { path: "/feedback", label: "用户反馈", icon: MessageCircle, match: "exact" },
 ];
 
 interface SidebarProps {
@@ -234,9 +212,9 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
             aria-label={collapsed ? "展开侧边栏" : "折叠侧边栏"}
             title={collapsed ? "展开侧边栏" : "折叠侧边栏"}
           >
-            <CaretLeft
+            <ChevronLeft
               size={14}
-              weight="bold"
+              strokeWidth={2.25}
               className={`transition-transform duration-300 ${collapsed ? "rotate-180" : ""}`}
               aria-hidden="true"
             />
@@ -264,7 +242,7 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
               >
                 <Icon
                   size={16}
-                  weight={active ? "fill" : "regular"}
+                  fill={active ? "currentColor" : "none"}
                   className="shrink-0"
                   aria-hidden="true"
                 />
@@ -287,14 +265,14 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
                 aria-label="新建对话"
                 title="新建对话"
               >
-                <Plus size={12} weight="bold" aria-hidden="true" />
+                <Plus size={12} strokeWidth={2.25} aria-hidden="true" />
               </button>
             </div>
 
             <div className="px-1 pb-2">
               {conversationLoading ? (
                 <div className="flex items-center justify-center py-4">
-                  <Spinner size={14} className="animate-spin text-[var(--color-text-muted)]" aria-hidden="true" />
+                  <LoaderCircle size={14} className="animate-spin text-[var(--color-text-muted)]" aria-hidden="true" />
                 </div>
               ) : conversations.length === 0 ? (
                 <p className="px-3 py-2 text-[10px] text-[var(--color-text-muted)]">
@@ -337,9 +315,9 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
                               className="flex-1 flex items-center gap-2 min-w-0 px-2.5 py-1.5 text-left cursor-pointer"
                               title={conv.title}
                             >
-                              <ChatCircleDots
+                              <MessagesSquare
                                 size={12}
-                                weight={active ? "fill" : "regular"}
+                                fill={active ? "currentColor" : "none"}
                                 className={`shrink-0 ${active ? "text-brand" : "text-[var(--color-text-muted)]"}`}
                                 aria-hidden="true"
                               />
@@ -364,7 +342,7 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
                                 aria-label="重命名"
                                 title="重命名"
                               >
-                                <PencilSimple size={10} weight="regular" aria-hidden="true" />
+                                <Pencil size={10} aria-hidden="true" />
                               </button>
                               <button
                                 onClick={(e) => {
@@ -375,7 +353,7 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
                                 aria-label="删除"
                                 title="删除"
                               >
-                                <Trash size={10} weight="regular" aria-hidden="true" />
+                                <Trash2 size={10} aria-hidden="true" />
                               </button>
                             </div>
                           </div>
@@ -417,7 +395,7 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
                     </p>
                   </div>
                   <motion.div animate={{ rotate: userMenuOpen ? 180 : 0 }} transition={{ duration: 0.2 }}>
-                    <CaretDown size={10} className="text-[var(--color-text-muted)]" aria-hidden="true" />
+                    <ChevronDown size={10} className="text-[var(--color-text-muted)]" aria-hidden="true" />
                   </motion.div>
                 </>
               )}
@@ -466,7 +444,7 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
                       onClick={() => { navigate("/admin"); setUserMenuOpen(false); }}
                       className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer"
                     >
-                      <Gear size={14} weight="regular" aria-hidden="true" />
+                      <Settings size={14} aria-hidden="true" />
                       管理后台
                     </button>
                   )}
@@ -478,7 +456,7 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
                     onClick={() => { setPasswordDialogOpen(true); setUserMenuOpen(false); }}
                     className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer"
                   >
-                    <Key size={14} weight="regular" aria-hidden="true" />
+                    <KeyRound size={14} aria-hidden="true" />
                     修改密码
                   </button>
 
@@ -487,7 +465,7 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
                     onClick={() => { setEmailDialogOpen(true); setUserMenuOpen(false); }}
                     className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer"
                   >
-                    <EnvelopeSimple size={14} weight="regular" aria-hidden="true" />
+                    <Mail size={14} aria-hidden="true" />
                     重新绑定邮箱
                   </button>
 
@@ -496,7 +474,7 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
                     onClick={() => { setUsernameDialogOpen(true); setUserMenuOpen(false); }}
                     className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer"
                   >
-                    <User size={14} weight="regular" aria-hidden="true" />
+                    <User size={14} aria-hidden="true" />
                     修改用户名
                   </button>
 
@@ -505,7 +483,7 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
                     onClick={() => { setUsageDialogOpen(true); setUserMenuOpen(false); }}
                     className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer"
                   >
-                    <Gauge size={14} weight="regular" aria-hidden="true" />
+                    <Gauge size={14} aria-hidden="true" />
                     用量统计
                   </button>
 
@@ -514,7 +492,7 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
                     onClick={toggleTheme}
                     className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer"
                   >
-                    <Sun size={14} weight={theme === "dark" ? "fill" : "regular"} aria-hidden="true" />
+                    <Sun size={14} fill={theme === "dark" ? "currentColor" : "none"} aria-hidden="true" />
                     {theme === "dark" ? "浅色模式" : "深色模式"}
                   </button>
 
@@ -525,7 +503,7 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
                     onClick={() => setDeleteAccountOpen(true)}
                     className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-danger/80 hover:bg-danger-soft transition-colors cursor-pointer"
                   >
-                    <UserMinus size={14} weight="regular" aria-hidden="true" />
+                    <UserMinus size={14} aria-hidden="true" />
                     注销账号
                   </button>
 
@@ -534,7 +512,7 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
                     onClick={handleLogout}
                     className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-danger hover:bg-danger-soft transition-colors cursor-pointer"
                   >
-                    <SignOut size={14} weight="regular" aria-hidden="true" />
+                    <LogOut size={14} aria-hidden="true" />
                     退出登录
                   </button>
                 </motion.div>

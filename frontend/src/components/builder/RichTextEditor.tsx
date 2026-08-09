@@ -19,17 +19,7 @@ import StarterKit from "@tiptap/starter-kit";
 import { Markdown } from "@tiptap/markdown";
 import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
-import {
-  TextB,
-  TextItalic,
-  TextHOne,
-  TextHTwo,
-  ListBullets,
-  ListNumbers,
-  LinkSimple,
-  Code,
-  Lightning,
-} from "@phosphor-icons/react";
+import { Bold, Italic, Heading1, Heading2, List, ListOrdered, Link as LinkIcon, Code, Zap } from "lucide-react";
 import { aiRewrite } from "../../api/builder";
 
 // ── Props（对外签名与旧实现完全一致）─────────────────────────────
@@ -98,52 +88,52 @@ function runLink(editor: Editor) {
 
 const TOOLBAR_BUTTONS: ToolbarButton[] = [
   {
-    icon: <TextB size={14} weight="bold" />,
+    icon: <Bold size={14} strokeWidth={2.25} />,
     label: "加粗",
     shortcut: "Ctrl+B",
     activeKey: "bold",
     run: (e) => e.chain().focus().toggleBold().run(),
   },
   {
-    icon: <TextItalic size={14} weight="bold" />,
+    icon: <Italic size={14} strokeWidth={2.25} />,
     label: "斜体",
     shortcut: "Ctrl+I",
     activeKey: "italic",
     run: (e) => e.chain().focus().toggleItalic().run(),
   },
   {
-    icon: <TextHOne size={14} weight="bold" />,
+    icon: <Heading1 size={14} strokeWidth={2.25} />,
     label: "一级标题",
     activeKey: "h1",
     run: (e) => e.chain().focus().toggleHeading({ level: 1 }).run(),
   },
   {
-    icon: <TextHTwo size={14} weight="bold" />,
+    icon: <Heading2 size={14} strokeWidth={2.25} />,
     label: "二级标题",
     activeKey: "h2",
     run: (e) => e.chain().focus().toggleHeading({ level: 2 }).run(),
   },
   {
-    icon: <ListBullets size={14} weight="bold" />,
+    icon: <List size={14} strokeWidth={2.25} />,
     label: "无序列表",
     activeKey: "bullet",
     run: (e) => e.chain().focus().toggleBulletList().run(),
   },
   {
-    icon: <ListNumbers size={14} weight="bold" />,
+    icon: <ListOrdered size={14} strokeWidth={2.25} />,
     label: "有序列表",
     activeKey: "ordered",
     run: (e) => e.chain().focus().toggleOrderedList().run(),
   },
   {
-    icon: <LinkSimple size={14} weight="bold" />,
+    icon: <LinkIcon size={14} strokeWidth={2.25} />,
     label: "链接",
     shortcut: "Ctrl+K",
     activeKey: "link",
     run: runLink,
   },
   {
-    icon: <Code size={14} weight="bold" />,
+    icon: <Code size={14} strokeWidth={2.25} />,
     label: "行内代码",
     activeKey: "code",
     run: (e) => e.chain().focus().toggleCode().run(),
@@ -361,7 +351,7 @@ export function RichTextEditor({
           onClick={handleFloatRewrite}
           title="AI 改写选中文本"
         >
-          <Lightning size={12} weight="fill" /> AI 改写
+          <Zap size={12} fill="currentColor" /> AI 改写
         </button>
       )}
       {ai && rewrite && (
@@ -371,7 +361,7 @@ export function RichTextEditor({
         >
           {rewrite.loading ? (
             <div className="flex items-center gap-2 text-sm text-[var(--color-text-secondary)]">
-              <Lightning size={14} className="animate-pulse text-brand" /> AI 改写中…
+              <Zap size={14} className="animate-pulse text-brand" /> AI 改写中…
             </div>
           ) : (
             <>

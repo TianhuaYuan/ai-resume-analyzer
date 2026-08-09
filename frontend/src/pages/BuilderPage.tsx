@@ -14,21 +14,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import {
-  FloppyDisk,
-  Check,
-  PaintBrush,
-  Warning,
-  ArrowsClockwise,
-  ArrowCounterClockwise,
-  ArrowClockwise,
-  GitBranch,
-  ClipboardText,
-  GridFour,
-  GlobeSimple,
-  CaretDown,
-  Plus,
-} from "@phosphor-icons/react";
+import { Save, Check, Paintbrush, TriangleAlert, RefreshCw, RotateCcw, RotateCw, GitBranch, ClipboardList, LayoutGrid, Globe, ChevronDown, Plus } from "lucide-react";
 import {
   getBuilderResume,
   saveDraft,
@@ -628,7 +614,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
       <div className="flex-1 flex flex-col items-center justify-center bg-[var(--color-bg)] px-6">
         <div className="w-16 h-16 rounded-input bg-danger/10 border border-danger/15
           flex items-center justify-center text-danger mb-5">
-          <Warning size={28} weight="duotone" aria-hidden="true" />
+          <TriangleAlert size={28} fill="currentColor" aria-hidden="true" />
         </div>
         <p className="text-base text-[var(--color-text-secondary)] mb-1.5">
           加载失败
@@ -643,7 +629,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
             hover:bg-brand/25 active:scale-[0.98] motion-reduce:active:scale-100
             transition-all cursor-pointer"
         >
-          <ArrowsClockwise size={14} weight="bold" aria-hidden="true" />
+          <RefreshCw size={14} strokeWidth={2.25} aria-hidden="true" />
           重试
         </button>
       </div>
@@ -688,9 +674,9 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
               aria-label="语言版本"
               title="语言版本管理"
             >
-              <GlobeSimple size={13} weight="regular" aria-hidden="true" />
+              <Globe size={13} aria-hidden="true" />
               {resume?.language ? langLabel(resume.language) : "语言"}
-              <CaretDown size={10} weight="bold" aria-hidden="true" />
+              <ChevronDown size={10} strokeWidth={2.25} aria-hidden="true" />
             </button>
 
             {showLangMenu && (
@@ -742,7 +728,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
                         text-[var(--color-text-secondary)] hover:text-brand hover:bg-[var(--color-bg-secondary)]
                         disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
                     >
-                      <Plus size={12} weight="bold" aria-hidden="true" />
+                      <Plus size={12} strokeWidth={2.25} aria-hidden="true" />
                       {langBusy ? "翻译中..." : `新建${langLabel(lang)}版`}
                     </button>
                   ))}
@@ -764,7 +750,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
           )}
           {saveStatus === "error" && (
             <span className="flex items-center gap-1 text-[11px] text-danger">
-              <Warning size={11} weight="bold" aria-hidden="true" />
+              <TriangleAlert size={11} strokeWidth={2.25} aria-hidden="true" />
               保存失败
             </span>
           )}
@@ -773,7 +759,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
               className="flex items-center gap-1 text-[11px] text-warning"
               title="有未保存的修改，点击「草稿」或「完成」保存"
             >
-              <Warning size={11} weight="bold" aria-hidden="true" />
+              <TriangleAlert size={11} strokeWidth={2.25} aria-hidden="true" />
               未保存的修改
             </span>
           )}
@@ -782,7 +768,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
               className="flex items-center gap-1 text-[11px] text-success"
               title={lastSaveMode === "complete" ? "已保存并完成，可开始问答/检索" : "草稿已保存"}
             >
-              <Check size={11} weight="bold" aria-hidden="true" />
+              <Check size={11} strokeWidth={2.25} aria-hidden="true" />
               {lastSaveMode === "complete"
                 ? "已保存并完成，可开始问答/检索"
                 : "已保存"}
@@ -832,7 +818,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
             aria-label="撤销 (Ctrl+Z)"
             title="撤销 (Ctrl+Z)"
           >
-            <ArrowCounterClockwise size={13} weight="regular" aria-hidden="true" />
+            <RotateCcw size={13} aria-hidden="true" />
           </button>
           <button
             onClick={redo}
@@ -841,7 +827,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
             aria-label="重做 (Ctrl+Shift+Z)"
             title="重做 (Ctrl+Shift+Z)"
           >
-            <ArrowClockwise size={13} weight="regular" aria-hidden="true" />
+            <RotateCw size={13} aria-hidden="true" />
           </button>
 
           {/* 分隔线 */}
@@ -854,7 +840,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
             aria-label="粘贴简历文本"
             title="粘贴简历文本"
           >
-            <ClipboardText size={13} weight="regular" aria-hidden="true" />
+            <ClipboardList size={13} aria-hidden="true" />
             粘贴导入
           </button>
 
@@ -873,7 +859,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
               transition-all cursor-pointer"
             aria-label="保存草稿"
           >
-            <FloppyDisk size={13} weight="regular" aria-hidden="true" />
+            <Save size={13} aria-hidden="true" />
             草稿
           </button>
 
@@ -896,7 +882,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
                 aria-hidden="true"
               />
             ) : (
-              <Check size={13} weight="bold" aria-hidden="true" />
+              <Check size={13} strokeWidth={2.25} aria-hidden="true" />
             )}
             完成
           </button>
@@ -911,7 +897,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
             aria-label="切换模板"
             title="切换简历模板"
           >
-            <GridFour size={12} weight="regular" aria-hidden="true" />
+            <LayoutGrid size={12} aria-hidden="true" />
             模板
           </button>
 
@@ -922,7 +908,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
             aria-label="样式配置"
             aria-pressed={showStylePanel}
           >
-            <PaintBrush size={12} weight={showStylePanel ? "fill" : "regular"} aria-hidden="true" />
+            <Paintbrush size={12} fill={showStylePanel ? "currentColor" : "none"} aria-hidden="true" />
             样式
           </button>
 
@@ -933,7 +919,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
             aria-label="版本历史"
             title="查看检索索引版本历史"
           >
-            <GitBranch size={12} weight="regular" aria-hidden="true" />
+            <GitBranch size={12} aria-hidden="true" />
             版本
           </button>
 
@@ -957,7 +943,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
             aria-label="待审阅改动"
             title="审阅 AI 改写的字段级改动"
           >
-            <ClipboardText size={12} weight="regular" aria-hidden="true" />
+            <ClipboardList size={12} aria-hidden="true" />
             待审阅
             {pendingCount !== null && pendingCount > 0 && (
               <span
@@ -997,7 +983,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
             className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-brand/10 text-brand border border-brand/20
               hover:bg-brand/20 transition-all cursor-pointer shrink-0"
           >
-            <ClipboardText size={12} weight="bold" aria-hidden="true" />
+            <ClipboardList size={12} strokeWidth={2.25} aria-hidden="true" />
             粘贴导入恢复
           </button>
         </div>

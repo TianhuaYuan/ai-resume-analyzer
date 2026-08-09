@@ -12,21 +12,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  Plus,
-  Spinner,
-  Trash,
-  X,
-  Eye,
-  Building,
-  SuitcaseSimple,
-  Target,
-  ListChecks,
-  TrendUp,
-  ChatCircleDots,
-  CaretLeft,
-  CaretRight,
-} from "@phosphor-icons/react";
+import { Plus, LoaderCircle, Trash2, X, Eye, Building2, Luggage, Target, ListChecks, TrendingUp, MessagesSquare, ChevronLeft, ChevronRight } from "lucide-react";
 import {
   listInterviews,
   getInterview,
@@ -566,7 +552,7 @@ export default function InterviewPage() {
                 transition-all duration-300 cursor-pointer"
               aria-label="新建面试记录"
             >
-              <Plus size={14} weight="bold" aria-hidden="true" />
+              <Plus size={14} strokeWidth={2.25} aria-hidden="true" />
               新建面试记录
             </button>
           </header>
@@ -576,14 +562,14 @@ export default function InterviewPage() {
             {/* 高频薄弱点 */}
             <div className="glass-card p-5">
               <div className="flex items-center gap-2 mb-4">
-                <Target size={16} weight="duotone" className="text-rose-400" aria-hidden="true" />
+                <Target size={16} fill="currentColor" className="text-rose-400" aria-hidden="true" />
                 <h2 className="text-sm font-semibold text-[var(--color-text)]">
                   高频薄弱点
                 </h2>
               </div>
               {reviewLoading ? (
                 <div className="flex items-center gap-2 py-4">
-                  <Spinner size={14} className="animate-spin text-[var(--color-text-muted)]" aria-hidden="true" />
+                  <LoaderCircle size={14} className="animate-spin text-[var(--color-text-muted)]" aria-hidden="true" />
                   <span className="text-xs text-[var(--color-text-muted)]">加载中...</span>
                 </div>
               ) : !review || review.frequent_weaknesses.length === 0 ? (
@@ -611,14 +597,14 @@ export default function InterviewPage() {
             {/* 训练推荐 */}
             <div className="glass-card p-5">
               <div className="flex items-center gap-2 mb-4">
-                <ListChecks size={16} weight="duotone" className="text-sky-400" aria-hidden="true" />
+                <ListChecks size={16} fill="currentColor" className="text-sky-400" aria-hidden="true" />
                 <h2 className="text-sm font-semibold text-[var(--color-text)]">
                   训练推荐
                 </h2>
               </div>
               {reviewLoading ? (
                 <div className="flex items-center gap-2 py-4">
-                  <Spinner size={14} className="animate-spin text-[var(--color-text-muted)]" aria-hidden="true" />
+                  <LoaderCircle size={14} className="animate-spin text-[var(--color-text-muted)]" aria-hidden="true" />
                   <span className="text-xs text-[var(--color-text-muted)]">加载中...</span>
                 </div>
               ) : !review || review.training_plan.modules.length === 0 ? (
@@ -658,14 +644,14 @@ export default function InterviewPage() {
             {/* 面试次数趋势 */}
             <div className="glass-card p-5">
               <div className="flex items-center gap-2 mb-4">
-                <TrendUp size={16} weight="duotone" className="text-success" aria-hidden="true" />
+                <TrendingUp size={16} fill="currentColor" className="text-success" aria-hidden="true" />
                 <h2 className="text-sm font-semibold text-[var(--color-text)]">
                   面试次数趋势
                 </h2>
               </div>
               {reviewLoading ? (
                 <div className="flex items-center gap-2 py-4">
-                  <Spinner size={14} className="animate-spin text-[var(--color-text-muted)]" aria-hidden="true" />
+                  <LoaderCircle size={14} className="animate-spin text-[var(--color-text-muted)]" aria-hidden="true" />
                   <span className="text-xs text-[var(--color-text-muted)]">加载中...</span>
                 </div>
               ) : !review || review.trend.length === 0 ? (
@@ -713,7 +699,7 @@ export default function InterviewPage() {
           {/* ── 面试记录列表 ── */}
           {loading ? (
             <div className="flex items-center justify-center py-32">
-              <Spinner
+              <LoaderCircle
                 size={24}
                 className="animate-spin text-[var(--color-text-muted)] mr-2"
                 aria-hidden="true"
@@ -724,9 +710,9 @@ export default function InterviewPage() {
             </div>
           ) : interviews.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-32 text-center">
-              <ChatCircleDots
+              <MessagesSquare
                 size={48}
-                weight="duotone"
+                fill="currentColor"
                 className="text-[var(--color-text-muted)] mb-4"
                 aria-hidden="true"
               />
@@ -750,9 +736,9 @@ export default function InterviewPage() {
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
                         <span className="inline-flex items-center gap-1 text-sm font-semibold text-[var(--color-text)] truncate max-w-[180px]">
-                          <Building
+                          <Building2
                             size={14}
-                            weight="duotone"
+                            fill="currentColor"
                             className="text-brand shrink-0"
                             aria-hidden="true"
                           />
@@ -761,9 +747,9 @@ export default function InterviewPage() {
                           </span>
                         </span>
                         <span className="inline-flex items-center gap-1 text-xs text-[var(--color-text-secondary)] truncate max-w-[160px]">
-                          <SuitcaseSimple
+                          <Luggage
                             size={12}
-                            weight="duotone"
+                            fill="currentColor"
                             className="text-sky-500 shrink-0"
                             aria-hidden="true"
                           />
@@ -797,7 +783,7 @@ export default function InterviewPage() {
                         aria-label={`查看 ${it.company} ${it.position} 详情`}
                         title="查看详情"
                       >
-                        <Eye size={14} weight="bold" aria-hidden="true" />
+                        <Eye size={14} strokeWidth={2.25} aria-hidden="true" />
                       </button>
                       <button
                         onClick={() => setDeleteTarget(it)}
@@ -805,7 +791,7 @@ export default function InterviewPage() {
                         aria-label={`删除 ${it.company} ${it.position}`}
                         title="删除"
                       >
-                        <Trash size={14} weight="bold" aria-hidden="true" />
+                        <Trash2 size={14} strokeWidth={2.25} aria-hidden="true" />
                       </button>
                     </div>
                   </div>
@@ -834,7 +820,7 @@ export default function InterviewPage() {
                   className="p-2 rounded-full bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
                   aria-label="上一页"
                 >
-                  <CaretLeft size={14} weight="bold" aria-hidden="true" />
+                  <ChevronLeft size={14} strokeWidth={2.25} aria-hidden="true" />
                 </button>
                 {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
                   const start = Math.max(
@@ -864,7 +850,7 @@ export default function InterviewPage() {
                   className="p-2 rounded-full bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
                   aria-label="下一页"
                 >
-                  <CaretRight size={14} weight="bold" aria-hidden="true" />
+                  <ChevronRight size={14} strokeWidth={2.25} aria-hidden="true" />
                 </button>
               </div>
             </div>
@@ -900,7 +886,7 @@ export default function InterviewPage() {
                 className="p-1.5 rounded-md text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 aria-label="关闭"
               >
-                <X size={16} weight="bold" aria-hidden="true" />
+                <X size={16} strokeWidth={2.25} aria-hidden="true" />
               </button>
             </div>
 
@@ -1045,7 +1031,7 @@ export default function InterviewPage() {
                 className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-action text-sm font-medium text-white bg-brand hover:bg-brand-hover active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {saving && (
-                  <Spinner size={14} className="animate-spin" aria-hidden="true" />
+                  <LoaderCircle size={14} className="animate-spin" aria-hidden="true" />
                 )}
                 保存
               </button>
@@ -1087,13 +1073,13 @@ export default function InterviewPage() {
                 className="p-1.5 rounded-md text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 aria-label="关闭"
               >
-                <X size={16} weight="bold" aria-hidden="true" />
+                <X size={16} strokeWidth={2.25} aria-hidden="true" />
               </button>
             </div>
 
             {detailLoading ? (
               <div className="flex items-center justify-center py-16">
-                <Spinner
+                <LoaderCircle
                   size={22}
                   className="animate-spin text-[var(--color-text-muted)]"
                   aria-hidden="true"
@@ -1147,7 +1133,7 @@ export default function InterviewPage() {
                       transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
                   >
                     {archiving && (
-                      <Spinner size={12} className="animate-spin" aria-hidden="true" />
+                      <LoaderCircle size={12} className="animate-spin" aria-hidden="true" />
                     )}
                     归档到知识库
                   </button>
@@ -1265,7 +1251,7 @@ export default function InterviewPage() {
                       transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {scorecardSaving && (
-                      <Spinner size={14} className="animate-spin" aria-hidden="true" />
+                      <LoaderCircle size={14} className="animate-spin" aria-hidden="true" />
                     )}
                     保存评分卡
                   </button>

@@ -11,7 +11,7 @@
  */
 
 import { useCallback, useState } from "react";
-import { Check, X, PaperPlaneTilt, PencilSimple, TrendUp, Eyeglasses } from "@phosphor-icons/react";
+import { Check, X, Send, Pencil, TrendingUp, Glasses } from "lucide-react";
 import { useInlineAI } from "./useInlineAI";
 import { REWRITE_PRESETS } from "./rewritePresets";
 import { CheckIssueList } from "./CheckIssueList";
@@ -99,7 +99,7 @@ export function FieldAIMenu({
             disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer"
           aria-label="优化此条内容"
         >
-          <TrendUp size={10} weight="bold" aria-hidden="true" />
+          <TrendingUp size={10} strokeWidth={2.25} aria-hidden="true" />
           优化
         </button>
         <button
@@ -110,7 +110,7 @@ export function FieldAIMenu({
             disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer"
           aria-label="检查此条内容"
         >
-          <Eyeglasses size={10} weight="bold" aria-hidden="true" />
+          <Glasses size={10} strokeWidth={2.25} aria-hidden="true" />
           检查
         </button>
         <button
@@ -123,7 +123,7 @@ export function FieldAIMenu({
               : "bg-sky-500/10 text-sky-600 border border-sky-500/30 hover:brightness-110"}`}
           aria-label="按指令改写此条内容"
         >
-          <PencilSimple size={10} weight="bold" aria-hidden="true" />
+          <Pencil size={10} strokeWidth={2.25} aria-hidden="true" />
           改写
         </button>
       </div>
@@ -160,7 +160,7 @@ export function FieldAIMenu({
                 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer"
               aria-label="执行改写"
             >
-              <PaperPlaneTilt size={10} weight="fill" aria-hidden="true" />
+              <Send size={10} fill="currentColor" aria-hidden="true" />
               Go
             </button>
           </div>
@@ -218,7 +218,7 @@ export function FieldAIMenu({
                 transition-all cursor-pointer"
               aria-label="取消"
             >
-              <X size={10} weight="bold" className="inline mr-0.5" aria-hidden="true" />
+              <X size={10} strokeWidth={2.25} className="inline mr-0.5" aria-hidden="true" />
               取消
             </button>
             <button
@@ -227,7 +227,7 @@ export function FieldAIMenu({
                 inline-flex items-center gap-1 transition-all cursor-pointer"
               aria-label="使用 AI 结果"
             >
-              <Check size={10} weight="bold" aria-hidden="true" />
+              <Check size={10} strokeWidth={2.25} aria-hidden="true" />
               使用
             </button>
           </div>

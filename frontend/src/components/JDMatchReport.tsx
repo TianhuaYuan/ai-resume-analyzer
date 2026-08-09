@@ -7,7 +7,7 @@
  * - 导出差距清单（一键复制 + CareerCoach 学习路径引导）
  */
 import { useState } from "react";
-import { CheckCircle, WarningCircle, TrendUp, Export } from "@phosphor-icons/react";
+import { CircleCheck, CircleAlert, TrendingUp, Download } from "lucide-react";
 import type { MatchJDResult } from "../api/resumes";
 import { formatGapList, type GapExportContext } from "../lib/gapExport";
 import { BAND_META, scoreBandKey } from "./ScoreCard";
@@ -77,7 +77,7 @@ export default function JDMatchReport({ result, resumeName, jdSnippet }: JDMatch
           </div>
         ) : (
           <div className="flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
-            <TrendUp size={14} />
+            <TrendingUp size={14} />
             未生成结构化评分
           </div>
         )}
@@ -93,7 +93,7 @@ export default function JDMatchReport({ result, resumeName, jdSnippet }: JDMatch
       {result.dims && Object.keys(result.dims).length > 0 && (
         <div className="space-y-1.5">
           <div className="flex items-center gap-1.5 mb-1">
-            <TrendUp size={13} className="text-brand" />
+            <TrendingUp size={13} className="text-brand" />
             <span className="text-xs font-medium text-[var(--color-text-secondary)]">
               四维 JD 匹配
             </span>
@@ -124,7 +124,7 @@ export default function JDMatchReport({ result, resumeName, jdSnippet }: JDMatch
       {matched.length > 0 && (
         <div>
           <div className="flex items-center gap-1.5 mb-1.5">
-            <CheckCircle size={13} className="text-success" weight="fill" />
+            <CircleCheck size={13} className="text-success" fill="currentColor" />
             <span className="text-xs font-medium text-[var(--color-text-secondary)]">
               已匹配 ({matched.length})
             </span>
@@ -145,7 +145,7 @@ export default function JDMatchReport({ result, resumeName, jdSnippet }: JDMatch
       {missing.length > 0 && (
         <div>
           <div className="flex items-center gap-1.5 mb-1.5">
-            <WarningCircle size={13} className="text-rose-400" weight="fill" />
+            <CircleAlert size={13} className="text-rose-400" fill="currentColor" />
             <span className="text-xs font-medium text-[var(--color-text-secondary)]">
               缺失 ({missing.length})
             </span>
@@ -167,7 +167,7 @@ export default function JDMatchReport({ result, resumeName, jdSnippet }: JDMatch
       {gaps.length > 0 && (
         <div>
           <div className="flex items-center gap-1.5 mb-1.5">
-            <TrendUp size={13} className="text-warning" />
+            <TrendingUp size={13} className="text-warning" />
             <span className="text-xs font-medium text-[var(--color-text-secondary)]">
               改进建议
             </span>
@@ -189,7 +189,7 @@ export default function JDMatchReport({ result, resumeName, jdSnippet }: JDMatch
                 text-[var(--color-text-secondary)] bg-[var(--color-bg-secondary)]
                 hover:bg-[var(--color-bg-secondary)] active:scale-[0.98] transition-all cursor-pointer"
             >
-              <Export size={12} weight="bold" aria-hidden="true" />
+              <Download size={12} strokeWidth={2.25} aria-hidden="true" />
               {copied ? "已复制" : "导出差距清单"}
             </button>
             <p className="mt-2 text-[11px] text-[var(--color-text-muted)] leading-relaxed">

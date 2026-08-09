@@ -7,7 +7,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { X, Check } from "@phosphor-icons/react";
+import { X, Check } from "lucide-react";
 import { getTemplateConfigs } from "../templates/registry";
 import { ResumeTemplateView } from "../templates";
 import type { ResumeModule, ResumeStyle } from "../../api/builder";
@@ -90,7 +90,7 @@ export function TemplateSheet({
             className="btn-tool-icon"
             aria-label="关闭"
           >
-            <X size={16} weight="bold" />
+            <X size={16} strokeWidth={2.25} />
           </button>
         </div>
 
@@ -116,7 +116,7 @@ export function TemplateSheet({
                     {isActive && (
                       <span className="absolute top-2 right-2 w-5 h-5 rounded-full bg-brand text-white
                         flex items-center justify-center">
-                        <Check size={12} weight="bold" />
+                        <Check size={12} strokeWidth={2.25} />
                       </span>
                     )}
                   </div>

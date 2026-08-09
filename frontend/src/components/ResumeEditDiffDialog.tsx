@@ -1,18 +1,5 @@
 import { useEffect, useRef, useMemo, useState, useCallback } from "react";
-import {
-  X,
-  GitDiff,
-  ArrowRight,
-  Plus,
-  Minus,
-  PencilSimple,
-  ArrowCounterClockwise,
-  ArrowClockwise,
-  CheckCircle,
-  SpinnerGap,
-  CaretDown,
-  CaretRight,
-} from "@phosphor-icons/react";
+import { X, GitCompare, ArrowRight, Plus, Minus, Pencil, RotateCcw, RotateCw, CircleCheck, Loader, ChevronDown, ChevronRight } from "lucide-react";
 import { saveDraft } from "../api/builder";
 import type { ResumeModule, ModuleType, ResumeModuleInput, ModuleContent } from "../api/builder";
 import { useToast } from "./Toast";
@@ -460,7 +447,7 @@ function DiffValue({
           onClick={() => setOpen(!open)}
           className="mt-1 inline-flex items-center gap-1 text-[10px] text-brand hover:underline cursor-pointer"
         >
-          {open ? <CaretUpIcon /> : <CaretDown size={10} weight="bold" aria-hidden="true" />}
+          {open ? <CaretUpIcon /> : <ChevronDown size={10} strokeWidth={2.25} aria-hidden="true" />}
           {open ? "收起" : `展开（${text.length} 字符）`}
         </button>
       )}
@@ -469,7 +456,7 @@ function DiffValue({
 }
 
 function CaretUpIcon() {
-  return <CaretDown size={10} weight="bold" className="rotate-180" aria-hidden="true" />;
+  return <ChevronDown size={10} strokeWidth={2.25} className="rotate-180" aria-hidden="true" />;
 }
 
 // ── 单条字段 diff 行 ──
@@ -517,12 +504,12 @@ function FieldDiffRow({
         >
           {reverted ? (
             <>
-              <CheckCircle size={11} weight="fill" aria-hidden="true" />
+              <CircleCheck size={11} fill="currentColor" aria-hidden="true" />
               已还原
             </>
           ) : (
             <>
-              <ArrowCounterClockwise size={11} weight="bold" aria-hidden="true" />
+              <RotateCcw size={11} strokeWidth={2.25} aria-hidden="true" />
               还原
             </>
           )}
@@ -574,7 +561,7 @@ function DiffCard({
       label: "删除模块",
     },
     modified: {
-      icon: PencilSimple,
+      icon: Pencil,
       color: "text-warning",
       bg: "bg-warning/10",
       border: "border-warning/20",
@@ -603,7 +590,7 @@ function DiffCard({
     <div className={`rounded-list border ${config.border} overflow-hidden`}>
       {/* 模块标题栏 */}
       <div className={`flex items-center gap-2 px-4 py-2.5 ${config.bg}`}>
-        <StatusIcon size={14} weight="bold" className={config.color} aria-hidden="true" />
+        <StatusIcon size={14} strokeWidth={2.25} className={config.color} aria-hidden="true" />
         <span className="text-sm font-medium text-[var(--color-text)]">{entry.label}</span>
         <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${config.bg} ${config.color} font-medium`}>
           {config.label}
@@ -661,7 +648,7 @@ function DiffCard({
               onClick={() => setShowFull(!showFull)}
               className="w-full flex items-center justify-center gap-1 px-4 py-1.5 text-[10px] text-[var(--color-text-muted)] hover:text-brand border-t border-[var(--color-border)] cursor-pointer"
             >
-              {showFull ? <CaretDown size={11} weight="bold" /> : <CaretRight size={11} weight="bold" />}
+              {showFull ? <ChevronDown size={11} strokeWidth={2.25} /> : <ChevronRight size={11} strokeWidth={2.25} />}
               {showFull ? "收起完整对比" : "查看完整模块对比"}
             </button>
           )}
@@ -698,7 +685,7 @@ function DiffCard({
       <div className="flex items-center justify-between gap-2 px-4 py-2 border-t border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
         {moduleReverted ? (
           <span className="inline-flex items-center gap-1.5 text-xs font-medium text-success">
-            <CheckCircle size={13} weight="fill" aria-hidden="true" />
+            <CircleCheck size={13} fill="currentColor" aria-hidden="true" />
             {revertedLabel}
           </span>
         ) : (
@@ -718,12 +705,12 @@ function DiffCard({
         >
           {moduleReverted ? (
             <>
-              <ArrowClockwise size={13} weight="bold" aria-hidden="true" />
+              <RotateCw size={13} strokeWidth={2.25} aria-hidden="true" />
               撤销整模块还原
             </>
           ) : (
             <>
-              <ArrowCounterClockwise size={13} weight="bold" aria-hidden="true" />
+              <RotateCcw size={13} strokeWidth={2.25} aria-hidden="true" />
               {revertActionLabel}
             </>
           )}
@@ -800,12 +787,12 @@ function SaveFooter({
           >
             {saving ? (
               <>
-                <SpinnerGap size={14} weight="bold" className="animate-spin" aria-hidden="true" />
+                <Loader size={14} strokeWidth={2.25} className="animate-spin" aria-hidden="true" />
                 保存中...
               </>
             ) : (
               <>
-                <ArrowCounterClockwise size={14} weight="bold" aria-hidden="true" />
+                <RotateCcw size={14} strokeWidth={2.25} aria-hidden="true" />
                 保存并应用
               </>
             )}
@@ -944,7 +931,7 @@ export default function ResumeEditDiffDialog({
         {/* 头部 */}
         <div className="flex items-center gap-3 px-6 py-4 border-b border-[var(--color-border)] shrink-0">
           <div className="shrink-0 p-2 rounded-action bg-brand/10 text-brand">
-            <GitDiff size={18} weight="fill" aria-hidden="true" />
+            <GitCompare size={18} fill="currentColor" aria-hidden="true" />
           </div>
           <div className="flex-1 min-w-0">
             <h3 className="text-base font-semibold text-[var(--color-text)]">
@@ -973,7 +960,7 @@ export default function ResumeEditDiffDialog({
               active:scale-[0.95] motion-reduce:active:scale-100
               transition-all cursor-pointer shrink-0"
           >
-            <X size={16} weight="bold" aria-hidden="true" />
+            <X size={16} strokeWidth={2.25} aria-hidden="true" />
           </button>
         </div>
 
@@ -987,7 +974,7 @@ export default function ResumeEditDiffDialog({
           ) : diffs.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-center">
               <div className="w-12 h-12 rounded-list bg-[var(--color-bg-tertiary)] flex items-center justify-center text-[var(--color-text-muted)] mb-3">
-                <ArrowRight size={20} weight="duotone" aria-hidden="true" />
+                <ArrowRight size={20} fill="currentColor" aria-hidden="true" />
               </div>
               <p className="text-sm text-[var(--color-text-muted)]">未检测到模块内容变化</p>
               <p className="text-xs text-[var(--color-text-muted)] mt-1">可能修改了非模块数据或内容未发生实质变化</p>

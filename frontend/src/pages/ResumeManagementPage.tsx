@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback, type ChangeEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { Upload, FileText, Lightning, Trash, Plus, Spinner, TrendUp, X, ClipboardText, Copy } from "@phosphor-icons/react";
+import { Upload, FileText, Zap, Trash2, Plus, LoaderCircle, TrendingUp, X, ClipboardList, Copy } from "lucide-react";
 import { listResumes, uploadResume, deleteResume, copyResume, generateIdempotencyKey, analyzeResume, matchJD, roleScore, type ResumeItem, type AnalyzeResult, type MatchJDResult, type RoleScoreResult } from "../api/resumes";
 import { createBuilderResume } from "../api/builder";
 import { useToast } from "../components/Toast";
@@ -424,7 +424,7 @@ export default function ResumeManagementPage() {
       return (
         <div className="inline-flex flex-col gap-1 px-2 py-1 rounded-action bg-sky-500/15 text-sky-600 border border-sky-500/30 min-w-[96px]">
           <span className="inline-flex items-center gap-1 text-[10px] font-medium">
-            <Spinner size={10} className="animate-spin" aria-hidden="true" />
+            <LoaderCircle size={10} className="animate-spin" aria-hidden="true" />
             <span className="truncate">{label}</span>
           </span>
           <div className="h-1 w-full bg-sky-500/15 rounded-full overflow-hidden">
@@ -527,12 +527,12 @@ export default function ResumeManagementPage() {
               >
                 {uploading ? (
                   <>
-                    <Spinner size={14} className="animate-spin" aria-hidden="true" />
+                    <LoaderCircle size={14} className="animate-spin" aria-hidden="true" />
                     导入中...
                   </>
                 ) : (
                   <>
-                    <Upload size={14} weight="bold" aria-hidden="true" />
+                    <Upload size={14} strokeWidth={2.25} aria-hidden="true" />
                     导入现有简历
                   </>
                 )}
@@ -550,7 +550,7 @@ export default function ResumeManagementPage() {
                   disabled:opacity-50 disabled:cursor-not-allowed"
                 aria-label="新建简历"
               >
-                <Plus size={14} weight="bold" aria-hidden="true" />
+                <Plus size={14} strokeWidth={2.25} aria-hidden="true" />
                 新建简历
               </button>
 
@@ -569,12 +569,12 @@ export default function ResumeManagementPage() {
               >
                 {creating ? (
                   <>
-                    <Spinner size={14} className="animate-spin" aria-hidden="true" />
+                    <LoaderCircle size={14} className="animate-spin" aria-hidden="true" />
                     创建中...
                   </>
                 ) : (
                   <>
-                    <Lightning size={14} weight="fill" aria-hidden="true" />
+                    <Zap size={14} fill="currentColor" aria-hidden="true" />
                     AI 创建简历
                   </>
                 )}
@@ -585,7 +585,7 @@ export default function ResumeManagementPage() {
           {/* ── 简历卡片列表 ── */}
           {loading ? (
             <div className="flex items-center justify-center py-32">
-              <Spinner
+              <LoaderCircle
                 size={24}
                 className="animate-spin text-[var(--color-text-muted)] mr-2"
                 aria-hidden="true"
@@ -596,7 +596,7 @@ export default function ResumeManagementPage() {
             <div className="flex flex-col items-center justify-center py-32 text-center">
               <FileText
                 size={48}
-                weight="duotone"
+                fill="currentColor"
                 className="text-[var(--color-text-muted)] mb-4"
                 aria-hidden="true"
               />
@@ -647,7 +647,7 @@ export default function ResumeManagementPage() {
                         <div className="flex items-center justify-center w-full h-full">
                           <FileText
                             size={40}
-                            weight="duotone"
+                            fill="currentColor"
                             className="text-[var(--color-text-muted)] opacity-50"
                             aria-hidden="true"
                           />
@@ -693,7 +693,7 @@ export default function ResumeManagementPage() {
                     aria-label={`JD 匹配 ${r.filename}`}
                     title={r.status === "ready" ? "JD 匹配" : "简历未就绪"}
                   >
-                    <ClipboardText size={14} weight="bold" aria-hidden="true" />
+                    <ClipboardList size={14} strokeWidth={2.25} aria-hidden="true" />
                   </button>
 
                   {/* 评分按钮 — hover 显示（A3 评分卡入口，消费 analyzeResume 结构化四维分数） */}
@@ -713,7 +713,7 @@ export default function ResumeManagementPage() {
                     aria-label={`评分 ${r.filename}`}
                     title={r.status === "ready" ? "AI 评分" : "简历未就绪"}
                   >
-                    <TrendUp size={14} weight="bold" aria-hidden="true" />
+                    <TrendingUp size={14} strokeWidth={2.25} aria-hidden="true" />
                   </button>
 
                   {/* 复制按钮 — hover 显示（多语言版本：复制副本后编辑器中翻译） */}
@@ -731,7 +731,7 @@ export default function ResumeManagementPage() {
                     aria-label={`复制 ${r.filename}`}
                     title="复制为草稿副本（可另存语言版本）"
                   >
-                    <Copy size={14} weight="bold" aria-hidden="true" />
+                    <Copy size={14} strokeWidth={2.25} aria-hidden="true" />
                   </button>
 
                   {/* 删除按钮 — hover 显示（与卡片为兄弟元素，避免嵌套 interactive） */}
@@ -749,7 +749,7 @@ export default function ResumeManagementPage() {
                     aria-label={`删除 ${r.filename}`}
                     title="删除"
                   >
-                    <Trash size={14} weight="bold" aria-hidden="true" />
+                    <Trash2 size={14} strokeWidth={2.25} aria-hidden="true" />
                   </button>
                 </div>
               ))}
@@ -823,14 +823,14 @@ export default function ResumeManagementPage() {
                 className="p-1.5 rounded-md text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer"
                 aria-label="关闭"
               >
-                <X size={16} weight="bold" aria-hidden="true" />
+                <X size={16} strokeWidth={2.25} aria-hidden="true" />
               </button>
             </div>
 
             {scoreView === "single" ? (
               scoreLoading ? (
                 <div className="flex items-center justify-center py-16">
-                  <Spinner size={22} className="animate-spin text-[var(--color-text-muted)]" aria-hidden="true" />
+                  <LoaderCircle size={22} className="animate-spin text-[var(--color-text-muted)]" aria-hidden="true" />
                   <span className="text-sm text-[var(--color-text-secondary)] ml-2.5">AI 评分中...</span>
                 </div>
               ) : scoreError ? (
@@ -847,7 +847,7 @@ export default function ResumeManagementPage() {
               )
             ) : roleLoading ? (
               <div className="flex items-center justify-center py-16">
-                <Spinner size={22} className="animate-spin text-[var(--color-text-muted)]" aria-hidden="true" />
+                <LoaderCircle size={22} className="animate-spin text-[var(--color-text-muted)]" aria-hidden="true" />
                 <span className="text-sm text-[var(--color-text-secondary)] ml-2.5">多角色评分中...</span>
               </div>
             ) : roleError ? (
@@ -893,7 +893,7 @@ export default function ResumeManagementPage() {
                 className="p-1.5 rounded-md text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer"
                 aria-label="关闭"
               >
-                <X size={16} weight="bold" aria-hidden="true" />
+                <X size={16} strokeWidth={2.25} aria-hidden="true" />
               </button>
             </div>
 
@@ -913,12 +913,12 @@ export default function ResumeManagementPage() {
                 >
                   {jdLoading ? (
                     <>
-                      <Spinner size={14} className="animate-spin" aria-hidden="true" />
+                      <LoaderCircle size={14} className="animate-spin" aria-hidden="true" />
                       匹配分析中...
                     </>
                   ) : (
                     <>
-                      <ClipboardText size={14} weight="bold" aria-hidden="true" />
+                      <ClipboardList size={14} strokeWidth={2.25} aria-hidden="true" />
                       开始匹配
                     </>
                   )}

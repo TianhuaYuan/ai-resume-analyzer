@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Warning, X } from "@phosphor-icons/react";
+import { TriangleAlert, X } from "lucide-react";
 import Spinner from "./ui/Spinner";
 
 interface ConfirmDialogProps {
@@ -94,7 +94,7 @@ export default function ConfirmDialog({
             className={`shrink-0 mt-0.5 p-2 rounded-action
               ${danger ? "bg-danger-soft text-danger" : "bg-warning-soft text-warning"}`}
           >
-            <Warning size={20} weight="bold" aria-hidden="true" />
+            <TriangleAlert size={20} strokeWidth={2.25} aria-hidden="true" />
           </div>
           <div className="flex-1 min-w-0">
             <h3 className="text-base font-semibold text-[var(--color-text)]">{title}</h3>
@@ -112,7 +112,7 @@ export default function ConfirmDialog({
               transition-all cursor-pointer shrink-0
               disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <X size={16} weight="bold" aria-hidden="true" />
+            <X size={16} strokeWidth={2.25} aria-hidden="true" />
           </button>
         </div>
 

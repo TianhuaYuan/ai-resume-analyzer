@@ -5,7 +5,7 @@
  * 供静默纠错角标展开与未来其他入口复用。
  */
 
-import { Check, Eyeglasses } from "@phosphor-icons/react";
+import { Check, Glasses } from "lucide-react";
 import type { AICheckIssue } from "../../api/builder";
 
 /** check 问题严重度样式映射（颜色编码左边框 + 标签） */
@@ -62,7 +62,7 @@ export function CheckIssueList({ issues, loading = false, error = "" }: CheckIss
   if (issues.length === 0) {
     return (
       <div className="flex items-center gap-2 p-3 rounded-action bg-success/10 border border-success/20 text-success text-xs">
-        <Check size={14} weight="bold" aria-hidden="true" />
+        <Check size={14} strokeWidth={2.25} aria-hidden="true" />
         未发现问题，内容质量良好
       </div>
     );
@@ -71,7 +71,7 @@ export function CheckIssueList({ issues, loading = false, error = "" }: CheckIss
   return (
     <div className="space-y-2">
       <p className="flex items-center gap-1 text-[10px] font-medium text-[var(--color-text-muted)] uppercase tracking-wider">
-        <Eyeglasses size={11} weight="bold" aria-hidden="true" />
+        <Glasses size={11} strokeWidth={2.25} aria-hidden="true" />
         智能检查结果
       </p>
       <ul className="space-y-2">

@@ -10,15 +10,7 @@
  */
 
 import { useState, useCallback, memo } from "react";
-import {
-  FilePdf,
-  FileText,
-  ArrowsInSimple,
-  ArrowsOutSimple,
-  SpinnerGap,
-  Printer,
-  TextAlignJustify,
-} from "@phosphor-icons/react";
+import { FileDown, FileText, Minimize2, Maximize2, Loader, Printer, AlignJustify } from "lucide-react";
 import { downloadExport } from "../../api/builder";
 import { PaginatedResumePreview, type PaginatedPreviewState } from "./PaginatedResumePreview";
 import { exportResumeToBrowserPrint } from "../../utils/printResume";
@@ -105,7 +97,7 @@ export const A4PreviewPanel = memo(function A4PreviewPanel({
           aria-label="展开预览"
           title="展开预览"
         >
-          <ArrowsOutSimple size={16} weight="bold" aria-hidden="true" />
+          <Maximize2 size={16} strokeWidth={2.25} aria-hidden="true" />
         </button>
         <span className="text-[10px] text-[var(--color-text-muted)] writing-mode-vertical
           [writing-mode:vertical-rl] tracking-wider">
@@ -134,7 +126,7 @@ export const A4PreviewPanel = memo(function A4PreviewPanel({
             aria-pressed={fitPages > 0}
             title="内容超出目标页数时自动压缩（点击切换 1 页 / 2 页 / 关闭）"
           >
-            <TextAlignJustify size={11} weight={fitPages > 0 ? "fill" : "regular"} aria-hidden="true" />
+            <AlignJustify size={11} fill={fitPages > 0 ? "currentColor" : "none"} aria-hidden="true" />
             {fitPages === 0 ? "自动压缩" : `压到 ${fitPages} 页`}
           </button>
           {pageState.isScaled && (
@@ -174,9 +166,9 @@ export const A4PreviewPanel = memo(function A4PreviewPanel({
             title="浏览器打印"
           >
             {exporting === "print" ? (
-              <SpinnerGap size={12} weight="bold" className="animate-spin" aria-hidden="true" />
+              <Loader size={12} strokeWidth={2.25} className="animate-spin" aria-hidden="true" />
             ) : (
-              <Printer size={12} weight="regular" aria-hidden="true" />
+              <Printer size={12} aria-hidden="true" />
             )}
             打印
           </button>
@@ -192,9 +184,9 @@ export const A4PreviewPanel = memo(function A4PreviewPanel({
             title="导出 PDF（后端 WeasyPrint）"
           >
             {exporting === "pdf" ? (
-              <SpinnerGap size={12} weight="bold" className="animate-spin" aria-hidden="true" />
+              <Loader size={12} strokeWidth={2.25} className="animate-spin" aria-hidden="true" />
             ) : (
-              <FilePdf size={12} weight="regular" aria-hidden="true" />
+              <FileDown size={12} aria-hidden="true" />
             )}
             PDF
           </button>
@@ -208,9 +200,9 @@ export const A4PreviewPanel = memo(function A4PreviewPanel({
             title="导出 Markdown"
           >
             {exporting === "markdown" ? (
-              <SpinnerGap size={12} weight="bold" className="animate-spin" aria-hidden="true" />
+              <Loader size={12} strokeWidth={2.25} className="animate-spin" aria-hidden="true" />
             ) : (
-              <FileText size={12} weight="regular" aria-hidden="true" />
+              <FileText size={12} aria-hidden="true" />
             )}
             MD
           </button>
@@ -222,7 +214,7 @@ export const A4PreviewPanel = memo(function A4PreviewPanel({
             aria-label="收起预览"
             title="收起预览"
           >
-            <ArrowsInSimple size={14} weight="bold" aria-hidden="true" />
+            <Minimize2 size={14} strokeWidth={2.25} aria-hidden="true" />
           </button>
         </div>
       </div>

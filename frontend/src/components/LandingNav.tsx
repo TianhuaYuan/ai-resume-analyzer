@@ -8,7 +8,8 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { CaretDown, EnvelopeSimple, User, Shield, Key, Gauge, SignOut, Sun, Moon, Monitor, CircleHalf, type Icon } from "@phosphor-icons/react";
+import type { LucideIcon } from "lucide-react";
+import { ChevronDown, Mail, User, Shield, KeyRound, Gauge, LogOut, Sun, Moon, Monitor, Contrast } from "lucide-react";
 import { useTheme, type Theme } from "../context/ThemeContext";
 import { openLoginModal } from "./LoginModal";
 import ChangePasswordDialog from "./ChangePasswordDialog";
@@ -33,11 +34,11 @@ const NAV_ITEMS: NavItem[] = [
 
 // ── P1: 主题 4 模式选项（浅色/深色/跟随系统/OLED） ──
 
-const THEME_OPTIONS: { key: Theme; label: string; icon: Icon }[] = [
+const THEME_OPTIONS: { key: Theme; label: string; icon: LucideIcon }[] = [
   { key: "light", label: "浅色", icon: Sun },
   { key: "dark", label: "深色", icon: Moon },
   { key: "system", label: "跟随系统", icon: Monitor },
-  { key: "oled", label: "OLED", icon: CircleHalf },
+  { key: "oled", label: "OLED", icon: Contrast },
 ];
 
 // ── 顶部导航 ──
@@ -163,7 +164,7 @@ export default function LandingNav({ activeKey }: LandingNavProps) {
                     {user.username.charAt(0).toUpperCase()}
                   </div>
                   <span className="text-xs text-[var(--color-text-secondary)] hidden sm:inline">{user.username}</span>
-                  <CaretDown size={12} className={`text-[var(--color-text-muted)] transition-transform duration-300 ${userMenuOpen ? "rotate-180" : ""}`} />
+                  <ChevronDown size={12} className={`text-[var(--color-text-muted)] transition-transform duration-300 ${userMenuOpen ? "rotate-180" : ""}`} />
                 </button>
                 {userMenuOpen && (
                   <div className="absolute right-0 top-full mt-2 w-48 rounded-input bg-white/90 backdrop-blur-xl border border-[var(--color-border)] shadow-2xl shadow-black/10 py-1 z-50 animate-fade-in-down">
@@ -199,7 +200,7 @@ export default function LandingNav({ activeKey }: LandingNavProps) {
                         onClick={() => { navigate("/admin"); setUserMenuOpen(false); }}
                         className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)] cursor-pointer transition-colors"
                       >
-                        <Shield size={14} weight="regular" aria-hidden="true" />
+                        <Shield size={14} aria-hidden="true" />
                         管理后台
                       </button>
                     )}
@@ -211,28 +212,28 @@ export default function LandingNav({ activeKey }: LandingNavProps) {
                       onClick={() => { setPasswordDialogOpen(true); setUserMenuOpen(false); }}
                       className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)] cursor-pointer transition-colors"
                     >
-                      <Key size={14} weight="regular" aria-hidden="true" />
+                      <KeyRound size={14} aria-hidden="true" />
                       修改密码
                     </button>
                     <button
                       onClick={() => { setEmailDialogOpen(true); setUserMenuOpen(false); }}
                       className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)] cursor-pointer transition-colors"
                     >
-                      <EnvelopeSimple size={14} weight="regular" aria-hidden="true" />
+                      <Mail size={14} aria-hidden="true" />
                       重新绑定邮箱
                     </button>
                     <button
                       onClick={() => { setUsernameDialogOpen(true); setUserMenuOpen(false); }}
                       className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)] cursor-pointer transition-colors"
                     >
-                      <User size={14} weight="regular" aria-hidden="true" />
+                      <User size={14} aria-hidden="true" />
                       修改用户名
                     </button>
                     <button
                       onClick={() => { setUsageDialogOpen(true); setUserMenuOpen(false); }}
                       className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)] cursor-pointer transition-colors"
                     >
-                      <Gauge size={14} weight="regular" aria-hidden="true" />
+                      <Gauge size={14} aria-hidden="true" />
                       用量统计
                     </button>
 
@@ -254,7 +255,7 @@ export default function LandingNav({ activeKey }: LandingNavProps) {
                                   : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)]"
                                 }`}
                             >
-                              <Icon size={15} weight={active ? "fill" : "regular"} aria-hidden="true" />
+                              <Icon size={15} fill={active ? "currentColor" : "none"} aria-hidden="true" />
                               {opt.label}
                             </button>
                           );
@@ -298,7 +299,7 @@ export default function LandingNav({ activeKey }: LandingNavProps) {
                       onClick={handleLogout}
                       className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs text-danger hover:bg-danger/10 cursor-pointer transition-colors"
                     >
-                      <SignOut size={14} weight="regular" aria-hidden="true" />
+                      <LogOut size={14} aria-hidden="true" />
                       退出登录
                     </button>
                   </div>
