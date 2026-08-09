@@ -32,12 +32,14 @@ from services.rag.pipeline import (
     llm_generate_with_tools,  # noqa: F401 — 保留模块属性供测试 patch（mock 目标）
     llm_generate_with_tools_stream,
 )
+from services.react_agent.authorization_gate import AuthorizationGate, authorization_gate_lock_timeout
 from services.react_agent.memory import assemble_system_prompt, manage_l1_context
 from services.react_agent.tools import (
     get_agent_schemas,  # noqa: F401 — 保留模块属性供测试 patch（mock 目标）
     get_tool_by_name,
     get_tools_for_agent,
 )
+from services.react_agent.tool_result_middleware import process_tool_result
 from services.react_agent.tools.base import (
     ApprovalRequired,
     Tool,
@@ -494,6 +496,9 @@ class ReactLoopResult:
 
 # 工具并行执行 Semaphore（Spec A#32：限单轮工具并发，非整个 Agent 循环）
 _tool_semaphore: asyncio.Semaphore | None = None
+
+# P1-10 授权门控实例（模块级单例：跨 ReAct 会话共享 in-flight 授权槽）
+_auth_gate = AuthorizationGate()
 
 
 def _get_tool_semaphore() -> asyncio.Semaphore:
@@ -980,12 +985,9 @@ async def react_loop(
             # 收集工具来源（Spec A#10: search_resume 来源聚合）
             all_sources.extend(tool_sources)
 
-            # tool 结果/错误回灌到 messages（工具结果预算管理：超长结果截断到
-            # 预算上限，避免单一超长结果挤爆 L1 上下文窗口）
-            budget = _tool_result_budget()
-            content = tool_result
-            if len(content) > budget:
-                content = content[: budget - 3] + "..."
+            # tool 结果/错误回灌到 messages（工具结果中间件：脱敏 + 按上下文窗口
+            # 预算截断，避免敏感信息外泄 + 单一超长结果挤爆 L1）
+            content = await process_tool_result(tool_result, tool_name=tc.name)
             messages.append(
                 {
                     "role": "tool",
@@ -1379,6 +1381,30 @@ async def _execute_tool_call(
         and await check_tool_approval(user_id, tc.name)
     ):
         tool.mark_approval_granted()
+
+    # P1-10 授权门控（借鉴 Hermes authorization_gate_lock_timeout）：
+    # 黑名单工具直接拒绝（不回灌 LLM 重试，杜绝绕过）；高代价工具串行化
+    # 授权（一次一个在途，有限等待防并发风暴）。黑名单命中返回 blocked。
+    if _auth_gate.is_blocked(tc.name):
+        logger.warning("授权门控: 工具 %s 被禁止执行 user=%d", tc.name, user_id)
+        return (
+            f"工具 '{tc.name}' 已被系统禁用，无法执行。请换其他方式。",
+            False,  # 终端拒绝，不累计坏调用（重试无意义）
+            [],
+            {"prompt_tokens": 0, "completion_tokens": 0},
+        )
+    _auth_granted, _auth_reason = await _auth_gate.authorize(
+        user_id, tc.name, timeout=authorization_gate_lock_timeout()
+    )
+    if not _auth_granted:
+        logger.warning("授权门控拒绝: %s user=%d tool=%s", _auth_reason, user_id, tc.name)
+        return (
+            f"工具 '{tc.name}' 授权失败（{_auth_reason}），已终止执行。",
+            True,
+            [],
+            {"prompt_tokens": 0, "completion_tokens": 0},
+        )
+
     _tool_t0 = time.perf_counter()
     _timeout = _tool_exec_timeout(tc.name)
     try:
@@ -1439,6 +1465,9 @@ async def _execute_tool_call(
         logger.warning("工具执行失败: %s, args=%s, error=%s", tc.name, tc.arguments, e)
         logger.info("tool_exec: %s %.0fms (error)", tc.name, (time.perf_counter() - _tool_t0) * 1000)
         return f"工具执行失败: {e}", True, [], {"prompt_tokens": 0, "completion_tokens": 0}
+    finally:
+        # 释放授权槽（串行化高代价工具：无论成功/失败/超时/异常都释放，防死锁）
+        await _auth_gate.release(user_id, tc.name)
 
 
 async def _handle_tool_approval(

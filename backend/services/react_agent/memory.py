@@ -44,10 +44,22 @@ DEFAULT_L2_LIMIT = 10
 # ═══════════════════════════════════════════════════════════════
 
 
-def truncate_tool_result(text: str, max_chars: int = MAX_TOOL_RESULT_CHARS) -> str:
-    """截断工具结果到 ≤ max_chars 字符，超长部分用 ... 省略。"""
+def truncate_tool_result(text: str, max_chars: int | None = None) -> str:
+    """截断工具结果到 ≤ max_chars 字符，超长部分用 ... 省略。
+
+    max_chars=None 时用动态预算（P1-5 工具结果预算管理：随上下文窗口自适应，
+    避免与 loop 层回灌截断口径不一致导致双重截断错乱）。
+    """
     if not text:
         return ""
+    if max_chars is None:
+        # 懒导入避免循环依赖（loop 导入 memory）
+        try:
+            from services.react_agent.loop import _tool_result_budget
+
+            max_chars = _tool_result_budget()
+        except Exception:
+            max_chars = MAX_TOOL_RESULT_CHARS
     if len(text) <= max_chars:
         return text
     # 留 3 字符给省略号
