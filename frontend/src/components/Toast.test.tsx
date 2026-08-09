@@ -108,7 +108,7 @@ describe("Toast 系统", () => {
     });
   });
 
-  it("error Toast 无进度条（不自动消失）", async () => {
+  it("error Toast 有进度条（10s 自动消失）", async () => {
     renderToast();
     await act(async () => {
       fireEvent.click(screen.getByText("error"));
@@ -116,7 +116,8 @@ describe("Toast 系统", () => {
     await waitFor(() => {
       const toast = screen.getByRole("alert");
       const progressBar = toast.querySelector("[data-testid='toast-progress']");
-      expect(progressBar).toBeNull();
+      // error 自动关闭（10s）：WS 推送的失败提示不再永不消失（用户反馈）
+      expect(progressBar).not.toBeNull();
     });
   });
 
@@ -138,7 +139,7 @@ describe("Toast 系统", () => {
     });
   });
 
-  it("error Toast 不自动消失（6秒后仍存在）", async () => {
+  it("error Toast 10s 后才自动消失（6秒后仍存在）", async () => {
     renderToast();
     await act(async () => {
       fireEvent.click(screen.getByText("error"));
@@ -146,8 +147,7 @@ describe("Toast 系统", () => {
     // 在 real timers 下确认 Toast 渲染（waitFor 依赖 setTimeout）
     await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
 
-    // 切到 fake timers 推进 6 秒，确认 error Toast 仍在
-    // error 的 AUTO_DISMISS_MS=null，useEffect 不注册 setTimeout，advanceTimersByTime 不会触发消失
+    // 切到 fake timers 推进 6 秒（< 10s 自动关闭时长），确认 error Toast 仍在
     vi.useFakeTimers();
     try {
       await act(async () => {

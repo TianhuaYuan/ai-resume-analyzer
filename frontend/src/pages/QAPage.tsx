@@ -64,6 +64,8 @@ import ConfirmDialog from "../components/ConfirmDialog";
 import { CompareSelectDialog } from "../components/CompareSelectDialog";
 import MarkdownRenderer from "../components/MarkdownRenderer";
 import HighlightedText from "../components/HighlightedText";
+import TokenBar from "../components/TokenBar";
+import { ROLE_STYLES } from "../components/roleStyles";
 import AgentProcessPanel, { getToolLabel } from "../components/AgentProcessPanel";
 // E1: 简历诊断结构化卡片（四维评分 + 诊断结论 + 可溯源来源）
 import DiagnosisCard, { isDiagnosisMessage } from "../components/DiagnosisCard";
@@ -682,10 +684,10 @@ const MessageBubble = memo(function MessageBubble({ msg, deleting, onDelete, onF
   }, [msg.answer, msg.question]);
   return (
     <div className="group animate-fade-in-up">
-      {/* 用户问题 */}
+      {/* 用户问题（P4-8 角色样式：右对齐 brand 底色） */}
       <div className="flex justify-end mb-4">
-        <div className="max-w-[75%] px-4 py-3 bg-brand
-          text-white text-sm leading-relaxed rounded-2xl rounded-br-md">
+        <div className={`max-w-[75%] px-4 py-3 ${ROLE_STYLES.user.bg}
+          ${ROLE_STYLES.user.text} text-sm leading-relaxed rounded-2xl rounded-br-md`}>
           {/* P4-10: 搜索词高亮（历史搜索命中时高亮） */}
           {searchTerm ? (
             <HighlightedText text={msg.question} terms={[searchTerm]} />
@@ -730,8 +732,8 @@ const MessageBubble = memo(function MessageBubble({ msg, deleting, onDelete, onF
               </button>
             </div>
           )}
-          <div className="px-4 py-3.5 rounded-2xl rounded-bl-md leading-relaxed text-sm
-            bg-[var(--color-bg-secondary)] border border-[var(--color-border)]">
+          <div className={`px-4 py-3.5 rounded-2xl rounded-bl-md leading-relaxed text-sm
+            ${ROLE_STYLES.assistant.bg} ${ROLE_STYLES.assistant.text}`}>
             {/* T18: Agent 推理过程面板（#11: streaming 开始即显示占位，用户立即看到反馈） */}
             {msg.streaming || (msg.agent_steps && msg.agent_steps.length > 0) ? (
               <AgentProcessPanel steps={msg.agent_steps ?? []} streaming={msg.streaming} />
@@ -791,22 +793,28 @@ const MessageBubble = memo(function MessageBubble({ msg, deleting, onDelete, onF
                     {formatTimestamp(msg.created_at)}
                   </span>
                 )}
-                {/* Token 消耗 */}
+                {/* Token 消耗：文本徽标 + TokenBar 可视化（P4-11 借鉴 Hermes TokenBar） */}
                 {msg.token_usage?.total ? (
-                  <span
+                  <div
                     data-testid="message-token-usage"
-                    className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 text-[10px] font-mono tabular-nums text-[var(--color-text-muted)] bg-[var(--color-bg-secondary)] rounded-md"
+                    className="mt-1 w-36 px-1.5 py-1 text-[10px] font-mono tabular-nums text-[var(--color-text-muted)] bg-[var(--color-bg-secondary)] rounded-md"
                   >
-                    <svg className="w-2.5 h-2.5 opacity-50" viewBox="0 0 16 16" fill="currentColor">
-                      <path d="M8 1a7 7 0 100 14A7 7 0 008 1zm0 12.5a5.5 5.5 0 110-11 5.5 5.5 0 010 11zM8 4a.75.75 0 01.75.75v2.5h2.5a.75.75 0 010 1.5h-2.5v2.5a.75.75 0 01-1.5 0v-2.5h-2.5a.75.75 0 010-1.5h2.5v-2.5A.75.75 0 018 4z"/>
-                    </svg>
-                    {msg.token_usage.total.toLocaleString()} tokens
-                    {msg.token_usage.prompt != null && msg.token_usage.completion != null && (
-                      <span className="opacity-60">
-                        （↑{msg.token_usage.prompt.toLocaleString()} ↓{msg.token_usage.completion.toLocaleString()}）
+                    <div className="flex items-center justify-between">
+                      <span className="inline-flex items-center gap-1">
+                        <svg className="w-2.5 h-2.5 opacity-50" viewBox="0 0 16 16" fill="currentColor">
+                          <path d="M8 1a7 7 0 100 14A7 7 0 008 1zm0 12.5a5.5 5.5 0 110-11 5.5 5.5 0 010 11zM8 4a.75.75 0 01.75.75v2.5h2.5a.75.75 0 010 1.5h-2.5v2.5a.75.75 0 01-1.5 0v-2.5h-2.5a.75.75 0 010-1.5h2.5v-2.5A.75.75 0 018 4z"/>
+                        </svg>
+                        {msg.token_usage.total.toLocaleString()} tokens
                       </span>
-                    )}
-                  </span>
+                    </div>
+                    <TokenBar
+                      total={msg.token_usage.total}
+                      prompt={msg.token_usage.prompt ?? 0}
+                      completion={msg.token_usage.completion ?? 0}
+                      showLabels={false}
+                      className="mt-1"
+                    />
+                  </div>
                 ) : null}
               </div>
               <div className="shrink-0 flex items-center gap-1 mt-2">

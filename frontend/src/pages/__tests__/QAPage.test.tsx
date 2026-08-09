@@ -3,6 +3,7 @@ import { render, fireEvent, screen, waitFor, act } from "@testing-library/react"
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import QAPage from "../QAPage";
 import { AppChatProvider } from "../../context/AppChatContext";
+import { ToastProvider } from "../../components/Toast";
 
 // v2 重构后 QAPage 用 askAgentStream（旧 askQuestionStream 已移除），
 // 且挂载时自动创建/读取对话会话，需全部 mock（jsdom 无 fetch）。
@@ -53,14 +54,17 @@ import { getHistory, clearHistory, deleteQa, submitFeedback, getQuota, askAgentS
 function renderPage(route = "/resumes/42") {
   // P2-12：测试路由与生产 App.tsx 保持一致（/resumes/:id）
   // QAPage 使用 useAppChat（与 Sidebar 共享对话状态），需包 AppChatProvider
+  // QAPage 使用 useToast（失败提示），需包 ToastProvider，否则抛 "useToast must be used within ToastProvider"
   return render(
-    <AppChatProvider>
-      <MemoryRouter initialEntries={[route]}>
-        <Routes>
-          <Route path="/resumes/:id" element={<QAPage />} />
-        </Routes>
-      </MemoryRouter>
-    </AppChatProvider>
+    <ToastProvider>
+      <AppChatProvider>
+        <MemoryRouter initialEntries={[route]}>
+          <Routes>
+            <Route path="/resumes/:id" element={<QAPage />} />
+          </Routes>
+        </MemoryRouter>
+      </AppChatProvider>
+    </ToastProvider>
   );
 }
 
@@ -341,16 +345,18 @@ describe("QAPage AI 能力入口触发（回归：location.state 死循环）", 
     );
 
     render(
-      <AppChatProvider>
-        {/* 模拟 AI 能力页 / FloatingAIPanel 的 navigate("/qa", { state: { question } }) */}
-        <MemoryRouter
-          initialEntries={[{ pathname: "/qa", state: { question: "帮我诊断这份简历" } }]}
-        >
-          <Routes>
-            <Route path="/qa" element={<QAPage />} />
-          </Routes>
-        </MemoryRouter>
-      </AppChatProvider>,
+      <ToastProvider>
+        <AppChatProvider>
+          {/* 模拟 AI 能力页 / FloatingAIPanel 的 navigate("/qa", { state: { question } }) */}
+          <MemoryRouter
+            initialEntries={[{ pathname: "/qa", state: { question: "帮我诊断这份简历" } }]}
+          >
+            <Routes>
+              <Route path="/qa" element={<QAPage />} />
+            </Routes>
+          </MemoryRouter>
+        </AppChatProvider>
+      </ToastProvider>,
     );
 
     // 简历 id=42 就绪后应自动发送一次该问题
@@ -379,15 +385,17 @@ describe("QAPage AI 能力入口触发（回归：location.state 死循环）", 
     vi.mocked(askAgentStream).mockImplementation(() => () => {});
 
     const { container } = render(
-      <AppChatProvider>
-        <MemoryRouter
-          initialEntries={[{ pathname: "/qa", state: { question: "帮我诊断这份简历" } }]}
-        >
-          <Routes>
-            <Route path="/qa" element={<QAPage />} />
-          </Routes>
-        </MemoryRouter>
-      </AppChatProvider>,
+      <ToastProvider>
+        <AppChatProvider>
+          <MemoryRouter
+            initialEntries={[{ pathname: "/qa", state: { question: "帮我诊断这份简历" } }]}
+          >
+            <Routes>
+              <Route path="/qa" element={<QAPage />} />
+            </Routes>
+          </MemoryRouter>
+        </AppChatProvider>
+      </ToastProvider>,
     );
 
     await waitFor(() => {
