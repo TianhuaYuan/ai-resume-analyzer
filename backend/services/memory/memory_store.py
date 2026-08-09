@@ -31,6 +31,7 @@ MEM_CREATED_AT = "created_at"
 MEM_LAST_ACCESSED = "last_accessed_at"
 MEM_TTL = "ttl"
 MEM_EXPIRED = "expired"  # A3: 失效标记（true=过期/被推翻，默认召回隐藏）
+MEM_PROJECT = "project"  # P2-13: 项目作用域标记（跨项目不串扰）
 
 # 默认记忆层级：L4 全部归 episodic（原始情节），L3 画像为压缩后的 semantic
 DEFAULT_TIER = "episodic"
@@ -60,6 +61,7 @@ async def save_memory(
     memory_type: str = "episodic",
     importance: float = DEFAULT_IMPORTANCE,
     ttl: int | None = None,
+    project: str | None = None,
 ) -> str:
     """写入一条长期记忆（幂等：同内容 hash id 覆盖）。返回 memory id。
 
@@ -69,6 +71,8 @@ async def save_memory(
         memory_type: episodic（原始情节）/ semantic（提炼后的语义事实）。
         importance: 重要度 0-1。
         ttl: 过期秒数（None = 永久；T16 衰减据此）。
+        project: 项目作用域标记（P2-13，借鉴 OpenClaw 项目作用域记忆）。
+            同一记忆只归属一个项目；召回时按项目过滤/加权，跨项目不串扰。
     """
     snippet = (snippet or "").strip()
     if not snippet:
@@ -88,6 +92,8 @@ async def save_memory(
     }
     if ttl:
         meta[MEM_TTL] = int(ttl)
+    if project:
+        meta[MEM_PROJECT] = project  # P2-13: 项目作用域标记
 
     await get_vector_store().upsert(
         _collection(user_id),
@@ -96,7 +102,7 @@ async def save_memory(
         embeddings=[embedding],
         metadatas=[meta],
     )
-    logger.info("L4 记忆写入: user=%d id=%s len=%d", user_id, mid, len(snippet))
+    logger.info("L4 记忆写入: user=%d id=%s len=%d project=%s", user_id, mid, len(snippet), project)
     return mid
 
 
@@ -107,11 +113,18 @@ async def recall_memory(
     top_k: int = 5,
     threshold: float = DEFAULT_RECALL_THRESHOLD,
     show_expired: bool = False,
+    project: str | None = None,
+    active_project: str | None = None,
 ) -> list[dict]:
     """按语义召回用户记忆片段（按用户隔离 + 分数阈值过滤）。
 
     A3 失效不删除（借鉴 mem0 expiration 隐藏 + graphiti invalid_at 保留历史）：
     默认过滤 expired 标记的记忆；show_expired=True 可见全部（审计/回溯）。
+
+    P2-13 项目作用域（借鉴 OpenClaw）：
+    - project 传入时：只召回该项目标记的记忆（跨项目不串扰）
+    - active_project 传入时：活跃项目记忆加权 1.5x，非活跃项目 0.8x，
+      无项目标记保持中性 1.0x（活跃项目信号更强，不活跃项目降噪）
 
     Returns:
         ``[{memory_id, text, score, metadata}, ...]``，按相似度降序。
@@ -124,14 +137,24 @@ async def recall_memory(
             meta = item["metadata"] or {}
             if not show_expired and meta.get(MEM_EXPIRED) is True:
                 continue  # 失效记忆默认隐藏（保留历史，不删除）
+            mem_project = meta.get(MEM_PROJECT)
+            # 项目过滤：指定 project 时，只召回该项目或无项目标记的记忆
+            if project and mem_project and mem_project != project:
+                continue
+            score = item["score"]
+            # 项目加权：活跃项目 1.5x / 非活跃项目 0.8x / 中性 1.0x
+            if active_project and mem_project:
+                score = score * (1.5 if mem_project == active_project else 0.8)
             out.append(
                 {
                     "memory_id": item["id"],
                     "text": item["text"],
-                    "score": item["score"],
+                    "score": score,
                     "metadata": meta,
                 }
             )
+    # 项目加权后重排序
+    out.sort(key=lambda m: m["score"], reverse=True)
     return out
 
 

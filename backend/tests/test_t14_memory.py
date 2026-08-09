@@ -126,8 +126,9 @@ class TestManageL1Context:
         assert result[0]["role"] == "system"
 
     def test_tool_result_truncated(self):
-        """工具结果被截断到 ≤2000 字符。"""
-        long_tool_result = "x" * 5000
+        """工具结果被截断到动态预算上限（P2-5.7：随上下文窗口自适应）。"""
+        # 输入远超动态预算（默认窗口 16384 → 预算 6000），必须被截断
+        long_tool_result = "x" * 10000
         messages = [
             {"role": "system", "content": "sys"},
             {"role": "user", "content": "query"},
@@ -138,7 +139,9 @@ class TestManageL1Context:
         result = manage_l1_context(messages, max_tokens=16000)
         for msg in result:
             if msg["role"] == "tool":
-                assert len(msg["content"]) <= 2000
+                # 动态预算 ≥ 4000（默认窗口 16384 下为 6000），且 ≤ 原长度
+                assert len(msg["content"]) < len(long_tool_result)
+                assert len(msg["content"]) >= 4000
 
     def test_evict_oldest_tool_round_first(self):
         """超额时先丢最旧工具轮。"""
