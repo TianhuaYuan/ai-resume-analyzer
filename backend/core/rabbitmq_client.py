@@ -108,7 +108,11 @@ async def init_consumer(
         queue = await _channel.declare_queue(settings.RABBITMQ_QUEUE, durable=True)
         # P2-5：prefetch 限制——慢 LLM 任务队列若无限 in-flight 会堆积。
         # 设为 1 实现"单消费者顺序处理 + 失败可重试"，配合消息失败 nack requeue。
-        await _channel.set_qos(prefetch_count=max(1, settings.RABBITMQ_PREFETCH_COUNT))
+        try:
+            prefetch_count = max(1, int(settings.RABBITMQ_PREFETCH_COUNT))
+        except (TypeError, ValueError):
+            prefetch_count = 1
+        await _channel.set_qos(prefetch_count=prefetch_count)
 
         # 注册消息处理回调
         async def _on_message(message: aio_pika.IncomingMessage) -> None:

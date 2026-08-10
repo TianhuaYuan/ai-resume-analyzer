@@ -980,9 +980,8 @@ async def complete_resume(
     # 4. 全量替换模块（如果请求体包含 modules）
     current_modules = existing_modules
     if body.modules is not None:
-        # 先清理全空条目/补占位（复用草稿清洗），避免「残留空条目」被严格校验 422。
-        # 部分空条目（缺必填字段，如 work 填了 company 没填 position）仍会 422，由前端提示补全。
-        _sanitize_draft_modules(body.modules)
+        # 完成态必须经过严格校验；草稿阶段的占位/空条目清洗不能带入
+        # complete，否则空姓名会被伪装成“未命名”而绕过最终校验。
         _validate_modules(body.modules)
 
         for old_mod in existing_modules:

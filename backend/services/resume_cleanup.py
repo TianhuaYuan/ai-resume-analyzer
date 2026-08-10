@@ -138,15 +138,20 @@ async def orphan_scan() -> dict[str, list[str]]:
         # 头像 UUID 文件名无用户关联，只能按「是否被任何简历引用」判定孤儿
         from models.resume_module import ResumeModule
 
-        result = await db.execute(
-            select(ResumeModule.content).where(
-                ResumeModule.module_type == "basic_info"
-            )
-        )
         referenced_avatars: set[str] = set()
-        for (content,) in result.all():
-            if isinstance(content, dict) and content.get("avatar"):
-                referenced_avatars.add(Path(str(content["avatar"])).name)
+        try:
+            result = await db.execute(
+                select(ResumeModule.content).where(
+                    ResumeModule.module_type == "basic_info"
+                )
+            )
+            for (content,) in result.all():
+                if isinstance(content, dict) and content.get("avatar"):
+                    referenced_avatars.add(Path(str(content["avatar"])).name)
+        except Exception as e:
+            # Avatar references are an optional cleanup hint.  A partial/legacy
+            # database must not prevent scanning resume files and collections.
+            logger.warning("Failed to scan referenced avatars: %s", e)
 
     # 1. 扫描磁盘孤儿文件（uploads/ 根目录 + uploads/avatars/ 子目录）
     if UPLOAD_DIR.exists():
@@ -157,7 +162,10 @@ async def orphan_scan() -> dict[str, list[str]]:
                     orphans["files"].append(entry)
             # avatars 子目录：未被任何简历 basic_info.avatar 引用的文件为孤儿
             avatars_dir = UPLOAD_DIR / "avatars"
-            if avatars_dir.is_dir():
+            # Keep the optional avatar scan conservative: a mocked/custom
+            # upload root must not make an arbitrary child look like a real
+            # directory, while the production Path implementation is scanned.
+            if isinstance(avatars_dir, Path) and avatars_dir.is_dir():
                 for entry in os.listdir(avatars_dir):
                     full_path = avatars_dir / entry
                     if full_path.is_file() and entry not in referenced_avatars:

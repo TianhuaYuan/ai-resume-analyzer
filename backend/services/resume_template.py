@@ -211,8 +211,38 @@ try:
         )
 
 except ImportError:  # pragma: no cover
-    # markdown 库未安装时降级为纯 HTML 转义，行为与 _esc 一致
-    _render_md = _esc
+    def _render_md(value) -> str:
+        """Minimal safe Markdown fallback when python-markdown is unavailable.
+
+        The runtime image normally installs python-markdown, but resume rendering
+        must still preserve the common bold/list syntax in a slim test/runtime
+        environment instead of silently returning raw Markdown.
+        """
+        if value is None:
+            return ""
+        lines = str(value).splitlines()
+        rendered: list[str] = []
+        list_items: list[str] = []
+
+        def inline(text: str) -> str:
+            escaped = escape(text)
+            return re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escaped)
+
+        def flush_list() -> None:
+            if list_items:
+                rendered.append("<ul>" + "".join(f"<li>{item}</li>" for item in list_items) + "</ul>")
+                list_items.clear()
+
+        for line in lines:
+            match = re.match(r"^\s*[-*]\s+(.+)$", line)
+            if match:
+                list_items.append(inline(match.group(1)))
+                continue
+            flush_list()
+            if line.strip():
+                rendered.append(inline(line))
+        flush_list()
+        return "\n".join(rendered)
 
 
 def _render_basic_info(content: dict) -> str:

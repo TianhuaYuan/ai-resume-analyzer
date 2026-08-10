@@ -12,6 +12,7 @@
 4. 问答历史 → 保存到 DB
 5. 幂等上传 → 同 key 返回同一 resume
 """
+import asyncio
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -23,6 +24,17 @@ from tests.conftest import AsyncSessionTest
 def _make_resume_bytes() -> bytes:
     """构造一份合法的 txt 简历内容。"""
     return "张三\nPython 工程师\n3年经验\n本科毕业\n熟练 FastAPI 和 LangGraph".encode("utf-8")
+
+
+async def _wait_for_status(client, resume_id, headers, expected):
+    """Poll asynchronous parsing instead of racing the task scheduler."""
+    response = None
+    for _ in range(100):
+        response = await client.get(f"/api/v1/resumes/{resume_id}", headers=headers)
+        if response.json().get("status") == expected:
+            return response
+        await asyncio.sleep(0.02)
+    return response
 
 
 @pytest.mark.asyncio
@@ -59,7 +71,7 @@ async def test_upload_pdf_then_ask(
         assert resp.json()["status"] == "processing"
 
         # 2. 验证后台处理完成（BackgroundTasks 在 ASGITransport 中应已执行）
-        resp = await client.get(f"/api/v1/resumes/{resume_id}", headers=auth_headers)
+        resp = await _wait_for_status(client, resume_id, auth_headers, "ready")
         assert resp.status_code == 200
         resume_data = resp.json()
         assert resume_data["status"] == "ready", \
@@ -124,7 +136,7 @@ async def test_upload_docx_then_ask(
         resume_id = resp.json()["id"]
 
         # 等处理完
-        resp = await client.get(f"/api/v1/resumes/{resume_id}", headers=auth_headers)
+        resp = await _wait_for_status(client, resume_id, auth_headers, "ready")
         assert resp.json()["status"] == "ready"
 
         # 提问
@@ -171,7 +183,7 @@ async def test_upload_failed_then_delete(
         resume_id = resp.json()["id"]
 
         # 确认状态是 failed
-        resp = await client.get(f"/api/v1/resumes/{resume_id}", headers=auth_headers)
+        resp = await _wait_for_status(client, resume_id, auth_headers, "failed")
         assert resp.status_code == 200
         assert resp.json()["status"] == "failed"
 

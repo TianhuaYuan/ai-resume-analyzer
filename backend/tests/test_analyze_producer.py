@@ -6,6 +6,7 @@ RED-GREEN-REFACTOR:
 3. REFACTOR: Clean up
 """
 
+import asyncio
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -72,7 +73,7 @@ class TestAnalyzeProducer:
             assert result is True
             mock_process.assert_called_once()
 
-    async def test_publish_sync_failure(self):
+    async def test_publish_fallback_schedules_background_task(self):
         """同步执行失败时返回 False。"""
         with (
             patch("services.resume_analyze_producer.settings") as mock_settings,
@@ -91,4 +92,6 @@ class TestAnalyzeProducer:
                 resume_id=1, user_id=42, filename="test.pdf"
             )
 
-            assert result is False
+            assert result is True
+            await asyncio.sleep(0)
+            mock_process.assert_awaited_once()

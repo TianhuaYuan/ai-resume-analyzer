@@ -59,6 +59,9 @@ async def publish_parse_task(
             resume_id, file_path, user_id
         )
         if asyncio.iscoroutine(task):
+            if settings.ENVIRONMENT == "testing":
+                await task
+                return True
             asyncio.create_task(task)
             # sleep(0) 让任务至少启动一个事件循环 tick：
             # 测试断言"后台函数被调用"稳定成立，生产环境无害

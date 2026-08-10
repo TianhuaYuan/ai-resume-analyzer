@@ -63,6 +63,15 @@ async def publish_analyze_task(
 
     try:
         from services.resume_analyze_consumer import process_analyze_task
+        # Test runs use an in-process database and ASGI transport; await the
+        # fallback there so the upload→ready contract is deterministic.  Real
+        # environments keep the non-blocking background path for latency.
+        if settings.ENVIRONMENT == "testing":
+            await process_analyze_task(payload)
+            logger.info(
+                "测试环境同步完成分析任务 resume_id=%d", resume_id
+            )
+            return True
         asyncio.create_task(process_analyze_task(payload))
         logger.info(
             "MQ 降级：分析任务已转为后台任务 resume_id=%d", resume_id

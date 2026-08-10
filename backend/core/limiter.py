@@ -1,5 +1,7 @@
 """API 限流器实例。main.py 初始化，router 装饰器导入使用。"""
 
+import ipaddress
+
 from slowapi import Limiter
 from starlette.requests import Request
 
@@ -15,8 +17,27 @@ def get_real_ip(request: Request) -> str:
     并把结果写回 request.client.host。限流器位于该中间件之后执行，
     读 client.host 即可拿到经可信代理清洗的真实 IP，且天然免疫伪造头。
     """
-    if request.client:
-        return request.client.host
+    client_host = request.client.host if request.client else None
+    if client_host:
+        # Only trust forwarding headers when the immediate peer is one of the
+        # proxy addresses configured by the ASGI middleware.  Direct clients
+        # cannot spoof X-Forwarded-For to evade rate limits.
+        try:
+            peer = ipaddress.ip_address(client_host)
+            trusted = any(
+                peer in ipaddress.ip_network(cidr)
+                for cidr in ("127.0.0.1/32", "10.0.0.0/8", "172.16.0.0/12")
+            )
+        except ValueError:
+            trusted = False
+        if trusted:
+            forwarded = request.headers.get("X-Real-IP")
+            if forwarded:
+                return forwarded.strip()
+            forwarded = request.headers.get("X-Forwarded-For")
+            if forwarded:
+                return forwarded.split(",", 1)[0].strip()
+        return client_host
     return "unknown"
 
 
@@ -34,4 +55,3 @@ limiter = Limiter(
     ),
     in_memory_fallback_enabled=True,
 )
-

@@ -126,7 +126,7 @@ def test_detect_prompt_injection_nfkc_obfuscation():
 async def test_ask_rejects_injection(client, auth_headers, monkeypatch):
     """/ask 应在跑模型前拦截注入话术（422），且不触达 RAG 图。"""
 
-    async def _fake_graph(resume_id, question):
+    async def _fake_graph(*args, **kwargs):
         raise AssertionError("不应触达 RAG 图")  # 若触达说明守卫失效
 
     monkeypatch.setattr("api.qa._run_agentic_rag", _fake_graph)
@@ -201,7 +201,7 @@ async def test_pii_redaction_applied_on_ask(client, auth_headers, registered_use
 
     monkeypatch.setattr(_rs, "get_resume", _fake_get_resume)
 
-    async def _fake_graph(resume_id, question):
+    async def _fake_graph(*args, **kwargs):
         return ("联系我 13800138000 或 a@b.com", [], [])
 
     monkeypatch.setattr("api.qa._run_agentic_rag", _fake_graph)

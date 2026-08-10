@@ -26,7 +26,13 @@ import os
 _test_db_file = tempfile.mktemp(suffix=".db")
 TEST_DATABASE_URL = f"sqlite+aiosqlite:///{_test_db_file}"
 
-engine_test = create_async_engine(TEST_DATABASE_URL, echo=False)
+engine_test = create_async_engine(
+    TEST_DATABASE_URL,
+    echo=False,
+    pool_size=32,
+    max_overflow=32,
+    pool_timeout=60,
+)
 AsyncSessionTest = async_sessionmaker(engine_test, class_=AsyncSession, expire_on_commit=False)
 
 
