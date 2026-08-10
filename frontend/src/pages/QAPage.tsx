@@ -81,6 +81,9 @@ export default function QAPage() {
   const [chat, setChat] = useState<ChatMessage[]>([]);
   const [asking, setAsking] = useState(false);
   const [error, setError] = useState("");
+  const [qaInitState, setQaInitState] = useState<"empty" | "creating" | "loading" | "ready" | "error">("empty");
+  const [builderReadyId, setBuilderReadyId] = useState(0);
+  const [qaInitRetry, setQaInitRetry] = useState(0);
 
   // 对话会话状态
   const [conversations, setConversations] = useState<ConversationItem[]>([]);
@@ -113,6 +116,7 @@ export default function QAPage() {
 
   // v2: 简历预览面板（右侧抽屉，默认隐藏，点击展开）
   const [showPreview, setShowPreview] = useState(false);
+  const [previewCollapsed, setPreviewCollapsed] = useState(false);
   const [previewModules, setPreviewModules] = useState<ResumeModule[]>([]);
   const [previewStyle, setPreviewStyle] = useState<ResumeStyle | null>(null);
   const [editingModule, setEditingModule] = useState<string | null>(null);
@@ -136,10 +140,66 @@ export default function QAPage() {
   const [atsAuditLoading, setAtsAuditLoading] = useState(false);
   const lockTokenRef = useRef<string | null>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const modulesRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const diffFetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const diffOwnerTokenRef = useRef(0);
   const modulesRef = useRef(previewModules);
   const styleRef = useRef(previewStyle);
+  const [isDirty, setIsDirty] = useState(false);
+  const dirtyRef = useRef(false);
+  const editRevisionRef = useRef(0);
+  const activeResumeIdRef = useRef(resumeId);
+  const manualSaveTokenRef = useRef(0);
+  const manualSaveOwnerRef = useRef<{ token: number; resumeId: number } | null>(null);
   useEffect(() => { modulesRef.current = previewModules; }, [previewModules]);
   useEffect(() => { styleRef.current = previewStyle; }, [previewStyle]);
+
+  const clearAutoSaveTimer = useCallback(() => {
+    if (!autoSaveTimerRef.current) return;
+    clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = null;
+  }, []);
+
+  const markDirty = useCallback(() => {
+    editRevisionRef.current += 1;
+    dirtyRef.current = true;
+    setIsDirty(true);
+  }, []);
+
+  const clearDirty = useCallback((savedResumeId: number, savedRevision?: number) => {
+    if (activeResumeIdRef.current !== savedResumeId) return false;
+    if (savedRevision !== undefined && editRevisionRef.current !== savedRevision) return false;
+    dirtyRef.current = false;
+    setIsDirty(false);
+    clearAutoSaveTimer();
+    return true;
+  }, [clearAutoSaveTimer]);
+
+  // 切换简历立即废弃旧草稿状态和 timer；异步回调还会用 activeResumeIdRef 二次校验。
+  useEffect(() => {
+    activeResumeIdRef.current = resumeId;
+    diffOwnerTokenRef.current += 1;
+    if (diffFetchTimerRef.current) {
+      clearTimeout(diffFetchTimerRef.current);
+      diffFetchTimerRef.current = null;
+    }
+    manualSaveTokenRef.current += 1;
+    manualSaveOwnerRef.current = null;
+    editRevisionRef.current = 0;
+    dirtyRef.current = false;
+    setIsDirty(false);
+    setSaving(false);
+    setSaveStatus("idle");
+    clearAutoSaveTimer();
+    return () => {
+      clearAutoSaveTimer();
+      diffOwnerTokenRef.current += 1;
+      if (diffFetchTimerRef.current) {
+        clearTimeout(diffFetchTimerRef.current);
+        diffFetchTimerRef.current = null;
+      }
+    };
+  }, [resumeId, clearAutoSaveTimer]);
   const [uploading, setUploading] = useState(false);
 
   // ── 无简历引导状态 ──
@@ -154,13 +214,54 @@ export default function QAPage() {
   const [diffAfterModules, setDiffAfterModules] = useState<ResumeModule[] | null>(null);
   const [diffToolName, setDiffToolName] = useState("");
   const [diffLoading, setDiffLoading] = useState(false);
+  const [diffResumeId, setDiffResumeId] = useState(0);
+  const diffOwnerRef = useRef<{ resumeId: number; revision: number } | null>(null);
+
+  const ownsCurrentDiff = useCallback(() => {
+    const owner = diffOwnerRef.current;
+    return owner !== null
+      && owner.resumeId === activeResumeIdRef.current
+      && owner.revision === editRevisionRef.current;
+  }, []);
+
+  const setOwnedDiffBeforeModules = useCallback((modules: ResumeModule[] | null) => {
+    const owner = {
+      resumeId: activeResumeIdRef.current,
+      revision: editRevisionRef.current,
+    };
+    diffOwnerRef.current = owner;
+    setDiffResumeId(owner.resumeId);
+    setDiffBeforeModules(modules);
+  }, []);
+  const setOwnedDiffAfterModules = useCallback((modules: ResumeModule[] | null) => {
+    if (ownsCurrentDiff()) setDiffAfterModules(modules);
+  }, [ownsCurrentDiff]);
+  const setOwnedDiffToolName = useCallback((toolName: string) => {
+    if (ownsCurrentDiff()) setDiffToolName(toolName);
+  }, [ownsCurrentDiff]);
+  const setOwnedDiffLoading = useCallback((loading: boolean) => {
+    if (ownsCurrentDiff()) setDiffLoading(loading);
+  }, [ownsCurrentDiff]);
+  const setOwnedDiffDialogOpen = useCallback((open: boolean) => {
+    if (!open || ownsCurrentDiff()) setDiffDialogOpen(open);
+  }, [ownsCurrentDiff]);
+
+  useEffect(() => {
+    diffOwnerRef.current = null;
+    setDiffDialogOpen(false);
+    setDiffLoading(false);
+  }, [resumeId]);
 
   // G 功能：diff 弹窗里逐条还原后保存，落库结果回填预览模块 + before 快照
   const handleDiffModulesSaved = useCallback((modules: ResumeModule[]) => {
+    const owner = diffOwnerRef.current;
+    if (!owner || owner.resumeId !== activeResumeIdRef.current || owner.revision !== editRevisionRef.current) return;
     setPreviewModules(modules);
+    modulesRef.current = modules;
     setDiffAfterModules(modules);
     beforeModulesRef.current = modules;
-  }, []);
+    clearDirty(owner.resumeId, owner.revision);
+  }, [clearDirty]);
 
   // ── A4PreviewPanel props 稳定化（配合组件 memo） ──
   // agent_thought / tool_stream 高频刷新时 chat 变化触发 QAPage 重渲染，
@@ -177,11 +278,15 @@ export default function QAPage() {
     }),
     [previewModules, previewStyle],
   );
-  const handleToggleCollapse = useCallback(() => {
+  const handleClosePreview = useCallback(() => {
     setShowPreview(false);
-    // 关闭预览同时退出模块编辑态：不残留编辑板块，直接回到聊天（用户反馈）
+    setPreviewCollapsed(false);
     setEditingModule(null);
     setExpandedType(null);
+  }, []);
+  const handleOpenPreview = useCallback(() => {
+    setShowPreview(true);
+    setPreviewCollapsed(false);
   }, []);
   const handleSelectSection = useCallback((moduleType: ModuleType) => {
     setEditingModule(moduleType);
@@ -215,7 +320,13 @@ export default function QAPage() {
         // 守卫：resumeId 已被 state/ctx 设置时不再覆盖（异步返回晚于挂载）
         setResumeId((prev) => (prev > 0 ? prev : (ready ?? data.items[0]).id));
       }
-    }).catch(() => {});
+    }).catch(() => {
+      if (activeResumeIdRef.current === resumeId) {
+        setQaInitState("error");
+        setPendingAiCreateQuestion(null);
+        setError("简历加载失败，请重试");
+      }
+    });
     return () => { cancelled = true; };
   }, [resumeId, ctxResumeId, location.state]);
 
@@ -292,20 +403,34 @@ export default function QAPage() {
   useEffect(() => {
     const syncPreview = () => {
       if (!resumeId || resumeId <= 0) return;
+      const requestRevision = editRevisionRef.current;
       // 延迟 500ms 等待 DB 提交完成（与 dispatch 侧注释同模式）
-      setTimeout(() => {
+      if (modulesRefreshTimerRef.current) clearTimeout(modulesRefreshTimerRef.current);
+      modulesRefreshTimerRef.current = setTimeout(() => {
+        modulesRefreshTimerRef.current = null;
         getBuilderResume(resumeId)
           .then((data) => {
+            if (activeResumeIdRef.current !== resumeId || editRevisionRef.current !== requestRevision) return;
             const mods = data.modules ?? [];
             setPreviewModules(mods);
             modulesRef.current = mods;
+            setPreviewStyle(data.style ?? null);
+            styleRef.current = data.style ?? null;
+            setVersion(data.version);
+            clearDirty(resumeId);
           })
           .catch(() => {});
       }, 500);
     };
     window.addEventListener("resume:modules-refresh", syncPreview);
-    return () => window.removeEventListener("resume:modules-refresh", syncPreview);
-  }, [resumeId]);
+    return () => {
+      window.removeEventListener("resume:modules-refresh", syncPreview);
+      if (modulesRefreshTimerRef.current) {
+        clearTimeout(modulesRefreshTimerRef.current);
+        modulesRefreshTimerRef.current = null;
+      }
+    };
+  }, [resumeId, clearDirty]);
 
   // ── 接收来自简历列表 / AI 能力入口 / 侧边栏会话的导航状态（resumeId / question / conversationId） ──
   useEffect(() => {
@@ -313,6 +438,7 @@ export default function QAPage() {
       resumeId?: number;
       question?: string;
       conversationId?: number;
+      openPreview?: boolean;
     } | null;
     if (!state?.resumeId && !state?.question && !state?.conversationId) return;
     // 防重入：同一份 location.state 只消费一次（否则因 asking/resumeId 变化重复触发 → 死循环）
@@ -321,7 +447,7 @@ export default function QAPage() {
 
     if (state.resumeId) {
       setResumeId(state.resumeId);
-      setShowPreview(true); // 立即显示预览
+      if (state.openPreview) setShowPreview(true);
     }
     // 侧边栏会话跳转：标记待选会话（对话加载完成后优先选中，防被 list[0] 覆盖）
     if (state.conversationId) {
@@ -336,6 +462,12 @@ export default function QAPage() {
     // 必须走 navigate 同路径 replace，否则 state.question 会一直残留触发重复发送）
     navigate(location.pathname, { replace: true, state: null });
   }, [location.state, location.pathname, navigate]);
+
+  // 离开 QA（例如进入用户反馈）时结束加载态，避免 Sidebar 保持 spinner，
+  // 同时保留 AppChatContext 中已加载的对话列表。
+  useEffect(() => {
+    return () => setCtxConvLoading(false);
+  }, [setCtxConvLoading]);
 
 
   // Token 限额状态
@@ -390,19 +522,45 @@ export default function QAPage() {
   // 加载简历元信息 + 预览数据
   useEffect(() => {
     if (!resumeId) return;
+    setBuilderReadyId(0);
+    setQaInitState("loading");
+    const requestRevision = editRevisionRef.current;
     listResumes().then((data) => {
+      if (activeResumeIdRef.current !== resumeId) return;
       setResumeOptions(data.items);
       const r = data.items.find((item) => item.id === resumeId);
       if (r) setResume(r);
     });
     // v2: 加载预览模块数据
     getBuilderResume(resumeId).then((data) => {
-      setPreviewModules(data.modules ?? []);
-      setPreviewStyle(data.style ?? null);
+      if (activeResumeIdRef.current !== resumeId || editRevisionRef.current !== requestRevision) return;
+      const modules = data.modules ?? [];
+      const style = data.style ?? null;
+      setPreviewModules(modules);
+      modulesRef.current = modules;
+      setPreviewStyle(style);
+      styleRef.current = style;
       setVersion(data.version);
-      setShowPreview(true);
-    }).catch(() => {});
-  }, [resumeId]);
+      setBuilderReadyId(resumeId);
+      clearDirty(resumeId);
+    }).catch((err) => {
+      if (activeResumeIdRef.current === resumeId) {
+        setQaInitState("error");
+        setError(err instanceof Error ? err.message : "加载简历失败");
+      }
+    });
+  }, [resumeId, qaInitRetry, clearDirty]);
+
+  useEffect(() => {
+    if (qaInitState === "error" || qaInitState === "creating") return;
+    if (resumeId <= 0) {
+      setQaInitState("empty");
+    } else if (builderReadyId === resumeId && !conversationLoading && activeConversationId != null) {
+      setQaInitState("ready");
+    } else {
+      setQaInitState("loading");
+    }
+  }, [resumeId, builderReadyId, conversationLoading, activeConversationId, qaInitState]);
 
   // 顶栏切换简历：切换后 useEffect [resumeId] 重载该简历的对话/预览/锁
   // （对话按简历隔离，切换即切换会话；ctxResumeId 由下方 useEffect 自动同步）
@@ -435,10 +593,12 @@ export default function QAPage() {
 
   // v2: 自动保存草稿（5s 防抖）
   const doSaveDraft = useCallback(async () => {
-    if (!resume) return;
+    const savingResumeId = activeResumeIdRef.current;
+    if (!dirtyRef.current || savingResumeId <= 0) return;
+    const savingRevision = editRevisionRef.current;
     setSaveStatus("saving");
     try {
-      const result = await saveDraft(resumeId, {
+      const result = await saveDraft(savingResumeId, {
         modules: modulesRef.current.map((m) => ({
           module_type: m.module_type,
           content: m.content,
@@ -446,20 +606,29 @@ export default function QAPage() {
         })),
         style: styleRef.current ?? undefined,
       });
+      if (activeResumeIdRef.current !== savingResumeId || editRevisionRef.current !== savingRevision) return;
       setVersion(result.version);
       setSaveStatus("saved");
       setLastSaveMode("draft");
+      if (clearDirty(savingResumeId, savingRevision)) {
+        setResume((current) => current?.id === savingResumeId ? { ...current, status: "draft" } : current);
+        setResumeOptions((items) => items.map((item) => item.id === savingResumeId ? { ...item, status: "draft" } : item));
+      }
     } catch {
+      if (activeResumeIdRef.current !== savingResumeId) return;
       setSaveStatus("error");
     }
-  }, [resume, resumeId]);
+  }, [clearDirty]);
 
   useEffect(() => {
-    if (!resume || previewModules.length === 0) return;
-    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
-    autoSaveTimerRef.current = setTimeout(() => { doSaveDraft(); }, 5000);
-    return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current); };
-  }, [previewModules, previewStyle, resume, doSaveDraft]);
+    if (!isDirty || activeResumeIdRef.current <= 0) return;
+    clearAutoSaveTimer();
+    autoSaveTimerRef.current = setTimeout(() => {
+      autoSaveTimerRef.current = null;
+      void doSaveDraft();
+    }, 5000);
+    return clearAutoSaveTimer;
+  }, [isDirty, previewModules, previewStyle, doSaveDraft, clearAutoSaveTimer]);
 
   // P0-A: ATS 审计
   const handleAtsAudit = useCallback(async () => {
@@ -480,9 +649,18 @@ export default function QAPage() {
   // v2: 手动保存草稿
   const handleSaveDraft = useCallback(async () => {
     if (!resume) return;
+    const savingResumeId = resumeId;
+    const savingRevision = editRevisionRef.current;
+    const requestToken = ++manualSaveTokenRef.current;
+    manualSaveOwnerRef.current = { token: requestToken, resumeId: savingResumeId };
+    const ownsRequest = () => manualSaveOwnerRef.current?.token === requestToken
+      && manualSaveOwnerRef.current.resumeId === savingResumeId
+      && activeResumeIdRef.current === savingResumeId;
+    const ownsSavedRevision = () => ownsRequest() && editRevisionRef.current === savingRevision;
+    clearAutoSaveTimer();
     setSaving(true);
     try {
-      const result = await saveDraft(resumeId, {
+      const result = await saveDraft(savingResumeId, {
         modules: modulesRef.current.map((m) => ({
           module_type: m.module_type,
           content: m.content,
@@ -490,24 +668,42 @@ export default function QAPage() {
         })),
         style: styleRef.current ?? undefined,
       });
+      if (!ownsSavedRevision()) return;
       setVersion(result.version);
       setSaveStatus("saved");
       setLastSaveMode("draft");
+      if (clearDirty(savingResumeId, savingRevision)) {
+        setResume((current) => current?.id === savingResumeId ? { ...current, status: "draft" } : current);
+        setResumeOptions((items) => items.map((item) => item.id === savingResumeId ? { ...item, status: "draft" } : item));
+      }
       toast.success("草稿已保存"); // 用户反馈：保存无任何反馈
     } catch (e) {
+      if (!ownsRequest()) return;
       setSaveStatus("error");
       toast.error(e instanceof Error ? e.message : "保存草稿失败");
     } finally {
-      setSaving(false);
+      if (ownsRequest()) {
+        manualSaveOwnerRef.current = null;
+        setSaving(false);
+      }
     }
-  }, [resume, resumeId, toast]);
+  }, [resume, resumeId, toast, clearDirty, clearAutoSaveTimer]);
 
   // v2: 保存并完成
   const handleSaveComplete = useCallback(async () => {
     if (!resume) return;
+    const savingResumeId = resumeId;
+    const savingRevision = editRevisionRef.current;
+    const requestToken = ++manualSaveTokenRef.current;
+    manualSaveOwnerRef.current = { token: requestToken, resumeId: savingResumeId };
+    const ownsRequest = () => manualSaveOwnerRef.current?.token === requestToken
+      && manualSaveOwnerRef.current.resumeId === savingResumeId
+      && activeResumeIdRef.current === savingResumeId;
+    const ownsSavedRevision = () => ownsRequest() && editRevisionRef.current === savingRevision;
+    clearAutoSaveTimer();
     setSaving(true);
     try {
-      const result = await saveComplete(resumeId, version, {
+      const result = await saveComplete(savingResumeId, version, {
         modules: modulesRef.current.map((m) => ({
           module_type: m.module_type,
           content: m.content,
@@ -515,19 +711,27 @@ export default function QAPage() {
         })),
         style: styleRef.current ?? undefined,
       });
+      if (!ownsSavedRevision()) return;
       setVersion(result.version);
       setSaveStatus("saved");
       setLastSaveMode("complete");
+      clearDirty(savingResumeId, savingRevision);
+      setResume((current) => current?.id === savingResumeId ? { ...current, status: "ready" } : current);
+      setResumeOptions((items) => items.map((item) => item.id === savingResumeId ? { ...item, status: "ready" } : item));
       toast.success("已保存并完成，可开始问答/检索");
       // 完成弹窗：确认保存成功 + 引导下一步（用户反馈：完成后应有弹窗）
       setShowSaveCompleteDialog(true);
     } catch (e) {
+      if (!ownsRequest()) return;
       setSaveStatus("error");
       toast.error(e instanceof Error ? e.message : "保存失败");
     } finally {
-      setSaving(false);
+      if (ownsRequest()) {
+        manualSaveOwnerRef.current = null;
+        setSaving(false);
+      }
     }
-  }, [resume, resumeId, version, toast]);
+  }, [resume, resumeId, version, toast, clearDirty, clearAutoSaveTimer]);
 
   // v2: 粘贴简历回调
   const handlePasteParsed = useCallback((parsedModules: ResumeModuleInput[]) => {
@@ -540,7 +744,9 @@ export default function QAPage() {
       created_at: new Date().toISOString(),
     }));
     setPreviewModules(newModules);
-  }, [resumeId]);
+    modulesRef.current = newModules;
+    markDirty();
+  }, [resumeId, markDirty]);
 
   // 加载 token 限额
   useEffect(() => {
@@ -597,14 +803,17 @@ export default function QAPage() {
         setConversations([conv]);
         setActiveConversationId(conv.id);
       })
-      .catch(() => {
-        if (!cancelled) setError("加载对话列表失败");
+      .catch((err) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "加载对话列表失败");
+          setQaInitState("error");
+        }
       })
       .finally(() => {
         if (!cancelled) setConversationLoading(false);
       });
     return () => { cancelled = true; };
-  }, [resumeId]);
+  }, [resumeId, qaInitRetry]);
 
   // debouncedKeyword / activeConversationId 变化时重新加载历史（含初次加载）
   useEffect(() => {
@@ -661,6 +870,7 @@ export default function QAPage() {
     navigate,
     setResumeId,
     setPendingAiCreateQuestion,
+    setQaInitState,
     setChat,
     setAsking,
     setError,
@@ -668,11 +878,15 @@ export default function QAPage() {
     setConversations,
     setQuota,
     beforeModulesRef,
-    setDiffBeforeModules,
-    setDiffAfterModules,
-    setDiffToolName,
-    setDiffLoading,
-    setDiffDialogOpen,
+    activeResumeIdRef,
+    editRevisionRef,
+    diffOwnerTokenRef,
+    diffFetchTimerRef,
+    setDiffBeforeModules: setOwnedDiffBeforeModules,
+    setDiffAfterModules: setOwnedDiffAfterModules,
+    setDiffToolName: setOwnedDiffToolName,
+    setDiffLoading: setOwnedDiffLoading,
+    setDiffDialogOpen: setOwnedDiffDialogOpen,
     isNearBottomRef,
     scrollToBottom,
   }));
@@ -684,6 +898,7 @@ export default function QAPage() {
   // 确保这条问答的历史存入该会话（否则 conversation_id 为空导致历史不落库）。
   useEffect(() => {
     if (resumeId <= 0 || !pendingTriggerQuestion || asking) return;
+    if (qaInitState !== "ready" || builderReadyId !== resumeId) return;
     if (activeConversationId == null) return; // 会话未就绪，等待
     const q = pendingTriggerQuestion;
     setPendingTriggerQuestion(null);
@@ -694,28 +909,36 @@ export default function QAPage() {
       return;
     }
     sendQuestion(q);
-  }, [resumeId, pendingTriggerQuestion, asking, activeConversationId, sendQuestion]);
+  }, [resumeId, pendingTriggerQuestion, asking, activeConversationId, builderReadyId, qaInitState, sendQuestion]);
 
   // ── AI 创建简历：resumeId 更新后发送待发送的问题 ──
   useEffect(() => {
-    if (resumeId > 0 && pendingAiCreateQuestion) {
+    if (resumeId > 0 && pendingAiCreateQuestion && builderReadyId === resumeId && !conversationLoading && activeConversationId != null && qaInitState === "ready") {
       const q = pendingAiCreateQuestion;
       setPendingAiCreateQuestion(null);
       // 延迟一点确保 state 更新完成
-      setTimeout(() => {
-        sendQuestion(q);
-      }, 100);
+      sendQuestion(q);
     }
-  }, [resumeId, pendingAiCreateQuestion, sendQuestion]);
+  }, [resumeId, pendingAiCreateQuestion, builderReadyId, conversationLoading, activeConversationId, qaInitState, sendQuestion]);
 
   // ChatInput 提交回调：trim 后触发发送（asking 时忽略）
   const handleSendText = useCallback(
     (text: string) => {
       const q = text.trim();
       if (!q || asking) return;
+      if (qaInitState === "error") {
+        if (resumeId <= 0) {
+          sendQuestion(q);
+          return;
+        }
+        setQaInitState("loading");
+        setQaInitRetry((v) => v + 1);
+        setPendingTriggerQuestion(q);
+        return;
+      }
       sendQuestion(q);
     },
-    [asking, sendQuestion]
+    [asking, qaInitState, resumeId, sendQuestion]
   );
 
   const handleCancel = () => {
@@ -842,8 +1065,16 @@ export default function QAPage() {
       const content = text.trim();
       if (!content) return;
       injectToActiveTurn(resumeId, content, activeConversationId ?? undefined)
-        .then(() => {
-          toast.success("已补充给正在思考的 AI");
+        .then((result) => {
+          if (result.status === "restarting") {
+            toast.success("已收到，正在重答");
+          } else if (result.status === "queued") {
+            toast.success("已收到，将在下一轮处理");
+          } else if (result.status === "accepted") {
+            toast.success("已生效");
+          } else {
+            toast.error("补充信息未生效");
+          }
         })
         .catch((e) => {
           toast.error(e instanceof Error ? e.message : "补充信息失败");
@@ -929,7 +1160,7 @@ export default function QAPage() {
   const handleCompareConfirm = (selectedIds: number[]) => {
     setCompareIds(selectedIds);
     setCompareOpen(false);
-    sendQuestion("请对比我选中的简历，分析各自的优劣势");
+    sendQuestion("请对比我选中的简历，分析各自的优劣势", { compareIds: selectedIds });
   };
 
   // 附件上传简历
@@ -975,7 +1206,7 @@ export default function QAPage() {
         onClearHistory={() => setClearConfirmOpen(true)}
         canPreview={resumeId > 0 && previewModules.length > 0}
         showPreview={showPreview}
-        onTogglePreview={() => setShowPreview((v) => !v)}
+        onTogglePreview={() => (showPreview ? handleClosePreview() : handleOpenPreview())}
       />
 
 
@@ -1027,7 +1258,7 @@ export default function QAPage() {
           <ChatInput
             asking={asking}
             uploading={uploading}
-            disabled={!resumeId || resumeId === 0}
+              disabled={!resumeId || resumeId === 0 || qaInitState === "creating" || qaInitState === "loading"}
             onSend={handleSendText}
             onInject={handleInjectMessage}
             onCancel={handleCancel}
@@ -1045,7 +1276,7 @@ export default function QAPage() {
           <>
             <div
               className="fixed inset-0 z-40 bg-black/20 backdrop-blur-sm"
-              onClick={handleToggleCollapse}
+              onClick={handleClosePreview}
               aria-hidden="true"
             />
             <motion.aside
@@ -1053,13 +1284,13 @@ export default function QAPage() {
               animate={{ x: 0 }}
               exit={{ x: "100%" }}
               transition={{ type: "spring", stiffness: 260, damping: 30 }}
-              className="fixed top-0 right-0 z-50 h-full w-[min(720px,90vw)]
-                border-l border-[var(--color-border)] bg-[var(--color-bg)] shadow-2xl flex flex-col"
+              className={`fixed top-0 right-0 z-50 h-full ${previewCollapsed ? "w-12" : "w-[min(720px,90vw)]"}
+                border-l border-[var(--color-border)] bg-[var(--color-bg)] shadow-2xl flex flex-col`}
               aria-label="简历预览"
             >
               {/* 抽屉头部 */}
-              <div className="shrink-0 px-4 py-3 border-b border-[var(--color-border)]
-                flex items-center justify-between gap-2">
+              <div className={`${previewCollapsed ? "hidden" : ""} shrink-0 px-4 py-3 border-b border-[var(--color-border)]
+                flex items-center justify-between gap-2`}>
                 <div className="min-w-0 flex items-center gap-2">
                   {editingModule && (
                     <button
@@ -1075,7 +1306,7 @@ export default function QAPage() {
                   </span>
                 </div>
                 <button
-                  onClick={handleToggleCollapse}
+                  onClick={handleClosePreview}
                   aria-label="关闭预览"
                   className="shrink-0 p-1.5 rounded-action text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)] active:scale-95 motion-reduce:active:scale-100 transition-all cursor-pointer"
                 >
@@ -1095,6 +1326,7 @@ export default function QAPage() {
                       setPreviewModules((prev) =>
                         prev.map((m) => (m.module_type === type ? { ...m, content } : m))
                       );
+                      markDirty();
                       setPreviewKey((k) => k + 1);
                     }}
                     onReorder={(ordered) => {
@@ -1104,6 +1336,7 @@ export default function QAPage() {
                           sort_order: ordered.indexOf(m.module_type),
                         }))
                       );
+                      markDirty();
                     }}
                     onAdd={(type) => {
                       setPreviewModules((prev) => {
@@ -1117,17 +1350,19 @@ export default function QAPage() {
                           created_at: new Date().toISOString(),
                         }];
                       });
+                      markDirty();
                     }}
                     onRemove={(type) => {
                       setPreviewModules((prev) => prev.filter((m) => m.module_type !== type));
+                      markDirty();
                     }}
                   />
                 ) : (
                   <A4PreviewPanel
                     resumeId={resumeId}
                     previewKey={previewKey}
-                    collapsed={false}
-                    onToggleCollapse={handleToggleCollapse}
+                    collapsed={previewCollapsed}
+                    onToggleCollapse={handleClosePreview}
                     modulesData={previewModulesData}
                     onSelectSection={handleSelectSection}
                   />
@@ -1135,7 +1370,7 @@ export default function QAPage() {
               </div>
 
               {/* 抽屉底部：工具 + 保存操作条 */}
-              <div className="shrink-0 border-t border-[var(--color-border)] px-4 py-3 flex items-center justify-between gap-2 flex-wrap">
+              <div className={`${previewCollapsed ? "hidden" : ""} shrink-0 border-t border-[var(--color-border)] px-4 py-3 flex items-center justify-between gap-2 flex-wrap`}>
                 <div className="flex items-center gap-1">
                   <button
                     onClick={() => setShowPasteDialog(true)}
@@ -1361,8 +1596,8 @@ export default function QAPage() {
       {/* ── AI 修改简历实时 diff 弹窗 ── */}
       <ResumeEditDiffDialog
         open={diffDialogOpen}
-        onClose={() => setDiffDialogOpen(false)}
-        resumeId={resumeId}
+        onClose={() => setOwnedDiffDialogOpen(false)}
+        resumeId={diffResumeId}
         beforeModules={diffBeforeModules}
         afterModules={diffAfterModules}
         toolName={diffToolName}
@@ -1488,6 +1723,7 @@ export default function QAPage() {
             style={previewStyle ?? ({} as ResumeStyle)}
             onChange={(newStyle) => {
               setPreviewStyle(newStyle);
+              markDirty();
               setPreviewKey((k) => k + 1);
             }}
             show={showStylePanel}

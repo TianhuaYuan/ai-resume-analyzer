@@ -366,7 +366,7 @@ export default function ResumeManagementPage() {
     try {
       const resume = await createBuilderResume({ filename: "未命名简历" });
       toast.success("已创建新简历，开始编辑吧");
-      navigate("/qa", { state: { resumeId: resume.id } });
+      navigate("/qa", { state: { resumeId: resume.id, openPreview: true } });
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "创建简历失败");
     } finally {
@@ -380,7 +380,7 @@ export default function ResumeManagementPage() {
       const resume = await createBuilderResume({ filename: "未命名简历" });
       toast.success("已创建新简历，AI 助手已就绪");
       // ?ai=true → BuilderPage 可据此自动打开 AI 面板
-      navigate("/qa", { state: { resumeId: resume.id } });
+      navigate("/qa", { state: { resumeId: resume.id, openPreview: true } });
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "创建简历失败");
     } finally {
@@ -395,8 +395,8 @@ export default function ResumeManagementPage() {
       await deleteResume(deleteTarget.id);
       toast.success("已删除");
       await fetchResumes();
-    } catch {
-      toast.error("删除失败");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "删除失败");
     } finally {
       setDeleting(false);
       setDeleteTarget(null);
@@ -487,7 +487,7 @@ export default function ResumeManagementPage() {
       toast.error("简历解析失败，请删除后重新上传");
       return;
     }
-    navigate("/qa", { state: { resumeId: r.id } });
+    navigate("/qa", { state: { resumeId: r.id, openPreview: true } });
   };
 
   return (

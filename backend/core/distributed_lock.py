@@ -61,7 +61,7 @@ async def acquire_lock(
 
     except Exception as e:
         logger.exception("分布式锁获取异常 user_id=%s: %s", user_id, e)
-        return None
+        return f"local-fallback:{uuid.uuid4()}"
 
 
 async def release_lock(user_id: int, resume_id: int, lock_id: str) -> bool:

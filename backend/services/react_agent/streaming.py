@@ -3,7 +3,7 @@
 react_loop_stream 包装 react_loop，以 async generator 形式产出 SSE 事件：
 - agent_start: 流开始
 - tool_call / tool_result / tool_error: 工具调用过程
-- agent_done: 最终答案（含 qa_id + process_trace + usage）
+- agent_done: 最终答案（含 qa_id + process_trace + token_usage）
 - quota_exceeded: 配额不足
 - error: 内部错误
 
@@ -20,6 +20,7 @@ process_trace 双载荷：
 import asyncio
 import logging
 import time
+import uuid
 from dataclasses import dataclass
 
 from sqlalchemy import select
@@ -243,7 +244,7 @@ async def react_loop_stream(
     - tool_call: Agent 决定调用工具（name, arguments, id）
     - tool_result: 工具执行成功（name, result, id）
     - tool_error: 工具执行失败（name, error, id）
-    - agent_done: Agent 完成（answer, qa_id, process_trace, usage）
+    - agent_done: Agent 完成（answer, qa_id, process_trace, token_usage）
     - quota_exceeded: 配额不足（message）
     - error: 内部错误（message）
 
@@ -254,6 +255,7 @@ async def react_loop_stream(
     loop_result: ReactLoopResult | None = None
     loop_error: Exception | None = None
     start_time = time.monotonic()  # Spec: 紧凑摘要含耗时
+    turn_id = uuid.uuid4().hex
 
     async def event_callback(event: dict) -> None:
         """react_loop 事件回调 — 入队供生成器消费。"""
@@ -306,6 +308,31 @@ async def react_loop_stream(
             f"react:inject:{user_id}:{resume_id}:{conv_suffix}"
         )
 
+    active_key = f"react:active:{user_id}:{resume_id}:{conversation_id or 'all'}"
+    try:
+        from core.redis_client import get_redis
+        _active_redis = await get_redis()
+        if _active_redis is not None:
+            await _active_redis.setex(active_key, 1800, turn_id)
+    except Exception:
+        _active_redis = None
+
+    async def cleanup_active_key() -> None:
+        if _active_redis is not None:
+            try:
+                current = await _active_redis.get(active_key)
+                if isinstance(current, bytes):
+                    current = current.decode("utf-8", errors="ignore")
+                if current == turn_id:
+                    script = "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end"
+                    if hasattr(_active_redis, "eval"):
+                        await _active_redis.eval(script, 1, active_key, turn_id)
+                    else:
+                        # Without atomic eval, retain short TTL rather than race-delete a newer turn.
+                        logger.debug("Redis lacks eval; retain active key until TTL")
+            except Exception:
+                logger.debug("清理活跃回合标记失败", exc_info=True)
+
     task = asyncio.create_task(run_loop())
 
     try:
@@ -314,6 +341,7 @@ async def react_loop_stream(
 
         # 异常情况：loop 在发出任何事件前就结束了
         if first_event is _SENTINEL:
+            await cleanup_active_key()
             if loop_error:
                 yield {"type": "error", "message": f"Agent 内部错误: {loop_error}"}
             else:
@@ -322,6 +350,7 @@ async def react_loop_stream(
 
         # 配额不足 → 不创建占位记录，直接返回
         if first_event.get("type") == "quota_exceeded":
+            await cleanup_active_key()
             yield first_event
             await queue.get()  # 消费 SENTINEL
             await task
@@ -331,6 +360,7 @@ async def react_loop_stream(
         yield {
             "type": "agent_start",
             "resume_id": resume_id,
+            "turn_id": turn_id,
             "tools": _get_tool_list(tool_mode),
         }
         logger.info(
@@ -359,18 +389,11 @@ async def react_loop_stream(
         await task
 
         # P1-2：回合结束清理注入队列（残留消息不污染下一回合）
-        if inject_key:
-            try:
-                from core.redis_client import get_redis
-
-                redis = await get_redis()
-                if redis is not None:
-                    await redis.delete(inject_key)
-            except Exception:
-                logger.debug("清理回合注入队列失败（忽略）", exc_info=True)
+        await cleanup_active_key()
 
         # ── 检查异常 ──────────────────────────────────────────
         if loop_error:
+            await cleanup_active_key()
             # 失败也落库（status=failed + 错误信息），前端可展示重试入口
             # （用户反馈：失败/错误的聊天记录不存库、无聊天记录）
             try:
@@ -385,6 +408,7 @@ async def react_loop_stream(
             return
 
         if loop_result is None:
+            await cleanup_active_key()
             try:
                 from services.qa_service import mark_qa_interrupted
 
@@ -459,6 +483,7 @@ async def react_loop_stream(
             resume_id,
             type(e).__name__,
         )
+        await cleanup_active_key()
         if not task.done():
             task.cancel()
             try:
@@ -476,6 +501,9 @@ async def react_loop_stream(
         # GeneratorExit 必须继续传播（不能吞掉生成器关闭信号）
         if isinstance(e, GeneratorExit):
             raise
+        raise
+    except Exception:
+        await cleanup_active_key()
         raise
 
 

@@ -166,4 +166,5 @@ volumes:
 
 networks:
   resume-network:
+    name: resume-network
     driver: bridge

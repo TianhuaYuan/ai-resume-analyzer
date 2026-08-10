@@ -12,6 +12,7 @@ import pytest
 from httpx import AsyncClient
 
 from models.audit_log import AuditLog
+from sqlalchemy import delete
 
 
 @pytest.fixture
@@ -61,6 +62,9 @@ async def normal_headers(client: AsyncClient):
 
 async def _seed_audit_logs(db_session, user_id: int, count: int = 5):
     """直接插入若干审计日志。"""
+    # admin_headers 登录本身会产生一条真实 login 审计；测试分页只验证本 helper 写入的集合。
+    await db_session.execute(delete(AuditLog))
+    await db_session.commit()
     for i in range(count):
         db_session.add(
             AuditLog(
@@ -246,6 +250,8 @@ class TestAdminStats:
             "total_resumes",
             "total_qa_history",
             "total_feedback",
+            "total_job_applications",
+            "total_interviews",
         }
 
 

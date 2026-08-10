@@ -20,6 +20,7 @@ from services.feedback_service import (
     submit_user_feedback,
     toggle_feedback_like,
 )
+from services.audit_log_service import write_audit_log
 
 router = APIRouter(prefix="/feedback", tags=["feedback"])
 
@@ -41,6 +42,15 @@ async def create_user_feedback(
         user_id=current_user.id,
         content=data.content,
         feedback_type=data.type,
+    )
+    await write_audit_log(
+        db,
+        user_id=current_user.id,
+        action="feedback_submit",
+        target_type="feedback",
+        target_id=str(fb.id),
+        detail={"result": "success", "request_id": request.headers.get("X-Request-ID"), "type": data.type},
+        ip=request.client.host if request.client else None,
     )
     return {"id": fb.id, "detail": "反馈已提交，感谢你的建议"}
 

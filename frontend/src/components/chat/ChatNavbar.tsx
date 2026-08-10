@@ -78,7 +78,7 @@ export default function ChatNavbar({
             title="切换简历（对话按简历隔离）"
           >
             {resumeOptions.length === 0 && (
-              <option value="">{resume?.filename ?? "加载中..."}</option>
+              <option value="">{resume?.filename ?? "暂无简历"}</option>
             )}
             {resumeOptions.map((r) => (
               <option key={r.id} value={r.id}>

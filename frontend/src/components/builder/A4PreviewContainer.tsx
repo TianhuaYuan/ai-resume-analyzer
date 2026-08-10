@@ -60,7 +60,7 @@ export function A4PreviewContainer({
     <div
       ref={ref}
       id={id}
-      className={`relative w-full bg-white overflow-hidden ${className}`}
+      className={`paper-surface relative w-full bg-white overflow-hidden ${className}`}
       style={{ aspectRatio: "210 / 297" }}
     >
       <div

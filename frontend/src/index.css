@@ -123,6 +123,61 @@
   -webkit-backdrop-filter: none;
 }
 
+/* Theme-safe fallbacks for legacy utility classes used by QA and dashboards. */
+[data-theme="dark"] .bg-white,
+[data-theme="oled-dark"] .bg-white { background-color: var(--color-surface) !important; }
+[data-theme="dark"] .bg-white\/80,
+[data-theme="oled-dark"] .bg-white\/80 { background-color: color-mix(in srgb, var(--color-surface) 88%, transparent) !important; }
+[data-theme="dark"] .bg-white\/70,
+[data-theme="oled-dark"] .bg-white\/70 { background-color: color-mix(in srgb, var(--color-surface) 78%, transparent) !important; }
+[data-theme="dark"] .text-gray-900,
+[data-theme="oled-dark"] .text-gray-900,
+[data-theme="dark"] .text-gray-800,
+[data-theme="oled-dark"] .text-gray-800 { color: var(--color-text) !important; }
+[data-theme="dark"] .text-gray-600,
+[data-theme="oled-dark"] .text-gray-600,
+[data-theme="dark"] .text-gray-500,
+[data-theme="oled-dark"] .text-gray-500 { color: var(--color-text-secondary) !important; }
+[data-theme="dark"] .bg-gray-100,
+[data-theme="oled-dark"] .bg-gray-100 { background-color: var(--color-bg-secondary) !important; }
+[data-theme="dark"] .focus\:bg-white:focus,
+[data-theme="oled-dark"] .focus\:bg-white:focus { background-color: var(--color-surface) !important; }
+/* A4 paper is intentionally white in every UI theme. */
+[data-theme="dark"] .resume-page.bg-white,
+[data-theme="oled-dark"] .resume-page.bg-white { background-color: #fff !important; }
+[data-theme="dark"] .paper-surface,
+[data-theme="oled-dark"] .paper-surface { background-color: #fff !important; color: #1d1d1f; }
+[data-theme="dark"] .paper-surface .text-gray-900,
+[data-theme="oled-dark"] .paper-surface .text-gray-900,
+[data-theme="dark"] .paper-surface .text-gray-800,
+[data-theme="oled-dark"] .paper-surface .text-gray-800 { color: #1d1d1f !important; }
+[data-theme="dark"] .paper-surface .text-gray-600,
+[data-theme="oled-dark"] .paper-surface .text-gray-600,
+[data-theme="dark"] .paper-surface .text-gray-500,
+[data-theme="oled-dark"] .paper-surface .text-gray-500 { color: #515154 !important; }
+[data-theme="dark"] .resume-page .text-gray-900,
+[data-theme="oled-dark"] .resume-page .text-gray-900,
+[data-theme="dark"] .resume-page .text-gray-800,
+[data-theme="oled-dark"] .resume-page .text-gray-800 { color: #1d1d1f !important; }
+[data-theme="dark"] .resume-page .text-gray-600,
+[data-theme="oled-dark"] .resume-page .text-gray-600,
+[data-theme="dark"] .resume-page .text-gray-500,
+[data-theme="oled-dark"] .resume-page .text-gray-500 { color: #515154 !important; }
+
+/* Mobile: keep sheets usable edge-to-edge and prevent horizontal page drift. */
+html, body, #root { min-height: 100%; }
+body { overflow-x: hidden; }
+@media (max-width: 639px) {
+  .modal-mobile-sheet {
+    width: 100%;
+    max-width: none;
+    max-height: calc(100dvh - 0.5rem);
+    border-radius: 20px 20px 0 0;
+    margin-top: auto;
+  }
+  button, [role="button"], input, select, textarea { touch-action: manipulation; }
+}
+
 /* ── Aurora 氛围背景：固定光球 + 弥散模糊 + 缓慢浮动 ── */
 body::before,
 body::after {

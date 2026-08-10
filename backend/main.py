@@ -151,6 +151,13 @@ async def lifespan(app: FastAPI):
         pass
 
     # 优雅关闭数据库连接池
+    try:
+        from services.mineru_parser import get_mineru_client
+
+        await get_mineru_client().aclose()
+    except Exception:
+        pass
+
     await engine.dispose()
 
     # 关闭 MCP Server

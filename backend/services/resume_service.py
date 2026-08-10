@@ -12,6 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core import cache as embedding_cache
 from core.config import settings
 from core.database import AsyncSessionLocal
+from core.exceptions import AppException
+from core.request_id import get_request_id
 from models.resume import Resume
 from services.rag.pipeline import clear_resume_vectors
 from services.resume_analysis_cache import get_analysis_cache, invalidate_resume_cache
@@ -388,36 +390,51 @@ async def get_resume(db: AsyncSession, resume_id: int, user_id: int) -> Resume:
 
 
 async def delete_resume(db: AsyncSession, resume_id: int, user_id: int) -> None:
-    """先清外部资源（Chroma/文件/缓存）→ 最后删 MySQL（CASCADE 清历史）。
-
-    P2-4 修正：原顺序「先删 DB 再清外部资源」，若 DB commit 后外部清理失败，
-    会产生孤儿（DB 没了但 Chroma/文件还在，无法重试）。改为先清外部资源，
-    DB 删除放最后——外部清理失败时 DB 仍保留，用户可重试删除。
-
-    外部资源清理清单（杜绝孤儿）：
-    - Chroma knowledge_{user_id} 内该资产全部版本 chunks + BM25 内存索引
-    - Embedding 内存缓存（按 resume_id 追踪）
-    - Redis 分析缓存 resume_analysis:{resume_id}:{type}（4 种类型，TTL 7 天）
-    - 上传的原始文件
-    """
+    """Delete DB row first; clean external resources best-effort and idempotently."""
     resume = await get_resume(db, resume_id, user_id)
     file_path = resume.file_path
-
-    # 1. 清 ChromaDB 向量 + BM25 内存索引（内部已吞 Chroma 异常，仅 warning + 重连）
-    await clear_resume_vectors(user_id, resume_id)
-    # 2. 清 Embedding 内存缓存
-    cleared = await embedding_cache.clear_resume(resume_id)
-    logger.info("Cleared %d embedding cache entries for resume %d", cleared, resume_id)
-    # 2.5 清 Redis 分析缓存（4 个 key 一次 DEL；invalidate_resume_cache 内部已吞异常）
-    await invalidate_resume_cache(resume_id)
-    # 3. 删上传的原始文件（文件丢失仅 warning，不影响 DB 删除）
     try:
-        os.remove(file_path)
-    except Exception:
-        logger.warning("Failed to delete resume file: %s", file_path)
-    # 4. 最后删 MySQL（CASCADE 自动清理 qa_history 等关联记录）
-    await db.delete(resume)
-    await db.commit()
+        await db.delete(resume)
+        await db.commit()
+    except Exception as exc:
+        await db.rollback()
+        logger.exception(
+            "resume_delete_db_failed",
+            extra={"event": "resume_delete_db_failed", "resume_id": resume_id,
+                   "user_id": user_id, "request_id": get_request_id()},
+        )
+        raise AppException(500, "简历删除失败，请稍后重试", "RESUME_DELETE_FAILED") from exc
+
+    async def cleanup(resource: str, operation) -> None:
+        try:
+            await operation()
+        except Exception:
+            logger.exception(
+                "resume_cleanup_failed",
+                extra={"event": "resume_cleanup_failed", "resource": resource,
+                       "resume_id": resume_id, "user_id": user_id,
+                       "request_id": get_request_id()},
+            )
+
+    await cleanup("chroma", lambda: clear_resume_vectors(user_id, resume_id))
+
+    async def clear_embeddings() -> None:
+        cleared = await embedding_cache.clear_resume(resume_id)
+        logger.info(
+            "resume_cleanup_succeeded",
+            extra={"event": "resume_cleanup_succeeded", "resource": "embedding_cache",
+                   "resume_id": resume_id, "cleared": cleared,
+                   "request_id": get_request_id()},
+        )
+
+    await cleanup("embedding_cache", clear_embeddings)
+    await cleanup("redis_analysis_cache", lambda: invalidate_resume_cache(resume_id))
+
+    async def remove_file() -> None:
+        if file_path:
+            os.remove(file_path)
+
+    await cleanup("file", remove_file)
 
 
 async def compare_resumes(
@@ -432,7 +449,7 @@ async def compare_resumes(
     Args:
         db: 数据库 session
         user_id: 当前用户 ID
-        resume_ids: 简历 ID 列表（已由 schema 校验 2-5 个）
+        resume_ids: 简历 ID 列表（已由 schema 校验 1-5 个）
         dimensions: 对比维度列表（summary/skills/experience/score/projects）
 
     Returns:

@@ -2,7 +2,6 @@ import { useState, type ReactNode } from "react";
 import { useAuth } from "./context/AuthContext";
 import { AppChatProvider } from "./context/AppChatContext";
 import Sidebar from "./components/Sidebar";
-import FloatingAIPanel from "./components/FloatingAIPanel";
 import SessionExpiredDialog from "./components/SessionExpiredDialog";
 
 interface AppLayoutProps {
@@ -17,12 +16,10 @@ interface AppLayoutProps {
  * │          │                                   │
  * │ Sidebar  │  Main Content (children)          │
  * │ (left)   │                                   │
- * │          │  [FloatingAIPanel - fixed]        │
  * │          │                                   │
  * └──────────┴───────────────────────────────────┘
  *
  * Sidebar 包含：导航菜单 + 对话历史 + 底部用户信息
- * FloatingAIPanel 根据当前路由切换内容
  */
 export default function AppLayout({ children }: AppLayoutProps) {
   const { sessionDialog, handleSessionGoLogin } = useAuth();
@@ -43,7 +40,6 @@ export default function AppLayout({ children }: AppLayoutProps) {
         </div>
 
         {/* 全局悬浮 AI 面板（根据路由切换内容） */}
-        <FloatingAIPanel />
       </div>
 
       <SessionExpiredDialog

@@ -57,6 +57,7 @@ class MinerUClient:
         self.enable_table = enable_table if enable_table is not None else settings.MINERU_ENABLE_TABLE
         self.enable_formula = enable_formula if enable_formula is not None else settings.MINERU_ENABLE_FORMULA
         self.language = language or settings.MINERU_LANGUAGE or "ch"
+        self._http_client: httpx.AsyncClient | None = None
 
     @property
     def enabled(self) -> bool:
@@ -69,6 +70,15 @@ class MinerUClient:
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
+
+    async def _get_http_client(self) -> httpx.AsyncClient:
+        if self._http_client is None or self._http_client.is_closed:
+            self._http_client = httpx.AsyncClient(timeout=self.timeout)
+        return self._http_client
+
+    async def aclose(self) -> None:
+        if self._http_client is not None and not self._http_client.is_closed:
+            await self._http_client.aclose()
 
     async def parse_file(self, file_path: str) -> str | None:
         """解析本地文件，返回 markdown 文本。
@@ -119,10 +129,10 @@ class MinerUClient:
             "language": self.language,
         }
 
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            resp = await client.post(url, headers=self._headers(), json=payload)
-            resp.raise_for_status()
-            data = resp.json()
+        client = await self._get_http_client()
+        resp = await client.post(url, headers=self._headers(), json=payload)
+        resp.raise_for_status()
+        data = resp.json()
 
         if data.get("code") != 0:
             raise MinerUParseError(f"申请上传链接失败: {data.get('msg')} (code={data.get('code')})")
@@ -140,42 +150,42 @@ class MinerUClient:
         # 直接传同步文件对象会被 httpx 判定为同步请求而抛错
         with open(file_path, "rb") as f:
             file_bytes = f.read()
-        async with httpx.AsyncClient() as client:
-            resp = await client.put(upload_url, content=file_bytes)
-            if resp.status_code not in (200, 201):
-                raise MinerUParseError(f"文件上传失败: HTTP {resp.status_code}")
+        client = await self._get_http_client()
+        resp = await client.put(upload_url, content=file_bytes)
+        if resp.status_code not in (200, 201):
+            raise MinerUParseError(f"文件上传失败: HTTP {resp.status_code}")
 
     async def _poll_batch_result(self, batch_id: str) -> dict[str, Any]:
         """轮询批量解析结果，直到 done/failed 或超时。"""
         url = f"{self.base_url}/extract-results/batch/{batch_id}"
         elapsed = 0.0
 
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            while elapsed < self.timeout:
-                resp = await client.get(url, headers=self._headers())
-                resp.raise_for_status()
-                data = resp.json()
+        client = await self._get_http_client()
+        while elapsed < self.timeout:
+            resp = await client.get(url, headers=self._headers())
+            resp.raise_for_status()
+            data = resp.json()
 
-                if data.get("code") != 0:
-                    raise MinerUParseError(f"查询任务失败: {data.get('msg')} (code={data.get('code')})")
+            if data.get("code") != 0:
+                raise MinerUParseError(f"查询任务失败: {data.get('msg')} (code={data.get('code')})")
 
-                result = data["data"]
-                extract_result = result.get("extract_result")
-                if isinstance(extract_result, list) and extract_result:
-                    item = extract_result[0]
-                elif isinstance(extract_result, dict):
-                    item = extract_result
-                else:
-                    item = {}
+            result = data["data"]
+            extract_result = result.get("extract_result")
+            if isinstance(extract_result, list) and extract_result:
+                item = extract_result[0]
+            elif isinstance(extract_result, dict):
+                item = extract_result
+            else:
+                item = {}
 
-                state = item.get("state", "")
-                if state == "done":
-                    return item
-                if state == "failed":
-                    raise MinerUParseError(f"MinerU 解析失败: {item.get('err_msg', '未知错误')}")
+            state = item.get("state", "")
+            if state == "done":
+                return item
+            if state == "failed":
+                raise MinerUParseError(f"MinerU 解析失败: {item.get('err_msg', '未知错误')}")
 
-                await __import__("asyncio").sleep(self.poll_interval)
-                elapsed += self.poll_interval
+            await __import__("asyncio").sleep(self.poll_interval)
+            elapsed += self.poll_interval
 
         raise MinerUTimeoutError(f"MinerU 解析轮询超时 ({self.timeout}s)")
 
@@ -185,10 +195,10 @@ class MinerUClient:
         if not zip_url:
             raise MinerUParseError("MinerU 返回结果缺少 full_zip_url")
 
-        async with httpx.AsyncClient(timeout=60) as client:
-            resp = await client.get(zip_url)
-            resp.raise_for_status()
-            zip_bytes = resp.content
+        client = await self._get_http_client()
+        resp = await client.get(zip_url)
+        resp.raise_for_status()
+        zip_bytes = resp.content
 
         try:
             with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:

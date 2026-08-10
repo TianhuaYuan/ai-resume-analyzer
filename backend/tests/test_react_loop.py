@@ -16,6 +16,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from services.rag.pipeline import LLMToolResponse, ToolCall
+from services.react_agent.loop import (
+    _cleanup_resume_write_lock,
+    _resume_write_lock,
+    _resume_write_locks,
+    _stabilize_tool_call_ids,
+)
 
 
 # ── 辅助函数 ──────────────────────────────────────────────────
@@ -45,6 +51,7 @@ def _make_stream_response(content="", tool_calls=None, usage=None, reasoning="")
     对应 pipeline.py 流式事件协议：reasoning / token / usage / done。
     注意：async generator 不可复用，多轮需各自生成独立实例。
     """
+
     async def _gen():
         if reasoning:
             yield {"type": "reasoning", "content": reasoning}
@@ -58,6 +65,25 @@ def _make_stream_response(content="", tool_calls=None, usage=None, reasoning="")
             }
         yield {"type": "done", "content": content, "tool_calls": tool_calls or []}
     return _gen()
+
+
+def test_tool_call_ids_are_unique_when_provider_omits_or_reuses_ids():
+    calls = [
+        ToolCall(id="", name="generate_module", arguments="{}"),
+        ToolCall(id="provider-id", name="search_resume", arguments="{}"),
+        ToolCall(id="provider-id", name="rewrite_star", arguments="{}"),
+    ]
+    _stabilize_tool_call_ids(calls, 2)
+    ids = [call.id for call in calls]
+    assert all(ids)
+    assert len(set(ids)) == len(ids)
+
+
+def test_resume_write_lock_cleanup_is_identity_safe():
+    resume_id = 987654321
+    lock = _resume_write_lock(resume_id)
+    _cleanup_resume_write_lock(resume_id, lock)
+    assert resume_id not in _resume_write_locks
 
 
 def _patch_loop():

@@ -17,11 +17,22 @@ FROM python:3.11-slim-bookworm AS runtime
 
 WORKDIR /app
 
+# Debian Bookworm runtime packages keep WeasyPrint's native ABI stable.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         curl \
         libmagic1 \
-        poppler-utils && \
+        poppler-utils \
+        libpango-1.0-0 \
+        libpangoft2-1.0-0 \
+        libcairo2 \
+        libgdk-pixbuf-2.0-0 \
+        libffi8 \
+        shared-mime-info \
+        fonts-noto-cjk \
+        fonts-noto-core \
+        fontconfig && \
+    fc-cache -f -v && \
     rm -rf /var/lib/apt/lists/*
 
 RUN groupadd -r appuser && \

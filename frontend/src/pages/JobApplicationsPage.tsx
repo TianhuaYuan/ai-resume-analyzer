@@ -168,9 +168,9 @@ export default function JobApplicationsPage() {
   const dl = dash?.deadline_counts;
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <div className="p-4 sm:p-6 max-w-6xl mx-auto w-full">
       {/* ── 头部 ── */}
-      <div className="flex items-center justify-between mb-5">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
         <div>
           <h1 className="text-xl font-semibold text-[var(--color-text)]">投递看板</h1>
           <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
@@ -290,7 +290,7 @@ export default function JobApplicationsPage() {
           onClick={() => setInTrash((v) => !v)}
           className={`flex items-center gap-1.5 rounded-action px-3 py-1.5 text-sm border transition-colors cursor-pointer ${
             inTrash
-              ? "bg-danger text-danger border-danger"
+              ? "bg-danger-soft text-danger border-danger/30"
               : "border-[var(--color-border)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)]"
           }`}
         >
@@ -382,8 +382,8 @@ export default function JobApplicationsPage() {
                           }}
                           className={`p-1.5 rounded-action transition-colors cursor-pointer ${
                             inTrash
-                              ? "text-success hover:bg-success"
-                              : "text-[var(--color-text-muted)] hover:text-danger hover:bg-danger"
+                              ? "text-success hover:bg-success/15"
+                              : "text-[var(--color-text-muted)] hover:text-danger hover:bg-danger/10"
                           }`}
                           title={inTrash ? "恢复" : "删除（进垃圾箱）"}
                         >
@@ -861,12 +861,12 @@ function ModalShell({
   footer?: React.ReactNode;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/45 backdrop-blur-sm p-2 sm:p-4" onClick={onClose}>
       <div
-        className="w-full max-w-lg rounded-input border border-[var(--color-border)] bg-white dark:bg-[#1c1c1e] shadow-2xl p-5 max-h-[88vh] overflow-y-auto"
+        className="modal-mobile-sheet relative w-full max-w-lg rounded-input border border-[var(--color-border)] bg-[var(--color-surface)] shadow-2xl p-5 max-h-[calc(100dvh-1rem)] sm:max-h-[88vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between mb-4">
+        <div className="sticky top-0 z-10 -mx-5 -mt-5 mb-4 px-5 pt-5 pb-3 flex items-center justify-between bg-[var(--color-surface)]/95 backdrop-blur-sm">
           <h3 className="text-base font-semibold text-[var(--color-text)]">{title}</h3>
           <button onClick={onClose} className="p-1 rounded-action text-[var(--color-text-muted)] hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer" aria-label="关闭">
             <X size={16} />

@@ -5,7 +5,7 @@ JD 评分卡 + 去重检测 + 软删除垃圾箱 + 看板（截止红黄绿/停�
 错误码统一走 AppException（core/exceptions.py），非本人记录一律 404。
 """
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_current_user
@@ -24,6 +24,7 @@ from schemas.job_application import (
     JobApplicationUpdate,
 )
 from services import asset_service, job_application_service as svc
+from services.audit_log_service import write_audit_log
 
 router = APIRouter(prefix="/job-applications", tags=["job-applications"])
 
@@ -46,6 +47,7 @@ def _duplicates_to_items(dupes: list) -> list[DuplicateItem]:
 @router.post("", response_model=JobApplicationCreateResult, status_code=status.HTTP_201_CREATED)
 async def create_application(
     body: JobApplicationCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -63,6 +65,7 @@ async def create_application(
         jd_text=body.jd_text,
         generate_scorecard=body.generate_scorecard,
     )
+    await write_audit_log(db, user_id=current_user.id, action="job_application_create", target_type="job_application", target_id=str(app.id), detail={"result": "success", "request_id": request.headers.get("X-Request-ID")}, ip=request.client.host if request.client else None)
     return JobApplicationCreateResult(
         application=_to_response(app),
         duplicates=_duplicates_to_items(dupes),
@@ -125,6 +128,7 @@ async def get_application(
 async def update_application(
     application_id: int,
     body: JobApplicationUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -142,6 +146,7 @@ async def update_application(
         jd_text=body.jd_text,
         generate_scorecard=body.generate_scorecard,
     )
+    await write_audit_log(db, user_id=current_user.id, action="job_application_update", target_type="job_application", target_id=str(app.id), detail={"result": "success", "request_id": request.headers.get("X-Request-ID")}, ip=request.client.host if request.client else None)
     return JobApplicationCreateResult(
         application=_to_response(app),
         duplicates=_duplicates_to_items(dupes),
@@ -152,6 +157,7 @@ async def update_application(
 async def transition_status(
     application_id: int,
     body: JobApplicationStatusUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -163,28 +169,33 @@ async def transition_status(
         new_status=body.new_status,
         note=body.note,
     )
+    await write_audit_log(db, user_id=current_user.id, action="job_application_status", target_type="job_application", target_id=str(app.id), detail={"result": "success", "request_id": request.headers.get("X-Request-ID"), "status": body.new_status}, ip=request.client.host if request.client else None)
     return _to_response(app)
 
 
 @router.delete("/{application_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_application(
     application_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """软删除（进垃圾箱）。"""
     await svc.soft_delete(db, current_user.id, application_id)
+    await write_audit_log(db, user_id=current_user.id, action="job_application_delete", target_type="job_application", target_id=str(application_id), detail={"result": "success", "request_id": request.headers.get("X-Request-ID")}, ip=request.client.host if request.client else None)
     return None
 
 
 @router.post("/{application_id}/restore", response_model=JobApplicationResponse)
 async def restore_application(
     application_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """从垃圾箱恢复。"""
     app = await svc.restore_application(db, current_user.id, application_id)
+    await write_audit_log(db, user_id=current_user.id, action="job_application_restore", target_type="job_application", target_id=str(app.id), detail={"result": "success", "request_id": request.headers.get("X-Request-ID")}, ip=request.client.host if request.client else None)
     return _to_response(app)
 
 
@@ -195,6 +206,7 @@ async def restore_application(
 )
 async def archive_application(
     application_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -225,4 +237,5 @@ async def archive_application(
         title=f"{app.company} {app.position} JD",
         content=asset_service.build_jd_asset_content(app),
     )
+    await write_audit_log(db, user_id=current_user.id, action="job_application_archive", target_type="job_application", target_id=str(application_id), detail={"result": "success", "request_id": request.headers.get("X-Request-ID")}, ip=request.client.host if request.client else None)
     return AssetResponse.model_validate(asset)

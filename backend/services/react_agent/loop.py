@@ -26,6 +26,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
 from core.database import AsyncSessionLocal
+from core.distributed_lock import acquire_lock as acquire_resume_write_lock
+from core.distributed_lock import release_lock as release_resume_write_lock
 from services.rag.pipeline import (
     LLMToolResponse,
     ToolCall,
@@ -33,7 +35,12 @@ from services.rag.pipeline import (
     llm_generate_with_tools_stream,
 )
 from services.react_agent.authorization_gate import AuthorizationGate, authorization_gate_lock_timeout
-from services.react_agent.memory import assemble_system_prompt, manage_l1_context
+from services.react_agent.memory import (
+    assemble_system_prompt,
+    compact_l1_context,
+    ContextCompactor,
+    manage_l1_context,  # noqa: F401 — legacy patch target retained for compatibility
+)
 from services.react_agent.tools import (
     get_agent_schemas,  # noqa: F401 — 保留模块属性供测试 patch（mock 目标）
     get_tool_by_name,
@@ -45,6 +52,7 @@ from services.react_agent.tools.base import (
     Tool,
     ToolFailed,
     ToolRetryError,
+    normalize_tool_result,
 )
 from services.token_quota import check_quota
 
@@ -56,6 +64,41 @@ MAX_ROUNDS = settings.REACT_MAX_TOOL_ROUNDS  # Spec A#6: 6 轮工具上限（con
 # 同一工具连续失败超限即终止本轮，成功一次即清零
 MAX_TOOL_RETRIES = 3
 AGENT_CONCURRENCY_LIMIT = 5
+# Tools which mutate resume/module state must not overlap for one resume.  The
+# lock is keyed by resume_id, so unrelated resumes still execute concurrently.
+_RESUME_WRITE_TOOLS = {
+    "rewrite_star", "translate", "modify_module", "generate_module",
+    "rewrite_resume", "update_resume", "delete_module",
+}
+_resume_write_locks: dict[int, asyncio.Lock] = {}
+
+
+def _resume_write_lock(resume_id: int) -> asyncio.Lock:
+    lock = _resume_write_locks.get(resume_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _resume_write_locks[resume_id] = lock
+    return lock
+
+
+def _cleanup_resume_write_lock(resume_id: int, lock: asyncio.Lock) -> None:
+    """Drop idle lock only if the registry still points at this exact lock."""
+    waiters = getattr(lock, "_waiters", None)
+    if lock.locked() or (waiters and any(not waiter.done() for waiter in waiters)):
+        return
+    if _resume_write_locks.get(resume_id) is lock:
+        _resume_write_locks.pop(resume_id, None)
+
+
+def _stabilize_tool_call_ids(tool_calls: list[ToolCall], round_no: int) -> None:
+    """Ensure every call has a unique ID even when a provider omits/duplicates it."""
+    seen: set[str] = set()
+    for index, tc in enumerate(tool_calls):
+        candidate = str(tc.id or "").strip()
+        if not candidate or candidate in seen:
+            candidate = f"tool-{round_no}-{index}-{uuid4().hex[:10]}"
+        tc.id = candidate
+        seen.add(candidate)
 # 工具实际执行墙钟超时（秒）：工具内部外部 API（embedding/rerank/LLM/网络）挂起时
 # 兜底超时降级，避免「调用工具后永久卡住」只能等会话级 REACT_MAX_DURATION_SEC 强断。
 # 按工具差异化：深度 agentic 工具（多轮 LLM + Reflexion 循环）正常就需要 >60s，
@@ -377,7 +420,14 @@ async def _enqueue_injection(key: str, content: str) -> bool:
         # InMemoryRedis 需支持 lpush/rpop；不支持时静默降级（不注入）
         if not hasattr(redis, "lpush"):
             return False
-        await redis.lpush(key, content)
+        normalized = content[:500]
+        if hasattr(redis, "lrange"):
+            existing = await redis.lrange(key, 0, 31)
+            if any((item.decode() if isinstance(item, bytes) else str(item)) == normalized for item in existing):
+                return True
+        await redis.lpush(key, normalized)
+        if hasattr(redis, "ltrim"):
+            await redis.ltrim(key, 0, 31)
         return True
     except Exception:
         logger.debug("写入回合注入队列失败（忽略）", exc_info=True)
@@ -397,7 +447,7 @@ async def _drain_injections(key: str, max_items: int = 2) -> list[str]:
             raw = await redis.rpop(key)
             if raw is None:
                 break
-            items.append(str(raw))
+            items.append(raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else str(raw))
         return items
     except Exception:
         logger.debug("读取回合注入队列失败（忽略）", exc_info=True)
@@ -632,8 +682,14 @@ async def react_loop(
     _phases["prompt_assembly_ms"] = round((time.perf_counter() - _t0) * 1000)
 
     # 3. 初始化消息
+    tool_contract = (
+        "\n\n[工具调用契约]\n"
+        "仅调用工具列表中的工具；arguments 必须是与 schema 完全匹配的 JSON object。"
+        "不要输出 Markdown、注释、额外字段或 JSON 字符串套 JSON；缺少参数时先向用户询问。"
+        "收到工具错误时不要重复相同调用，改正参数或基于已有信息安全降级。"
+    )
     messages: list[dict] = [
-        {"role": "system", "content": system_prompt},
+        {"role": "system", "content": f"{system_prompt}{tool_contract}"},
     ]
     if history:
         messages.extend(history)
@@ -679,7 +735,10 @@ async def react_loop(
     from services.react_agent.tool_gate import filter_agent_tools
 
     agent_tools = filter_agent_tools(question, get_tools_for_agent())
-    tool_schemas = [tc().to_openai_schema() for tc in agent_tools]
+    tool_schemas = [
+        tc().to_openai_schema(strict=getattr(settings, "TOOL_CALL_STRICT", False))
+        for tc in agent_tools
+    ]
 
     # D1/D2/D3 循环级状态（置于 builder 意图直达之前——该路径也会执行工具，需要审批锁）
     # D1 审批门：本轮审批串行化锁（同一轮并行工具的审批请求逐个处理，前端一次只弹一个）
@@ -711,6 +770,7 @@ async def react_loop(
                 tc,
                 user_id,
                 tool_semaphore,
+                resume_id=resume_id,
                 emit=_emit,
                 approval_lock=approval_lock,
                 round_no=1,
@@ -750,6 +810,7 @@ async def react_loop(
     stuck = False
     stuck_level: str | None = None  # "critical" | "warning" | None
 
+    context_compactor = ContextCompactor(context_window=DEFAULT_CONTEXT_WINDOW)
     while rounds < MAX_ROUNDS:
         rounds += 1
 
@@ -787,8 +848,15 @@ async def react_loop(
                     checkpoint_restored=restored_from_checkpoint,
                 )
 
-        # L1 上下文管理（逐出旧轮次，截断工具结果）
-        messages = manage_l1_context(messages)
+        # L1 上下文管理：优先结构化压缩，保留旧轮次的目标/决策；
+        # 超预算或压缩失败时 compact_l1_context 内部回退到逐出。
+        # 不传 llm_caller，避免为了省 token 再发起一次摘要请求。
+        messages = await compact_l1_context(
+            messages,
+            llm_caller=None,
+            max_tokens=DEFAULT_CONTEXT_WINDOW,
+            compactor=context_compactor,
+        )
 
         # T25: 压缩后恢复用户原始问题（Hermes 借鉴）——L1 结构化压缩可能把
         # 用户消息顶成摘要 handoff，末尾恢复确保模型不"答非所问"。幂等：question
@@ -842,6 +910,7 @@ async def react_loop(
             model=MIDDLE_MODEL,
             emit=_emit,
         )
+        _stabilize_tool_call_ids(response.tool_calls, rounds)
         _llm_round_ms += (time.perf_counter() - _llm_round_start) * 1000
         _phases["llm_rounds_ms"] = round(_llm_round_ms)
 
@@ -895,6 +964,14 @@ async def react_loop(
                 continue
 
             # 正常回答
+            if inject_key:
+                late_injections = await _drain_injections(inject_key, max_items=8)
+                if late_injections:
+                    for inj in late_injections:
+                        messages.append({"role": "user", "content": inj})
+                        await _emit({"type": "injection", "content": inj})
+                    await _emit({"type": "turn_restarting", "reason": "injection"})
+                    continue
             await _emit({"type": "agent_done", "content": content})
             _log_agent_timing("done")
             if checkpoint_key:
@@ -932,6 +1009,7 @@ async def react_loop(
                     tc,
                     user_id,
                     tool_semaphore,
+                    resume_id=resume_id,
                     emit=_emit,
                     approval_lock=approval_lock,
                     round_no=rounds,
@@ -1085,12 +1163,25 @@ async def react_loop(
                 )
 
     # 6. 强制收敛：无工具调用，用 CHAT_MODEL（流式：推理过程实时推给前端）
-    messages = manage_l1_context(messages)
+    messages = await compact_l1_context(
+        messages,
+        llm_caller=None,
+        max_tokens=DEFAULT_CONTEXT_WINDOW,
+        compactor=context_compactor,
+    )
     response = await _stream_final_round(
         messages=messages,
         user_id=user_id,
         emit=_emit,
     )
+    if inject_key:
+        late_injections = await _drain_injections(inject_key, max_items=8)
+        if late_injections:
+            for inj in late_injections:
+                messages.append({"role": "user", "content": inj})
+                await _emit({"type": "injection", "content": inj})
+            await _emit({"type": "turn_restarting", "reason": "injection"})
+            response = await _stream_final_round(messages=messages, user_id=user_id, emit=_emit)
 
     _accumulate_usage(total_usage, response)
     await _emit_llm_events(response)
@@ -1159,6 +1250,7 @@ async def _stream_middle_round(
             tools=tools,
             user_id=user_id,
             model=model,
+            scenario="tool_call",
         ):
             if _first_chunk:
                 _first_chunk = False
@@ -1236,6 +1328,7 @@ async def _stream_final_round(
             tools=None,
             user_id=user_id,
             model=FINAL_MODEL,
+            scenario="qa_complex",
         ):
             if _first_chunk:
                 _first_chunk = False
@@ -1351,6 +1444,13 @@ async def _execute_tool_call(
             [],
             {"prompt_tokens": 0, "completion_tokens": 0},
         )
+    if not isinstance(args, dict):
+        return (
+            "[参数或状态错误] 工具参数必须是 JSON 对象，请按 schema 重新生成。",
+            True,
+            [],
+            {"prompt_tokens": 0, "completion_tokens": 0},
+        )
 
     # 2. 查找工具（A3: 未知工具附可用列表，模型几乎必然自愈——借鉴 pydantic-ai _resolve_tool）
     tool_class = get_tool_by_name(tc.name)
@@ -1436,7 +1536,7 @@ async def _execute_tool_call(
             "tool_exec: %s %.0fms", tc.name, (time.perf_counter() - _tool_t0) * 1000
         )
         return (
-            result,
+            normalize_tool_result(result, tool_name=tc.name),
             False,
             getattr(tool, "sources", []),
             getattr(tool, "last_usage", {"prompt_tokens": 0, "completion_tokens": 0}),
@@ -1554,7 +1654,7 @@ async def _handle_tool_approval(
                         {"prompt_tokens": 0, "completion_tokens": 0},
                     )
                 return (
-                    result,
+                    normalize_tool_result(result, tool_name=tc.name),
                     False,
                     getattr(tool, "sources", []),
                     getattr(tool, "last_usage", {"prompt_tokens": 0, "completion_tokens": 0}),
@@ -1624,6 +1724,7 @@ async def _execute_tool_call_with_limit(
     semaphore: asyncio.Semaphore,
     emit=None,
     *,
+    resume_id: int,
     approval_lock: asyncio.Lock | None = None,
     round_no: int | None = None,
 ) -> tuple[str, bool, list[dict], dict]:
@@ -1634,16 +1735,47 @@ async def _execute_tool_call_with_limit(
     （readexactly() called while another coroutine is already waiting / Command Out of Sync）。
     """
     async with semaphore:
+        async def scoped_emit(event: dict) -> None:
+            if event.get("type") == "tool_stream":
+                event = {**event, "id": tc.id}
+            if emit is not None:
+                await emit(event)
+
+        async def run() -> tuple[str, bool, list[dict], dict]:
         # 每工具独立 session，用完即关；避免共享请求 session 的并发读冲突
-        async with AsyncSessionLocal() as tool_db:
-            return await _execute_tool_call(
-                tc,
-                tool_db,
-                user_id,
-                emit,
-                approval_lock=approval_lock,
-                round_no=round_no,
-            )
+            async with AsyncSessionLocal() as tool_db:
+                return await _execute_tool_call(
+                    tc,
+                    tool_db,
+                    user_id,
+                    scoped_emit if emit is not None else None,
+                    approval_lock=approval_lock,
+                    round_no=round_no,
+                )
+        if tc.name in _RESUME_WRITE_TOOLS:
+            resume_lock = _resume_write_lock(resume_id)
+            try:
+                async with resume_lock:
+                # The process-local lock handles the fast path.  Redis provides
+                # cross-worker exclusion when available; the existing lock API
+                # is non-blocking, so poll briefly and then fall back locally if
+                # Redis is unavailable rather than dropping the tool call.
+                    distributed_id = None
+                    for _ in range(120):
+                        distributed_id = await acquire_resume_write_lock(user_id, resume_id, ttl_seconds=600)
+                        if distributed_id:
+                            break
+                        await asyncio.sleep(0.25)
+                    if not distributed_id:
+                        return ("简历正在被其他请求修改，请稍后重试", True, [], {"prompt_tokens": 0, "completion_tokens": 0})
+                    try:
+                        return await run()
+                    finally:
+                        if distributed_id and not distributed_id.startswith("local-fallback:"):
+                            await release_resume_write_lock(user_id, resume_id, distributed_id)
+            finally:
+                _cleanup_resume_write_lock(resume_id, resume_lock)
+        return await run()
 
 
 def _deduplicate_sources(sources: list[dict]) -> list[dict]:

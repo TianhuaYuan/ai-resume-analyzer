@@ -337,6 +337,7 @@ async def generate_plan(
             temperature=0.5,
             max_tokens=3000,
             user_id=user_id,
+            scenario="qa_complex",
         )
         plan = _parse_plan_json(raw)
         if plan and len(plan) >= MIN_PLAN_QUESTIONS:
@@ -511,6 +512,7 @@ async def _score_answers(
                 temperature=0.2,
                 max_tokens=2000,
                 user_id=user_id,
+                scenario="judge",
             )
             parsed = _parse_score_json(raw)
             if parsed:

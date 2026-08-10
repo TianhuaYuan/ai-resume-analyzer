@@ -42,6 +42,10 @@ interface StreamCtx {
   appendThought: (content: string) => void;
   stepStartRef: MutableRefObject<Map<string, number>>;
   beforeModulesRef: MutableRefObject<ResumeModule[] | null>;
+  activeResumeIdRef: MutableRefObject<number>;
+  editRevisionRef: MutableRefObject<number>;
+  diffOwnerTokenRef: MutableRefObject<number>;
+  diffFetchTimerRef: MutableRefObject<ReturnType<typeof setTimeout> | null>;
   setDiffBeforeModules: (v: ResumeModule[] | null) => void;
   setDiffAfterModules: (v: ResumeModule[] | null) => void;
   setDiffToolName: (v: string) => void;
@@ -64,6 +68,22 @@ function handleAgentStart(_ev: AgentSSEEvent, ctx: StreamCtx): void {
 /** handler: agent_thought — LLM 推理过程（Spec A#7），追加到 pending 缓冲 rAF 批量刷新 */
 function handleAgentThought(ev: AgentSSEEvent, ctx: StreamCtx): void {
   ctx.appendThought(ev.content ?? "");
+  ctx.scheduleStreamingFlush(ctx.tempId);
+}
+
+function handleInjection(ev: AgentSSEEvent, ctx: StreamCtx): void {
+  ctx.pendingStepsRef.current.push({ type: "agent_thought", name: "补充信息", detail: `已收到补充信息：${ev.content ?? ""}` });
+  ctx.scheduleStreamingFlush(ctx.tempId);
+}
+
+function handleTurnRestarting(_ev: AgentSSEEvent, ctx: StreamCtx): void {
+  if (ctx.answerRafRef.current != null) {
+    cancelAnimationFrame(ctx.answerRafRef.current);
+    ctx.answerRafRef.current = null;
+  }
+  ctx.answerBufferRef.current.delete(ctx.tempId);
+  ctx.setChat((prev) => prev.map((m) => m.id === ctx.tempId ? { ...m, answer: "" } : m));
+  ctx.pendingStepsRef.current.push({ type: "agent_thought", name: "重新生成", detail: "正在合并补充信息并重新生成答案…" });
   ctx.scheduleStreamingFlush(ctx.tempId);
 }
 
@@ -114,22 +134,34 @@ function handleToolResult(ev: AgentSSEEvent, ctx: StreamCtx): void {
   const MODIFYING_TOOLS = ["rewrite_star", "translate", "modify_module", "generate_module", "rewrite_resume"];
   const toolName = ev.tool_name ?? "";
   if (MODIFYING_TOOLS.includes(toolName) && ctx.beforeModulesRef.current && ctx.resumeId > 0) {
+    const ownerResumeId = ctx.resumeId;
+    const ownerRevision = ctx.editRevisionRef.current;
+    const ownerToken = ++ctx.diffOwnerTokenRef.current;
+    const ownsDiff = () => ctx.diffOwnerTokenRef.current === ownerToken
+      && ctx.activeResumeIdRef.current === ownerResumeId
+      && ctx.editRevisionRef.current === ownerRevision;
+    if (!ownsDiff()) return;
     ctx.setDiffBeforeModules(ctx.beforeModulesRef.current);
     ctx.setDiffToolName(toolName);
     ctx.setDiffLoading(true);
     ctx.setDiffDialogOpen(true);
     // 延迟 500ms 等待 DB 提交完成（与 refreshModules 修复同模式）
-    setTimeout(() => {
-      getBuilderResume(ctx.resumeId)
+    if (ctx.diffFetchTimerRef.current) clearTimeout(ctx.diffFetchTimerRef.current);
+    ctx.diffFetchTimerRef.current = setTimeout(() => {
+      ctx.diffFetchTimerRef.current = null;
+      getBuilderResume(ownerResumeId)
         .then((data) => {
+          if (!ownsDiff()) return;
           ctx.setDiffAfterModules(data.modules);
           // 更新 before 快照为当前状态，支持后续多次修改
           ctx.beforeModulesRef.current = data.modules;
         })
         .catch(() => {
+          if (!ownsDiff()) return;
           ctx.setDiffAfterModules(null);
         })
         .finally(() => {
+          if (!ownsDiff()) return;
           ctx.setDiffLoading(false);
         });
     }, 500);
@@ -163,16 +195,20 @@ function handleToolError(ev: AgentSSEEvent, ctx: StreamCtx): void {
  */
 function handleToolStream(ev: AgentSSEEvent, ctx: StreamCtx): void {
   const steps = ctx.pendingStepsRef.current;
-  const last = steps[steps.length - 1];
-  if (last && last.type === "tool_stream" && last.name === ev.tool_name) {
-    steps[steps.length - 1] = {
-      ...last,
-      detail: (last.detail ?? "") + (ev.content ?? ""),
+  const existingIndex = ev.id
+    ? steps.findIndex((step) => step.type === "tool_stream" && step.id === ev.id)
+    : -1;
+  if (existingIndex >= 0) {
+    const existing = steps[existingIndex];
+    steps[existingIndex] = {
+      ...existing,
+      detail: (existing.detail ?? "") + (ev.content ?? ""),
     };
   } else {
     steps.push({
       type: "tool_stream" as const,
       name: ev.tool_name ?? "",
+      id: ev.id,
       detail: ev.content ?? "",
     });
   }
@@ -360,6 +396,8 @@ function dispatchStreamEvent(ev: AgentSSEEvent, ctx: StreamCtx): void {
   switch (ev.type) {
     case "agent_start": return handleAgentStart(ev, ctx);
     case "agent_thought": return handleAgentThought(ev, ctx);
+    case "injection": return handleInjection(ev, ctx);
+    case "turn_restarting": return handleTurnRestarting(ev, ctx);
     case "tool_call": return handleToolCall(ev, ctx);
     case "tool_result": return handleToolResult(ev, ctx);
     case "tool_error": return handleToolError(ev, ctx);
@@ -396,6 +434,7 @@ export interface AgentStreamDeps {
   navigate: (to: string) => void;
   setResumeId: (id: number) => void;
   setPendingAiCreateQuestion: (q: string | null) => void;
+  setQaInitState?: (state: "empty" | "creating" | "loading" | "ready" | "error") => void;
   setChat: Dispatch<SetStateAction<ChatMessage[]>>;
   setAsking: (v: boolean) => void;
   setError: (v: string) => void;
@@ -403,6 +442,10 @@ export interface AgentStreamDeps {
   setConversations: Dispatch<SetStateAction<ConversationItem[]>>;
   setQuota: (v: QuotaResponse | null) => void;
   beforeModulesRef: MutableRefObject<ResumeModule[] | null>;
+  activeResumeIdRef: MutableRefObject<number>;
+  editRevisionRef: MutableRefObject<number>;
+  diffOwnerTokenRef: MutableRefObject<number>;
+  diffFetchTimerRef: MutableRefObject<ReturnType<typeof setTimeout> | null>;
   setDiffBeforeModules: (v: ResumeModule[] | null) => void;
   setDiffAfterModules: (v: ResumeModule[] | null) => void;
   setDiffToolName: (v: string) => void;
@@ -413,6 +456,7 @@ export interface AgentStreamDeps {
 }
 
 export interface SendQuestionOptions {
+  compareIds?: number[];
   toolMode?: string;
   moduleType?: string;
   entryId?: string;
@@ -440,6 +484,7 @@ export function useAgentStream(getDeps: () => AgentStreamDeps): {
   const answerBufferRef = useRef<Map<string, string>>(new Map());
   const answerRafRef = useRef<number | null>(null);
   const abortRef = useRef<(() => void) | null>(null);
+  const createResumePromiseRef = useRef<Promise<{ id: number }> | null>(null);
 
   const applyPendingSteps = useCallback((targetId: string) => {
     const d = depsRef.current;
@@ -455,12 +500,22 @@ export function useAgentStream(getDeps: () => AgentStreamDeps): {
         // 避免同一工具的 token 被拆成碎片步骤（agent_thought 由 mergeThoughtSteps 兜底）
         const next = [...existing];
         for (const step of steps) {
+          if (step.id && (step.type === "tool_result" || step.type === "tool_error" || step.type === "tool_stream")) {
+            const index = next.findIndex((candidate) => candidate.id === step.id);
+            if (index >= 0) {
+              const current = next[index];
+              next[index] = step.type === "tool_stream"
+                ? { ...current, detail: (current.detail ?? "") + (step.detail ?? "") }
+                : { ...current, ...step };
+              continue;
+            }
+          }
           const last = next[next.length - 1];
           if (
             last &&
             last.type === "tool_stream" &&
             step.type === "tool_stream" &&
-            last.name === step.name
+            last.name === step.name && last.id === step.id
           ) {
             next[next.length - 1] = {
               ...last,
@@ -536,15 +591,19 @@ export function useAgentStream(getDeps: () => AgentStreamDeps): {
     // ── 无简历时：先创建空简历，再启动 AI 创建流程 ──
     if (!d.resumeId || d.resumeId === 0) {
       d.setAiCreateMode(true);
-      // 先创建一个空的 builder 简历
-      createBuilderResume({ filename: "未命名简历" }).then((resume) => {
-        d.setResumeId(resume.id);
-        // 设置待发送的问题，等 resumeId 更新后自动发送
-        d.setPendingAiCreateQuestion(q);
-      }).catch((err) => {
-        d.setError(err instanceof Error ? err.message : "创建简历失败");
-        d.setAiCreateMode(false);
-      });
+      d.setQaInitState?.("creating");
+      d.setPendingAiCreateQuestion(q);
+      if (createResumePromiseRef.current) return;
+      createResumePromiseRef.current = createBuilderResume({ filename: "未命名简历" })
+        .then((resume) => { d.setResumeId(resume.id); d.setQaInitState?.("loading"); return resume; })
+        .catch((err) => {
+          d.setError(err instanceof Error ? err.message : "创建简历失败");
+          d.setQaInitState?.("error");
+          d.setAiCreateMode(false);
+          d.setPendingAiCreateQuestion(null);
+          return { id: 0 };
+        })
+        .finally(() => { createResumePromiseRef.current = null; });
       return;
     }
 
@@ -553,9 +612,19 @@ export function useAgentStream(getDeps: () => AgentStreamDeps): {
     // ── 快照当前模块（before），用于 diff 弹窗 ──
     // 非阻塞：失败则 beforeModulesRef 保持 null，diff 弹窗不弹出
     if (d.resumeId > 0) {
-      getBuilderResume(d.resumeId)
-        .then((data) => { d.beforeModulesRef.current = data.modules; })
-        .catch(() => { d.beforeModulesRef.current = null; });
+      const snapshotResumeId = d.resumeId;
+      const snapshotRevision = d.editRevisionRef.current;
+      getBuilderResume(snapshotResumeId)
+        .then((data) => {
+          if (d.activeResumeIdRef.current === snapshotResumeId && d.editRevisionRef.current === snapshotRevision) {
+            d.beforeModulesRef.current = data.modules;
+          }
+        })
+        .catch(() => {
+          if (d.activeResumeIdRef.current === snapshotResumeId && d.editRevisionRef.current === snapshotRevision) {
+            d.beforeModulesRef.current = null;
+          }
+        });
     }
 
     const tempId = `streaming-${Date.now()}`;
@@ -591,6 +660,10 @@ export function useAgentStream(getDeps: () => AgentStreamDeps): {
       appendThought,
       stepStartRef,
       beforeModulesRef: d.beforeModulesRef,
+      activeResumeIdRef: d.activeResumeIdRef,
+      editRevisionRef: d.editRevisionRef,
+      diffOwnerTokenRef: d.diffOwnerTokenRef,
+      diffFetchTimerRef: d.diffFetchTimerRef,
       setDiffBeforeModules: d.setDiffBeforeModules,
       setDiffAfterModules: d.setDiffAfterModules,
       setDiffToolName: d.setDiffToolName,
@@ -633,7 +706,7 @@ export function useAgentStream(getDeps: () => AgentStreamDeps): {
         );
       },
       {
-        compareIds: d.compareIds.length > 0 ? d.compareIds : undefined,
+        compareIds: options?.compareIds ?? (d.compareIds.length > 0 ? d.compareIds : undefined),
         conversationId: d.activeConversationId ?? undefined,
         toolMode: options?.toolMode,
         moduleType: options?.moduleType,

@@ -75,6 +75,49 @@ async def test_stream_success_emits_token_then_done(client: AsyncClient, auth_he
 
 
 @pytest.mark.asyncio
+async def test_agent_route_does_not_record_final_usage_again(
+    client: AsyncClient, auth_headers: dict
+):
+    """Agent service 已拥有 quota 记账权；路由收到 agent_done 后不得二次记账。"""
+
+    async def fake_agent_stream(**kwargs):
+        yield {
+            "type": "agent_done",
+            "answer": "答案",
+            "qa_id": 42,
+            "sources": [],
+            # 保留旧内部 usage 兼容字段：旧 API 重复记账分支会读取它。
+            # token_usage 则是当前 SSE 对外契约，两者故意同时存在以捕获回归。
+            "usage": {"prompt_tokens": 200, "completion_tokens": 80},
+            "token_usage": {"prompt_tokens": 200, "completion_tokens": 80},
+            "process_trace": {},
+            "degraded": False,
+        }
+
+    stream_db = AsyncMock()
+    with patch("api.qa.resume_service.get_resume", new_callable=AsyncMock), \
+         patch("api.qa.react_loop_stream", new=fake_agent_stream), \
+         patch("core.database.AsyncSessionLocal", return_value=stream_db), \
+         patch("api.qa.record_usage", new_callable=AsyncMock) as mock_api_quota:
+        resp = await client.post(
+            "/api/v1/qa/ask/agent",
+            json={"resume_id": 1, "question": "分析我的简历"},
+            headers=auth_headers,
+        )
+
+    assert resp.status_code == 200
+    done_event = next(
+        event for event in _parse_sse_events(resp.text) if event["type"] == "agent_done"
+    )
+    assert done_event["token_usage"] == {
+        "prompt_tokens": 200,
+        "completion_tokens": 80,
+    }
+    mock_api_quota.assert_not_awaited()
+    stream_db.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_stream_response_has_sse_headers(client: AsyncClient, auth_headers: dict):
     """SSE 响应应带正确的 media_type 和禁用缓冲的头部。"""
 

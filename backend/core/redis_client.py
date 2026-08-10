@@ -4,6 +4,7 @@ Redis 不可用时自动降级为 InMemoryRedis，所有功能原地工作。
 """
 
 import asyncio
+import fnmatch
 import logging
 import time
 
@@ -103,6 +104,11 @@ class InMemoryRedis:
     async def mget(self, *keys: str) -> list[str | None]:
         self._purge_expired()
         return [self._data.get(k) for k in keys]
+
+    async def keys(self, pattern: str = "*") -> list[str]:
+        """兼容 redis.keys，用于开发/测试环境的用量看板与诊断查询。"""
+        self._purge_expired()
+        return [key for key in self._data if fnmatch.fnmatch(key, pattern)]
 
     async def eval(self, script: str, num_keys: int, *args: str) -> int:
         """简易 Lua eval — 按脚本内容区分 RELEASE（DEL）与 RENEW（EXPIRE）。

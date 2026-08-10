@@ -15,6 +15,7 @@ from core.limiter import limiter
 from core.security import detect_prompt_injection, redact_pii
 from models.qa_feedback import QAFeedback
 from models.user import User
+from services.audit_log_service import write_audit_log
 from schemas.feedback import QAFeedbackRequest, QAStatsResponse
 from schemas.qa import (
     AnswerResponse,
@@ -388,16 +389,8 @@ async def ask_agent(
                     src = event.get("sources")
                     if isinstance(src, list):
                         event["sources"] = [_enrich_source(s) for s in src]
-
-                # 记录 token 消耗
-                if event.get("type") == "agent_done" and "usage" in event:
-                    usage = event["usage"]
-                    if usage.get("prompt_tokens", 0) > 0 or usage.get("completion_tokens", 0) > 0:
-                        await record_usage(
-                            current_user.id,
-                            usage["prompt_tokens"],
-                            usage["completion_tokens"],
-                        )
+                    # Agent quota 由 react_loop_stream 使用最终聚合 usage 统一记账。
+                    # API 层只做事件富化与序列化，避免同一 provider usage 重复扣减。
 
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except asyncio.CancelledError:
@@ -458,7 +451,26 @@ async def inject_into_active_turn(
         f"react:inject:{current_user.id}:{resume_id}:{conv_suffix}"
     )
     ok = await _enqueue_injection(inject_key, data.content)
-    return {"injected": ok}
+    if not ok:
+        return {"status": "failed", "injected": False, "turn_id": None}
+    turn_id = None
+    active = False
+    try:
+        from core.redis_client import get_redis
+        redis = await get_redis()
+        active_key = f"react:active:{current_user.id}:{resume_id}:{conv_suffix}"
+        if redis is not None:
+            raw = await redis.get(active_key)
+            if raw:
+                active = True
+                turn_id = str(raw)
+    except Exception:
+        logger.debug("读取活跃回合状态失败", exc_info=True)
+    return {
+        "status": "restarting" if active else "queued",
+        "injected": True,
+        "turn_id": turn_id,
+    }
 
 
 @router.get("/history/{resume_id}", response_model=QAHistoryResponse)
@@ -708,6 +720,7 @@ async def get_quota_status_api(
 async def create_qa_feedback(
     qa_id: int,
     data: QAFeedbackRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -723,6 +736,15 @@ async def create_qa_feedback(
             user_id=current_user.id,
             qa_id=qa_id,
             rating=data.rating,
+        )
+        await write_audit_log(
+            db,
+            user_id=current_user.id,
+            action="qa_feedback",
+            target_type="qa",
+            target_id=str(qa_id),
+            detail={"result": "success", "request_id": request.headers.get("X-Request-ID"), "rating": data.rating},
+            ip=request.client.host if request.client else None,
         )
     except LookupError:
         raise HTTPException(

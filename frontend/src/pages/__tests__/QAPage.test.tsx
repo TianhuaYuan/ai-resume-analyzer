@@ -21,7 +21,7 @@ vi.mock("../../api/qa", () => ({
 }));
 
 // QAPage 挂载时 listResumes 自动选第一份简历（优先 ready），id 需为 42（测试断言用）
-const { DEFAULT_RESUME } = vi.hoisted(() => ({
+const { DEFAULT_RESUME, SECOND_RESUME, BUILDER_RESUME, BUILDER_RESUME_B } = vi.hoisted(() => ({
   DEFAULT_RESUME: {
     id: 42,
     filename: "resume-42.pdf",
@@ -31,25 +31,81 @@ const { DEFAULT_RESUME } = vi.hoisted(() => ({
     status_message: "",
     created_at: "",
   },
+  SECOND_RESUME: {
+    id: 43,
+    filename: "resume-43.pdf",
+    parsed_text: "",
+    chunk_count: 1,
+    status: "ready",
+    status_message: "",
+    created_at: "",
+  },
+  BUILDER_RESUME: {
+    id: 42,
+    filename: "resume-42.pdf",
+    status: "ready",
+    source: "upload",
+    style: null,
+    version: 1,
+    created_at: "",
+    modules: [{
+      id: 1,
+      resume_id: 42,
+      module_type: "basic_info",
+      content: { name: "Tianhua" },
+      sort_order: 0,
+      created_at: "",
+    }],
+  },
+  BUILDER_RESUME_B: {
+    id: 43,
+    filename: "resume-43.pdf",
+    status: "ready",
+    source: "upload",
+    style: null,
+    version: 7,
+    created_at: "",
+    modules: [{
+      id: 2,
+      resume_id: 43,
+      module_type: "basic_info",
+      content: { name: "Resume B" },
+      sort_order: 0,
+      created_at: "",
+    }],
+  },
 }));
 
 vi.mock("../../api/resumes", () => ({
-  listResumes: vi.fn(async () => ({ items: [DEFAULT_RESUME], total: 1 })),
+  listResumes: vi.fn(async () => ({ items: [DEFAULT_RESUME, SECOND_RESUME], total: 2 })),
   uploadResume: vi.fn(async () => ({ id: 42, filename: "resume.pdf", status: "processing" })),
 }));
 
 // QAPage 的 useEffect 会调用编辑锁生命周期 + 保存 + 创建简历（jsdom 无 fetch，必须全部 mock）
 vi.mock("../../api/builder", () => ({
-  getBuilderResume: vi.fn(async () => null),
-  saveDraft: vi.fn(async () => ({ id: 42, version: 1 })),
-  saveComplete: vi.fn(async () => ({ id: 42, version: 1 })),
+  getBuilderResume: vi.fn(async (id: number) => id === 43 ? BUILDER_RESUME_B : BUILDER_RESUME),
+  saveDraft: vi.fn(async () => ({ ...BUILDER_RESUME, status: "draft" })),
+  saveComplete: vi.fn(async () => ({ ...BUILDER_RESUME, status: "ready", version: 2 })),
   acquireEditLock: vi.fn(async () => ({ locked: false, lock_token: null })),
   renewEditLock: vi.fn(async () => ({ locked: false, lock_token: null })),
   releaseEditLock: vi.fn(async () => undefined),
   createBuilderResume: vi.fn(async () => ({ id: 43, filename: "未命名简历" })),
 }));
 
+vi.mock("../../components/builder/A4PreviewPanel", () => ({
+  A4PreviewPanel: ({ onSelectSection }: { onSelectSection: (type: string) => void }) => (
+    <button aria-label="编辑基本信息" onClick={() => onSelectSection("basic_info")}>编辑基本信息</button>
+  ),
+}));
+
+vi.mock("../../components/builder/ModuleCardEditor", () => ({
+  ModuleCardEditor: ({ onChange }: { onChange: (type: string, content: object) => void }) => (
+    <button aria-label="修改模块" onClick={() => onChange("basic_info", { name: "Changed" })}>修改模块</button>
+  ),
+}));
+
 import { getHistory, clearHistory, deleteQa, submitFeedback, getQuota, askAgentStream } from "../../api/qa";
+import { getBuilderResume, saveDraft } from "../../api/builder";
 
 function renderPage(route = "/resumes/42") {
   // P2-12：测试路由与生产 App.tsx 保持一致（/resumes/:id）
@@ -76,12 +132,15 @@ beforeEach(() => {
   vi.mocked(deleteQa).mockResolvedValue(undefined);
   vi.mocked(submitFeedback).mockResolvedValue(undefined);
   vi.mocked(getQuota).mockResolvedValue({ enabled: true, used: 1000, limit: 10000, remaining: 9000, reset_at: null });
+  vi.mocked(getBuilderResume).mockImplementation(async (id) => id === 43 ? BUILDER_RESUME_B : BUILDER_RESUME);
+  vi.mocked(saveDraft).mockResolvedValue({ ...BUILDER_RESUME, status: "draft" });
   // jsdom 没有 scrollIntoView / scrollTo，QAPage 的滚动逻辑会调用它们
   Element.prototype.scrollIntoView = vi.fn();
   Element.prototype.scrollTo = vi.fn();
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
@@ -248,6 +307,103 @@ describe("QAPage 基本交互 (Task 4)", () => {
 
     const clearBtn = screen.getByText("清除历史").closest("button");
     expect(clearBtn?.disabled).toBe(true);
+  });
+});
+
+describe("QAPage 草稿 dirty 防线", () => {
+  async function openModuleEditor() {
+    const previewButton = await screen.findByTitle("打开简历预览");
+    fireEvent.click(previewButton);
+    await screen.findByRole("button", { name: "编辑基本信息" });
+    fireEvent.click(screen.getByRole("button", { name: "编辑基本信息" }));
+    await screen.findByRole("button", { name: "修改模块" });
+  }
+
+  it("加载 ready 简历不会自动保存草稿", async () => {
+    renderPage();
+    await waitFor(() => expect(getBuilderResume).toHaveBeenCalledWith(42));
+
+    vi.useFakeTimers();
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+
+    expect(saveDraft).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it("用户直接编辑后才触发自动保存", async () => {
+    renderPage();
+    await openModuleEditor();
+    vi.mocked(saveDraft).mockClear();
+
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole("button", { name: "修改模块" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+
+    expect(saveDraft).toHaveBeenCalledTimes(1);
+    expect(saveDraft).toHaveBeenCalledWith(42, expect.objectContaining({
+      modules: [expect.objectContaining({ module_type: "basic_info", content: { name: "Changed" } })],
+    }));
+    vi.useRealTimers();
+  });
+
+  it("自动保存失败保留 dirty，允许用户重试", async () => {
+    renderPage();
+    await openModuleEditor();
+    vi.mocked(saveDraft)
+      .mockClear()
+      .mockRejectedValueOnce(new Error("network"))
+      .mockResolvedValue({ ...BUILDER_RESUME, status: "draft" });
+
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole("button", { name: "修改模块" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(saveDraft).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: /保存草稿/ }));
+    await act(async () => { await Promise.resolve(); });
+    expect(saveDraft).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
+  });
+
+  it("refresh 响应晚到时不覆盖期间的用户编辑", async () => {
+    renderPage();
+    await openModuleEditor();
+
+    let resolveRefresh!: (value: typeof BUILDER_RESUME) => void;
+    const refreshPromise = new Promise<typeof BUILDER_RESUME>((resolve) => { resolveRefresh = resolve; });
+    vi.mocked(getBuilderResume).mockImplementationOnce(() => refreshPromise);
+    vi.useFakeTimers();
+    window.dispatchEvent(new Event("resume:modules-refresh"));
+    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+
+    fireEvent.click(screen.getByRole("button", { name: "修改模块" }));
+    await act(async () => { resolveRefresh(BUILDER_RESUME); await Promise.resolve(); });
+    fireEvent.click(screen.getByRole("button", { name: /保存草稿/ }));
+    await act(async () => { await Promise.resolve(); });
+
+    expect(saveDraft).toHaveBeenLastCalledWith(42, expect.objectContaining({
+      modules: [expect.objectContaining({ content: { name: "Changed" } })],
+    }));
+    vi.useRealTimers();
+  });
+
+  it("切换简历后旧手动保存失败不污染新简历 UI", async () => {
+    renderPage();
+    await openModuleEditor();
+
+    let rejectSave!: (reason?: unknown) => void;
+    const pendingSave = new Promise<never>((_resolve, reject) => { rejectSave = reject; });
+    vi.mocked(saveDraft).mockImplementationOnce(() => pendingSave);
+    fireEvent.click(screen.getByRole("button", { name: "修改模块" }));
+    fireEvent.click(screen.getByRole("button", { name: /保存草稿/ }));
+    await waitFor(() => expect(saveDraft).toHaveBeenCalledWith(42, expect.anything()));
+
+    fireEvent.change(screen.getByRole("combobox", { name: "切换简历" }), { target: { value: "43" } });
+    await waitFor(() => expect(getBuilderResume).toHaveBeenCalledWith(43));
+    await act(async () => { rejectSave(new Error("A 保存失败")); await Promise.resolve(); });
+
+    expect(screen.queryByText("A 保存失败")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /保存草稿/ })).not.toBeDisabled();
   });
 });
 

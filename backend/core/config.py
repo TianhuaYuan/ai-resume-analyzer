@@ -179,10 +179,16 @@ class Settings(BaseSettings):
     # ── Thinking 配置 ──
     THINKING_ENABLED: bool = True
     THINKING_EFFORT: str = "high"
+    # Token 成本（USD / 1M tokens），用于用量看板与预算核算；按供应商实际价目覆盖。
+    LLM_INPUT_COST_PER_MILLION_USD: float = 0.0
+    LLM_OUTPUT_COST_PER_MILLION_USD: float = 0.0
 
     # ── 简历编辑器配置 ──
     TEMPLATE_DIR: str = "backend/templates"
     BUILDER_PARSE_MODEL: str = ""  # 空 = 使用 CHAT_MODEL
+    # Provider function-calling strict mode is opt-in because OpenAI-compatible
+    # providers reject optional fields unless every property is required/nullable.
+    TOOL_CALL_STRICT: bool = False
 
     # ── MinerU 精准解析 API 配置 ──
     MINERU_ENABLED: bool = False

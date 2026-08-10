@@ -24,6 +24,34 @@ from core.config import settings
 from core.security import detect_prompt_injection
 
 
+def _strict_schema(value):
+    """Make an OpenAI/DeepSeek function schema closed-world without mutating Pydantic output."""
+    if isinstance(value, list):
+        return [_strict_schema(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    result = {key: _strict_schema(item) for key, item in value.items()}
+    if result.get("type") == "object" or "properties" in result:
+        result["additionalProperties"] = False
+        # OpenAI/DeepSeek strict schemas require every property in `required`.
+        # Optional Pydantic fields already carry a nullable anyOf, so requiring
+        # the key still lets the provider emit null without losing strictness.
+        properties = result.get("properties")
+        if isinstance(properties, dict):
+            result["required"] = list(properties)
+    return result
+
+
+def normalize_tool_result(result, *, tool_name: str) -> str:
+    """Four-layer boundary: every tool result fed back to the model is safe text."""
+    if isinstance(result, str):
+        return result
+    try:
+        return json.dumps(result, ensure_ascii=False, default=str)
+    except Exception:
+        return f"工具 {tool_name} 返回了不可序列化结果，已安全降级；请基于已有信息继续。"
+
+
 class ToolRetryError(Exception):
     """工具可重试错误（A3，借鉴 pydantic-ai ModelRetry）。
 
@@ -168,6 +196,13 @@ class Tool(ABC):
         不实际执行，返回 ``ApprovalRequired`` 交给 loop 发起用户确认；
         ``mark_approval_granted()`` 后再次调用才会真正执行。
         """
+        # Reject unknown keys explicitly; Pydantic's default extra=ignore would
+        # otherwise silently drop provider hallucinations.
+        unknown = sorted(set(kwargs) - set(self.args_model.model_fields))
+        if unknown:
+            raise ToolRetryError(
+                "未知参数: " + ", ".join(unknown) + "；请严格按照工具 schema 重试。"
+            )
         # 1. args pydantic 校验（失败 → 结构化错误回灌，模型可自愈）
         try:
             validated = self.args_model(**kwargs)
@@ -211,7 +246,8 @@ class Tool(ABC):
         # loop 读到的是本轮空 sources 而非上一轮值）。
         self.sources = []
         self.last_usage = {"prompt_tokens": 0, "completion_tokens": 0}
-        return await self._execute(**validated.model_dump())
+        result = await self._execute(**validated.model_dump())
+        return normalize_tool_result(result, tool_name=self.name)
 
     def is_approval_required(self) -> bool:
         """D1: 工具是否需要用户审批。类属性或集中映射命中即返回 True。"""
@@ -301,13 +337,20 @@ class Tool(ABC):
         """检查 resume_id 是否属于当前 user。"""
         return await self._get_resume(resume_id) is not None
 
-    def to_openai_schema(self) -> dict:
+    def to_openai_schema(self, strict: bool | None = None) -> dict:
         """生成 OpenAI function calling 格式的工具定义。"""
+        parameters = self.args_model.model_json_schema()
+        use_strict = bool(
+            getattr(settings, "TOOL_CALL_STRICT", False) if strict is None else strict
+        )
+        if use_strict:
+            parameters = _strict_schema(parameters)
         return {
             "type": "function",
             "function": {
                 "name": self.name,
                 "description": self.description,
-                "parameters": self.args_model.model_json_schema(),
+                "parameters": parameters,
+                **({"strict": True} if use_strict else {}),
             },
         }

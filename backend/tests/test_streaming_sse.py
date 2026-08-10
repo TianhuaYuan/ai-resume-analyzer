@@ -250,6 +250,64 @@ async def test_agent_done_has_degraded_and_token_usage():
 
 
 @pytest.mark.asyncio
+async def test_agent_usage_has_one_quota_owner_and_shared_final_total():
+    """最终聚合 usage 同时驱动 QAHistory、quota 与 agent_done，quota 只写一次。"""
+    from services.react_agent.streaming import react_loop_stream
+
+    usage = {"prompt_tokens": 200, "completion_tokens": 80}
+
+    async def mock_loop(**kwargs):
+        await kwargs["event_callback"]({"type": "agent_done", "content": "答案"})
+        return _make_result(usage=usage)
+
+    with patch("services.react_agent.streaming.react_loop", side_effect=mock_loop), \
+         patch("services.react_agent.streaming.save_qa_placeholder", new_callable=AsyncMock) as mock_save, \
+         patch("services.react_agent.streaming.update_qa_answer", new_callable=AsyncMock) as mock_update, \
+         patch("services.token_quota.record_usage", new_callable=AsyncMock) as mock_quota:
+        mock_save.return_value = MagicMock(id=42)
+        events = [
+            event
+            async for event in react_loop_stream(
+                db=AsyncMock(), user_id=7, resume_id=1, question="测试"
+            )
+        ]
+
+    mock_quota.assert_awaited_once_with(7, 200, 80)
+    assert mock_update.await_args.kwargs["token_usage"] == usage
+    done = next(event for event in events if event["type"] == "agent_done")
+    assert done["token_usage"] == usage
+
+
+@pytest.mark.asyncio
+async def test_agent_missing_provider_usage_does_not_record_quota():
+    """provider 未返回 token 时保留零 usage，不虚构、不写 quota。"""
+    from services.react_agent.streaming import react_loop_stream
+
+    usage = {"prompt_tokens": 0, "completion_tokens": 0}
+
+    async def mock_loop(**kwargs):
+        await kwargs["event_callback"]({"type": "agent_done", "content": "降级答案"})
+        return _make_result(answer="降级答案", usage=usage)
+
+    with patch("services.react_agent.streaming.react_loop", side_effect=mock_loop), \
+         patch("services.react_agent.streaming.save_qa_placeholder", new_callable=AsyncMock) as mock_save, \
+         patch("services.react_agent.streaming.update_qa_answer", new_callable=AsyncMock) as mock_update, \
+         patch("services.token_quota.record_usage", new_callable=AsyncMock) as mock_quota:
+        mock_save.return_value = MagicMock(id=42)
+        events = [
+            event
+            async for event in react_loop_stream(
+                db=AsyncMock(), user_id=7, resume_id=1, question="测试"
+            )
+        ]
+
+    mock_quota.assert_not_awaited()
+    assert mock_update.await_args.kwargs["token_usage"] == usage
+    done = next(event for event in events if event["type"] == "agent_done")
+    assert done["token_usage"] == usage
+
+
+@pytest.mark.asyncio
 async def test_agent_done_degraded_when_tool_error():
     """agent_done 的 degraded=True 当 process_trace 含 tool_error。"""
     from services.react_agent.streaming import react_loop_stream
@@ -340,6 +398,7 @@ async def test_update_qa_answer_saves_db_trace_to_db():
 
     assert mock_record.process_trace == db_trace
     assert mock_record.status == "complete"
+    assert mock_record.token_usage == 150
 
 
 @pytest.mark.asyncio

@@ -222,6 +222,7 @@ async def generate_jd_scorecard(db, user_id: int, jd_text: str) -> dict:
             temperature=0.2,
             max_tokens=800,
             user_id=user_id,
+            scenario="resume_compare",
         )
         parsed = _parse_scorecard_json(raw)
         if parsed:

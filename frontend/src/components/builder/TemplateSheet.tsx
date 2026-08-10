@@ -49,7 +49,7 @@ function TemplateThumbnail({
   }, []);
 
   return (
-    <div ref={containerRef} className="w-full overflow-hidden bg-white">
+    <div ref={containerRef} className="paper-surface w-full overflow-hidden bg-white">
       <div style={{ width: A4_WIDTH_PX, height: A4_HEIGHT_PX, transform: `scale(${scale})`, transformOrigin: "top left" }}>
         <ResumeTemplateView modules={modules} style={{ ...style, template_id: templateId }} />
       </div>
@@ -110,7 +110,7 @@ export function TemplateSheet({
                     }`}
                   aria-pressed={isActive}
                 >
-                  <div className="aspect-[3/4] overflow-hidden relative bg-white">
+                  <div className="paper-surface aspect-[3/4] overflow-hidden relative bg-white">
                     <TemplateThumbnail templateId={t.id} modules={modules} style={style} />
                     {/* 选中角标 */}
                     {isActive && (
@@ -120,7 +120,7 @@ export function TemplateSheet({
                       </span>
                     )}
                   </div>
-                  <div className="px-2.5 py-2 flex items-center justify-between bg-white border-t border-[var(--color-border)]/60">
+                  <div className="paper-surface px-2.5 py-2 flex items-center justify-between bg-white border-t border-[var(--color-border)]/60">
                     <span className={`text-xs font-medium ${isActive ? "text-brand" : "text-[var(--color-text)]"}`}>
                       {t.name}
                     </span>

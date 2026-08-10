@@ -109,6 +109,15 @@ async def login(
     """
     user = await authenticate_user(db, data.email, data.password)
     tokens = create_tokens(user)
+    await write_audit_log(
+        db,
+        user_id=user.id,
+        action="login",
+        target_type="user",
+        target_id=str(user.id),
+        detail={"result": "success", "request_id": request.headers.get("X-Request-ID"), "ip": request.client.host if request.client else None},
+        ip=request.client.host if request.client else None,
+    )
     a_max, r_max = _cookie_max_age()
     set_auth_cookies(
         response,
@@ -188,6 +197,7 @@ def _is_admin(user: User) -> bool:
 
 @router.post("/admin/reset-password", response_model=AdminResetPasswordResponse)
 async def admin_reset_password_endpoint(
+    request: Request,
     data: AdminResetPasswordRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -203,6 +213,15 @@ async def admin_reset_password_endpoint(
         )
 
     new_password = await admin_reset_password(db, data.email)
+    await write_audit_log(
+        db,
+        user_id=current_user.id,
+        action="admin_reset_password",
+        target_type="user",
+        target_id=data.email,
+        detail={"result": "success", "request_id": request.headers.get("X-Request-ID"), "ip": request.client.host if request.client else None},
+        ip=request.client.host if request.client else None,
+    )
     return AdminResetPasswordResponse(email=data.email, new_password=new_password)
 
 

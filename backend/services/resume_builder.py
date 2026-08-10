@@ -450,6 +450,7 @@ async def translate_resume_modules(
             temperature=0.2,
             max_tokens=8000,
             user_id=user_id,
+            scenario="field_rewrite",
         )
         translated = _parse_translated_modules(raw)
     except Exception as e:

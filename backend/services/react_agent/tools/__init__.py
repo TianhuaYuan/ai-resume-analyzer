@@ -74,7 +74,7 @@ class DiagnoseResumeArgs(BaseModel):
 
 
 class CompareResumesArgs(BaseModel):
-    resume_ids: list[int] = Field(..., description="要对比的简历 ID 列表（至少 2 个）")
+    resume_ids: list[int] = Field(..., min_length=1, max_length=5, description="要对比的简历 ID 列表（1-5 个，可包含当前简历）")
 
 
 class RewriteStarArgs(BaseModel):
@@ -1956,9 +1956,9 @@ def get_tool_by_name(name: str) -> type[Tool] | None:
     return None
 
 
-def get_agent_schemas() -> list[dict]:
+def get_agent_schemas(strict: bool | None = None) -> list[dict]:
     """获取 /ask/agent 的 OpenAI function calling schema 列表（unified）。"""
-    return [tool_class().to_openai_schema() for tool_class in get_tools_for_agent()]
+    return [tool_class().to_openai_schema(strict=strict) for tool_class in get_tools_for_agent()]
 
 
 def get_builder_schemas() -> list[dict]:

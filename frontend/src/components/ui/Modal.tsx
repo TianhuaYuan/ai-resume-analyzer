@@ -74,7 +74,7 @@ export default function Modal({
           role="dialog"
           aria-modal="true"
           aria-label={typeof title === "string" ? title : undefined}
-          className="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6"
+          className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-2 sm:p-6"
         >
           {/* 遮罩 */}
           <motion.div
@@ -93,15 +93,15 @@ export default function Modal({
             exit="exit"
             style={{ transformOrigin: "center" }}
             className={twMerge(
-              "relative w-full rounded-modal bg-[var(--color-surface)] border border-[var(--color-border)] shadow-2xl shadow-black/20",
-              "max-h-[85vh] flex flex-col overflow-hidden",
+              "modal-mobile-sheet relative w-full rounded-modal bg-[var(--color-surface)] border border-[var(--color-border)] shadow-2xl shadow-black/20",
+              "max-h-[calc(100dvh-1rem)] sm:max-h-[85vh] flex flex-col overflow-hidden",
               SIZE_CLASSES[size],
               className,
             )}
           >
             {/* 标题栏 */}
             {(title || !hideClose) && (
-              <div className="flex items-center justify-between gap-3 px-6 pt-5 pb-3 shrink-0">
+              <div className="sticky top-0 z-10 flex items-center justify-between gap-3 px-6 pt-5 pb-3 shrink-0 bg-[var(--color-surface)]/95 backdrop-blur-sm">
                 <div className="min-w-0 text-base font-semibold text-[var(--color-text)] display-tight">
                   {title}
                 </div>

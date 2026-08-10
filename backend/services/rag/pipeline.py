@@ -21,6 +21,7 @@ from services.rag.clients import (
     knowledge_collection_name,
     reconnect_chroma,
 )
+from services.rag.provider_profiles import get_provider_profile
 from services.rag.metadata import META_ASSET_ID
 from services.vector_store import get_vector_store
 from services.rag.retrieval import (
@@ -194,11 +195,12 @@ def _build_llm_kwargs(
     *,
     model_name: str,
     messages: list[dict],
-    temperature: float,
+    temperature: float | None,
     max_tokens: int | None,
     tools: list[dict] | None,
-    thinking_enabled: bool,
-    thinking_effort: str,
+    thinking_enabled: bool | None,
+    thinking_effort: str | None,
+    scenario: str | None = None,
     stream: bool = False,
 ) -> dict:
     """组装 LLM 请求 kwargs（非流式和流式共用）。
@@ -215,21 +217,24 @@ def _build_llm_kwargs(
 
     语义：`thinking_enabled=False`（默认）→ 显式关闭思考；True → 开启 + effort。
     """
-    kwargs: dict = {
-        "model": model_name,
-        "messages": messages,
-        "temperature": temperature,
-    }
+    profile = get_provider_profile(scenario, use_tools=bool(tools))
+    effective_thinking = profile.thinking if thinking_enabled is None else thinking_enabled
+    effective_effort = thinking_effort or profile.effort
+    kwargs: dict = {"model": model_name, "messages": messages}
+    if temperature is not None:
+        kwargs["temperature"] = temperature
     if max_tokens is not None:
         kwargs["max_tokens"] = max_tokens
+    elif profile.max_tokens is not None:
+        kwargs["max_tokens"] = profile.max_tokens
     if tools:
         kwargs["tools"] = tools
     if model_name != settings.JUDGE_MODEL:
         kwargs["extra_body"] = {
-            "thinking": {"type": "enabled" if thinking_enabled else "disabled"}
+            "thinking": {"type": "enabled" if effective_thinking else "disabled"}
         }
-        if thinking_enabled:
-            kwargs["reasoning_effort"] = thinking_effort
+        if effective_thinking:
+            kwargs["reasoning_effort"] = effective_effort
     if stream:
         kwargs["stream"] = True
         kwargs["stream_options"] = {"include_usage": True}
@@ -260,8 +265,9 @@ async def llm_generate_with_tools(
     max_tokens: int | None = None,
     model: str | None = None,
     user_id: int | None = None,
-    thinking_enabled: bool = False,
-    thinking_effort: str = "high",
+    thinking_enabled: bool | None = None,
+    thinking_effort: str | None = None,
+    scenario: str | None = "tool_call",
 ) -> LLMToolResponse:
     """带 tools + thinking 的 LLM 调用（非流式）。
 
@@ -273,7 +279,7 @@ async def llm_generate_with_tools(
         model: 模型选择，'judge' 使用 JUDGE_MODEL
         user_id: 传入时记录 LLM usage
         thinking_enabled: 是否启用 thinking/reasoning
-        thinking_effort: thinking 努力程度 (low/medium/high)
+        thinking_effort: thinking 努力程度 (low/high/max)
 
     Returns:
         LLMToolResponse: content + tool_calls + reasoning_content + usage
@@ -287,6 +293,7 @@ async def llm_generate_with_tools(
         tools=tools,
         thinking_enabled=thinking_enabled,
         thinking_effort=thinking_effort,
+        scenario=scenario,
     )
     try:
         response = await _call_completion_with_retry(client, kwargs, model=model)
@@ -333,8 +340,9 @@ async def llm_generate_with_tools_stream(
     max_tokens: int | None = None,
     model: str | None = None,
     user_id: int | None = None,
-    thinking_enabled: bool = False,
-    thinking_effort: str = "high",
+    thinking_enabled: bool | None = None,
+    thinking_effort: str | None = None,
+    scenario: str | None = "tool_call",
 ):
     """带 tools + thinking 的流式 LLM 调用。
 
@@ -354,6 +362,7 @@ async def llm_generate_with_tools_stream(
         tools=tools,
         thinking_enabled=thinking_enabled,
         thinking_effort=thinking_effort,
+        scenario=scenario,
         stream=True,
     )
     # P0-2：流创建阶段接入重试 + 熔断（尚未产出 chunk，重试安全）。
@@ -464,6 +473,9 @@ async def llm_generate(
     max_tokens: int | None = None,
     model: str | None = None,
     user_id: int | None = None,
+    thinking_enabled: bool | None = None,
+    thinking_effort: str | None = None,
+    scenario: str | None = "field_rewrite",
 ) -> str:
     """调 Chat API 生成回答。
 
@@ -475,25 +487,19 @@ async def llm_generate(
     """
     client = get_chat_client()
     model_name = model or settings.CHAT_MODEL
-    kwargs = {
-        "model": model_name,
-        "messages": [
+    kwargs = _build_llm_kwargs(
+        model_name=model_name,
+        messages=[
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
-    }
-    # temperature=None → 不传该参数（推理模型如 deepseek-v4-flash / qwen 深度思考
-    # 对 temperature 会 400 拒绝或忽略；None 时让服务端用模型默认值）
-    if temperature is not None:
-        kwargs["temperature"] = temperature
-    if max_tokens is not None:
-        kwargs["max_tokens"] = max_tokens
-    # thinking 模式治理：DeepSeek 思考模式默认打开（effort=high），本函数是
-    # 结构化任务（反解析/改写/翻译/检查/意图识别等）主力，纯格式化输出无需
-    # 思考，显式关闭以提速降 token（详见 _build_llm_kwargs 注释）。
-    # judge 模型（评审模型）不支持该参数，跳过。
-    if model_name != settings.JUDGE_MODEL:
-        kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
+        temperature=temperature,
+        max_tokens=max_tokens,
+        tools=None,
+        thinking_enabled=thinking_enabled,
+        thinking_effort=thinking_effort,
+        scenario=scenario,
+    )
     # P0-2：接入 with_retry（Full Jitter + 错误分类）+ 熔断器。
     # max_retries=1 提供一次重试保护；调用方若另有 with_retry 包裹（如
     # rewrite_query），外层仍会兜底，不构成有害的双重重试（内层先耗尽）。
@@ -523,6 +529,9 @@ async def _llm_generate_stream(
     user: str,
     temperature: float = 0.1,
     user_id: int | None = None,
+    thinking_enabled: bool | None = None,
+    thinking_effort: str | None = None,
+    scenario: str | None = "field_rewrite",
 ):
     """流式调 Chat API（模型由 settings.CHAT_MODEL 决定），逐 token yield delta text。
 
@@ -533,18 +542,23 @@ async def _llm_generate_stream(
     """
     client = get_chat_client()
     # P0-2：流创建阶段接入重试 + 熔断（未产出 chunk，重试安全）。
+    kwargs = _build_llm_kwargs(
+        model_name=settings.CHAT_MODEL,
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        temperature=temperature,
+        max_tokens=None,
+        tools=None,
+        thinking_enabled=thinking_enabled,
+        thinking_effort=thinking_effort,
+        scenario=scenario,
+        stream=True,
+    )
     stream = await _call_completion_with_retry(
         client,
-        {
-            "model": settings.CHAT_MODEL,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            "temperature": temperature,
-            "stream": True,
-            "stream_options": {"include_usage": True},  # 请求返回 token 使用量
-        },
+        kwargs,
         model=None,
     )
     async for chunk in stream:

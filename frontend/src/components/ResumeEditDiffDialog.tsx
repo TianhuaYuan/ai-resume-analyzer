@@ -966,6 +966,9 @@ export default function ResumeEditDiffDialog({
 
         {/* 内容区 */}
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
+          <div className="rounded-list border border-brand/20 bg-brand/5 px-3 py-2 text-xs text-[var(--color-text-secondary)]">
+            左侧是表单当前内容（草稿/完成态），右侧是 LLM 读取并生成后写回的内容；两者可能存在差异，请确认后再保存。
+          </div>
           {loading ? (
             <div className="flex flex-col items-center justify-center py-16">
               <span className="inline-block w-6 h-6 rounded-full border-2 border-brand border-t-transparent animate-spin mb-3" />

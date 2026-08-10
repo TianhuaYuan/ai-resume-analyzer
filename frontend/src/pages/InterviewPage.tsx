@@ -157,22 +157,40 @@ function scoreLabel(score: number): string {
  *
  * 支持标准形状：
  *   { overall_score: 72, competency_scores: [{competency, score}], weak_competencies: [...], notes }
- * 兼容简写 { overall: 72, weak: [...], strong: [...] }；未知形状兜底 JSON 折叠展示。
+ * 兼容简写 { overall: 72, weak: [...], strong: [...] }；未知字段也以可读字段卡展示。
  */
 function ScorecardView({ scorecard }: { scorecard: Record<string, unknown> }) {
+  const formatValue = (value: unknown): string => {
+    if (Array.isArray(value)) return value.map((item) => formatValue(item)).join("、");
+    if (value && typeof value === "object") {
+      return Object.entries(value as Record<string, unknown>)
+        .map(([key, item]) => `${key}：${formatValue(item)}`)
+        .join("；");
+    }
+    if (value === null || value === undefined || value === "") return "未填写";
+    return String(value);
+  };
+
   const overall =
-    (typeof scorecard.overall_score === "number" && scorecard.overall_score) ||
-    (typeof scorecard.overall === "number" && (scorecard.overall as number)) ||
-    null;
+    typeof scorecard.overall_score === "number"
+      ? scorecard.overall_score
+      : typeof scorecard.overall === "number"
+      ? scorecard.overall
+      : null;
   const competencies = Array.isArray(scorecard.competency_scores)
-    ? (scorecard.competency_scores as Record<string, unknown>[])
+    ? scorecard.competency_scores.filter(
+        (item): item is Record<string, unknown> =>
+          item !== null && typeof item === "object" && !Array.isArray(item),
+      )
     : [];
   const weak = Array.isArray(scorecard.weak_competencies)
-    ? (scorecard.weak_competencies as string[])
+    ? scorecard.weak_competencies.map(formatValue)
     : Array.isArray(scorecard.weak)
-    ? (scorecard.weak as string[])
+    ? scorecard.weak.map(formatValue)
     : [];
   const notes = typeof scorecard.notes === "string" ? scorecard.notes : "";
+  const knownKeys = new Set(["overall_score", "overall", "competency_scores", "weak_competencies", "weak", "notes"]);
+  const extraEntries = Object.entries(scorecard).filter(([key]) => !knownKeys.has(key));
 
   return (
     <div className="rounded-list bg-[var(--color-bg-secondary)]/60 border border-[var(--color-border)] p-4 mb-3 space-y-4">
@@ -209,7 +227,7 @@ function ScorecardView({ scorecard }: { scorecard: Record<string, unknown> }) {
       {competencies.length > 0 && (
         <div className="space-y-2">
           {competencies.map((c, idx) => {
-            const name = (c.competency ?? c.name ?? `维度 ${idx + 1}`) as string;
+            const name = formatValue(c.competency ?? c.name ?? `维度 ${idx + 1}`);
             const score = c.score as number | undefined;
             if (typeof score !== "number") return null;
             return (
@@ -236,14 +254,18 @@ function ScorecardView({ scorecard }: { scorecard: Record<string, unknown> }) {
         </p>
       )}
 
-      {/* 未知字段兜底（高级用户可展开原始 JSON） */}
-      {overall === null && competencies.length === 0 && (
-        <details className="text-[11px] text-[var(--color-text-muted)]">
-          <summary className="cursor-pointer text-[var(--color-text-secondary)]">查看原始评分数据</summary>
-          <pre className="mt-2 whitespace-pre-wrap break-words font-mono max-h-40 overflow-y-auto">
-            {JSON.stringify(scorecard, null, 2)}
-          </pre>
-        </details>
+      {extraEntries.length > 0 && (
+        <div className="grid gap-2 sm:grid-cols-2">
+          {extraEntries.map(([key, value]) => (
+            <div key={key} className="rounded-action border border-[var(--color-border)] bg-white/60 px-3 py-2">
+              <div className="text-[10px] text-[var(--color-text-muted)] mb-0.5">{key.replace(/[_-]/g, " ")}</div>
+              <div className="text-xs text-[var(--color-text)] whitespace-pre-wrap break-words">{formatValue(value)}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      {overall === null && competencies.length === 0 && extraEntries.length === 0 && (
+        <p className="text-xs text-[var(--color-text-muted)]">暂无可展示的评分维度。</p>
       )}
     </div>
   );
@@ -530,7 +552,7 @@ export default function InterviewPage() {
   return (
     <>
       <div className="min-h-screen bg-[var(--color-bg)]">
-        <div className="max-w-7xl mx-auto px-6 md:px-8 lg:px-12 py-8">
+        <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 md:px-8 lg:px-12 py-6 sm:py-8">
           {/* ── 标题区 ── */}
           <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
             <div>
@@ -861,17 +883,17 @@ export default function InterviewPage() {
       {/* ── 新建面试弹窗 ── */}
       {createOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-2 sm:p-4 bg-black/50 backdrop-blur-sm"
           onClick={closeCreate}
           role="dialog"
           aria-modal="true"
           aria-label="新建面试记录"
         >
           <div
-            className="w-full max-w-xl rounded-input bg-[var(--color-bg)] border border-[var(--color-border)] p-5 shadow-2xl max-h-[88vh] overflow-y-auto"
+            className="modal-mobile-sheet relative w-full max-w-xl rounded-input bg-[var(--color-surface)] border border-[var(--color-border)] p-5 shadow-2xl max-h-[calc(100dvh-1rem)] sm:max-h-[88vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between mb-5">
+            <div className="sticky top-0 z-10 -mx-5 -mt-5 mb-5 px-5 pt-5 pb-3 flex items-center justify-between bg-[var(--color-surface)]/95 backdrop-blur-sm">
               <div className="min-w-0">
                 <h3 className="text-base font-semibold text-[var(--color-text)]">
                   新建面试记录
@@ -1043,17 +1065,17 @@ export default function InterviewPage() {
       {/* ── 详情弹窗 ── */}
       {detailId !== null && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-2 sm:p-4 bg-black/50 backdrop-blur-sm"
           onClick={closeDetail}
           role="dialog"
           aria-modal="true"
           aria-label="面试详情"
         >
           <div
-            className="w-full max-w-2xl rounded-input bg-[var(--color-bg)] border border-[var(--color-border)] p-5 shadow-2xl max-h-[88vh] overflow-y-auto"
+            className="modal-mobile-sheet relative w-full max-w-2xl rounded-input bg-[var(--color-surface)] border border-[var(--color-border)] p-5 shadow-2xl max-h-[calc(100dvh-1rem)] sm:max-h-[88vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-start justify-between gap-3 mb-4">
+            <div className="sticky top-0 z-10 -mx-5 -mt-5 mb-4 px-5 pt-5 pb-3 flex items-start justify-between gap-3 bg-[var(--color-surface)]/95 backdrop-blur-sm">
               <div className="min-w-0">
                 <h3 className="text-base font-semibold text-[var(--color-text)] truncate">
                   {detail

@@ -10,6 +10,7 @@ from fastapi import (
     HTTPException,
     Query,
     Response,
+    Request,
     UploadFile,
     status,
 )
@@ -26,6 +27,7 @@ from core.security import detect_prompt_injection
 from models.resume import Resume
 from models.resume_module import ResumeModule
 from models.user import User
+from services.audit_log_service import write_audit_log
 from schemas.resume import (
     AnalyzeRequest,
     AnalyzeResponse,
@@ -496,11 +498,20 @@ async def get_builder_resume(
 @router.delete("/{resume_id}", status_code=204)
 async def delete_resume(
     resume_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """删简历。先删 MySQL（CASCADE 清历史）→ 清 Chroma → 删文件 → 清 Embedding 缓存。"""
     await resume_service.delete_resume(db, resume_id, current_user.id)
+    await write_audit_log(
+        db,
+        user_id=current_user.id,
+        action="delete_resume",
+        target_type="resume",
+        target_id=str(resume_id),
+        detail={"result": "success", "request_id": request.headers.get("X-Request-ID"), "ip": request.client.host if request.client else None},
+    )
     return None
 
 
@@ -1060,6 +1071,14 @@ _AI_CEILING_CONSTRAINT = (
     "不得把推断内容写成既定事实。\n"
 )
 
+_AI_ITEM_SCOPE_PROMPT = (
+    "条目范围（必须遵守）：本次只处理当前传入的单个条目。允许的条目类型为："
+    "basic_info（姓名/联系方式/求职目标）、summary（个人简介）、experience（单段工作经历）、"
+    "education（单段教育经历）、project（单个项目）、skills（技能列表）、"
+    "certifications（证书）、achievements（单条成就）或 custom（用户自定义条目）。\n"
+    "不得输出其它条目、不得调整字段顺序、不得生成标题或 Markdown 包装；只返回当前条目的文本。\n"
+)
+
 
 async def _load_module_fact_source(
     resume_id: int,
@@ -1156,6 +1175,7 @@ async def ai_optimize(
         "使其更专业、更有吸引力。要求：\n"
         "1. 使用更强的动词（如'深耕'代替'专注于'，'主导'代替'参与'）\n"
         "2. 结构更清晰，适当使用分段或要点\n"
+        + _AI_ITEM_SCOPE_PROMPT
         + _AI_FIELD_ISOLATION_PROMPT
         + _AI_CEILING_CONSTRAINT
         + "7. 语言更精炼，去除冗余表述\n"
@@ -1181,6 +1201,7 @@ async def ai_optimize(
             temperature=0.3,
             max_tokens=800,  # 条目级文本较短，限制输出防模型超长生成拖慢响应
             user_id=current_user.id,
+            scenario="field_rewrite",
         )
         return {"optimized_text": result, "original_text": body.text}
     except Exception as e:
@@ -1221,7 +1242,8 @@ async def ai_check(
         "1. 量化问题：关键成就缺少数据支撑（如性能指标、业务价值、效率提升比例）\n"
         "2. 描述模糊：技术栈罗列但未说明解决的核心问题或独特架构方案\n"
         "3. 角色不清：个人贡献与团队协作边界模糊，动词强度不一致\n\n"
-        "请以 JSON 格式返回结果，格式如下：\n"
+        + _AI_ITEM_SCOPE_PROMPT
+        + "请以 JSON 格式返回结果，格式如下：\n"
         '{"issues": [{"severity": "high|medium|low", "category": "问题分类", "description": "具体问题描述", "field": "所属字段"}]}\n\n'
         "severity 取值：high（红色，严重影响）、medium（黄色，建议改进）、low（绿色，小问题）\n"
         "category 使用简洁中文标签，如'量化问题'、'描述模糊'、'角色不清'\n"
@@ -1243,6 +1265,7 @@ async def ai_check(
             temperature=0.2,
             max_tokens=500,  # 检查只输出 JSON issues，限制输出防超长生成
             user_id=current_user.id,
+            scenario="field_rewrite",
         )
 
         # 尝试解析 JSON
@@ -1295,6 +1318,7 @@ async def ai_rewrite(
         "要求：\n"
         "1. 严格遵循用户的改写指令\n"
         "2. 保留原文的核心事实和技术栈，不编造数据\n"
+        + _AI_ITEM_SCOPE_PROMPT
         + _AI_FIELD_ISOLATION_PROMPT
         + _AI_CEILING_CONSTRAINT
         + "7. 直接输出改写后的文本，不要加任何解释或前缀\n"
@@ -1320,6 +1344,7 @@ async def ai_rewrite(
             temperature=0.4,
             max_tokens=800,  # 条目级文本较短，限制输出防模型超长生成拖慢响应
             user_id=current_user.id,
+            scenario="field_rewrite",
         )
         return {"rewritten_text": result, "original_text": body.text}
     except Exception as e:
@@ -1355,7 +1380,7 @@ async def compare_resumes(
 ):
     """多简历对比分析。
 
-    对比 2-5 份简历的技能和项目维度。
+    对比 1-5 份简历的技能和项目维度（可包含当前简历）。
     错误码：
     - 401 未登录
     - 404 任一简历不存在或非本人

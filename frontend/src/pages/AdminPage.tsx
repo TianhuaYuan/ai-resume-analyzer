@@ -72,6 +72,28 @@ function StatsSection() {
       .catch((e) => setError(e instanceof Error ? e.message : "加载失败"));
   }, []);
 
+  useEffect(() => {
+    let disposed = false;
+    const refresh = () => {
+      if (document.hidden) return;
+      getSystemStats().then((value) => {
+        if (!disposed) {
+          setStats(value);
+          setError("");
+        }
+      }).catch(() => {
+        // 保留上一次成功数据，避免短暂网络抖动覆盖概况卡片。
+      });
+    };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      disposed = true;
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, []);
+
   if (error) {
     return <ErrorBox message={error} />;
   }
@@ -84,6 +106,8 @@ function StatsSection() {
     { label: "简历总数", value: stats.total_resumes, icon: Database, color: "text-success" },
     { label: "问答记录", value: stats.total_qa_history, icon: MessagesSquare, color: "text-sky-500" },
     { label: "用户反馈", value: stats.total_feedback, icon: MessageSquareText, color: "text-warning" },
+    { label: "投递记录", value: stats.total_job_applications, icon: Database, color: "text-violet-500" },
+    { label: "面试记录", value: stats.total_interviews, icon: MessagesSquare, color: "text-rose-500" },
   ];
 
   return (

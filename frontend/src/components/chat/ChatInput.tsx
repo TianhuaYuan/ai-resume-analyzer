@@ -150,9 +150,9 @@ export default function ChatInput({
         <div className="rounded-3xl bg-white/80 backdrop-blur-xl border border-[var(--color-border)]
           shadow-sm
           focus-within:ring-4 focus-within:ring-brand/15 focus-within:border-brand/40
-          transition-all duration-200 overflow-hidden">
+          transition-all duration-200 overflow-visible">
           {/* 上方：多行输入区 */}
-          <div className="px-4 pt-3.5">
+          <div className="relative px-4 pt-3.5">
             <textarea
               ref={textareaRef}
               value={value}
@@ -208,7 +208,7 @@ export default function ChatInput({
 
             {/* P4-3: 斜杠命令弹出层（输入 / 前缀时出现） */}
             {slashActive && slashMatches.length > 0 && (
-              <div className="absolute z-30 mt-1 w-64 max-h-56 overflow-y-auto rounded-list
+              <div className="absolute z-50 left-4 right-4 bottom-full mb-2 max-h-56 overflow-y-auto rounded-list
                 bg-[var(--color-surface)] border border-[var(--color-border)] shadow-xl
                 animate-fade-in-up motion-reduce:animate-none">
                 <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider

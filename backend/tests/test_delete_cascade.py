@@ -313,13 +313,8 @@ async def test_delete_resume_api_returns_204(
 
 
 @pytest.mark.asyncio
-async def test_delete_resume_keeps_db_when_external_cleanup_fails(registered_user: dict):
-    """P2-4: 外部资源清理失败时，DB 中的 resume 行应保留，便于用户重试删除。
-
-    顺序修正核心收益：先清外部资源 → 再删 DB。若 clear_resume_vectors 抛异常，
-    delete_resume 应向上抛出，db.delete 不会执行，resume 行仍在 DB 中，
-    用户可再次发起删除请求（重试）。
-    """
+async def test_delete_resume_succeeds_when_external_cleanup_fails(registered_user: dict):
+    """外部资源清理失败不应阻塞已提交的 DB 删除，后续可后台重试清理。"""
     resume_id, _ = await _insert_resume_with_qa(registered_user["id"])
 
     with patch(
@@ -328,13 +323,9 @@ async def test_delete_resume_keeps_db_when_external_cleanup_fails(registered_use
         side_effect=Exception("ChromaDB 不可用"),
     ):
         async with AsyncSessionTest() as session:
-            with pytest.raises(Exception, match="ChromaDB 不可用"):
-                await delete_resume(session, resume_id, registered_user["id"])
+            await delete_resume(session, resume_id, registered_user["id"])
 
-    # DB 中的 resume 行应仍然存在（未被删除）
-    assert await _resume_exists(resume_id), (
-        "外部清理失败时 DB 不应删除 resume，用户需能重试删除"
-    )
+    assert not await _resume_exists(resume_id)
 
 
 @pytest.mark.asyncio

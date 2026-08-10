@@ -9,7 +9,7 @@ FastAPI + SQLAlchemy 风格。错误码统一走 AppException（core/exceptions.
 
 import logging
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_current_user
@@ -26,6 +26,7 @@ from schemas.interview import (
     ScorecardUpdateResponse,
 )
 from services import asset_service, interview_service
+from services.audit_log_service import write_audit_log
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,7 @@ router = APIRouter(prefix="/interviews", tags=["interviews"])
 @router.post("", response_model=InterviewResponse, status_code=status.HTTP_201_CREATED)
 async def create_interview(
     body: InterviewCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -59,6 +61,7 @@ async def create_interview(
         notes=body.notes,
         scorecard=body.scorecard,
     )
+    await write_audit_log(db, user_id=current_user.id, action="interview_create", target_type="interview", target_id=str(session.id), detail={"result": "success", "request_id": request.headers.get("X-Request-ID"), "reviewed": bool(body.scorecard)}, ip=request.client.host if request.client else None)
     return InterviewResponse.model_validate(session)
 
 
@@ -119,6 +122,7 @@ async def get_interview(
 @router.delete("/{interview_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_interview(
     interview_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -129,6 +133,7 @@ async def delete_interview(
     - 404 记录不存在或非本人
     """
     await interview_service.delete_interview(db, current_user.id, interview_id)
+    await write_audit_log(db, user_id=current_user.id, action="interview_delete", target_type="interview", target_id=str(interview_id), detail={"result": "success", "request_id": request.headers.get("X-Request-ID")}, ip=request.client.host if request.client else None)
     return None
 
 
@@ -136,6 +141,7 @@ async def delete_interview(
 async def update_scorecard(
     interview_id: int,
     body: InterviewUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -149,6 +155,7 @@ async def update_scorecard(
     session = await interview_service.update_scorecard(
         db, current_user.id, interview_id, body.scorecard, notes=body.notes
     )
+    await write_audit_log(db, user_id=current_user.id, action="interview_scorecard", target_type="interview", target_id=str(session.id), detail={"result": "success", "request_id": request.headers.get("X-Request-ID")}, ip=request.client.host if request.client else None)
     weak = interview_service.derive_weak_competencies(session.scorecard)
     return ScorecardUpdateResponse(
         interview_id=session.id,
@@ -166,6 +173,7 @@ async def update_scorecard(
 )
 async def archive_interview(
     interview_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -189,4 +197,5 @@ async def archive_interview(
         title=f"{session.company} {session.position} 面试记录",
         content=asset_service.build_interview_asset_content(session),
     )
+    await write_audit_log(db, user_id=current_user.id, action="interview_archive", target_type="interview", target_id=str(interview_id), detail={"result": "success", "request_id": request.headers.get("X-Request-ID")}, ip=request.client.host if request.client else None)
     return AssetResponse.model_validate(asset)

@@ -12,6 +12,8 @@ from models.qa_history import QAHistory
 from models.resume import Resume
 from models.user import User
 from models.user_feedback import UserFeedback
+from models.job_application import JobApplication
+from models.interview_session import InterviewSession
 
 # 18 套内置模板（与 backend/templates/*.html 对齐，由 generate-templates 生成）
 # id = 文件名（template_id），name/description 为管理员后台展示用
@@ -57,7 +59,8 @@ async def list_audit_logs(
 
     total = (await db.execute(count_stmt)).scalar_one()
 
-    stmt = stmt.order_by(AuditLog.created_at.desc()).limit(limit).offset(offset)
+    # created_at 可能精确到秒；用 id 作为并列时的稳定排序，避免分页时重复/漏项。
+    stmt = stmt.order_by(AuditLog.created_at.desc(), AuditLog.id.desc()).limit(limit).offset(offset)
     items = (await db.execute(stmt)).scalars().all()
     return items, total
 
@@ -98,6 +101,8 @@ async def get_system_stats(db: AsyncSession) -> dict[str, int]:
         "total_resumes": await _count(Resume),
         "total_qa_history": await _count(QAHistory),
         "total_feedback": await _count(UserFeedback),
+        "total_job_applications": await _count(JobApplication),
+        "total_interviews": await _count(InterviewSession),
     }
 
 

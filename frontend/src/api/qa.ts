@@ -237,10 +237,13 @@ export interface AgentSSEEvent {
     | "error"
     // D1 工具审批门：approval_request 请求用户确认；approval_decision 回执决议
     | "approval_request"
-    | "approval_decision";
+    | "approval_decision"
+    | "injection"
+    | "turn_restarting";
 
   // ── agent_start ──
   resume_id?: number;
+  turn_id?: string;
   tools?: { name: string; description: string }[];
 
   // ── agent_thought ──
@@ -541,9 +544,9 @@ export async function injectToActiveTurn(
   resumeId: number,
   content: string,
   conversationId?: number,
-): Promise<{ injected: boolean }> {
+): Promise<{ injected: boolean; status: "accepted" | "restarting" | "queued" | "failed"; turn_id: string | null }> {
   return api.post(`/api/v1/qa/${resumeId}/inject`, {
     content,
     conversation_id: conversationId ?? null,
-  }) as Promise<{ injected: boolean }>;
+    }) as Promise<{ injected: boolean; status: "accepted" | "restarting" | "queued" | "failed"; turn_id: string | null }>;
 }

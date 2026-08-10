@@ -90,11 +90,11 @@ export function FieldAIMenu({
   return (
     <div className="space-y-2">
       {/* 操作按钮：优化 / 检查 / 改写（直接平铺，不折叠） */}
-      <div className="flex items-center gap-1.5 flex-wrap">
+      <div className="grid grid-cols-3 items-center gap-1.5">
         <button
           onClick={handleOptimize}
           disabled={disabled || loading}
-          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium
+          className="w-full inline-flex items-center justify-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium
             bg-brand/10 text-brand border border-brand/30 hover:brightness-125
             disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer"
           aria-label="优化此条内容"
@@ -105,7 +105,7 @@ export function FieldAIMenu({
         <button
           onClick={handleCheck}
           disabled={disabled || loading}
-          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium
+          className="w-full inline-flex items-center justify-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium
             bg-success/10 text-success border border-success/30 hover:brightness-110
             disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer"
           aria-label="检查此条内容"
@@ -116,7 +116,7 @@ export function FieldAIMenu({
         <button
           onClick={() => setRewriteOpen((v) => !v)}
           disabled={disabled || loading}
-          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium
+          className={`w-full inline-flex items-center justify-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium
             transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed
             ${rewriteOpen
               ? "bg-brand/10 text-brand border border-brand/30"

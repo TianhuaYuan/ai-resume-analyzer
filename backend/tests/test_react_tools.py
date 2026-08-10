@@ -99,6 +99,12 @@ class TestSchemaGeneration:
             schema = tool_class().to_openai_schema()
             assert schema["function"]["name"] == tool_class.name
 
+    def test_schemas_enable_strict_closed_world_validation(self):
+        for schema in get_agent_schemas(strict=True):
+            function = schema["function"]
+            assert function["strict"] is True
+            assert function["parameters"].get("additionalProperties") is False
+
 
 # ═══════════════════════════════════════════════════════════════
 # 3. get_tool_by_name 覆盖全部 23 工具
@@ -410,3 +416,13 @@ class TestExecuteToolCallErrors:
         # 但 diagnose_resume 需要 resume_id → Pydantic 校验失败
         assert is_error is True
         assert "JSON" not in result and "解析" not in result
+# T9: provider strict schema + scalar arguments are rejected at the boundary.
+@pytest.mark.asyncio
+async def test_scalar_tool_arguments_are_rejected():
+    from services.react_agent.loop import _execute_tool_call
+    from services.rag.pipeline import ToolCall
+
+    tc = ToolCall(id="tc1", name="diagnose_resume", arguments="[]")
+    result, is_error, _, _ = await _execute_tool_call(tc, AsyncMock(), user_id=1)
+    assert is_error is True
+    assert "JSON object" in result or "JSON" in result

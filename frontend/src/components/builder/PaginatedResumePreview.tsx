@@ -222,7 +222,7 @@ export function PaginatedResumePreview({
       {/* 首次测量前的占位骨架 */}
       {!measured && (
         <div
-          className="bg-white shadow-lg rounded-sm animate-pulse"
+          className="paper-surface bg-white shadow-lg rounded-sm animate-pulse"
           style={{ width: A4_WIDTH_PX * zoom, height: A4_HEIGHT_PX * zoom }}
         />
       )}
@@ -236,7 +236,7 @@ export function PaginatedResumePreview({
               第 {pageIndex + 1} / {pageCount} 页
             </figcaption>
             <div
-              className="resume-page bg-white shadow-lg rounded-sm overflow-hidden"
+              className="paper-surface resume-page bg-white shadow-lg rounded-sm overflow-hidden"
               data-resume-page={pageIndex + 1}
               style={{ width: A4_WIDTH_PX * zoom, height: A4_HEIGHT_PX * zoom }}
             >

@@ -335,9 +335,8 @@ class TestLLMGenerateWithToolsNonStream:
             )
 
         call_kwargs = client.chat.completions.create.call_args.kwargs
-        assert "thinking" in call_kwargs
-        assert call_kwargs["thinking"]["enabled"] is True
-        assert call_kwargs["thinking"]["effort"] == "high"
+        assert call_kwargs["extra_body"]["thinking"]["type"] == "enabled"
+        assert call_kwargs["reasoning_effort"] == "high"
 
     @pytest.mark.asyncio
     async def test_thinking_param_not_sent_when_disabled(self):
@@ -355,7 +354,8 @@ class TestLLMGenerateWithToolsNonStream:
             )
 
         call_kwargs = client.chat.completions.create.call_args.kwargs
-        assert "thinking" not in call_kwargs
+        assert call_kwargs["extra_body"]["thinking"]["type"] == "disabled"
+        assert "reasoning_effort" not in call_kwargs
 
 
 # ═══════════════════════════════════════════════════════════
@@ -597,8 +597,8 @@ class TestLLMGenerateWithToolsStream:
                 pass
 
         call_kwargs = client.chat.completions.create.call_args.kwargs
-        assert "thinking" in call_kwargs
-        assert call_kwargs["thinking"]["effort"] == "medium"
+        assert call_kwargs["extra_body"]["thinking"]["type"] == "enabled"
+        assert call_kwargs["reasoning_effort"] == "medium"
 
     @pytest.mark.asyncio
     async def test_stream_include_usage_always_sent(self):

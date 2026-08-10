@@ -45,14 +45,24 @@ async def test_compare_requires_resume_ids(client: AsyncClient, auth_headers: di
 
 
 @pytest.mark.asyncio
-async def test_compare_requires_at_least_two_resumes(client: AsyncClient, auth_headers: dict):
-    """至少需要 2 份简历。"""
-    resp = await client.post(
-        "/api/v1/resumes/compare",
-        json={"resume_ids": [1], "dimensions": ["skills"]},
-        headers=auth_headers,
+async def test_compare_accepts_one_resume(client: AsyncClient, auth_headers: dict, registered_user: dict):
+    """当前简历已包含在上下文中，因此允许仅选择 1 份。"""
+    resume_id = await _insert_resume(
+        registered_user["id"], filename="single-compare.pdf", parsed_text="Python"
     )
-    assert resp.status_code == 422
+    from unittest.mock import AsyncMock, patch
+
+    with patch(
+        "services.analyze_service.llm_generate",
+        new_callable=AsyncMock,
+        return_value="分析结果",
+    ):
+        resp = await client.post(
+            "/api/v1/resumes/compare",
+            json={"resume_ids": [resume_id], "dimensions": ["skills"]},
+            headers=auth_headers,
+        )
+    assert resp.status_code == 200
 
 
 @pytest.mark.asyncio

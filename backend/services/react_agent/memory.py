@@ -223,17 +223,21 @@ class ContextCompactor:
 
         # 构建压缩后的消息列表：摘要作为 system 消息 + 保留的最近消息
         # 注意：不移除原有的 system 消息（它们包含角色指令等重要信息）
-        compressed_messages = [
-            {
-                "role": "system",
-                "content": (
-                    "# 上下文摘要（已压缩）\n"
-                    "以下是之前对话的结构化摘要，用于节省上下文窗口。\n\n"
-                    f"{summary}"
-                ),
-            }
-        ]
-        compressed_messages.extend(to_keep)
+        summary_block = (
+            "# 上下文摘要（已压缩）\n"
+            "以下是之前对话的结构化摘要，用于节省上下文窗口。\n\n"
+            f"{summary}"
+        )
+        # System 指令（角色约束、工具安全规则）不可被摘要替换；将摘要追加到
+        # 第一条 system，其余 system 保持原顺序，再接最近的非 system 消息。
+        kept_systems = [m for m in messages if m.get("role") == "system"]
+        if kept_systems:
+            first_system = dict(kept_systems[0])
+            first_system["content"] = f"{first_system.get('content', '')}\n\n{summary_block}"
+            compressed_messages = [first_system, *[dict(m) for m in kept_systems[1:]]]
+        else:
+            compressed_messages = [{"role": "system", "content": summary_block}]
+        compressed_messages.extend(m for m in to_keep if m.get("role") != "system")
 
         before_tokens = self.estimate_tokens(messages)
         after_tokens = self.estimate_tokens(compressed_messages)
@@ -484,6 +488,7 @@ async def compact_l1_context(
     messages: list[dict],
     llm_caller=None,
     max_tokens: int = DEFAULT_L1_BUDGET,
+    compactor: ContextCompactor | None = None,
 ) -> list[dict]:
     """结构化压缩 L1 上下文（升级路径，优先于手动逐出）。
 
@@ -504,7 +509,7 @@ async def compact_l1_context(
     Returns:
         压缩后的消息列表
     """
-    compactor = ContextCompactor(context_window=max_tokens)
+    compactor = compactor or ContextCompactor(context_window=max_tokens)
 
     if not compactor.should_compact(messages):
         return messages

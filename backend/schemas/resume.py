@@ -139,7 +139,7 @@ class CompareRequest(BaseModel):
     """多简历对比请求。"""
 
     resume_ids: list[int] = Field(
-        ..., min_length=2, max_length=5, description="简历 ID 列表，2-5 个"
+        ..., min_length=1, max_length=5, description="简历 ID 列表，1-5 个（可包含当前简历）"
     )
     dimensions: list[CompareDimension] = Field(
         default_factory=lambda: ["summary", "skills", "experience", "score", "projects"],

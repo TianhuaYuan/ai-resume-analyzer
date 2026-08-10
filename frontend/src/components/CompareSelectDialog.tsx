@@ -4,18 +4,18 @@ import { listResumes, type ResumeItem } from "../api/resumes";
 
 interface CompareSelectDialogProps {
   open: boolean;
-  currentResumeId: number; // 当前简历 ID，排除在列表外
+  currentResumeId: number; // 当前简历 ID，可作为对比输入
   onConfirm: (selectedIds: number[]) => void;
   onCancel: () => void;
 }
 
-const MIN_SELECT = 2;
+const MIN_SELECT = 1;
 const MAX_SELECT = 5;
 
 /**
  * 简历对比选择弹窗。
  *
- * 用途：从简历列表中勾选 2-5 份简历用于多维度对比。
+ * 用途：从简历列表中勾选 1-5 份简历用于多维度对比（包含当前简历）。
  *
  * - 打开时拉取 listResumes()，仅展示 status === "ready" 且非当前简历的项
  * - 选满 MAX_SELECT 后禁止继续勾选，未选项降透明度提示
@@ -43,8 +43,9 @@ export function CompareSelectDialog({
 
     listResumes(50)
       .then((data) => {
+        // 对比请求已包含当前简历本身：当前简历始终可选，其余只展示已解析完成的简历。
         const filtered = data.items.filter(
-          (r) => r.status === "ready" && r.id !== currentResumeId,
+          (r) => r.id === currentResumeId || r.status === "ready",
         );
         setResumes(filtered);
         setLoading(false);
@@ -80,14 +81,14 @@ export function CompareSelectDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm motion-reduce:backdrop-blur-none"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm motion-reduce:backdrop-blur-none p-2 sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-label="选择对比简历"
       onClick={onCancel}
     >
       <div
-        className="w-full max-w-md mx-4 p-6 rounded-input glass-card shadow-2xl animate-fade-in-up motion-reduce:animate-none"
+        className="modal-mobile-sheet relative w-full max-w-md mx-0 sm:mx-4 p-6 rounded-input glass-card shadow-2xl max-h-[calc(100dvh-1rem)] sm:max-h-[85vh] overflow-y-auto animate-fade-in-up motion-reduce:animate-none"
         onClick={(e) => e.stopPropagation()}
       >
         {/* ── 标题栏 ── */}
@@ -137,7 +138,7 @@ export function CompareSelectDialog({
               暂无可对比的简历
             </span>
             <span className="text-xs text-[var(--color-text-muted)]">
-              需至少 2 份已解析完成的简历
+              可选择 1-5 份简历；当前简历也可直接参与对比
             </span>
           </div>
         ) : (
