@@ -72,13 +72,20 @@ class MinerUClient:
         }
 
     async def _get_http_client(self) -> httpx.AsyncClient:
-        if self._http_client is None or self._http_client.is_closed:
+        # Keep one connection pool for the full client lifetime.  The client
+        # owns its lifecycle; checking ``is_closed`` on every access can make
+        # long-running test/event-loop transitions recreate an otherwise
+        # reusable pool.  ``aclose`` below explicitly clears the reference so
+        # a later call can create a fresh pool after shutdown.
+        if self._http_client is None:
             self._http_client = httpx.AsyncClient(timeout=self.timeout)
         return self._http_client
 
     async def aclose(self) -> None:
-        if self._http_client is not None and not self._http_client.is_closed:
-            await self._http_client.aclose()
+        client = self._http_client
+        self._http_client = None
+        if client is not None and not client.is_closed:
+            await client.aclose()
 
     async def parse_file(self, file_path: str) -> str | None:
         """解析本地文件，返回 markdown 文本。
