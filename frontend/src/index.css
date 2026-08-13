@@ -255,9 +255,20 @@ body {
   font-family: var(--font-body);
   background-color: var(--color-bg);
   color: var(--color-text);
+
+  /* Keep the shell calm and task-oriented. Decorative aurora layers are disabled
+     so status, evidence and actions—not effects—carry the visual hierarchy. */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   letter-spacing: -0.01em;
+}
+
+/* Keep the shell calm and task-oriented: status, evidence and actions carry hierarchy. */
+body::before,
+body::after,
+#root::before {
+  display: none !important;
+  animation: none !important;
 }
 
 /* ── 工具类 ── */
@@ -539,6 +550,18 @@ button, a, input, select, textarea {
 .btn-tool-icon:disabled {
   opacity: 0.3;
   cursor: not-allowed;
+}
+
+@media (max-width: 639px) {
+  .btn-tool {
+    min-height: 2.5rem;
+    padding-inline: 0.875rem;
+  }
+
+  .btn-tool-icon {
+    width: 2.5rem;
+    height: 2.5rem;
+  }
 }
 
 /* ── Tiptap WYSIWYG 编辑器（RichTextEditor）───────────────────

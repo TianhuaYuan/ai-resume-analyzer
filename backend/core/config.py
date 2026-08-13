@@ -48,9 +48,10 @@ class Settings(BaseSettings):
     MAX_UPLOAD_SIZE_MB: int = 10  # 单文件最大 10MB
 
     # 上传简历处理预估耗时（秒）——前端上传后提示"预计等待时间"。
-    # 文本解析（MinerU/本地）+ LLM 反解析生成表单（reasoning 模型较慢）两段合计。
-    ESTIMATED_PARSE_SECONDS: int = 60
-    ESTIMATED_MATERIALIZE_SECONDS: int = 60
+    # 本地文本提取 + 非思考结构化两段合计。默认值来自真实中文 PDF
+    # 基准（约 0.5s + 9.5s），留出网络抖动余量；扫描件会通过进度条继续反馈。
+    ESTIMATED_PARSE_SECONDS: int = 5
+    ESTIMATED_MATERIALIZE_SECONDS: int = 15
 
     # ── 环境配置 ──
     ENVIRONMENT: str = "development"  # development / staging / production

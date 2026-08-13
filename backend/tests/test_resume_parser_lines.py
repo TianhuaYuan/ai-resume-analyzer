@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from services.resume_parser import (
+    _coerce_rich_text_fields,
     _index_lines,
     _normalize_date,
     _normalize_modules,
@@ -66,6 +67,31 @@ def test_resolve_invalid_ref_kept_for_validation():
         "lines": [1, 2],
         "extra": 1,
     }  # 非纯引用 dict 不替换
+
+
+def test_coerce_non_contiguous_rich_text_line_refs():
+    """模型输出三个离散行号时仍逐字还原，不触发一次昂贵 LLM 重试。"""
+    modules = [
+        {
+            "module_type": "education",
+            "content": {"items": [{"description": {"lines": [1, 3, 4]}}]},
+        }
+    ]
+
+    result = _coerce_rich_text_fields(modules, ["第一行", "跳过", "第三行", "第四行"])
+
+    assert result[0]["content"]["items"][0]["description"] == "第一行\n第三行\n第四行"
+
+
+def test_coerce_contiguous_rich_text_line_range():
+    """两端行号按连续区间还原，与 prompt 契约保持一致。"""
+    modules = [
+        {"module_type": "basic_info", "content": {"summary": {"lines": [2, 4]}}}
+    ]
+
+    result = _coerce_rich_text_fields(modules, ["标题", "A", "B", "C"])
+
+    assert result[0]["content"]["summary"] == "A\nB\nC"
 
 
 def test_resolve_nested_structure_recursive():

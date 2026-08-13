@@ -252,6 +252,18 @@ class TestModuleRenderers:
         assert "开发" in html
         assert "Python" in html
 
+    def test_project_link_is_clickable_and_unsafe_scheme_is_rejected(self):
+        safe_html = render_module(
+            "project_experience",
+            {"entries": [{"name": "Repo", "url": "https://github.com/test/repo"}]},
+        )
+        unsafe_html = render_module(
+            "project_experience",
+            {"entries": [{"name": "Bad", "url": "javascript:alert(1)"}]},
+        )
+        assert 'href="https://github.com/test/repo"' in safe_html
+        assert "javascript:" not in unsafe_html
+
     def test_skills(self):
         html = render_module("skills", _skills_content())
         assert "编程语言" in html
@@ -417,6 +429,10 @@ class TestRenderResume:
             assert "{{" not in html, f"{name} 残留 {{ 占位符"
             assert "var(" not in html, f"{name} 残留 var()"
             assert "display:grid" not in html, f"{name} 含 grid"
+
+    def test_render_repeats_page_container_decoration(self):
+        html = render_resume_from_dict(_full_modules(), ResumeStyle(template_id="default"))
+        assert "box-decoration-break: clone" in html
 
     def test_render_with_banner_template(self):
         """使用头带模板（executive）渲染，basic_info 进 {{basic_header}}。"""

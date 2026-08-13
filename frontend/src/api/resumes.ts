@@ -21,7 +21,7 @@ export interface ResumeItem {
     modules: Array<{ module_type: string; content: Record<string, unknown>; sort_order: number }>;
     style: Record<string, unknown> | null;
   } | null;
-  // 解析进度：{stage: parsing|materializing|done|failed, percent, message}
+  // 解析进度：{stage: parsing|materializing|done|partial|failed, percent, message}
   parse_progress?: {
     stage: string;
     percent: number;

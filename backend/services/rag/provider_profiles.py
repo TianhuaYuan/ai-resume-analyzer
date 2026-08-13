@@ -20,7 +20,7 @@ class ProviderProfile:
 
 
 _PROFILES: dict[str, ProviderProfile] = {
-    "resume_extract": ProviderProfile("resume_extract", max_tokens=4096),
+    "resume_extract": ProviderProfile("resume_extract", max_tokens=8000),
     "qa_simple": ProviderProfile("qa_simple", max_tokens=1200),
     "qa_complex": ProviderProfile("qa_complex", thinking=True, effort="high", max_tokens=2400),
     "field_rewrite": ProviderProfile("field_rewrite", max_tokens=1200),

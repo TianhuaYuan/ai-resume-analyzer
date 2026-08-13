@@ -26,6 +26,25 @@ import type { ModuleContent, ModuleType } from "../../../api/builder";
 
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
 
+const safeHttpUrl = (v: unknown): string => {
+  const raw = str(v).trim();
+  if (!raw) return "";
+  try {
+    const parsed = new URL(raw);
+    return parsed.protocol === "http:" || parsed.protocol === "https:" ? raw : "";
+  } catch {
+    return "";
+  }
+};
+
+function ExternalLinkOrText({ value }: { value: unknown }) {
+  const text = str(value);
+  const href = safeHttpUrl(value);
+  return href ? (
+    <a href={href} target="_blank" rel="noopener noreferrer">{text}</a>
+  ) : <>{text}</>;
+}
+
 /**
  * 长文本字段的 Markdown 渲染（对齐后端 resume_template._render_md）。
  *
@@ -150,6 +169,11 @@ function SectionBasicInfo({ content }: { content: ModuleContent }) {
   // age 是 number 类型（str() 只接受 string），需显式转字符串
   const age = content.age != null && content.age !== "" ? String(content.age) : "";
   const summary = str(content.summary);
+  const profileLinks = [
+    safeHttpUrl(content.github_url) ? { label: "GitHub", url: safeHttpUrl(content.github_url) } : null,
+    safeHttpUrl(content.blog_url) ? { label: "博客", url: safeHttpUrl(content.blog_url) } : null,
+    safeHttpUrl(content.homepage_url) ? { label: "主页", url: safeHttpUrl(content.homepage_url) } : null,
+  ].filter((item): item is { label: string; url: string } => Boolean(item?.url));
 
   const contacts = [
     gender ? `性别: ${gender}` : "",
@@ -173,14 +197,13 @@ function SectionBasicInfo({ content }: { content: ModuleContent }) {
       )}
       {jobTitle && <div className="basic-job-title">{jobTitle}</div>}
       {contacts.length > 0 && <div className="basic-contact">{contacts.join(" | ")}</div>}
-      {(str(content.github_url) || str(content.blog_url) || str(content.homepage_url)) && (
+      {profileLinks.length > 0 && (
         <div className="basic-links">
-          {[
-            content.github_url ? <a key="gh" href={str(content.github_url)}>GitHub</a> : null,
-            content.blog_url ? <a key="blog" href={str(content.blog_url)}>博客</a> : null,
-            content.homepage_url ? <a key="home" href={str(content.homepage_url)}>主页</a> : null,
-          ].filter(Boolean).map((a, i) => (
-            <span key={i}>{a}{i < 2 ? " | " : ""}</span>
+          {profileLinks.map((item, i) => (
+            <span key={item.label}>
+              <a href={item.url} target="_blank" rel="noopener noreferrer">{item.label}</a>
+              {i < profileLinks.length - 1 ? " | " : ""}
+            </span>
           ))}
         </div>
       )}
@@ -269,6 +292,8 @@ function SectionProjectExperience({ content, itemRange }: ListSectionProps) {
       {rows.map(([entry, i]) => {
         const desc = str(entry.description);
         const tech = strList(entry.tech_stack);
+        const projectUrl = safeHttpUrl(entry.url);
+        const displayUrl = projectUrl.replace(/^https?:\/\//, "").replace(/\/$/, "");
         // 去重：描述正文若已包含"技术栈"行，则不再单独渲染 proj-tech，避免重复
         const descHasTech = /技术栈\s*[:：]/.test(desc);
         return (
@@ -280,11 +305,15 @@ function SectionProjectExperience({ content, itemRange }: ListSectionProps) {
                 <span className="proj-date">{formatDateRange(entry.start_date, entry.end_date)}</span>
               )}
             </div>
+            {projectUrl && (
+              <div className="proj-url">
+                <a href={projectUrl} target="_blank" rel="noopener noreferrer">{displayUrl}</a>
+              </div>
+            )}
             {desc && <div className="proj-desc"><Md>{desc}</Md></div>}
             {tech.length > 0 && !descHasTech && (
               <div className="proj-tech">技术栈: {tech.join(", ")}</div>
             )}
-            {str(entry.url) && <div className="proj-url">{str(entry.url)}</div>}
           </div>
         );
       })}
@@ -471,9 +500,9 @@ function SectionPublications({ content, itemRange }: ListSectionProps) {
               <div className="pub-authors">{strList(entry.authors).join(", ")}</div>
             )}
             {info.length > 0 && <div className="pub-info">{info.join(" - ")}</div>}
-            {str(entry.url) && (
+            {safeHttpUrl(entry.url) && (
               <div className="pub-url">
-                <a href={str(entry.url)} target="_blank" rel="noopener noreferrer">
+                <a href={safeHttpUrl(entry.url)} target="_blank" rel="noopener noreferrer">
                   {str(entry.url)}
                 </a>
               </div>
@@ -524,7 +553,7 @@ function SectionSocialLinks({ content }: { content: ModuleContent }) {
     .filter(([key]) => str(content[key]))
     .map(([key, label]) => (
       <span key={key} className="social-link">
-        <strong>{label}</strong>: {str(content[key])}
+        <strong>{label}</strong>: <ExternalLinkOrText value={content[key]} />
       </span>
     ));
   for (const other of dictList(content.others)) {
@@ -533,7 +562,7 @@ function SectionSocialLinks({ content }: { content: ModuleContent }) {
     if (name || url) {
       parts.push(
         <span key={`o-${parts.length}`} className="social-link">
-          <strong>{name}</strong>: {url}
+          <strong>{name}</strong>: <ExternalLinkOrText value={url} />
         </span>,
       );
     }
@@ -545,7 +574,7 @@ function SectionSocialLinks({ content }: { content: ModuleContent }) {
     if (name || url) {
       parts.push(
         <span key={`i-${parts.length}`} className="social-link">
-          <strong>{name}</strong>: {url}
+          <strong>{name}</strong>: <ExternalLinkOrText value={url} />
         </span>,
       );
     }

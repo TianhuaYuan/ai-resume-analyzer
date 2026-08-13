@@ -17,8 +17,8 @@ import { exportResumeToBrowserPrint } from "../../utils/printResume";
 import { trackEvent } from "../../api/analytics";
 import type { ModuleType, ResumeModule, ResumeStyle } from "../../api/builder";
 
-type ZoomLevel = 50 | 75 | 100;
-const ZOOM_OPTIONS: ZoomLevel[] = [50, 75, 100];
+type ZoomLevel = 40 | 50 | 75 | 100;
+const ZOOM_OPTIONS: ZoomLevel[] = [40, 50, 75, 100];
 
 interface A4PreviewPanelProps {
   resumeId: number;
@@ -42,7 +42,9 @@ export const A4PreviewPanel = memo(function A4PreviewPanel({
   modulesData,
   onSelectSection,
 }: A4PreviewPanelProps) {
-  const [zoom, setZoom] = useState<ZoomLevel>(75);
+  const [zoom, setZoom] = useState<ZoomLevel>(() =>
+    typeof window !== "undefined" && window.innerWidth < 640 ? 40 : 75,
+  );
   /** 自动压缩目标页数：0 = 关闭 */
   const [fitPages, setFitPages] = useState(0);
   const [exporting, setExporting] = useState<"pdf" | "markdown" | "print" | null>(null);
@@ -110,9 +112,9 @@ export const A4PreviewPanel = memo(function A4PreviewPanel({
   return (
     <div className="flex flex-col h-full border-l border-[var(--color-border)] bg-[var(--color-bg)]">
       {/* 工具栏 */}
-      <div className="shrink-0 flex items-center justify-between px-3 py-2.5
+      <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 px-2 sm:px-3 py-2.5
         border-b border-[var(--color-border)]">
-        <div className="flex items-center gap-2">
+        <div className="flex w-full sm:w-auto items-center justify-between sm:justify-start gap-2">
           <span className="text-xs font-semibold text-[var(--color-text-secondary)]">预览</span>
           {pageState.pageCount > 0 && (
             <span className="text-[10px] text-[var(--color-text-muted)] tabular-nums">
@@ -136,7 +138,7 @@ export const A4PreviewPanel = memo(function A4PreviewPanel({
           )}
         </div>
 
-        <div className="flex items-center gap-1">
+        <div className="flex w-full sm:w-auto flex-wrap items-center gap-1">
           {/* 缩放控制 */}
           <div className="flex items-center gap-0.5 mr-1 px-1 py-0.5 rounded-full
             bg-[var(--color-bg-secondary)] border border-[var(--color-border)]">
@@ -238,7 +240,7 @@ export const A4PreviewPanel = memo(function A4PreviewPanel({
       {/* A4 预览区：真实多页容器，#resume-preview 供打印/导出取 DOM */}
       <div
         id="resume-preview"
-        className="flex-1 overflow-auto bg-[var(--color-bg)] flex justify-center p-6"
+        className="flex-1 overflow-auto bg-[var(--color-bg)] flex justify-center p-2 sm:p-6"
       >
         <PaginatedResumePreview
           modules={modules as ResumeModule[]}

@@ -235,7 +235,13 @@ async def test_build_interview_asset_content_includes_scorecard(db_session, test
         jd_text="JD 原文",
         questions=["讲一下项目", "算法题"],
         answers=["……", "……"],
-        scorecard={"overall_score": 60, "weak_competencies": ["算法"]},
+        scorecard={
+            "overall_score": 60,
+            "competency_scores": [{"competency": "算法", "score": 60}],
+            "weak_competencies": ["算法"],
+            "strengths": ["工程表达清晰"],
+            "notes": "补充复杂度分析",
+        },
         notes="一面复盘",
     )
     db_session.add(s)
@@ -246,4 +252,8 @@ async def test_build_interview_asset_content_includes_scorecard(db_session, test
     assert "Q1" in text and "Q2" in text
     assert "JD 原文" in text
     assert "算法" in text  # 评分卡摘要
+    assert "总体评分：60/100" in text
+    assert "表现亮点" in text and "工程表达清晰" in text
+    assert "待改进" in text and "复盘总结" in text
+    assert '"overall_score"' not in text
     assert "一面复盘" in text

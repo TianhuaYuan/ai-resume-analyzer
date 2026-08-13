@@ -8,7 +8,7 @@
  * - 顶部复盘概览：高频薄弱点 badge、训练推荐卡片、面试次数趋势（简易条状图）
  * - 面试记录列表：公司 / 岗位 / 状态 badge / 备注摘要 / 创建时间；查看详情 + 删除（ConfirmDialog）
  * - 新建面试弹窗：公司、岗位、关联简历（下拉）、JD 文本、问题列表、答案列表、备注
- * - 详情弹窗：问题 / 答案 / 备注 + 「录入评分卡」（JSON textarea + 保存，保存后展示 weak_competencies badge）
+ * - 详情弹窗：问题 / 答案 / 备注 + 普通表单评分卡（总分、维度、优点、待改进项）
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -131,6 +131,85 @@ const EMPTY_FORM: CreateFormState = {
   notes: "",
 };
 
+interface ScorecardCompetencyInput {
+  competency: string;
+  score: string;
+}
+
+interface ScorecardFormState {
+  overallScore: string;
+  competencies: ScorecardCompetencyInput[];
+  strengths: string;
+  weaknesses: string;
+  summary: string;
+}
+
+const DEFAULT_SCORECARD_COMPETENCIES: ScorecardCompetencyInput[] = [
+  { competency: "专业能力", score: "" },
+  { competency: "问题分析", score: "" },
+  { competency: "表达沟通", score: "" },
+  { competency: "岗位匹配", score: "" },
+];
+
+const EMPTY_SCORECARD_FORM: ScorecardFormState = {
+  overallScore: "",
+  competencies: DEFAULT_SCORECARD_COMPETENCIES.map((item) => ({ ...item })),
+  strengths: "",
+  weaknesses: "",
+  summary: "",
+};
+
+function linesToList(value: string): string[] {
+  return value
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function scorecardToForm(scorecard: InterviewScorecard | null): ScorecardFormState {
+  if (!scorecard) {
+    return {
+      ...EMPTY_SCORECARD_FORM,
+      competencies: DEFAULT_SCORECARD_COMPETENCIES.map((item) => ({ ...item })),
+    };
+  }
+
+  const overall =
+    typeof scorecard.overall_score === "number"
+      ? scorecard.overall_score
+      : typeof scorecard.overall === "number"
+        ? scorecard.overall
+        : "";
+  const competencies = Array.isArray(scorecard.competency_scores)
+    ? scorecard.competency_scores.flatMap((item) => {
+        if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+        const record = item as Record<string, unknown>;
+        const name = record.competency ?? record.name;
+        const score = record.score;
+        if (typeof name !== "string") return [];
+        return [{
+          competency: name,
+          score: typeof score === "number" ? String(score) : "",
+        }];
+      })
+    : [];
+  const listText = (value: unknown) =>
+    Array.isArray(value)
+      ? value.filter((item): item is string => typeof item === "string").join("\n")
+      : "";
+
+  return {
+    overallScore: String(overall),
+    competencies:
+      competencies.length > 0
+        ? competencies
+        : DEFAULT_SCORECARD_COMPETENCIES.map((item) => ({ ...item })),
+    strengths: listText(scorecard.strengths ?? scorecard.strong),
+    weaknesses: listText(scorecard.weak_competencies ?? scorecard.weak),
+    summary: typeof scorecard.notes === "string" ? scorecard.notes : "",
+  };
+}
+
 /** 输入类 className（与其他页面一致的表单样式） */
 const INPUT_CLS =
   "w-full px-3 py-2.5 rounded-list text-sm bg-[var(--color-bg-secondary)] border border-[var(--color-border)] " +
@@ -188,8 +267,22 @@ function ScorecardView({ scorecard }: { scorecard: Record<string, unknown> }) {
     : Array.isArray(scorecard.weak)
     ? scorecard.weak.map(formatValue)
     : [];
+  const strengths = Array.isArray(scorecard.strengths)
+    ? scorecard.strengths.map(formatValue)
+    : Array.isArray(scorecard.strong)
+      ? scorecard.strong.map(formatValue)
+      : [];
   const notes = typeof scorecard.notes === "string" ? scorecard.notes : "";
-  const knownKeys = new Set(["overall_score", "overall", "competency_scores", "weak_competencies", "weak", "notes"]);
+  const knownKeys = new Set([
+    "overall_score",
+    "overall",
+    "competency_scores",
+    "weak_competencies",
+    "weak",
+    "strengths",
+    "strong",
+    "notes",
+  ]);
   const extraEntries = Object.entries(scorecard).filter(([key]) => !knownKeys.has(key));
 
   return (
@@ -245,6 +338,27 @@ function ScorecardView({ scorecard }: { scorecard: Record<string, unknown> }) {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {(strengths.length > 0 || weak.length > 0) && (
+        <div className="grid gap-2 sm:grid-cols-2">
+          {strengths.length > 0 && (
+            <div className="rounded-action border border-emerald-500/20 bg-emerald-500/5 px-3 py-2.5">
+              <div className="text-[10px] font-medium text-emerald-600 mb-1">表现亮点</div>
+              <ul className="space-y-1 text-xs text-[var(--color-text)]">
+                {strengths.map((item, index) => <li key={`${item}-${index}`}>· {item}</li>)}
+              </ul>
+            </div>
+          )}
+          {weak.length > 0 && (
+            <div className="rounded-action border border-rose-500/20 bg-rose-500/5 px-3 py-2.5">
+              <div className="text-[10px] font-medium text-rose-500 mb-1">待改进</div>
+              <ul className="space-y-1 text-xs text-[var(--color-text)]">
+                {weak.map((item, index) => <li key={`${item}-${index}`}>· {item}</li>)}
+              </ul>
+            </div>
+          )}
         </div>
       )}
 
@@ -305,8 +419,9 @@ export default function InterviewPage() {
   const [detailError, setDetailError] = useState<string | null>(null);
 
   // 评分卡录入
-  const [scorecardText, setScorecardText] = useState("");
-  const [scorecardNotes, setScorecardNotes] = useState("");
+  const [scorecardForm, setScorecardForm] = useState<ScorecardFormState>(() =>
+    scorecardToForm(null)
+  );
   const [scorecardSaving, setScorecardSaving] = useState(false);
   const [weakCompetencies, setWeakCompetencies] = useState<string[]>([]);
 
@@ -442,14 +557,11 @@ export default function InterviewPage() {
     setDetailError(null);
     setDetailLoading(true);
     setWeakCompetencies([]);
-    setScorecardText("");
-    setScorecardNotes("");
+    setScorecardForm(scorecardToForm(null));
     try {
       const d = await getInterview(id);
       setDetail(d);
-      // 已有评分卡 → 回填 JSON 文本 + 备注，便于二次编辑
-      if (d.scorecard) setScorecardText(JSON.stringify(d.scorecard, null, 2));
-      setScorecardNotes(d.notes ?? "");
+      setScorecardForm(scorecardToForm(d.scorecard));
     } catch (e) {
       setDetailError(e instanceof Error ? e.message : "加载详情失败");
     } finally {
@@ -461,29 +573,57 @@ export default function InterviewPage() {
     if (scorecardSaving) return;
     setDetailId(null);
     setDetail(null);
-    setScorecardText("");
-    setScorecardNotes("");
+    setScorecardForm(scorecardToForm(null));
     setWeakCompetencies([]);
   };
 
   const handleSaveScorecard = async () => {
     if (!detail) return;
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(scorecardText);
-    } catch {
-      toast.error("评分卡需为合法 JSON");
+    const overall = Number(scorecardForm.overallScore);
+    if (
+      scorecardForm.overallScore.trim() === "" ||
+      !Number.isFinite(overall) ||
+      overall < 0 ||
+      overall > 100
+    ) {
+      toast.error("请填写 0-100 之间的总体评分");
       return;
     }
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-      toast.error("评分卡需为 JSON 对象，如 {\"overall\": 80, \"weak\": [\"系统设计\"]}");
+
+    const invalidCompetency = scorecardForm.competencies.some((item) => {
+      const hasName = item.competency.trim() !== "";
+      const hasScore = item.score.trim() !== "";
+      if (!hasName && !hasScore) return false;
+      const score = Number(item.score);
+      return !hasName || !hasScore || !Number.isFinite(score) || score < 0 || score > 100;
+    });
+    if (invalidCompetency) {
+      toast.error("每个评分维度都需填写名称及 0-100 分数");
       return;
     }
+
+    const competencyScores = scorecardForm.competencies
+      .filter((item) => item.competency.trim() && item.score.trim())
+      .map((item) => ({
+        competency: item.competency.trim(),
+        score: Number(item.score),
+      }));
+    const explicitWeaknesses = linesToList(scorecardForm.weaknesses);
+    const derivedWeaknesses = competencyScores
+      .filter((item) => item.score < 70)
+      .map((item) => item.competency);
+    const scorecard: InterviewScorecard = {
+      overall_score: overall,
+      competency_scores: competencyScores,
+      weak_competencies: Array.from(new Set([...explicitWeaknesses, ...derivedWeaknesses])),
+      strengths: linesToList(scorecardForm.strengths),
+      notes: scorecardForm.summary.trim(),
+    };
+
     setScorecardSaving(true);
     try {
       const result = await updateInterviewScorecard(detail.id, {
-        scorecard: parsed as InterviewScorecard,
-        notes: scorecardNotes.trim() || undefined,
+        scorecard,
       });
       setWeakCompetencies(result.weak_competencies ?? []);
       setDetail((prev) =>
@@ -493,7 +633,6 @@ export default function InterviewPage() {
               scorecard: result.scorecard,
               notes: result.notes,
               status: result.status,
-              updated_at: result.updated_at,
             }
           : prev
       );
@@ -1248,23 +1387,148 @@ export default function InterviewPage() {
                   )}
 
                   {/* 录入评分卡 */}
-                  <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1.5">
-                    录入 / 更新评分卡（JSON 对象）
-                  </label>
-                  <textarea
-                    value={scorecardText}
-                    onChange={(e) => setScorecardText(e.target.value)}
-                    placeholder='{"overall": 80, "weak": ["系统设计"], "strong": ["算法基础"]}'
-                    rows={4}
-                    className={`${INPUT_CLS} resize-none font-mono text-xs`}
-                  />
-                  <input
-                    type="text"
-                    value={scorecardNotes}
-                    onChange={(e) => setScorecardNotes(e.target.value)}
-                    placeholder="评分备注（可选，会同步更新面试备注）"
-                    className={`${INPUT_CLS} mt-2`}
-                  />
+                  <div className="rounded-list border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/30 p-3 sm:p-4 space-y-4">
+                    <div>
+                      <div className="text-sm font-medium text-[var(--color-text)]">录入 / 更新评分卡</div>
+                      <p className="mt-0.5 text-[11px] text-[var(--color-text-muted)]">
+                        分数范围 0-100；每行填写一个亮点或待改进项。
+                      </p>
+                    </div>
+
+                    <label className="block">
+                      <span className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1.5">
+                        总体评分 <span className="text-danger">*</span>
+                      </span>
+                      <div className="relative max-w-40">
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          inputMode="numeric"
+                          value={scorecardForm.overallScore}
+                          onChange={(e) =>
+                            setScorecardForm((prev) => ({ ...prev, overallScore: e.target.value }))
+                          }
+                          placeholder="例如 78"
+                          className={`${INPUT_CLS} pr-12`}
+                        />
+                        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[var(--color-text-muted)]">
+                          / 100
+                        </span>
+                      </div>
+                    </label>
+
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-1.5">
+                        <span className="text-xs font-medium text-[var(--color-text-secondary)]">评分维度</span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setScorecardForm((prev) => ({
+                              ...prev,
+                              competencies: [...prev.competencies, { competency: "", score: "" }],
+                            }))
+                          }
+                          className="inline-flex items-center gap-1 rounded-action px-2 py-1 text-[11px] text-brand hover:bg-brand/10 transition-colors"
+                        >
+                          <Plus size={12} aria-hidden="true" />
+                          添加维度
+                        </button>
+                      </div>
+                      <div className="space-y-2">
+                        {scorecardForm.competencies.map((item, index) => (
+                          <div key={index} className="grid grid-cols-[minmax(0,1fr)_88px_32px] gap-2 items-center">
+                            <input
+                              type="text"
+                              value={item.competency}
+                              onChange={(e) =>
+                                setScorecardForm((prev) => ({
+                                  ...prev,
+                                  competencies: prev.competencies.map((entry, entryIndex) =>
+                                    entryIndex === index ? { ...entry, competency: e.target.value } : entry
+                                  ),
+                                }))
+                              }
+                              placeholder="维度名称"
+                              aria-label={`评分维度 ${index + 1} 名称`}
+                              className={INPUT_CLS}
+                            />
+                            <input
+                              type="number"
+                              min={0}
+                              max={100}
+                              inputMode="numeric"
+                              value={item.score}
+                              onChange={(e) =>
+                                setScorecardForm((prev) => ({
+                                  ...prev,
+                                  competencies: prev.competencies.map((entry, entryIndex) =>
+                                    entryIndex === index ? { ...entry, score: e.target.value } : entry
+                                  ),
+                                }))
+                              }
+                              placeholder="分数"
+                              aria-label={`评分维度 ${index + 1} 分数`}
+                              className={`${INPUT_CLS} px-2`}
+                            />
+                            <button
+                              type="button"
+                              aria-label={`删除评分维度 ${index + 1}`}
+                              onClick={() =>
+                                setScorecardForm((prev) => ({
+                                  ...prev,
+                                  competencies: prev.competencies.filter((_, entryIndex) => entryIndex !== index),
+                                }))
+                              }
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-action text-[var(--color-text-muted)] hover:bg-danger/10 hover:text-danger transition-colors"
+                            >
+                              <Trash2 size={14} aria-hidden="true" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <label className="block">
+                        <span className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1.5">表现亮点</span>
+                        <textarea
+                          value={scorecardForm.strengths}
+                          onChange={(e) =>
+                            setScorecardForm((prev) => ({ ...prev, strengths: e.target.value }))
+                          }
+                          placeholder={"例如：\nRAG 链路设计清晰\n回答有具体数据"}
+                          rows={3}
+                          className={`${INPUT_CLS} resize-none`}
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1.5">待改进</span>
+                        <textarea
+                          value={scorecardForm.weaknesses}
+                          onChange={(e) =>
+                            setScorecardForm((prev) => ({ ...prev, weaknesses: e.target.value }))
+                          }
+                          placeholder={"例如：\n工具调用异常处理\n复杂问题拆解"}
+                          rows={3}
+                          className={`${INPUT_CLS} resize-none`}
+                        />
+                      </label>
+                    </div>
+
+                    <label className="block">
+                      <span className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1.5">复盘总结</span>
+                      <textarea
+                        value={scorecardForm.summary}
+                        onChange={(e) =>
+                          setScorecardForm((prev) => ({ ...prev, summary: e.target.value }))
+                        }
+                        placeholder="记录本次面试的总体判断和下一步行动"
+                        rows={3}
+                        className={`${INPUT_CLS} resize-none`}
+                      />
+                    </label>
+                  </div>
                   <button
                     onClick={() => void handleSaveScorecard()}
                     disabled={scorecardSaving}

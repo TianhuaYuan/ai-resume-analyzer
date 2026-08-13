@@ -13,6 +13,7 @@ import ChangeUsernameDialog from "./ChangeUsernameDialog";
 import UsageDialog from "./UsageDialog";
 import ConfirmDialog from "./ConfirmDialog";
 import type { QuotaResponse } from "../api/qa";
+import { confirmUnsavedChanges } from "../utils/unsavedChanges";
 
 // ── 导航项配置 ──
 
@@ -24,11 +25,11 @@ interface NavItem {
   match: "exact" | "prefix";
 }
 
-// 排序按用户要求：Agent → 简历（核心资源）→ AI 能力 → 投递 → 面试复盘 → 知识资产 → 用户反馈
+// 排序按用户任务流：求职助手 → 简历 → 任务中心 → 投递 → 面试复盘 → 知识资产 → 用户反馈
 const NAV_ITEMS: NavItem[] = [
-  { path: "/qa", label: "Agent", icon: MessagesSquare, match: "exact" },
+  { path: "/qa", label: "求职助手", icon: MessagesSquare, match: "exact" },
   { path: "/resumes", label: "简历", icon: FileText, match: "prefix" },
-  { path: "/capabilities", label: "AI 能力", icon: Sparkles, match: "exact" },
+  { path: "/capabilities", label: "任务中心", icon: Sparkles, match: "exact" },
   { path: "/applications", label: "投递看板", icon: Send, match: "exact" },
   { path: "/interviews", label: "面试复盘", icon: Mic, match: "exact" },
   { path: "/assets", label: "知识资产", icon: Library, match: "exact" },
@@ -37,10 +38,11 @@ const NAV_ITEMS: NavItem[] = [
 
 interface SidebarProps {
   collapsed: boolean;
+  mobile?: boolean;
   onToggleCollapse: () => void;
 }
 
-export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
+export default function Sidebar({ collapsed, mobile = false, onToggleCollapse }: SidebarProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useAuth();
@@ -58,6 +60,12 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [quota, setQuota] = useState<QuotaResponse | null>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
+
+  const navigateFromSidebar = (path: string) => {
+    if (path !== location.pathname && !confirmUnsavedChanges()) return;
+    navigate(path);
+    if (mobile && !collapsed) onToggleCollapse();
+  };
   // 最近一次已应用的额度（ref 缓存），数据未变时跳过 setState，
   // 避免 30s 轮询 / quota:refresh 导致 Sidebar 每次轮询都重渲染
   const lastQuotaRef = useRef<QuotaResponse | null>(null);
@@ -121,6 +129,7 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
   );
 
   const handleLogout = async () => {
+    if (!confirmUnsavedChanges()) return;
     await logout();
     navigate("/");
   };
@@ -173,7 +182,9 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
   return (
     <>
       <aside
-        className={`shrink-0 border-r border-[var(--color-border)] bg-white/80 backdrop-blur-xl flex flex-col h-full transition-all duration-300 ${
+        className={`shrink-0 border-r border-[var(--color-border)] bg-[var(--color-surface)] flex flex-col h-full transition-all duration-300 ${
+          mobile && !collapsed ? "fixed inset-y-0 left-0 z-40 shadow-xl" : "relative"
+        } ${
           collapsed ? "w-14" : "w-60"
         }`}
       >
@@ -181,8 +192,8 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
         <div className="shrink-0 flex items-center justify-between px-3 py-3 border-b border-[var(--color-border)]">
           {!collapsed && (
             <button
-              onClick={() => navigate("/")}
-              className="flex items-center gap-2 no-underline"
+              onClick={() => navigateFromSidebar("/")}
+              className="flex min-h-11 items-center gap-2 no-underline"
             >
               <svg viewBox="0 0 64 64" className="w-6 h-6 shrink-0">
                 <polygon points="32,6 54,18 32,30 10,18" fill="#F5C547" />
@@ -196,8 +207,8 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
           )}
           {collapsed && (
             <button
-              onClick={() => navigate("/")}
-              className="flex items-center justify-center w-full"
+              onClick={() => navigateFromSidebar("/")}
+              className="flex min-h-11 items-center justify-center w-full"
             >
               <svg viewBox="0 0 64 64" className="w-6 h-6 shrink-0">
                 <polygon points="32,6 54,18 32,30 10,18" fill="#F5C547" />
@@ -208,7 +219,7 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
           )}
           <button
             onClick={onToggleCollapse}
-            className="p-1 rounded-md text-[var(--color-text-muted)] hover:text-brand hover:bg-brand/10 active:scale-90 transition-all cursor-pointer"
+            className="flex min-h-11 min-w-11 items-center justify-center rounded-md text-[var(--color-text-muted)] hover:text-brand hover:bg-brand/10 active:scale-90 transition-all cursor-pointer"
             aria-label={collapsed ? "展开侧边栏" : "折叠侧边栏"}
             title={collapsed ? "展开侧边栏" : "折叠侧边栏"}
           >
@@ -229,10 +240,10 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
             return (
               <button
                 key={item.path}
-                onClick={() => navigate(item.path)}
+                onClick={() => navigateFromSidebar(item.path)}
                 title={collapsed ? item.label : undefined}
                 className={`w-full flex items-center gap-2.5 rounded-action text-xs font-medium transition-all cursor-pointer
-                  ${collapsed ? "justify-center px-1 py-2" : "px-3 py-2"}
+                  ${collapsed ? "min-h-11 justify-center px-1 py-2" : "min-h-11 px-3 py-2"}
                   ${active
                     ? "bg-brand/10 text-brand border border-brand/30"
                     : "text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)] border border-transparent"
@@ -375,7 +386,7 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
           <div className="relative">
             <button
               onClick={() => setUserMenuOpen(!userMenuOpen)}
-              className={`w-full flex items-center gap-2 rounded-action p-1.5 transition-all cursor-pointer hover:bg-[var(--color-bg-secondary)]
+              className={`min-h-11 w-full flex items-center gap-2 rounded-action p-1.5 transition-all cursor-pointer hover:bg-[var(--color-bg-secondary)]
                 ${collapsed ? "justify-center" : ""}`}
               aria-label="用户菜单"
               aria-expanded={userMenuOpen}
@@ -409,7 +420,7 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 5, scale: 0.95 }}
                   transition={{ duration: 0.15 }}
-                  className={`absolute z-50 w-48 rounded-input border border-[var(--color-border)] bg-white/90 backdrop-blur-xl shadow-2xl py-1
+                  className={`absolute z-50 w-48 rounded-input border border-[var(--color-border)] bg-[var(--color-surface)] shadow-2xl py-1
                     ${collapsed ? "left-full ml-2 bottom-0" : "bottom-full mb-2 left-0"}`}
                 >
                   {/* Token 用量概览 */}
@@ -441,7 +452,11 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
                   {/* 管理后台 */}
                   {user.is_admin && (
                     <button
-                      onClick={() => { navigate("/admin"); setUserMenuOpen(false); }}
+                      onClick={() => {
+                        if (!confirmUnsavedChanges()) return;
+                        navigate("/admin");
+                        setUserMenuOpen(false);
+                      }}
                       className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer"
                     >
                       <Settings size={14} aria-hidden="true" />

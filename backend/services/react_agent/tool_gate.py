@@ -49,15 +49,15 @@ def greeting_reply(query: str) -> str:
 # 核心工具恒保留（简历检索/整文直读/深度检索/记忆召回/子代理委派），保证基本问答能力不断。
 _CORE_TOOLS = {
     "search_resume",
-    "search_assets",
     "get_resume_content",
-    "answer_from_index",
-    "recall_memory",
-    "spawn",  # P1-1 子代理委派：恒保留，不随领域裁剪
 }
 
 # 领域工具 → 触发关键词（小写匹配）。仅在强命中时保留该工具 + 核心工具。
 _DOMAIN_TOOLS = {
+    "search_assets": ["资产", "笔记", "资料", "历史记录", "知识库"],
+    "answer_from_index": ["依据", "引用", "深入", "详细分析", "综合分析", "为什么"],
+    "recall_memory": ["之前", "上次", "记得", "偏好", "长期目标"],
+    "spawn": ["全面调研", "多方案", "复杂任务", "分步骤研究"],
     "jd_match": ["jd", "岗位", "招聘", "职位", "匹配", "要求"],
     "compare_resumes": ["对比", "比较", "哪个", "区别", "差异", "更好"],
     "diagnose_resume": ["诊断", "优化", "评估", "改进", "问题", "短板"],
@@ -74,7 +74,12 @@ _DOMAIN_TOOLS = {
 }
 
 
-def filter_agent_tools(query: str, tool_classes: list) -> list:
+def filter_agent_tools(
+    query: str,
+    tool_classes: list,
+    *,
+    tool_hint: str | None = None,
+) -> list:
     """按关键词裁剪 agent 工具集。
 
     安全策略：无领域关键词强命中 → 返回全量（不裁剪，绝不误杀）；
@@ -82,12 +87,12 @@ def filter_agent_tools(query: str, tool_classes: list) -> list:
     """
     q = query.lower()
     relevant = set(_CORE_TOOLS)
-    hit = False
     for tool_name, kws in _DOMAIN_TOOLS.items():
         if any(k in q for k in kws):
             relevant.add(tool_name)
-            hit = True
 
-    if not hit:
-        return tool_classes
+    available_names = {tool.name for tool in tool_classes}
+    if tool_hint in available_names:
+        relevant.add(tool_hint)
+
     return [tc for tc in tool_classes if tc.name in relevant]

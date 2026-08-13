@@ -8,7 +8,7 @@
 """
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -120,7 +120,9 @@ class TestLlmGenerateRecordsUsage:
             )
 
         assert result == "hello"
-        mock_record.assert_awaited_once_with(99, 20, 10)
+        mock_record.assert_awaited_once_with(
+            99, 20, 10, model=ANY, scenario="field_rewrite"
+        )
 
     @pytest.mark.asyncio
     async def test_no_record_without_user_id(self):
@@ -203,7 +205,9 @@ class TestAnalyzeResumeRecordsUsage:
 
             await svc.analyze_resume(mock_db, user_id=7, resume_id=1, analysis_type="summary")
 
-        mock_record.assert_awaited_once_with(7, 100, 50)
+        mock_record.assert_awaited_once_with(
+            7, 100, 50, model=ANY, scenario="analysis:summary"
+        )
 
 
 # ═══════════════════════════════════════════════════════════
@@ -248,4 +252,6 @@ class TestMatchJdRecordsUsage:
 
             await svc.match_jd(mock_db, user_id=8, resume_id=1, jd_text="JD内容")
 
-        mock_record.assert_awaited_once_with(8, 200, 80)
+        mock_record.assert_awaited_once_with(
+            8, 200, 80, model=ANY, scenario="field_rewrite"
+        )

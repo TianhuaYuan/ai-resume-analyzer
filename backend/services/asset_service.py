@@ -17,7 +17,6 @@
 """
 
 import hashlib
-import json
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -193,10 +192,41 @@ def build_interview_asset_content(session) -> str:
         parts.append("## 问答\n" + "\n".join(qa_lines))
 
     if session.scorecard:
-        parts.append(
-            "## 评分卡\n"
-            + json.dumps(session.scorecard, ensure_ascii=False, indent=2)
-        )
+        scorecard = session.scorecard
+        score_lines: list[str] = []
+        overall = scorecard.get("overall_score", scorecard.get("overall"))
+        if isinstance(overall, (int, float)):
+            score_lines.append(f"总体评分：{overall:g}/100")
+
+        dimensions: list[str] = []
+        for item in scorecard.get("competency_scores") or []:
+            if not isinstance(item, dict):
+                continue
+            name = item.get("competency") or item.get("name")
+            score = item.get("score")
+            if isinstance(name, str) and isinstance(score, (int, float)):
+                dimensions.append(f"- {name}：{score:g}/100")
+        if dimensions:
+            score_lines.append("维度评分：\n" + "\n".join(dimensions))
+
+        strengths = scorecard.get("strengths") or scorecard.get("strong") or []
+        if isinstance(strengths, list):
+            values = [str(item).strip() for item in strengths if str(item).strip()]
+            if values:
+                score_lines.append("表现亮点：\n" + "\n".join(f"- {item}" for item in values))
+
+        weaknesses = scorecard.get("weak_competencies") or scorecard.get("weak") or []
+        if isinstance(weaknesses, list):
+            values = [str(item).strip() for item in weaknesses if str(item).strip()]
+            if values:
+                score_lines.append("待改进：\n" + "\n".join(f"- {item}" for item in values))
+
+        summary = scorecard.get("notes")
+        if isinstance(summary, str) and summary.strip():
+            score_lines.append("复盘总结：\n" + summary.strip())
+
+        if score_lines:
+            parts.append("## 评分卡\n" + "\n\n".join(score_lines))
 
     if session.notes:
         parts.append(f"## 备注\n{session.notes.strip()}")

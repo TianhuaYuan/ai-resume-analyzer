@@ -691,14 +691,43 @@ function TemplatesSection() {
 // ── Grafana 监控 ─────────────────────────────────────────
 
 function GrafanaSection() {
+  const grafanaUrl = (import.meta.env.VITE_GRAFANA_URL as string | undefined)?.trim();
+
+  if (!grafanaUrl) {
+    return (
+      <div className="glass-card p-5 sm:p-6">
+        <div className="flex items-start gap-3">
+          <div className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-action bg-warning/10 text-warning">
+            <Monitor size={18} aria-hidden="true" />
+          </div>
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold text-[var(--color-text)]">监控面板尚未启用</h2>
+            <p className="mt-1 text-xs leading-5 text-[var(--color-text-secondary)]">
+              启动 Prometheus 与 Grafana 后，为前端设置
+              <code className="mx-1 rounded bg-[var(--color-bg-secondary)] px-1.5 py-0.5 font-mono">VITE_GRAFANA_URL</code>
+              并重新构建。未配置时不会加载占位 iframe，避免把站点首页误当作监控页面。
+            </p>
+            <div className="mt-3 rounded-list border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3 text-[11px] leading-5 text-[var(--color-text-secondary)]">
+              <div><code className="font-mono">docker compose -f docker-compose.monitoring.yml up -d</code></div>
+              <div><code className="font-mono">VITE_GRAFANA_URL=http://127.0.0.1:3000</code></div>
+            </div>
+            <p className="mt-2 text-[11px] text-[var(--color-text-muted)]">
+              生产环境请使用同源反向代理地址，并限制为管理员访问。
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-2">
       <p className="text-xs text-[var(--color-text-muted)]">
-        若已部署 Grafana 并在反向代理中将 <code className="font-mono">/grafana</code> 指向它，则下方将显示监控面板；未配置时为空白。
+        当前监控地址：<code className="font-mono">{grafanaUrl}</code>
       </p>
       <div className="rounded-input border border-[var(--color-border)] overflow-hidden bg-[var(--color-bg-secondary)]">
         <iframe
-          src="/grafana"
+          src={grafanaUrl}
           className="w-full h-[560px] border-0"
           title="Grafana 监控面板"
         />

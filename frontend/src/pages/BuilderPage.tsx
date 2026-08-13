@@ -7,14 +7,14 @@
  * 核心机制：
  * - 挂载时加载 builder 简历 + 获取编辑锁
  * - 编辑锁心跳续期 60s，卸载时释放
- * - 自动保存草稿：编辑后 5s 防抖
+ * - 编辑默认仅保留在本地，用户显式选择“保存草稿”或“保存并完成”才持久化
  * - 预览防抖：内容变更后 300ms 刷新 iframe
  * - 样式状态本地管理，随草稿保存
  * - StylePanel 和 BuilderAIChat 为浮动覆盖层
  */
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { Save, Check, Paintbrush, TriangleAlert, RefreshCw, RotateCcw, RotateCw, GitBranch, ClipboardList, LayoutGrid, Globe, ChevronDown, Plus } from "lucide-react";
+import { Save, Check, Paintbrush, TriangleAlert, RefreshCw, RotateCcw, RotateCw, GitBranch, ClipboardList, LayoutGrid, Globe, ChevronDown, Plus, Eye, Pencil, ScanSearch } from "lucide-react";
 import {
   getBuilderResume,
   saveDraft,
@@ -48,6 +48,7 @@ import type { ResumeFamilyItem, AtsAuditResult } from "../api/resumes";
 import { useToast } from "../components/Toast";
 import { useNavigate } from "react-router-dom";
 import { useHistory } from "../hooks/useHistory";
+import { confirmUnsavedChanges, registerUnsavedChangesGuard } from "../utils/unsavedChanges";
 
 // ── 常量 ──────────────────────────────────────────────────────
 
@@ -128,6 +129,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
   const [showStylePanel, setShowStylePanel] = useState(false);
   const [showTemplateSheet, setShowTemplateSheet] = useState(false);
   const [previewCollapsed, setPreviewCollapsed] = useState(false);
+  const [mobilePreviewOpen, setMobilePreviewOpen] = useState(false);
   const [previewKey, setPreviewKey] = useState(0);
 
   // 保存状态
@@ -170,6 +172,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
   const handleCreateLangVersion = useCallback(
     async (language: string) => {
       if (langBusy) return;
+      if (!confirmUnsavedChanges()) return;
       setLangBusy(true);
       try {
         const res = (await copyResume(resumeId, language)) as { id?: number };
@@ -396,6 +399,13 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [isDirty]);
 
+  useEffect(
+    () => registerUnsavedChangesGuard(
+      () => !isDirty || window.confirm("当前简历有未保存的修改，确定离开并放弃这些修改吗？"),
+    ),
+    [isDirty],
+  );
+
   // ── 模块内容编辑（接收 type + content） ─────────────────────
 
   const handleModuleChange = useCallback(
@@ -573,7 +583,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
 
   // ── 粘贴简历文本回调 ──
   const handlePasteParsed = useCallback(
-    (parsedModules: ResumeModuleInput[]) => {
+    (parsedModules: ResumeModuleInput[], parsedFilename?: string) => {
       // 把解析的模块转为 ResumeModule 格式并替换当前内容
       const newModules: ResumeModule[] = parsedModules.map((m, i) => ({
         id: -Date.now() - i,
@@ -584,6 +594,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
         created_at: new Date().toISOString(),
       }));
       setModules(newModules);
+      if (parsedFilename) setFilename(parsedFilename);
       // 自动展开第一个模块
       if (newModules.length > 0) {
         setExpandedType(newModules[0].module_type);
@@ -643,10 +654,10 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-[var(--color-bg)]">
       {/* ── 顶部工具栏 ── */}
-      <div className="shrink-0 flex items-center justify-between gap-3 px-4 py-2.5
+      <div className="shrink-0 flex flex-col items-stretch sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3 px-3 sm:px-4 py-2.5
         border-b border-[var(--color-border)] bg-white/80 backdrop-blur-xl">
         {/* 左侧：文件名 + 保存状态 */}
-        <div className="flex items-center gap-3 min-w-0">
+        <div className="flex w-full sm:w-auto flex-wrap items-center gap-2 sm:gap-3 min-w-0">
           <input
             type="text"
             value={filename}
@@ -657,7 +668,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
               hover:border-[var(--color-border)]
               focus:outline-none focus:bg-white focus:border-brand/40
               focus:ring-4 focus:ring-brand/15
-              transition-all duration-150 min-w-[120px] max-w-[240px]"
+              transition-all duration-150 min-w-0 w-[min(55vw,200px)] sm:min-w-[120px] sm:max-w-[240px]"
             aria-label="文件名"
           />
 
@@ -696,7 +707,9 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
                       <button
                         key={v.id}
                         onClick={() => {
-                          if (v.id !== resumeId) navigate(`/resumes/${v.id}/edit`);
+                          if (v.id !== resumeId && confirmUnsavedChanges()) {
+                            navigate(`/resumes/${v.id}/edit`);
+                          }
                           setShowLangMenu(false);
                         }}
                         className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-left
@@ -809,7 +822,16 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
         </div>
 
         {/* 右侧：操作按钮 */}
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex w-full sm:w-auto flex-wrap items-center gap-1.5 sm:shrink-0">
+          <button
+            type="button"
+            onClick={() => setMobilePreviewOpen((value) => !value)}
+            className="btn-tool sm:hidden"
+            aria-label={mobilePreviewOpen ? "返回编辑" : "预览简历"}
+          >
+            {mobilePreviewOpen ? <Pencil size={13} aria-hidden="true" /> : <Eye size={13} aria-hidden="true" />}
+            {mobilePreviewOpen ? "编辑" : "预览"}
+          </button>
           {/* 撤销/重做 */}
           <button
             onClick={undo}
@@ -851,7 +873,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
           <button
             onClick={handleSaveDraft}
             disabled={saving}
-            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full
+            className="inline-flex min-h-10 sm:min-h-0 items-center gap-1 px-2.5 py-1.5 rounded-full
               text-xs font-medium text-[var(--color-text-secondary)]
               bg-[var(--color-bg-secondary)] hover:bg-[var(--color-bg-secondary)]
               disabled:opacity-40 disabled:cursor-not-allowed
@@ -867,7 +889,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
           <button
             onClick={handleSaveComplete}
             disabled={saving}
-            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full
+            className="inline-flex min-h-10 sm:min-h-0 items-center gap-1 px-2.5 py-1.5 rounded-full
               text-xs font-semibold text-white bg-brand
               hover:bg-brand-hover hover:scale-[1.02]
               disabled:opacity-40 disabled:cursor-not-allowed
@@ -930,7 +952,8 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
             aria-label="ATS 审计"
             title="模拟 ATS 解析，检测简历可读性问题"
           >
-            🔍 ATS
+            <ScanSearch size={12} aria-hidden="true" />
+            ATS
           </button>
 
           {/* E2: 待审阅改动（AI 改写/翻译的字段级 diff 审阅队列） */}
@@ -992,7 +1015,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
       {/* ── 两栏主体 ── */}
       <div className="flex-1 flex overflow-hidden">
         {/* 左栏：卡片式模块编辑器 */}
-        <div className={`min-w-0 overflow-hidden ${previewCollapsed ? "max-w-2xl" : "w-[45%] min-w-[380px] max-w-[520px]"}`}>
+        <div className={`${mobilePreviewOpen ? "hidden sm:block" : "block"} w-full min-w-0 overflow-hidden sm:w-auto ${previewCollapsed ? "sm:max-w-2xl" : "sm:w-[45%] sm:min-w-[380px] sm:max-w-[520px]"}`}>
           <ModuleCardEditor
             resumeId={resumeId}
             modules={modules}
@@ -1006,7 +1029,7 @@ export function BuilderPage({ resumeId }: BuilderPageProps) {
         </div>
 
         {/* 右栏：A4 预览面板 */}
-        <div className={`flex-1 min-w-0 ${previewCollapsed ? "w-12 shrink-0" : ""}`}>
+        <div className={`${mobilePreviewOpen ? "block" : "hidden sm:block"} flex-1 min-w-0 ${previewCollapsed ? "w-12 shrink-0" : ""}`}>
           <A4PreviewPanel
             resumeId={resumeId}
             previewKey={previewKey}

@@ -13,7 +13,7 @@
 import { useState, useEffect, type FormEvent } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useAuth } from "../context/AuthContext";
-import { MessagesSquare, Mail, Lock, User, Hash } from "lucide-react";
+import { FileText, Mail, Lock, User, Hash } from "lucide-react";
 import { overlayVariants, panelVariants } from "./useModalMotion";
 
 // ── Apple 风格输入框 ──
@@ -45,9 +45,9 @@ function AppleInput({
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         maxLength={maxLength}
-        className="w-full pl-9 pr-3 py-2.5 rounded-list bg-[#F2F2F7] text-sm text-[var(--color-text)]
-          placeholder:text-[var(--color-text-muted)] outline-none border border-transparent
-          focus:bg-white focus:border-brand/40 focus:ring-4 focus:ring-brand/15
+        className="w-full pl-9 pr-3 py-2.5 rounded-action bg-[var(--color-bg-secondary)] text-sm text-[var(--color-text)]
+          placeholder:text-[var(--color-text-muted)] outline-none border border-[var(--color-border)]
+          focus:border-brand/50 focus:ring-2 focus:ring-brand/15
           transition-all duration-200"
       />
     </div>
@@ -186,7 +186,7 @@ export function LoginModal({
 
   return (
     <motion.div
-      className="fixed inset-0 z-50 flex items-center justify-center"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center overflow-y-auto p-2 sm:p-4"
       variants={overlayVariants}
       initial="hidden"
       animate="visible"
@@ -197,7 +197,7 @@ export function LoginModal({
 
       {/* 卡片（毛玻璃）— 统一弹簧入场（useModalMotion） */}
       <motion.div
-        className="relative w-full max-w-sm mx-4 glass-card shadow-2xl shadow-black/10"
+        className="relative w-full max-w-sm rounded-[20px] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-xl shadow-black/15 max-h-[calc(100dvh-1rem)] overflow-y-auto"
         variants={panelVariants}
         initial="hidden"
         animate="visible"
@@ -217,8 +217,8 @@ export function LoginModal({
 
         {/* 标题 */}
         <div className="px-6 pt-7 pb-4 text-center">
-          <div className="mx-auto w-14 h-14 rounded-input bg-brand/10 flex items-center justify-center mb-4">
-            <MessagesSquare size={26} fill="currentColor" className="text-brand" />
+          <div className="mx-auto w-12 h-12 rounded-action bg-brand/10 flex items-center justify-center mb-4">
+            <FileText size={24} className="text-brand" />
           </div>
           <h2 className="text-xl font-bold text-[var(--color-text)] display-tight">
             {tab === "login" ? "欢迎回来" : "创建账号"}
@@ -229,15 +229,15 @@ export function LoginModal({
         </div>
 
         {/* Tab 切换 */}
-        <div className="flex mx-6 mb-4 p-1 rounded-full bg-[var(--color-bg-secondary)]">
+        <div className="grid grid-cols-2 mx-6 mb-4 border-b border-[var(--color-border)]">
           {(["login", "register"] as const).map((t) => (
             <button
               key={t}
               onClick={() => switchTab(t)}
-              className={`flex-1 py-2 text-xs font-medium rounded-full transition-all cursor-pointer
+              className={`py-2.5 text-xs font-medium border-b-2 transition-colors cursor-pointer
                 ${tab === t
-                  ? "bg-white text-[var(--color-text)] shadow-sm"
-                  : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
+                  ? "border-brand text-brand"
+                  : "border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
                 }`}
             >
               {t === "login" ? "登录" : "注册"}
@@ -278,8 +278,8 @@ export function LoginModal({
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full py-2.5 rounded-full bg-brand text-white text-sm font-semibold
-                  hover:bg-brand-hover hover:scale-[1.02] active:scale-[0.98]
+                className="w-full py-2.5 rounded-action bg-brand text-white text-sm font-semibold
+                  hover:bg-brand-hover active:translate-y-px
                   transition-all duration-300 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {loading ? (
@@ -328,8 +328,8 @@ export function LoginModal({
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full py-2.5 rounded-full bg-brand text-white text-sm font-semibold
-                  hover:bg-brand-hover hover:scale-[1.02] active:scale-[0.98]
+                className="w-full py-2.5 rounded-action bg-brand text-white text-sm font-semibold
+                  hover:bg-brand-hover active:translate-y-px
                   transition-all duration-300 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {loading ? (

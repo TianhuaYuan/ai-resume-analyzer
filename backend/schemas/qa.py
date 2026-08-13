@@ -25,6 +25,8 @@ class QuestionRequest(BaseModel):
     entry_id: str | None = None
     """AI 操作类型：optimize/check/rewrite/expand（builder 场景）。"""
     action: str | None = None
+    """能力目录传入的工具路由提示；只缩小候选 schema，不绕过参数校验或审批。"""
+    tool_hint: str | None = None
 
     @field_validator("resume_id")
     @classmethod
@@ -53,6 +55,16 @@ class QuestionRequest(BaseModel):
         if len(v) > 5:
             raise ValueError("compare_ids 最多 5 个")
         return v
+
+    @field_validator("tool_hint")
+    @classmethod
+    def tool_hint_validate(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        value = v.strip()
+        if not value or len(value) > 64 or not value.replace("_", "").isalnum():
+            raise ValueError("tool_hint 格式无效")
+        return value
 
 
 class SourceItem(BaseModel):

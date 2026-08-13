@@ -19,6 +19,8 @@ from __future__ import annotations
 
 from typing import Any
 
+PROTOCOL_VERSION = "1"
+
 # ── 文本事件族 ──────────────────────────────────────────────
 TEXT_START = "text_start"
 TEXT_DELTA = "text_delta"

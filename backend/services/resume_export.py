@@ -13,7 +13,9 @@
 
 import io
 import logging
+import os
 import re
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -23,7 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.resume import Resume
 from models.resume_module import ResumeModule
 from schemas.resume_module import ResumeStyle, get_content_items
-from services.resume_builder import _merge_modules_to_text, _MODULE_SECTION_HEADERS
+from services.resume_builder import _label, _merge_modules_to_text, _MODULE_SECTION_HEADERS
 from services.resume_template import render_resume
 
 logger = logging.getLogger(__name__)
@@ -31,6 +33,22 @@ logger = logging.getLogger(__name__)
 # WeasyPrint 懒导入（GTK 未安装时不可用）
 _weasyprint = None
 _weasyprint_checked = False
+
+
+def _configure_windows_weasyprint_dlls() -> None:
+    """Auto-discover a local GTK/Pango runtime before importing WeasyPrint."""
+    if sys.platform != "win32" or os.getenv("WEASYPRINT_DLL_DIRECTORIES"):
+        return
+
+    candidates = [
+        Path(os.getenv("MSYS2_ROOT", r"C:\msys64")) / "mingw64" / "bin",
+        Path(r"C:\Program Files\GTK3-Runtime Win64\bin"),
+    ]
+    for candidate in candidates:
+        if (candidate / "libgobject-2.0-0.dll").is_file():
+            os.environ["WEASYPRINT_DLL_DIRECTORIES"] = str(candidate)
+            logger.info("Configured WeasyPrint DLL directory: %s", candidate)
+            return
 
 # 匹配 /uploads/... 图片 URL（JPG/PNG/WebP）
 _UPLOAD_URL_RE = re.compile(r'/uploads/[^\s"\'<>]+\.(?:jpg|jpeg|png|webp)', re.IGNORECASE)
@@ -42,6 +60,7 @@ def _get_weasyprint():
     if _weasyprint_checked:
         return _weasyprint
     _weasyprint_checked = True
+    _configure_windows_weasyprint_dlls()
     try:
         from weasyprint import HTML
         _weasyprint = HTML
@@ -162,68 +181,74 @@ _MD_SECTION_TITLES: dict[str, str] = _MODULE_SECTION_HEADERS
 
 
 def _module_to_markdown(mod: ResumeModule) -> str:
-    """将单个模块转为 Markdown 段落。"""
+    """将单个模块转为可读、可移植的 Markdown 段落。"""
     title = _MD_SECTION_TITLES.get(mod.module_type, mod.module_type)
     content = mod.content if isinstance(mod.content, dict) else {}
-
     lines = [f"## {title}", ""]
 
-    # 纯字符串 items（兴趣/标签等）—— 直接逗号拼接（须先于通用 dict 列表分支，否则被跳过）
-    if "items" in content and isinstance(content["items"], list) and all(
-        isinstance(i, str) for i in content["items"]
-    ):
-        lines.append(", ".join(content["items"]))
+    def value_text(value: object) -> str:
+        if isinstance(value, list):
+            return "；".join(str(item) for item in value if item not in (None, ""))
+        text = str(value).replace("\r\n", "\n").replace("\n", "<br>")
+        if re.match(r"^https?://", text, re.IGNORECASE):
+            return f"[{text}]({text})"
+        return text
+
+    raw_items = content.get("items")
+    if isinstance(raw_items, list) and all(isinstance(item, str) for item in raw_items):
+        lines.append("、".join(raw_items))
         lines.append("")
         return "\n".join(lines)
 
-    # 列表型模块（v2: items；兼容旧格式 entries / skills categories）
     items = get_content_items(content)
-    if isinstance(items, list) and items:
-        for item in items:
-            if isinstance(item, dict):
-                parts = []
-                for k, v in item.items():
-                    if v is None or v == "" or v == [] or k in ("id", "hidden"):
-                        continue
-                    if isinstance(v, list):
-                        v_text = ", ".join(str(i) for i in v)
-                    else:
-                        v_text = str(v)
-                    parts.append(f"**{k}**: {v_text}")
-                if parts:
-                    lines.append(f"- {' | '.join(parts)}")
-        lines.append("")
-        return "\n".join(lines)
-
-    # 技能模块（v2: 扁平 items 按 category 分组）
-    if isinstance(items, list) and items and isinstance(items[0], dict) and "category" in items[0]:
+    if mod.module_type == "skills" and isinstance(items, list):
         grouped: dict[str, list[str]] = {}
         for item in items:
-            cat = item.get("category", "其他")
-            name = item.get("name", "")
+            if not isinstance(item, dict):
+                continue
+            category = str(item.get("category") or "其他")
+            name = str(item.get("name") or "").strip()
             if name:
-                grouped.setdefault(cat, []).append(name)
-        for cat_name, skill_names in grouped.items():
-            lines.append(f"- **{cat_name}**: {', '.join(skill_names)}")
+                grouped.setdefault(category, []).append(name)
+        for category, skill_names in grouped.items():
+            lines.append(f"- **{category}**：{'、'.join(skill_names)}")
+        if grouped:
+            lines.append("")
+            return "\n".join(lines)
+
+    if isinstance(items, list) and items:
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            parts: list[str] = []
+            for key, value in item.items():
+                if key in {"id", "hidden", "metadata"} or value in (None, "", []):
+                    continue
+                parts.append(f"**{_label(key, mod.module_type)}**：{value_text(value)}")
+            if parts:
+                lines.append(f"- {' | '.join(parts)}")
         lines.append("")
         return "\n".join(lines)
 
-    # 平铺型模块
-    for k, v in content.items():
-        if v is None or v == "" or v == []:
+    for key, value in content.items():
+        if key in {"avatar", "metadata", "id", "hidden"} or value in (None, "", []):
             continue
-        # 跳过头像 URL（二进制资源，Markdown 中无意义）
-        if k == "avatar":
-            continue
-        if isinstance(v, list):
-            for item in v:
-                if isinstance(item, dict):
-                    name = item.get("name", "")
-                    url = item.get("url", "")
-                    if name or url:
-                        lines.append(f"- **{name}**: {url}")
+        if isinstance(value, list):
+            for item in value:
+                if not isinstance(item, dict):
+                    continue
+                if key == "custom_fields":
+                    custom_key = str(item.get("key") or "自定义字段")
+                    custom_value = str(item.get("value") or "")
+                    if custom_value:
+                        lines.append(f"**{custom_key}**：{value_text(custom_value)}")
+                    continue
+                name = str(item.get("name") or _label(key, mod.module_type))
+                url = str(item.get("url") or "")
+                if url:
+                    lines.append(f"- **{name}**：[{url}]({url})")
         else:
-            lines.append(f"**{k}**: {v}")
+            lines.append(f"**{_label(key, mod.module_type)}**：{value_text(value)}")
     lines.append("")
     return "\n".join(lines)
 
@@ -269,7 +294,7 @@ async def export_resume_markdown(
 
     lines.append("---")
     lines.append("")
-    lines.append("*由 AI Resume Analyzer 生成*")
+    lines.append("*由求职工作台导出*")
 
     markdown = "\n".join(lines)
     filename = f"resume_{resume_id}.md"

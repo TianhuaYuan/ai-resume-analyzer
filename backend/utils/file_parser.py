@@ -73,6 +73,56 @@ _MULTICOLUMN_MIN_SPLIT = 2
 _LINE_JOIN_X_TOLERANCE = 3.0
 
 
+def _extract_link_evidence(
+    hyperlinks: list[dict], words: list[dict], existing_text: str
+) -> list[str]:
+    """Preserve clickable PDF annotations as labelled text evidence.
+
+    PDF text extraction returns the visible label but normally drops the URI
+    stored in the annotation.  This is common for labels such as “GitHub 主页”
+    and used to create broken resume links.  Only safe web/mail/phone schemes
+    are accepted; already-visible values are deduplicated.
+    """
+    evidence: list[str] = []
+    seen = {existing_text}
+    for link in hyperlinks or []:
+        raw_uri = str(link.get("uri") or "").strip()
+        if not raw_uri or len(raw_uri) > 2048:
+            continue
+        lowered = raw_uri.lower()
+        if lowered.startswith("mailto:"):
+            value = raw_uri[7:]
+        elif lowered.startswith("tel:"):
+            value = raw_uri[4:]
+        elif lowered.startswith(("http://", "https://")):
+            value = raw_uri
+        else:
+            continue
+        canonical_value = value.rstrip("/")
+        if not value or any(canonical_value in item for item in seen):
+            continue
+
+        try:
+            x0, x1 = float(link["x0"]), float(link["x1"])
+            top, bottom = float(link["top"]), float(link["bottom"])
+            label_words = [
+                word
+                for word in words
+                if x0 <= (float(word["x0"]) + float(word["x1"])) / 2 <= x1
+                and top <= (float(word["top"]) + float(word["bottom"])) / 2 <= bottom
+            ]
+            label_words.sort(key=lambda word: float(word["x0"]))
+            label = _join_line_words(label_words).strip()
+        except (KeyError, TypeError, ValueError):
+            label = ""
+        if not label:
+            label = "链接"
+        line = f"{label}: {value}"
+        evidence.append(line)
+        seen.add(line)
+    return evidence
+
+
 def _group_by_center_y(texts: list[dict]) -> list[list[dict]]:
     """按文本块中心 y 坐标分组（同一 y 带归一组）。纯函数。
 
@@ -188,11 +238,15 @@ def parse_pdf(path: str) -> str:
                         _join_line_words(line) for line in ordered_lines
                     )
                     if page_text.strip():
-                        parts.append(page_text)
+                        link_lines = _extract_link_evidence(
+                            getattr(page, "hyperlinks", []), words, page_text
+                        )
+                        parts.append("\n".join([page_text, *link_lines]))
                 continue
             text = page.extract_text()
             if text:
-                parts.append(text)
+                link_lines = _extract_link_evidence(getattr(page, "hyperlinks", []), words, text)
+                parts.append("\n".join([text, *link_lines]))
     return "\n".join(parts).strip()
 
 
@@ -267,29 +321,15 @@ def _is_scanned_pdf(path: str, extracted_text: str) -> bool:
 async def parse_resume(path: str) -> str:
     """根据扩展名自动选解析器。
 
-    优先级：MinerU → 本地快速解析（pdfplumber / python-docx，秒级）→ Docling 版面增强 → OCR。
+    优先级：本地快速解析（pdfplumber / python-docx，秒级）→ MinerU → Docling 版面增强 → OCR。
 
-    优化：原实现 MinerU 失败后无条件跑 Docling 版面分析（CPU 推理 + 首次加载 ~500MB 模型），
-    普通文本 PDF 也被拖慢到秒级。改为「本地解析结果足够就直接返回」，
-    Docling 降为本地结果不足/疑似扫描件时的版面感知兜底。
+    文本型 PDF/DOCX 的本地提取通常在 1 秒内完成，且 PDF 已包含双栏阅读顺序重建；
+    因此不再让所有上传先等待 MinerU 网络轮询。只有本地文本不足或判定为扫描件时，
+    才调用 MinerU/Docling/OCR，兼顾正常文件速度与复杂文件质量。
     """
     ext = Path(path).suffix.lower()
 
-    # 1. MinerU 在线精准解析（需配置，失败自动降级）
-    if ext in {".pdf", ".docx"}:
-        try:
-            client = _get_mineru_client()
-            mineru_text = await client.parse_file(path)
-            if mineru_text and len(mineru_text) >= MIN_SCAN_TEXT_LENGTH:
-                logger.info("MinerU 解析成功: path=%s, len=%d", path, len(mineru_text))
-                # MinerU 输出已是 markdown，对 PDF 也做分节标注增强
-                if ext == ".pdf":
-                    mineru_text = _annotate_sections(mineru_text)
-                return mineru_text
-        except Exception as e:
-            logger.warning("MinerU 解析失败，fallback 本地解析: %s", e)
-
-    # 2. 本地快速解析（秒级）——优先跑，避免 Docling 拖慢普通文本 PDF
+    # 1. 本地快速解析（秒级）
     text = ""
     parser = _PARSERS.get(ext)
     if parser is not None:
@@ -306,9 +346,23 @@ async def parse_resume(path: str) -> str:
     if ext == ".pdf":
         text = _annotate_sections(text or "")
 
-    # 3. 本地结果足够（非扫描件）→ 直接返回，不跑 Docling
+    # 2. 本地结果足够（非扫描件）→ 直接返回，不调用任何外部解析服务
     if text and len(text.strip()) >= MIN_SCAN_TEXT_LENGTH and not _is_scanned_pdf(path, text):
+        logger.info("本地快速解析成功: path=%s, len=%d", path, len(text.strip()))
         return text.strip()
+
+    # 3. MinerU 在线精准解析（仅复杂/扫描件，失败自动降级）
+    if ext in {".pdf", ".docx"}:
+        try:
+            client = _get_mineru_client()
+            mineru_text = await client.parse_file(path)
+            if mineru_text and len(mineru_text) >= MIN_SCAN_TEXT_LENGTH:
+                logger.info("MinerU 解析成功: path=%s, len=%d", path, len(mineru_text))
+                if ext == ".pdf":
+                    mineru_text = _annotate_sections(mineru_text)
+                return mineru_text
+        except Exception as e:
+            logger.warning("MinerU 解析失败，fallback 本地版面/OCR: %s", e)
 
     # 4. Docling 本地版面解析（本地结果不足/疑似扫描件时的版面感知兜底）
     if ext == ".pdf":

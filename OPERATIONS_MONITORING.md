@@ -44,6 +44,9 @@ docker compose -f docker-compose.monitoring.yml up -d
 
 监控 compose 默认只绑定 `127.0.0.1`（Grafana `3000`、Prometheus `9090`）。需要反向代理或内网访问时，显式设置 `GRAFANA_BIND` / `PROMETHEUS_BIND`，不要无意暴露到公网。
 
+管理后台只在构建前端时设置了 `VITE_GRAFANA_URL` 才嵌入面板。例如本地使用
+`VITE_GRAFANA_URL=http://127.0.0.1:3000`；生产环境建议填写经过鉴权与访问控制的同源反向代理地址。
+
 Prometheus 容器会以 `0600` 权限写入 `METRICS_TOKEN`，并通过 `bearer_token_file` 抓取后端 `/metrics`。Grafana datasource UID 固定为 `prometheus`，dashboard 由 provisioning 自动注册。
 
 生产/预发布必须设置非空的 `METRICS_TOKEN` 和 `GRAFANA_ADMIN_PASSWORD`；本地开发可留空 metrics token。

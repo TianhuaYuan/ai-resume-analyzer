@@ -357,7 +357,14 @@ async def cleanup_expired_resumes() -> int:
                 resume_result = await db.execute(select(Resume).where(Resume.id == resume_id))
                 resume = resume_result.scalar_one_or_none()
                 if resume:
-                    resume.status = "expired"
+                    from services.resume_service import set_resume_status
+
+                    await set_resume_status(
+                        db,
+                        resume,
+                        "expired",
+                        reason=f"简历已过期（过期时间: {resume.expires_at}）",
+                    )
                     resume.status_message = f"简历已过期（过期时间: {resume.expires_at}）"
 
                 cleaned_count += 1

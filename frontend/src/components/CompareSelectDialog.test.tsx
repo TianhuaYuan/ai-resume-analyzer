@@ -12,7 +12,7 @@ vi.mock("../api/resumes", () => ({
 }));
 
 describe("CompareSelectDialog", () => {
-  it("allows selecting the current resume as the only comparison input", async () => {
+  it("allows selecting one additional resume because the current resume is the baseline", async () => {
     const onConfirm = vi.fn();
     render(
       <CompareSelectDialog
@@ -23,9 +23,9 @@ describe("CompareSelectDialog", () => {
       />,
     );
 
-    await waitFor(() => expect(screen.getByText("当前简历")).toBeInTheDocument());
-    fireEvent.click(screen.getByText("当前简历"));
+    await waitFor(() => expect(screen.getByText("另一份简历")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("另一份简历"));
     fireEvent.click(screen.getByRole("button", { name: "确认" }));
-    expect(onConfirm).toHaveBeenCalledWith([7]);
+    expect(onConfirm).toHaveBeenCalledWith([8]);
   });
 });

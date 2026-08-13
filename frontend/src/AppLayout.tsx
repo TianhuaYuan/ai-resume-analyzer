@@ -1,6 +1,5 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useAuth } from "./context/AuthContext";
-import { AppChatProvider } from "./context/AppChatContext";
 import Sidebar from "./components/Sidebar";
 import SessionExpiredDialog from "./components/SessionExpiredDialog";
 
@@ -23,14 +22,36 @@ interface AppLayoutProps {
  */
 export default function AppLayout({ children }: AppLayoutProps) {
   const { sessionDialog, handleSessionGoLogin } = useAuth();
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobile, setMobile] = useState(() => window.matchMedia("(max-width: 639px)").matches);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => window.matchMedia("(max-width: 639px)").matches,
+  );
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 639px)");
+    const sync = () => {
+      setMobile(media.matches);
+      if (media.matches) setSidebarCollapsed(true);
+    };
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
 
   return (
-    <AppChatProvider>
-      <div className="flex h-screen overflow-hidden">
+    <>
+      <div className="relative flex h-screen overflow-hidden">
+        {mobile && !sidebarCollapsed && (
+          <button
+            type="button"
+            className="fixed inset-0 z-30 bg-black/35"
+            aria-label="关闭侧边栏"
+            onClick={() => setSidebarCollapsed(true)}
+          />
+        )}
         {/* 左侧导航栏 */}
         <Sidebar
           collapsed={sidebarCollapsed}
+          mobile={mobile}
           onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
         />
 
@@ -46,6 +67,6 @@ export default function AppLayout({ children }: AppLayoutProps) {
         open={sessionDialog !== null}
         onGoLogin={handleSessionGoLogin}
       />
-    </AppChatProvider>
+    </>
   );
 }

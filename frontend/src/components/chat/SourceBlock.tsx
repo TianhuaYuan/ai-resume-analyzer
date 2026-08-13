@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronRight, ChevronDown } from "lucide-react";
+import { ChevronRight, ChevronDown, Paperclip } from "lucide-react";
 import type { DiagnosisSource } from "./DiagnosisCard";
 
 interface SourceBlockProps {
@@ -30,7 +30,7 @@ export default function SourceBlock({ sources, title = "来源原文", numbered 
           text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer"
       >
         <span className="inline-flex items-center gap-1.5 min-w-0">
-          <span className="text-brand shrink-0">📎</span>
+          <Paperclip size={13} className="text-brand shrink-0" aria-hidden="true" />
           <span className="truncate">{title}</span>
           <span className="text-[10px] text-[var(--color-text-muted)] shrink-0">
             {items.length} 条

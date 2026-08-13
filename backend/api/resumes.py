@@ -876,7 +876,7 @@ async def upload_avatar(
     - 422 MIME 不支持 / 不是有效图片
     - 413 文件过大
     """
-    from services.avatar_service import save_avatar
+    from services.avatar_service import delete_avatar, save_avatar
     from services.resume_builder import get_resume_with_modules
 
     # 校验归属
@@ -891,7 +891,7 @@ async def upload_avatar(
             break
 
     # 保存头像（会自动删除旧头像文件）
-    avatar_url = await save_avatar(file, resume_id, old_avatar_url)
+    avatar_url = await save_avatar(file, resume_id)
 
     # 更新 basic_info 模块的 avatar 字段
     basic_info_module = None
@@ -901,7 +901,7 @@ async def upload_avatar(
             break
 
     if basic_info_module:
-        content = basic_info_module.content or {}
+        content = dict(basic_info_module.content or {})
         content["avatar"] = avatar_url
         basic_info_module.content = content
     else:
@@ -914,7 +914,15 @@ async def upload_avatar(
         )
         db.add(new_module)
 
-    await db.commit()
+    try:
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        delete_avatar(avatar_url)
+        raise
+
+    if old_avatar_url and old_avatar_url != avatar_url:
+        delete_avatar(old_avatar_url)
 
     logger.info("Avatar uploaded: resume=%d, url=%s", resume_id, avatar_url)
     return {"avatar_url": avatar_url}
@@ -1001,6 +1009,7 @@ async def parse_to_modules(
 
     请求体：
     - text: 简历纯文本（必填，长度 10-50000）
+    - filename: 原文件名/用户填写标题（可选，仅作为缺失姓名的显式元数据）
 
     错误码：
     - 401 未登录
@@ -1010,6 +1019,11 @@ async def parse_to_modules(
     from services.resume_parser import parse_text_to_modules
 
     text = body.get("text", "") if isinstance(body, dict) else ""
+    source_filename = body.get("filename") if isinstance(body, dict) else None
+    if source_filename is not None and not isinstance(source_filename, str):
+        source_filename = None
+    if isinstance(source_filename, str):
+        source_filename = source_filename.strip()[:255] or None
     if not text or len(text.strip()) < 10:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -1022,7 +1036,11 @@ async def parse_to_modules(
         )
 
     try:
-        modules = await parse_text_to_modules(text, user_id=current_user.id)
+        modules = await parse_text_to_modules(
+            text,
+            user_id=current_user.id,
+            source_filename=source_filename,
+        )
     except ValueError as e:
         logger.warning("parse_to_modules failed: %s", e)
         raise HTTPException(
@@ -1094,12 +1112,12 @@ async def _load_module_fact_source(
         import json as _json
 
         from services.resume_builder import get_resume_with_modules
-        from utils.privacy import sanitize_for_ai
+        from utils.privacy import sanitize_resume_module_for_ai
 
         _, modules = await get_resume_with_modules(db, user_id, resume_id)
         for m in modules:
             if m.module_type == module_type:
-                content = sanitize_for_ai(m.content) if isinstance(m.content, dict) else m.content
+                content = sanitize_resume_module_for_ai(m.module_type, m.content) if isinstance(m.content, dict) else m.content
                 # 1200 字符截断：事实源仅供约束不新增事实，过长反而拖慢 prefill
                 return _json.dumps(content, ensure_ascii=False)[:1200]
     except HTTPException:
@@ -1380,7 +1398,7 @@ async def compare_resumes(
 ):
     """多简历对比分析。
 
-    对比 1-5 份简历的技能和项目维度（可包含当前简历）。
+    对比 2-6 份简历的技能和项目维度（当前基准简历 + 1-5 个对比简历）。
     错误码：
     - 401 未登录
     - 404 任一简历不存在或非本人

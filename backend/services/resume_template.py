@@ -15,6 +15,7 @@ import logging
 import re
 from html import escape
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from schemas.resume_module import ResumeStyle, DEFAULT_MODULE_LABELS, get_content_items, get_content_title
 
@@ -193,6 +194,18 @@ def _esc(value) -> str:
     return escape(str(value))
 
 
+def _safe_http_url(value) -> str:
+    """Return an escaped absolute HTTP(S) URL, otherwise an empty string."""
+    raw = str(value or "").strip()
+    try:
+        parsed = urlsplit(raw)
+    except ValueError:
+        return ""
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
+        return ""
+    return _esc(raw)
+
+
 try:
     import markdown as _markdown
 
@@ -291,17 +304,20 @@ def _render_basic_info(content: dict) -> str:
 
     # 链接（GitHub | 博客 | 主页）
     link_parts = []
-    if content.get("github_url"):
+    github_url = _safe_http_url(content.get("github_url"))
+    blog_url = _safe_http_url(content.get("blog_url"))
+    homepage_url = _safe_http_url(content.get("homepage_url"))
+    if github_url:
         link_parts.append(
-            f'<a href="{_esc(content["github_url"])}" style="color:var(--accent-color);text-decoration:none;">GitHub</a>'
+            f'<a href="{github_url}" style="color:var(--accent-color);text-decoration:none;">GitHub</a>'
         )
-    if content.get("blog_url"):
+    if blog_url:
         link_parts.append(
-            f'<a href="{_esc(content["blog_url"])}" style="color:var(--accent-color);text-decoration:none;">博客</a>'
+            f'<a href="{blog_url}" style="color:var(--accent-color);text-decoration:none;">博客</a>'
         )
-    if content.get("homepage_url"):
+    if homepage_url:
         link_parts.append(
-            f'<a href="{_esc(content["homepage_url"])}" style="color:var(--accent-color);text-decoration:none;">主页</a>'
+            f'<a href="{homepage_url}" style="color:var(--accent-color);text-decoration:none;">主页</a>'
         )
     if link_parts:
         parts.append(f'<div class="basic-links">{" | ".join(link_parts)}</div>')
@@ -417,8 +433,10 @@ def _render_project_experience(content: dict) -> str:
         if tech_stack:
             techs = ", ".join(_esc(t) for t in tech_stack)
             row += f'<div class="proj-tech">技术栈: {techs}</div>'
-        if entry.get("url"):
-            row += f'<div class="proj-url">{_esc(entry["url"])}</div>'
+        project_url = _safe_http_url(entry.get("url"))
+        if project_url:
+            display_url = re.sub(r"^https?://", "", project_url, flags=re.IGNORECASE).rstrip("/")
+            row += f'<div class="proj-url"><a href="{project_url}">{display_url}</a></div>'
         row += "</div>"
         rows.append(row)
     return "\n".join(rows)
@@ -584,7 +602,7 @@ def _render_publications(content: dict) -> str:
         authors = entry.get("authors", [])
         venue = _esc(entry.get("venue", ""))
         date = _esc(entry.get("date", ""))
-        url = _esc(entry.get("url", ""))
+        url = _safe_http_url(entry.get("url"))
 
         row = f'<div class="pub-item"><div class="pub-title">{title}</div>'
         if authors:
@@ -642,9 +660,10 @@ def _render_social_links(content: dict) -> str:
         parts = []
         for item in items:
             platform = _esc(item.get("platform", ""))
-            url = _esc(item.get("url", ""))
+            url = _safe_http_url(item.get("url"))
             if platform or url:
-                parts.append(f'<span class="social-link"><strong>{platform}</strong>: {url}</span>')
+                value = f'<a href="{url}">{url}</a>' if url else ""
+                parts.append(f'<span class="social-link"><strong>{platform}</strong>: {value}</span>')
         return " | ".join(parts) if parts else ""
 
     # 旧格式兜底
@@ -659,15 +678,18 @@ def _render_social_links(content: dict) -> str:
     for key, label in fields:
         val = content.get(key)
         if val:
-            parts.append(f'<span class="social-link"><strong>{label}</strong>: {_esc(val)}</span>')
+            safe_url = _safe_http_url(val)
+            value = f'<a href="{safe_url}">{safe_url}</a>' if safe_url else _esc(val)
+            parts.append(f'<span class="social-link"><strong>{label}</strong>: {value}</span>')
 
     others = content.get("others", [])
     for other in others:
         if isinstance(other, dict):
             name = _esc(other.get("name", ""))
-            url = _esc(other.get("url", ""))
+            url = _safe_http_url(other.get("url"))
             if name or url:
-                parts.append(f'<span class="social-link"><strong>{name}</strong>: {url}</span>')
+                value = f'<a href="{url}">{url}</a>' if url else ""
+                parts.append(f'<span class="social-link"><strong>{name}</strong>: {value}</span>')
 
     return " | ".join(parts) if parts else ""
 
@@ -867,6 +889,18 @@ def render_resume(
 
     # 4. 预解析 CSS 变量
     html = preparse_css_variables(html, style)
+
+    # Keep PDF pagination identical to the A4 preview. Without clone,
+    # WeasyPrint applies a fragmented container's padding only at the start/end
+    # of the whole document, leaving continuation pages without page margins.
+    paged_media_css = (
+        "\n  /* preview/pdf pagination parity */\n"
+        "  body, .sidebar, .main, .body {\n"
+        "    box-decoration-break: clone;\n"
+        "    -webkit-box-decoration-break: clone;\n"
+        "  }\n"
+    )
+    html = html.replace("</style>", f"{paged_media_css}</style>", 1)
 
     # 5. 注入自定义 CSS（在变量预解析之后，追加到 </style> 前）
     if style.custom_css.strip():

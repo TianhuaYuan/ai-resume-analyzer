@@ -348,10 +348,12 @@ export default function ResumeManagementPage() {
     try {
       const key = await generateIdempotencyKey(file);
       const result = await uploadResume(file, key);
-      // 上传后提醒预计等待时间（解析文本 + AI 生成表单）
-      const estimated = result.estimated_seconds ?? 120;
-      const waitMin = Math.max(1, Math.ceil(estimated / 60));
-      toast.success(`「${result.filename}」上传成功，预计约 ${waitMin} 分钟完成，请稍候...`);
+      // 上传后提醒预计等待时间（本地文本读取 + 结构化表单）
+      const estimated = result.estimated_seconds ?? 20;
+      const waitText = estimated < 60
+        ? `${Math.max(5, Math.ceil(estimated / 5) * 5)} 秒`
+        : `${Math.ceil(estimated / 60)} 分钟`;
+      toast.success(`「${result.filename}」上传成功，预计约 ${waitText}完成；可在列表查看实时进度`);
       // 留在管理页，用户可实时看到解析状态变化（processing → ready）
       await fetchResumes();
     } catch (err) {
@@ -447,6 +449,16 @@ export default function ResumeManagementPage() {
       return (
         <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-warning/15 text-warning border border-warning/30">
           草稿
+        </span>
+      );
+    }
+    if (r.parse_progress?.stage === "partial") {
+      return (
+        <span
+          className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-warning/15 text-warning border border-warning/30"
+          title="文本已保留；打开简历会再次识别，也可使用粘贴导入"
+        >
+          表单待确认
         </span>
       );
     }

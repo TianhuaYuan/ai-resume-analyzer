@@ -68,14 +68,13 @@ beforeEach(() => {
 describe("HomePage 渲染", () => {
   it("渲染 Hero 标题与副标题", () => {
     render(<MemoryRouter><HomePage /></MemoryRouter>);
-    // P0 重设计后 h1 含品牌渐变强调行，用正则匹配
-    expect(screen.getByRole("heading", { level: 1, name: /拿下心仪 offer/ })).toBeInTheDocument();
-    expect(screen.getByText(/一站式 AI 求职助手/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: /让每次简历修改.*说明为什么/ })).toBeInTheDocument();
+    expect(screen.getByText(/导入简历，核对岗位证据/)).toBeInTheDocument();
   });
 
   it("未登录时显示「开始使用」CTA", () => {
     render(<MemoryRouter><HomePage /></MemoryRouter>);
-    expect(screen.getByText("开始使用")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "开始使用" }).length).toBeGreaterThan(0);
   });
 
   it("已登录时显示「我的简历」CTA 并跳转 /resumes", () => {
@@ -99,9 +98,9 @@ describe("HomePage 渲染", () => {
 
   it("渲染功能简介卡片", () => {
     render(<MemoryRouter><HomePage /></MemoryRouter>);
-    expect(screen.getByText("一站式求职，从简历开始")).toBeInTheDocument();
-    expect(screen.getByText("AI 智能对话")).toBeInTheDocument();
+    expect(screen.getByText("一套连贯的求职工作流")).toBeInTheDocument();
+    expect(screen.getByText("对话式任务台")).toBeInTheDocument();
     expect(screen.getByText("专业简历编辑器")).toBeInTheDocument();
-    expect(screen.getByText("求职全程护航")).toBeInTheDocument();
+    expect(screen.getByText("投递工作台")).toBeInTheDocument();
   });
 });

@@ -115,17 +115,16 @@ async def save_avatar(file: UploadFile, resume_id: int, old_avatar_url: str | No
     """安全保存头像图片。
 
     流程：
-    1. 删除旧头像文件（如果有）
-    2. MIME 白名单校验
-    3. 读取文件内容 + 大小校验
-    4. PIL 真实图片校验
-    5. UUID 文件名（防路径遍历）
-    6. 保存到 uploads/avatars/
+    1. MIME 白名单校验
+    2. 读取文件内容 + 大小校验
+    3. PIL 真实图片校验
+    4. UUID 文件名（防路径遍历）
+    5. 保存到 uploads/avatars/
 
     Args:
         file: 上传的文件
         resume_id: 简历ID
-        old_avatar_url: 旧头像URL，用于删除旧文件
+        old_avatar_url: 兼容旧调用，旧文件由 API 在数据库提交成功后删除
 
     Returns:
         avatar_url: 头像访问路径（如 /uploads/avatars/uuid.jpg）
@@ -134,25 +133,18 @@ async def save_avatar(file: UploadFile, resume_id: int, old_avatar_url: str | No
         HTTPException 422: MIME 不支持 / 不是有效图片
         HTTPException 413: 文件过大
     """
-    # 1. 删除旧头像文件
-    if old_avatar_url:
-        delete_avatar(old_avatar_url)
-
-    # 2. MIME 校验
+    # 先完整校验并保存新文件。旧文件只能在数据库提交成功后删除，
+    # 否则错误格式或提交失败会让用户已保存的头像永久丢失。
     content_type = _validate_mime(file)
 
-    # 3. 读取 + 大小校验
     data = await file.read()
     _validate_size(data)
 
-    # 4. PIL 校验
     _validate_image(data)
 
-    # 5. UUID 文件名
     ext = _get_extension(content_type)
     filename = f"{uuid.uuid4().hex}{ext}"
 
-    # 6. 保存
     upload_dir = _ensure_upload_dir()
     file_path = upload_dir / filename
     file_path.write_bytes(data)

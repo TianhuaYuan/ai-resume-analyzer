@@ -117,6 +117,18 @@ function getContentSummary(moduleType: ModuleType, content: ModuleContent): stri
     if (Array.isArray(categories) && categories.length > 0) {
       return `${categories.length} 个分类`;
     }
+    const items = content.items;
+    if (Array.isArray(items) && items.length > 0) {
+      const categoryCount = new Set(
+        items
+          .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object")
+          .map((item) => String(item.category ?? "").trim())
+          .filter(Boolean),
+      ).size;
+      return categoryCount > 0
+        ? `${categoryCount} 个分类 · ${items.length} 项`
+        : `${items.length} 项技能`;
+    }
     return "空模块";
   }
 

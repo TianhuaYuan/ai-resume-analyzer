@@ -38,6 +38,7 @@ from schemas.resume_module import (
 from services.rag.asset_source import ASSET_TYPE_RESUME
 from services.rag.clients import knowledge_collection_name
 from services.rag.ensure_indexed import ensure_indexed
+from services.resume_service import set_resume_status
 
 logger = logging.getLogger(__name__)
 
@@ -401,7 +402,7 @@ async def translate_resume_modules(
         HTTPException 404 简历不存在/无权访问；400 简历无模块；500 LLM 翻译或校验失败
     """
     from services.rag.pipeline import llm_generate
-    from utils.privacy import sanitize_for_ai
+    from utils.privacy import sanitize_resume_module_for_ai
 
     resume, modules = await get_resume_with_modules(db, user_id, resume_id)
     if not modules:
@@ -416,7 +417,7 @@ async def translate_resume_modules(
             {
                 "module_type": m.module_type,
                 "content": (
-                    sanitize_for_ai(m.content)
+                    sanitize_resume_module_for_ai(m.module_type, m.content)
                     if isinstance(m.content, dict)
                     else m.content
                 ),
@@ -571,7 +572,11 @@ async def materialize_modules_from_text(
         return resume, modules, True
 
     try:
-        parsed = await parse_text_to_modules(resume.parsed_text, user_id=user_id)
+        parsed = await parse_text_to_modules(
+            resume.parsed_text,
+            user_id=user_id,
+            source_filename=resume.filename,
+        )
     except Exception as e:  # noqa: BLE001 LLM/校验失败 → 降级，不抛给用户
         logger.warning("懒物化失败（可降级粘贴导入）resume=%d: %s", resume_id, e)
         return resume, modules, False
@@ -673,7 +678,7 @@ async def update_resume_draft(
 
     # version 不变（last-write-wins）
     # 内容已修改但未"保存并完成"重建索引 → 不再视为已就绪，置为 draft
-    resume.status = "draft"
+    await set_resume_status(db, resume, "draft", reason="草稿保存")
     resume.updated_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(resume)
@@ -731,6 +736,14 @@ _FIELD_LABELS: dict[str, str] = {
     "avatar": "头像",
     "job_title": "求职意向",
     "summary": "个人总结",
+    "status": "当前状态",
+    "hometown": "籍贯",
+    "work_years": "工作年限",
+    "highest_education": "最高学历",
+    "homepage_url": "个人主页",
+    "github_url": "GitHub",
+    "blog_url": "技术博客",
+    "custom_fields": "自定义信息",
     "school": "学校",
     "degree": "学历",
     "major": "专业",
@@ -761,29 +774,53 @@ _FIELD_LABELS: dict[str, str] = {
     "content": "内容",
 }
 
+_MODULE_FIELD_LABELS: dict[str, dict[str, str]] = {
+    "project_experience": {"name": "项目名称"},
+    "skills": {"name": "技能"},
+    "language": {"name": "语言"},
+    "honors": {"title": "奖项名称"},
+    "certificates": {"name": "证书名称"},
+    "interests": {"name": "兴趣"},
+    "club_activities": {"name": "社团/活动"},
+    "publications": {"title": "成果标题"},
+    "recommendation": {"name": "推荐人"},
+    "social_links": {"platform": "平台"},
+}
 
-def _label(key: str) -> str:
+
+def _label(key: str, module_type: str | None = None) -> str:
     """获取字段中文标签，无映射时返回原 key。"""
+    if module_type:
+        module_label = _MODULE_FIELD_LABELS.get(module_type, {}).get(key)
+        if module_label:
+            return module_label
     return _FIELD_LABELS.get(key, key)
 
 
-def _format_value(value) -> str:
+def _format_value(value, module_type: str | None = None) -> str:
     """格式化值为字符串。"""
     if value is None:
         return ""
     if isinstance(value, list):
         if all(isinstance(i, str) for i in value):
             return ", ".join(value)
-        return ", ".join(str(i) for i in value)
+        return ", ".join(
+            _entry_to_text(i, module_type) if isinstance(i, dict) else str(i) for i in value
+        )
+    if isinstance(value, dict):
+        return _entry_to_text(value, module_type)
     return str(value)
 
 
-def _entry_to_text(entry: dict) -> str:
+def _entry_to_text(entry: dict, module_type: str | None = None) -> str:
     """将单条 entry（dict）转为一行文本，字段用 | 分隔。"""
     parts = []
     for k, v in entry.items():
+        # id/hidden 是编辑器元数据，不属于候选人简历正文。
+        if k in {"id", "hidden", "metadata"}:
+            continue
         if v is not None and v != "" and v != []:
-            parts.append(f"{_label(k)}: {_format_value(v)}")
+            parts.append(f"{_label(k, module_type)}: {_format_value(v, module_type)}")
     return " | ".join(parts)
 
 
@@ -796,12 +833,32 @@ def _module_content_to_text(module_type: str, content: dict) -> str:
     - 兴趣模块（items）: 兴趣1, 兴趣2
     - 平铺型模块（basic_info 等）: 字段名: 值
     """
-    # 列表型模块
+    metadata = content.get("metadata")
+    if isinstance(metadata, dict) and metadata.get("hidden") is True:
+        return ""
+
+    # v2 统一结构：教育、工作、项目、技能等列表模块均使用 items。
+    # 旧实现只识别 entries/categories，导致页面表单与 parsed_text 严重不一致。
+    items = content.get("items")
+    if isinstance(items, list):
+        lines: list[str] = []
+        for item in items:
+            if isinstance(item, dict):
+                if item.get("hidden") is True:
+                    continue
+                line = _entry_to_text(item, module_type)
+            else:
+                line = _format_value(item, module_type)
+            if line.strip():
+                lines.append(line)
+        return "\n".join(lines)
+
+    # 兼容 v1 列表结构。
     if "entries" in content and isinstance(content["entries"], list):
         lines = []
         for entry in content["entries"]:
             if isinstance(entry, dict):
-                lines.append(_entry_to_text(entry))
+                lines.append(_entry_to_text(entry, module_type))
         return "\n".join(lines)
 
     # 技能模块
@@ -815,29 +872,25 @@ def _module_content_to_text(module_type: str, content: dict) -> str:
                     lines.append(f"{name}: {items}")
         return "\n".join(lines)
 
-    # 兴趣模块（扁平字符串列表）
-    if (
-        "items" in content
-        and isinstance(content["items"], list)
-        and all(isinstance(i, str) for i in content["items"])
-    ):
-        return ", ".join(content["items"])
-
     # 平铺型模块（basic_info, social_links, other, custom）
     lines = []
     for k, v in content.items():
+        if k in {"metadata", "hidden"}:
+            continue
         if v is None or v == "" or v == []:
             continue
         if isinstance(v, list):
-            # social_links 的 others 字段
             for item in v:
                 if isinstance(item, dict):
-                    name = item.get("name", "")
-                    url = item.get("url", "")
-                    if name or url:
-                        lines.append(f"{name}: {url}")
+                    if item.get("hidden") is True:
+                        continue
+                    line = _entry_to_text(item, module_type)
+                    if line:
+                        lines.append(line)
+                elif item not in (None, ""):
+                    lines.append(_format_value(item, module_type))
         else:
-            lines.append(f"{_label(k)}: {_format_value(v)}")
+            lines.append(f"{_label(k, module_type)}: {_format_value(v, module_type)}")
     return "\n".join(lines)
 
 
@@ -1012,9 +1065,15 @@ async def complete_resume(
     else:
         parsed_text = _merge_modules_to_text(current_modules)
         resume.parsed_text = parsed_text
+    previous_content_hash = resume.content_hash
     resume.content_hash = hashlib.sha256(parsed_text.encode("utf-8")).hexdigest()
 
-    # 6. 清 embedding 缓存（旧缓存对应旧文本）
+    # 6. 清派生缓存。分析缓存和向量缓存都对应旧正文；若只清向量缓存，
+    # 用户保存新表单后仍会收到旧诊断/旧评分。
+    from services.resume_analysis_cache import invalidate_resume_cache
+
+    if resume.content_hash != previous_content_hash:
+        await invalidate_resume_cache(resume_id)
     await embedding_cache.clear_resume(resume_id)
 
     # 7. 版本化重建（ensure_indexed：懒索引/预热统一入口，D2/D3）

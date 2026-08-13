@@ -23,13 +23,14 @@ import type { QuotaResponse } from "../api/qa";
 interface NavItem {
   key: string;
   label: string;
+  shortLabel?: string;
   route: string;
   requireAuth?: boolean;
 }
 
 const NAV_ITEMS: NavItem[] = [
   { key: "ai", label: "AI简历", route: "/qa", requireAuth: true },
-  { key: "feedback", label: "用户反馈", route: "/feedback" },
+  { key: "feedback", label: "用户反馈", shortLabel: "反馈", route: "/feedback" },
 ];
 
 // ── P1: 主题 4 模式选项（浅色/深色/跟随系统/OLED） ──
@@ -118,11 +119,12 @@ export default function LandingNav({ activeKey }: LandingNavProps) {
   return (
     <>
       <nav className="sticky top-0 z-30 bg-white/70 backdrop-blur-2xl border-b border-[var(--color-border)]">
-        <div className="max-w-7xl mx-auto px-6 h-14 flex items-center gap-6">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center gap-2 sm:gap-6">
           {/* Logo */}
           <button
             onClick={() => navigate("/")}
-            className="flex items-center gap-2 shrink-0 cursor-pointer transition-transform duration-300 hover:scale-[1.02]"
+            className="flex min-h-11 items-center gap-2 shrink-0 cursor-pointer transition-transform duration-300 hover:scale-[1.02]"
+            aria-label="返回首页"
           >
             <svg viewBox="0 0 64 64" className="w-7 h-7">
               <polygon points="32,6 54,18 32,30 10,18" fill="#F5C547" />
@@ -135,18 +137,19 @@ export default function LandingNav({ activeKey }: LandingNavProps) {
           </button>
 
           {/* 导航项 */}
-          <div className="flex items-center gap-0.5 overflow-x-auto">
+          <div className="flex min-w-0 items-center gap-0.5">
             {NAV_ITEMS.map((item) => (
               <button
                 key={item.key}
                 onClick={() => handleNavClick(item)}
-                className={`px-3 py-1.5 text-sm font-medium transition-all duration-300 cursor-pointer rounded-full whitespace-nowrap
+                className={`min-h-11 min-w-11 px-2 sm:px-3 py-1.5 text-xs sm:text-sm font-medium transition-all duration-300 cursor-pointer rounded-full whitespace-nowrap
                   ${activeKey === item.key
                     ? "text-brand bg-brand/10"
                     : "text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]"
                   }`}
               >
-                {item.label}
+                <span className="sm:hidden">{item.shortLabel ?? item.label}</span>
+                <span className="hidden sm:inline">{item.label}</span>
               </button>
             ))}
           </div>
@@ -158,7 +161,8 @@ export default function LandingNav({ activeKey }: LandingNavProps) {
               <div className="relative" ref={userMenuRef}>
                 <button
                   onClick={() => setUserMenuOpen((v) => !v)}
-                  className="flex items-center gap-2 px-2 py-1 rounded-full hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer"
+                  className="flex min-h-11 min-w-11 items-center justify-center gap-2 px-2 py-1 rounded-full hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer"
+                  aria-label="打开用户菜单"
                 >
                   <div className="w-7 h-7 rounded-full bg-brand flex items-center justify-center text-white text-xs font-semibold">
                     {user.username.charAt(0).toUpperCase()}
@@ -167,7 +171,7 @@ export default function LandingNav({ activeKey }: LandingNavProps) {
                   <ChevronDown size={12} className={`text-[var(--color-text-muted)] transition-transform duration-300 ${userMenuOpen ? "rotate-180" : ""}`} />
                 </button>
                 {userMenuOpen && (
-                  <div className="absolute right-0 top-full mt-2 w-48 rounded-input bg-white/90 backdrop-blur-xl border border-[var(--color-border)] shadow-2xl shadow-black/10 py-1 z-50 animate-fade-in-down">
+                  <div className="absolute right-0 top-full mt-2 w-48 rounded-input bg-[var(--color-surface)] border border-[var(--color-border)] shadow-2xl shadow-black/20 py-1 z-50 animate-fade-in-down">
                     {/* Token 用量概览 */}
                     {quota?.enabled && (
                       <div className="px-3.5 py-2.5 border-b border-[var(--color-border)]">
@@ -308,7 +312,7 @@ export default function LandingNav({ activeKey }: LandingNavProps) {
             ) : (
               <button
                 onClick={() => openLoginModal()}
-                className="px-4 py-1.5 rounded-full text-sm font-semibold bg-brand text-white
+                className="min-h-11 px-4 py-1.5 rounded-full text-sm font-semibold bg-brand text-white
                   hover:bg-brand-hover hover:scale-[1.02] active:scale-[0.98]
                   transition-all duration-300 cursor-pointer"
               >

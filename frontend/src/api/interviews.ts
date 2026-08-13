@@ -67,9 +67,13 @@ export interface ScorecardUpdateInput {
   notes?: string;
 }
 
-/** PUT /interviews/{id}/scorecard 返回 InterviewResponse + 派生 weak_competencies */
-export interface ScorecardUpdateResult extends InterviewSession {
+/** PUT /interviews/{id}/scorecard 的实际响应 + 派生 weak_competencies */
+export interface ScorecardUpdateResult {
+  interview_id: number;
+  status: string;
   weak_competencies: string[];
+  scorecard: InterviewScorecard;
+  notes: string | null;
 }
 
 /** GET /interviews/review/summary 复盘概览 */

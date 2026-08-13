@@ -8,7 +8,7 @@
 
 import json
 from dataclasses import dataclass
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -257,7 +257,9 @@ class TestLLMGenerateWithToolsNonStream:
                     user_id=42,
                 )
 
-        mock_record.assert_awaited_once_with(42, 100, 50)
+        mock_record.assert_awaited_once_with(
+            42, 100, 50, model=ANY, scenario="tool_call"
+        )
 
     @pytest.mark.asyncio
     async def test_no_usage_no_record(self):
@@ -513,7 +515,9 @@ class TestLLMGenerateWithToolsStream:
         assert len(usage_events) == 1
         assert usage_events[0]["prompt_tokens"] == 10
         assert usage_events[0]["completion_tokens"] == 5
-        mock_record.assert_awaited_once_with(99, 10, 5)
+        mock_record.assert_awaited_once_with(
+            99, 10, 5, model=ANY, scenario="tool_call"
+        )
 
     @pytest.mark.asyncio
     async def test_done_event_contains_aggregated_content(self):

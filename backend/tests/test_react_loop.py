@@ -18,6 +18,7 @@ import pytest
 from services.rag.pipeline import LLMToolResponse, ToolCall
 from services.react_agent.loop import (
     _cleanup_resume_write_lock,
+    _extract_direct_answer,
     _resume_write_lock,
     _resume_write_locks,
     _stabilize_tool_call_ids,
@@ -84,6 +85,17 @@ def test_resume_write_lock_cleanup_is_identity_safe():
     lock = _resume_write_lock(resume_id)
     _cleanup_resume_write_lock(resume_id, lock)
     assert resume_id not in _resume_write_locks
+
+
+def test_extract_direct_answer_keeps_structured_artifacts_out_of_chat_answer():
+    raw = (
+        "[[DIRECT_ANSWER]]\n## JD 匹配结果\n谨慎结论"
+        '\n\n<match_result>{"scores":{"overall":80}}</match_result>'
+    )
+    answer, visible = _extract_direct_answer(raw)
+    assert answer == "## JD 匹配结果\n谨慎结论"
+    assert visible.startswith("## JD 匹配结果")
+    assert "<match_result>" in visible
 
 
 def _patch_loop():
@@ -873,7 +885,8 @@ class TestAgentThoughtAndUsageEvents:
 
         thought_events = [e for e in events if e["type"] == "agent_thought"]
         assert len(thought_events) == 1
-        assert "让我想想" in thought_events[0]["content"]
+        # 对外只发可读阶段提示，不泄露 provider 的原始思维链。
+        assert thought_events[0]["content"] == "正在分析需求并规划下一步"
 
     @pytest.mark.asyncio
     async def test_agent_thought_not_emitted_when_no_reasoning(self):

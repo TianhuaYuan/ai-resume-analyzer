@@ -230,6 +230,7 @@ async def react_loop_stream(
     *,
     tool_mode: str = "agent",
     conversation_id: int | None = None,
+    tool_hint: str | None = None,
 ):
     """流式 ReAct 循环 — async generator 产出 SSE 事件。
 
@@ -256,10 +257,25 @@ async def react_loop_stream(
     loop_error: Exception | None = None
     start_time = time.monotonic()  # Spec: 紧凑摘要含耗时
     turn_id = uuid.uuid4().hex
+    sequence = 0
+
+    def envelope(event: dict) -> dict:
+        """Attach stable stream ownership metadata to every emitted event."""
+        nonlocal sequence
+        sequence += 1
+        from services.react_agent.events import PROTOCOL_VERSION
+
+        return {
+            **event,
+            "protocol_version": PROTOCOL_VERSION,
+            "event_type": event.get("type", "unknown"),
+            "turn_id": event.get("turn_id", turn_id),
+            "sequence": sequence,
+        }
 
     async def event_callback(event: dict) -> None:
         """react_loop 事件回调 — 入队供生成器消费。"""
-        await queue.put(event)
+        await queue.put(envelope(event))
 
     async def run_loop() -> None:
         """后台运行 react_loop，结束后放入 SENTINEL 标记完成。"""
@@ -285,6 +301,7 @@ async def react_loop_stream(
                 history=history,
                 event_callback=event_callback,
                 tool_mode=tool_mode,
+                tool_hint=tool_hint,
                 checkpoint_key=checkpoint_key,
                 inject_key=inject_key,
             )
@@ -343,9 +360,9 @@ async def react_loop_stream(
         if first_event is _SENTINEL:
             await cleanup_active_key()
             if loop_error:
-                yield {"type": "error", "message": f"Agent 内部错误: {loop_error}"}
+                yield envelope({"type": "error", "message": f"Agent 内部错误: {loop_error}"})
             else:
-                yield {"type": "error", "message": "Agent 未产出任何事件"}
+                yield envelope({"type": "error", "message": "Agent 未产出任何事件"})
             return
 
         # 配额不足 → 不创建占位记录，直接返回
@@ -357,12 +374,12 @@ async def react_loop_stream(
             return
 
         # ── 通知前端 Agent 开始（先发首事件，不被占位记录 DB 写阻塞）──
-        yield {
+        yield envelope({
             "type": "agent_start",
             "resume_id": resume_id,
             "turn_id": turn_id,
             "tools": _get_tool_list(tool_mode),
-        }
+        })
         logger.info(
             "agent_sse first_event_ms=%d", int((time.monotonic() - start_time) * 1000)
         )
@@ -404,7 +421,7 @@ async def react_loop_stream(
                 )
             except Exception:
                 logger.warning("标记失败 QA 记录失败: qa_id=%s", qa_id)
-            yield {"type": "error", "message": f"Agent 执行出错: {loop_error}"}
+            yield envelope({"type": "error", "message": f"Agent 执行出错: {loop_error}"})
             return
 
         if loop_result is None:
@@ -417,7 +434,7 @@ async def react_loop_stream(
                 )
             except Exception:
                 logger.warning("标记失败 QA 记录失败: qa_id=%s", qa_id)
-            yield {"type": "error", "message": "Agent 未返回结果"}
+            yield envelope({"type": "error", "message": "Agent 未返回结果"})
             return
 
         # ── 更新 QA 记录（完整 prompt trace 存 DB） ──────────
@@ -461,7 +478,7 @@ async def react_loop_stream(
         duration_ms = int((time.monotonic() - start_time) * 1000)
         logger.info("agent_sse done_ms=%d", duration_ms)
         compact_trace = _build_compact_trace(loop_result.process_trace, duration_ms)
-        yield {
+        yield envelope({
             "type": "agent_done",
             "answer": loop_result.answer,
             "qa_id": qa_id,
@@ -469,7 +486,7 @@ async def react_loop_stream(
             "token_usage": loop_result.usage,
             "process_trace": compact_trace,
             "degraded": _has_tool_error(loop_result.process_trace),
-        }
+        })
 
     except (asyncio.CancelledError, GeneratorExit) as e:
         # 客户端断连 — 取消后台 task，占位记录标记为 failed（生成中断），

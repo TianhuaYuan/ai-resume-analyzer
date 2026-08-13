@@ -3,6 +3,7 @@ import { useEffect, lazy, Suspense, type ReactNode } from "react";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { ThemeProvider } from "./context/ThemeContext";
 import { WebSocketProvider } from "./context/WebSocketContext";
+import { AppChatProvider } from "./context/AppChatContext";
 import AppLayout from "./AppLayout";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { LoginModalHost, openLoginModal } from "./components/LoginModal";
@@ -238,7 +239,9 @@ export default function App() {
           <AuthProvider>
             <ToastProvider>
               <WebSocketProvider>
-                <AppRoutes />
+                <AppChatProvider>
+                  <AppRoutes />
+                </AppChatProvider>
                 <LoginModalHost />
                 <ToastContainer />
               </WebSocketProvider>

@@ -71,6 +71,28 @@ _RESUME_WRITE_TOOLS = {
     "rewrite_resume", "update_resume", "delete_module",
 }
 _resume_write_locks: dict[int, asyncio.Lock] = {}
+_DIRECT_ANSWER_PREFIX = "[[DIRECT_ANSWER]]\n"
+
+
+def _extract_direct_answer(tool_result: str) -> tuple[str | None, str]:
+    """Extract a deterministic user answer while preserving tool artifacts.
+
+    Specialized analysis tools may already produce a fully grounded response.
+    Skipping an extra free-form LLM round both prevents embellishment and removes
+    one large latency/token hop.  Artifact blocks remain in the visible tool
+    result so the frontend can still render structured cards.
+    """
+    if not tool_result.startswith(_DIRECT_ANSWER_PREFIX):
+        return None, tool_result
+    visible_result = tool_result[len(_DIRECT_ANSWER_PREFIX):]
+    artifact_indexes = [
+        index
+        for marker in ("\n\n<match_result>", "\n\n<jd_report>")
+        if (index := visible_result.find(marker)) >= 0
+    ]
+    answer_end = min(artifact_indexes) if artifact_indexes else len(visible_result)
+    answer = visible_result[:answer_end].strip()
+    return (answer or None), visible_result
 
 
 def _resume_write_lock(resume_id: int) -> asyncio.Lock:
@@ -568,6 +590,7 @@ async def react_loop(
     history: list[dict] | None = None,
     event_callback: Callable[[dict], Awaitable[None]] | None = None,
     tool_mode: str = "agent",
+    tool_hint: str | None = None,
     checkpoint_key: str | None = None,
     checkpoint_ttl_seconds: int = 300,
     inject_key: str | None = None,
@@ -734,7 +757,14 @@ async def react_loop(
     # 4. 获取工具 schemas（v2: 统一使用 unified 工具集 + 相关性过滤）
     from services.react_agent.tool_gate import filter_agent_tools
 
-    agent_tools = filter_agent_tools(question, get_tools_for_agent())
+    all_agent_tools = get_tools_for_agent()
+    if tool_mode == "builder":
+        # Builder 模式必须保留写回模块的工具；普通 QA 相关性裁剪会把它们误删。
+        # 测试替身可能没有 category，回退到传入集合以保持兼容。
+        builder_tools = [tc for tc in all_agent_tools if getattr(tc, "category", None) == "builder"]
+        agent_tools = builder_tools or all_agent_tools
+    else:
+        agent_tools = filter_agent_tools(question, all_agent_tools, tool_hint=tool_hint)
     tool_schemas = [
         tc().to_openai_schema(strict=getattr(settings, "TOOL_CALL_STRICT", False))
         for tc in agent_tools
@@ -1034,9 +1064,13 @@ async def react_loop(
 
         # 处理结果：发 tool_result/tool_error 事件 + 回灌 messages + 收集 sources + 累计工具 LLM usage
         all_bad = True
+        direct_answer: str | None = None
         for tc, (tool_result, is_error, tool_sources, tool_usage) in zip(
             response.tool_calls, results
         ):
+            visible_tool_result = tool_result
+            if not is_error and len(response.tool_calls) == 1:
+                direct_answer, visible_tool_result = _extract_direct_answer(tool_result)
             if is_error:
                 await _emit(
                     {
@@ -1051,7 +1085,7 @@ async def react_loop(
                     {
                         "type": "tool_result",
                         "name": tc.name,
-                        "result": tool_result,
+                        "result": visible_tool_result,
                         "id": tc.id,
                     }
                 )
@@ -1065,7 +1099,7 @@ async def react_loop(
 
             # tool 结果/错误回灌到 messages（工具结果中间件：脱敏 + 按上下文窗口
             # 预算截断，避免敏感信息外泄 + 单一超长结果挤爆 L1）
-            content = await process_tool_result(tool_result, tool_name=tc.name)
+            content = await process_tool_result(visible_tool_result, tool_name=tc.name)
             messages.append(
                 {
                     "role": "tool",
@@ -1078,7 +1112,7 @@ async def react_loop(
             db_round["tool_results"].append(
                 {
                     "name": tc.name,
-                    "result": tool_result[:500],
+                    "result": visible_tool_result[:500],
                     "is_error": is_error,
                 }
             )
@@ -1090,6 +1124,31 @@ async def react_loop(
         if checkpoint_key:
             await _save_react_checkpoint(
                 checkpoint_key, question, messages, checkpoint_ttl_seconds
+            )
+
+        # Grounded specialized tools can provide a deterministic final answer.
+        # Return it directly instead of asking another model to paraphrase and
+        # potentially add unsupported claims.  Late user injections still win.
+        if direct_answer is not None and not all_bad:
+            if inject_key:
+                late_injections = await _drain_injections(inject_key, max_items=8)
+                if late_injections:
+                    for inj in late_injections:
+                        messages.append({"role": "user", "content": inj})
+                        await _emit({"type": "injection", "content": inj})
+                    await _emit({"type": "turn_restarting", "reason": "injection"})
+                    continue
+            await _emit({"type": "agent_done", "content": direct_answer})
+            _log_agent_timing("direct_tool_answer")
+            if checkpoint_key:
+                await _clear_react_checkpoint(checkpoint_key)
+            return ReactLoopResult(
+                answer=direct_answer,
+                process_trace=process_trace,
+                usage=total_usage,
+                sources=_deduplicate_sources(all_sources),
+                db_trace=_build_db_trace(system_prompt, db_rounds, FINAL_MODEL),
+                checkpoint_restored=restored_from_checkpoint,
             )
 
         # A3: per-tool 重试预算——同一工具连续失败超限即终止本轮（避免烧 token 反复重试同一错误）
@@ -1261,7 +1320,10 @@ async def _stream_middle_round(
             et = ev.get("type")
             if et == "reasoning":
                 reasoning_parts.append(ev["content"])
-                await emit({"type": "agent_thought", "content": ev["content"]})
+                # Provider reasoning 仅用于多轮协议回传，不属于用户答案。
+                # 不向客户端泄露原始 chain-of-thought；只发送一次可理解的阶段提示。
+                if len(reasoning_parts) == 1:
+                    await emit({"type": "agent_thought", "content": "正在分析需求并规划下一步"})
             elif et == "token":
                 content_parts.append(ev["content"])
             elif et == "usage":
@@ -1339,7 +1401,9 @@ async def _stream_final_round(
             et = ev.get("type")
             if et == "reasoning":
                 reasoning_parts.append(ev["content"])
-                await emit({"type": "agent_thought", "content": ev["content"]})
+                # 保留 reasoning_content 供 provider 协议使用，但不通过 SSE 暴露原文。
+                if len(reasoning_parts) == 1:
+                    await emit({"type": "agent_thought", "content": "正在整理信息并生成回答"})
             elif et == "token":
                 content_parts.append(ev["content"])
                 # 答案分块实时推送（打字机效果），避免最后一步长时间无内容

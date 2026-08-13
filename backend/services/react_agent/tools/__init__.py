@@ -15,6 +15,7 @@ v2 A1 新增 web_search（博查联网搜索：面经/薪资/公司评价/招聘
   unified (21): qa + builder 全部工具（/ask/agent 统一使用）
 """
 
+import asyncio
 import hashlib
 import json as _json
 import json as _json_std
@@ -49,7 +50,7 @@ from services.react_agent.tools.spawn import SpawnTool  # P1-1 子代理委派
 from services.react_agent.tools.web_search import WebSearchTool
 from services.resume_builder import get_resume_with_modules
 from services.resume_service import compare_resumes
-from utils.privacy import sanitize_for_ai
+from utils.privacy import sanitize_resume_module_for_ai
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +75,7 @@ class DiagnoseResumeArgs(BaseModel):
 
 
 class CompareResumesArgs(BaseModel):
-    resume_ids: list[int] = Field(..., min_length=1, max_length=5, description="要对比的简历 ID 列表（1-5 个，可包含当前简历）")
+    resume_ids: list[int] = Field(..., min_length=2, max_length=6, description="要对比的简历 ID 列表（当前基准简历 + 1-5 个对比简历）")
 
 
 class RewriteStarArgs(BaseModel):
@@ -238,7 +239,7 @@ class GetResumeContentTool(Tool):
                 if not m.content:
                     continue
                 sanitized = (
-                    sanitize_for_ai(m.content)
+                    sanitize_resume_module_for_ai(m.module_type, m.content)
                     if isinstance(m.content, dict)
                     else m.content
                 )
@@ -486,7 +487,36 @@ class JDMatchTool(Tool):
                 + _json_std.dumps(structured, ensure_ascii=False)
                 + "</match_result>"
             )
-            return analysis + structured_block + report_block
+            matched = structured["matched_keywords"]
+            missing = structured["missing_keywords"]
+            gaps = structured["gaps"]
+            overall = scores.get("overall")
+            answer_lines = ["## JD 匹配结果"]
+            if isinstance(overall, (int, float)):
+                answer_lines.extend(
+                    [
+                        f"**文本匹配参考分：{overall:g}/100**",
+                        "该分数只反映当前简历文字与 JD 的覆盖度，不代表 ATS 通过率或录用概率。",
+                    ]
+                )
+            answer_lines.append("\n### 匹配项（按当前文本证据）")
+            answer_lines.extend(
+                [f"- {item}" for item in matched]
+                or ["- 暂未找到可定位到简历原文的匹配项。"]
+            )
+            answer_lines.append("\n### 证据不足或缺失")
+            answer_lines.extend(
+                [f"- {item}" for item in missing]
+                or ["- 当前结构化分析未发现明确缺失项；技能深度仍需用项目细节或面试回答验证。"]
+            )
+            if gaps:
+                answer_lines.append("\n### 下一步建议")
+                answer_lines.extend(f"- {item}" for item in gaps)
+            answer_lines.append(
+                "\n> 说明：技能列表只能证明接触或了解；只有项目、实习或可复现实验中的具体做法，才算深度证据。"
+            )
+            direct_answer = "\n".join(answer_lines)
+            return "[[DIRECT_ANSWER]]\n" + direct_answer + structured_block + report_block
         except HTTPException as e:
             return f"⚠️ {e.detail}"
         except Exception as e:
@@ -513,14 +543,26 @@ class DiagnoseResumeTool(Tool):
 
         sections: list[str] = []
 
-        for analysis_type in ("experience", "score"):
-            try:
-                result = await analyze_resume(
-                    db=self.db,
+        async def _run_analysis(analysis_type: str):
+            # 两个分析都是只读且彼此独立。使用独立 session 并行执行，避免在同一个
+            # AsyncSession 上并发查询，也把首轮诊断等待时间从两次 LLM 串行降为一次。
+            async with AsyncSessionLocal() as analysis_db:
+                return await analyze_resume(
+                    db=analysis_db,
                     user_id=self.user_id,
                     resume_id=resume_id,
                     analysis_type=analysis_type,
                 )
+
+        analysis_types = ("experience", "score")
+        results = await asyncio.gather(
+            *(_run_analysis(analysis_type) for analysis_type in analysis_types),
+            return_exceptions=True,
+        )
+        for analysis_type, result in zip(analysis_types, results):
+            try:
+                if isinstance(result, Exception):
+                    raise result
                 analysis = result.get("analysis", "")
                 label = "经历分析" if analysis_type == "experience" else "评分"
                 sections.append(f"## {label}\n{analysis}")
@@ -593,7 +635,7 @@ class CompareResumesTool(Tool):
             sections = []
             for r in resumes:
                 rid = str(r["id"])
-                lines = [f"### {r['filename']}（ID {r['id']}）"]
+                lines = [f"### {r['filename']}"]
                 for dim in ("summary", "skills", "experience", "score", "projects"):
                     val = dimensions.get(dim, {}).get(rid)
                     if val is None:
@@ -645,7 +687,7 @@ class CompareResumesTool(Tool):
 
         lines = [f"对比 {len(resumes)} 份简历："]
         for r in resumes:
-            lines.append(f"  - {r['filename']} (ID: {r['id']})")
+            lines.append(f"  - {r['filename']}")
         if verdict:
             lines.append("\n## 综合裁决\n" + verdict)
 
@@ -1121,7 +1163,7 @@ async def _read_modules_context(db, user_id: int, resume_id: int):
         # 每模块截断 300 → 2000：原 300 只够 work_experience 等长模块第一个 entry 的
         # 一小部分，LLM 看到的是残缺内容（「工作经历无法正确识别」根因之一）。
         parts = [
-            f"- {m.module_type}: {_json.dumps(sanitize_for_ai(m.content) if isinstance(m.content, dict) else m.content, ensure_ascii=False)[:2000]}"
+            f"- {m.module_type}: {_json.dumps(sanitize_resume_module_for_ai(m.module_type, m.content) if isinstance(m.content, dict) else m.content, ensure_ascii=False)[:2000]}"
             for m in modules
         ]
         return resume, "\n".join(parts)
@@ -1420,7 +1462,9 @@ async def _replace_all_modules_short_txn(
         # 不设 status 的话，ready 简历被 Agent 改写后 status 仍 ready 但 parsed_text
         # 已变、Chroma 未重建 → Agent 会检索到旧索引内容（内容与表单不一致）。
         if not complete:
-            resume.status = "draft"
+            from services.resume_service import set_resume_status
+
+            await set_resume_status(session, resume, "draft", reason="Agent 改写待确认")
 
         if complete:
             # 完成路径：立即触发索引 + bump version + status=ready
@@ -1519,7 +1563,7 @@ class GenerateModuleTool(Tool):
         for mod in modules:
             if mod.module_type != module_type:
                 sanitized = (
-                    sanitize_for_ai(mod.content) if isinstance(mod.content, dict) else mod.content
+                    sanitize_resume_module_for_ai(mod.module_type, mod.content) if isinstance(mod.content, dict) else mod.content
                 )
                 context_parts.append(
                     f"- {mod.module_type}: {_json.dumps(sanitized, ensure_ascii=False)[:200]}"
@@ -1604,23 +1648,27 @@ class CheckModuleTool(Tool):
 
         # 脱敏后传给 LLM
         sanitized_content = (
-            sanitize_for_ai(module.content) if isinstance(module.content, dict) else module.content
+            sanitize_resume_module_for_ai(module.module_type, module.content) if isinstance(module.content, dict) else module.content
         )
         sanitized_str = _json.dumps(sanitized_content, ensure_ascii=False, indent=2)
 
         system = (
             "你是 ATS（Applicant Tracking System）简历检查专家。"
+            f"当前日期是 {datetime.now(timezone.utc).date().isoformat()}。"
             "分析给定模块的内容，检查以下方面：\n"
             "1. 完整性：必填字段是否缺失\n"
             "2. ATS 兼容性：是否包含 ATS 难以解析的格式（特殊符号、图片引用等）\n"
             "3. 专业性：用词是否专业、表述是否清晰\n"
             "4. 一致性：日期格式、字段值是否统一\n\n"
+            "事实约束：只能依据提供的模块内容判断；项目链接属于可选增强项，不得当作必填缺失；"
+            "不得建议用户虚构并发量、性能提升、用户数或任何量化结果；证据不足时应提出需要补充的问题。"
+            "不要把 JSON 字段名当成用户内容，不要输出 emoji 或装饰符号。\n\n"
             "输出格式：\n"
             "## 检查结果\n"
-            "- 完整性: ✅/⚠️/❌ + 说明\n"
-            "- ATS兼容性: ✅/⚠️/❌ + 说明\n"
-            "- 专业性: ✅/⚠️/❌ + 说明\n"
-            "- 一致性: ✅/⚠️/❌ + 说明\n\n"
+            "- 完整性: 通过/需改进 + 说明\n"
+            "- ATS兼容性: 通过/需改进 + 说明\n"
+            "- 专业性: 通过/需改进 + 说明\n"
+            "- 一致性: 通过/需改进 + 说明\n\n"
             "## 改进建议\n"
             "1. ...\n"
             "2. ...\n"
@@ -1635,8 +1683,8 @@ class CheckModuleTool(Tool):
             tools=None,
             tool_name="check_module",
             emit=self.emit,
-            temperature=0.2,
-            max_tokens=1500,
+            temperature=0,
+            max_tokens=1200,
             user_id=self.user_id,
             usage_target=self.last_usage,
         )
@@ -1667,7 +1715,7 @@ class ModifyModuleTool(Tool):
 
         # 脱敏后传给 LLM
         sanitized_content = (
-            sanitize_for_ai(module.content) if isinstance(module.content, dict) else module.content
+            sanitize_resume_module_for_ai(module.module_type, module.content) if isinstance(module.content, dict) else module.content
         )
         sanitized_str = _json.dumps(sanitized_content, ensure_ascii=False, indent=2)
 
@@ -1752,7 +1800,7 @@ class RewriteResumeTool(Tool):
             context_parts = []
             for mod in modules:
                 sanitized = (
-                    sanitize_for_ai(mod.content) if isinstance(mod.content, dict) else mod.content
+                    sanitize_resume_module_for_ai(mod.module_type, mod.content) if isinstance(mod.content, dict) else mod.content
                 )
                 context_parts.append(
                     f"- {mod.module_type}: {_json.dumps(sanitized, ensure_ascii=False)[:300]}"

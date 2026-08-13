@@ -406,7 +406,7 @@ async def analyze_resume(
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
                 ],
-                temperature=0.3,
+                temperature=0.0,
                 # 结构化分析任务：显式关闭思考模式（模型默认 high effort 思考，
                 # 纯格式化输出无需思考，提速降 token）
                 extra_body={"thinking": {"type": "disabled"}},
@@ -421,7 +421,13 @@ async def analyze_resume(
             ct = getattr(response.usage, "completion_tokens", 0) or 0
             usage_info = {"total_tokens": pt + ct, "prompt_tokens": pt, "completion_tokens": ct}
             # T3: 统一记账
-            await record_llm_usage(user_id, pt, ct)
+            await record_llm_usage(
+                user_id,
+                pt,
+                ct,
+                model=settings.CHAT_MODEL,
+                scenario=f"analysis:{analysis_type}",
+            )
             logger.info(
                 "分析 token: type=%s, prompt=%d, completion=%d, total=%d",
                 analysis_type,
@@ -587,7 +593,7 @@ async def analyze_resume_roles(
                     {"role": "system", "content": system},
                     {"role": "user", "content": user_prompt},
                 ],
-                temperature=0.3,
+                temperature=0.0,
                 # 结构化评分任务：显式关闭思考模式（同上，纯 JSON 契约输出）
                 extra_body={"thinking": {"type": "disabled"}},
             )
@@ -599,7 +605,13 @@ async def analyze_resume_roles(
             pt = getattr(response.usage, "prompt_tokens", 0) or 0
             ct = getattr(response.usage, "completion_tokens", 0) or 0
             usage_info = {"total_tokens": pt + ct, "prompt_tokens": pt, "completion_tokens": ct}
-            await record_llm_usage(user_id, pt, ct)
+            await record_llm_usage(
+                user_id,
+                pt,
+                ct,
+                model=settings.CHAT_MODEL,
+                scenario=f"analysis:{analysis_type}",
+            )
     except Exception as e:
         logger.exception("analyze_resume_roles failed for resume %d", resume_id)
         raise HTTPException(

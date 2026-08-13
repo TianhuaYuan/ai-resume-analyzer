@@ -4,7 +4,7 @@ import { listResumes, type ResumeItem } from "../api/resumes";
 
 interface CompareSelectDialogProps {
   open: boolean;
-  currentResumeId: number; // 当前简历 ID，可作为对比输入
+  currentResumeId: number; // 当前简历 ID，固定作为对比基准
   onConfirm: (selectedIds: number[]) => void;
   onCancel: () => void;
 }
@@ -15,7 +15,7 @@ const MAX_SELECT = 5;
 /**
  * 简历对比选择弹窗。
  *
- * 用途：从简历列表中勾选 1-5 份简历用于多维度对比（包含当前简历）。
+ * 用途：当前简历固定作为基准，再从列表中勾选 1-5 份其他简历。
  *
  * - 打开时拉取 listResumes()，仅展示 status === "ready" 且非当前简历的项
  * - 选满 MAX_SELECT 后禁止继续勾选，未选项降透明度提示
@@ -43,9 +43,9 @@ export function CompareSelectDialog({
 
     listResumes(50)
       .then((data) => {
-        // 对比请求已包含当前简历本身：当前简历始终可选，其余只展示已解析完成的简历。
+        // 当前简历由调用方固定加入请求；这里只展示其他已完成简历。
         const filtered = data.items.filter(
-          (r) => r.id === currentResumeId || r.status === "ready",
+          (r) => r.id !== currentResumeId && r.status === "ready",
         );
         setResumes(filtered);
         setLoading(false);
@@ -110,7 +110,7 @@ export function CompareSelectDialog({
           </button>
         </div>
         <p className="text-sm text-[var(--color-text-secondary)] mb-4">
-          勾选 {MIN_SELECT}-{MAX_SELECT} 份简历进行对比
+          当前简历作为基准，再选择 {MIN_SELECT}-{MAX_SELECT} 份其他简历
         </p>
 
         {/* ── 内容区 ── */}
@@ -138,7 +138,7 @@ export function CompareSelectDialog({
               暂无可对比的简历
             </span>
             <span className="text-xs text-[var(--color-text-muted)]">
-              可选择 1-5 份简历；当前简历也可直接参与对比
+              需要至少再准备 1 份已完成的简历
             </span>
           </div>
         ) : (

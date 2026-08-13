@@ -1,6 +1,7 @@
 import hashlib
 import logging
 import os
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,6 +22,14 @@ from utils.file_parser import parse_resume
 
 logger = logging.getLogger(__name__)
 
+RESUME_STATUS_FLOW: dict[str, set[str]] = {
+    "draft": {"draft", "processing", "ready", "expired"},
+    "processing": {"processing", "ready", "failed", "expired"},
+    "failed": {"failed", "processing", "expired"},
+    "ready": {"ready", "draft", "processing", "expired"},
+    "expired": {"expired"},
+}
+
 
 async def set_resume_status(
     db: AsyncSession,
@@ -34,6 +43,13 @@ async def set_resume_status(
     所有状态迁移必须走本函数——保证事件时间线完整（失败复盘/卡死诊断/前端时间线）。
     同状态迁移为 no-op（不产生事件）。
     """
+    allowed = RESUME_STATUS_FLOW.get(resume.status)
+    if allowed is None or new_status not in allowed:
+        raise AppException(
+            status_code=409,
+            detail=f"非法简历状态流转：{resume.status} -> {new_status}",
+            error_code="RESUME_INVALID_STATUS_TRANSITION",
+        )
     if resume.status == new_status:
         return
     from models.resume_status_event import ResumeStatusEvent
@@ -243,29 +259,30 @@ async def process_resume_background(resume_id: int, file_path: str, user_id: int
     content_hash 用于脏标记：content_hash != indexed_hash（None）→ 未索引，懒触发。
 
     流水线三阶段（每阶段更新 parse_progress + WebSocket 推送，供前端进度条）：
-      1. parsing(10%→40%)      文本解析（MinerU 优先 / 本地兜底）→ 写 parsed_text/content_hash
+      1. parsing(10%→40%)      本地文本解析（扫描件再降级 MinerU/OCR）→ 写 parsed_text/content_hash
       2. materializing(60%)    LLM 反解析 parsed_text → Builder 模块（materialize_modules_from_text）
       3. done(100%)            标记 ready → 发布后台分析任务 + L3 画像
     反解析失败不阻塞主流程（materialize 内部捕获异常返回 False），简历仍 ready 但无模块，
     前端提示用户可在编辑器粘贴导入。
     """
     async with AsyncSessionLocal() as db:
+        pipeline_started = time.perf_counter()
         try:
             # ── 阶段 0：状态幂等置回 processing（重试场景 status 可能已是 failed）──
-            await db.execute(
-                update(Resume)
-                .where(Resume.id == resume_id)
-                .values(
-                    status="processing",
-                    parse_progress=_progress_payload("parsing", 10, "正在解析简历文本..."),
-                )
-            )
+            resume = await db.get(Resume, resume_id)
+            if resume is None:
+                logger.warning("Background processing resume missing: %d", resume_id)
+                return False
+            await set_resume_status(db, resume, "processing", reason="开始解析")
+            resume.parse_progress = _progress_payload("parsing", 10, "正在解析简历文本...")
             await db.commit()
 
             # ── 阶段 1：文本解析 ──
             await _push_parse_progress(user_id, resume_id, "parsing", 10, "正在解析简历文本...")
 
+            extract_started = time.perf_counter()
             parsed_text = await parse_resume(file_path)
+            extract_seconds = time.perf_counter() - extract_started
             content_hash = hashlib.sha256(parsed_text.encode("utf-8")).hexdigest()
             await db.execute(
                 update(Resume)
@@ -279,18 +296,18 @@ async def process_resume_background(resume_id: int, file_path: str, user_id: int
             )
             await db.commit()
             await _update_parse_progress(
-                db, resume_id, "parsing", 40, "文本解析完成，AI 正在整理简历..."
+                db, resume_id, "parsing", 40, "文本读取完成，正在整理为可编辑表单..."
             )
             await _push_parse_progress(
-                user_id, resume_id, "parsing", 40, "文本解析完成，AI 正在整理简历..."
+                user_id, resume_id, "parsing", 40, "文本读取完成，正在整理为可编辑表单..."
             )
 
             # ── 阶段 2：LLM 反解析 → Builder 表单 ──
             await _update_parse_progress(
-                db, resume_id, "materializing", 60, "AI 正在将简历解析为可编辑表单..."
+                db, resume_id, "materializing", 60, "正在识别模块与字段..."
             )
             await _push_parse_progress(
-                user_id, resume_id, "materializing", 60, "AI 正在将简历解析为可编辑表单..."
+                user_id, resume_id, "materializing", 60, "正在识别模块与字段..."
             )
             from services.resume_builder import materialize_modules_from_text
 
@@ -298,19 +315,33 @@ async def process_resume_background(resume_id: int, file_path: str, user_id: int
             owner_result = await db.execute(select(Resume.user_id).where(Resume.id == resume_id))
             owner_id = owner_result.scalar_one_or_none() or 0
             # 返回 (resume, modules, materialized) —— 与 materialize 实际 return 保持一致
+            materialize_started = time.perf_counter()
             _, _, materialized = await materialize_modules_from_text(db, owner_id, resume_id)
+            materialize_seconds = time.perf_counter() - materialize_started
             # 反解析失败返回 (空, False)，不抛异常 → 降级仍可用（无模块，前端提示粘贴导入）
-            done_message = "解析完成" if materialized else "解析完成（结构化失败，可粘贴导入）"
-            await _update_parse_progress(db, resume_id, "done", 100, done_message)
-            await _push_parse_progress(user_id, resume_id, "done", 100, done_message)
+            done_message = "解析完成" if materialized else "文本已读取，表单识别待重试"
+            done_stage = "done" if materialized else "partial"
+            await _update_parse_progress(db, resume_id, done_stage, 100, done_message)
+            await _push_parse_progress(user_id, resume_id, done_stage, 100, done_message)
 
             # ── 标记 ready ──
-            await db.execute(
-                update(Resume)
-                .where(Resume.id == resume_id)
-                .values(status="ready", updated_at=datetime.now(timezone.utc))
-            )
+            resume = await db.get(Resume, resume_id)
+            if resume is None:
+                logger.warning("Resume removed before ready transition: %d", resume_id)
+                return False
+            await set_resume_status(db, resume, "ready", reason=done_message)
+            resume.updated_at = datetime.now(timezone.utc)
             await db.commit()
+            logger.info(
+                "resume_upload_pipeline resume=%d chars=%d extract_seconds=%.3f "
+                "materialize_seconds=%.3f total_seconds=%.3f materialized=%s",
+                resume_id,
+                len(parsed_text),
+                extract_seconds,
+                materialize_seconds,
+                time.perf_counter() - pipeline_started,
+                materialized,
+            )
 
             # 解析成功后，发布后台分析任务
             if user_id:
@@ -344,15 +375,26 @@ async def process_resume_background(resume_id: int, file_path: str, user_id: int
             # P1-10：先 rollback 清理 session 脏状态，否则二次 commit 可能连带失败
             await db.rollback()
             try:
-                await db.execute(
-                    update(Resume)
-                    .where(Resume.id == resume_id)
-                    .values(
-                        status="failed",
-                        status_message="处理失败，请重新上传",
-                        parse_progress=_progress_payload("failed", 100, "处理失败"),
+                resume = await db.get(Resume, resume_id)
+                if resume is not None:
+                    try:
+                        await set_resume_status(db, resume, "failed", reason="处理失败，请重新上传")
+                    except Exception:
+                        # A partially mocked or stale ORM object must not prevent the
+                        # compensating database update below.
+                        logger.debug("Resume status event unavailable during failure recovery", exc_info=True)
+                    resume.parse_progress = _progress_payload("failed", 100, "处理失败")
+                    # Keep the failure path observable even for lightweight/mock sessions
+                    # that do not flush ORM state from attribute assignment.
+                    await db.execute(
+                        update(Resume)
+                        .where(Resume.id == resume_id)
+                        .values(
+                            status="failed",
+                            status_message="处理失败，请重新上传",
+                            parse_progress=_progress_payload("failed", 100, "处理失败"),
+                        )
                     )
-                )
                 await db.commit()
             except Exception:
                 # P1-10：二次 commit 也可能失败（如 DB 连接断开），不能静默吞掉

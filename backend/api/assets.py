@@ -12,7 +12,7 @@ JD / 面试记录 / 笔记三类求职知识资产的增删改查：
 
 import logging
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,6 +33,7 @@ from services.rag.ensure_indexed import ensure_indexed
 from services.rag.metadata import META_ASSET_ID, META_ASSET_TYPE
 from services.vector_store import get_vector_store
 from services import asset_service
+from services.audit_log_service import write_audit_log
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,7 @@ async def _get_owned_asset(
 
 @router.post("", response_model=AssetResponse, status_code=status.HTTP_201_CREATED)
 async def create_asset(
+    request: Request,
     body: AssetCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -80,6 +82,15 @@ async def create_asset(
         title=body.title,
         content=body.content,
         is_draft=body.is_draft,
+    )
+    await write_audit_log(
+        db,
+        user_id=current_user.id,
+        action="asset_create",
+        target_type="asset",
+        target_id=str(asset.id),
+        detail={"result": "success", "request_id": request.headers.get("X-Request-ID"), "asset_type": asset.asset_type},
+        ip=request.client.host if request.client else None,
     )
     return AssetResponse.model_validate(asset)
 
@@ -145,6 +156,7 @@ async def get_asset(
 
 @router.put("/{asset_id}", response_model=AssetResponse)
 async def update_asset(
+    request: Request,
     asset_id: int,
     body: AssetUpdate,
     db: AsyncSession = Depends(get_db),
@@ -186,11 +198,22 @@ async def update_asset(
         # 同 create：ensure_indexed 失败路径会 rollback（expire ORM 对象），重读一次
         await db.refresh(asset)
 
+    await write_audit_log(
+        db,
+        user_id=current_user.id,
+        action="asset_update",
+        target_type="asset",
+        target_id=str(asset.id),
+        detail={"result": "success", "request_id": request.headers.get("X-Request-ID")},
+        ip=request.client.host if request.client else None,
+    )
+
     return AssetResponse.model_validate(asset)
 
 
 @router.delete("/{asset_id}", status_code=204)
 async def delete_asset(
+    request: Request,
     asset_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -218,5 +241,15 @@ async def delete_asset(
         )
     except Exception:
         logger.warning("Failed to delete asset vectors: asset=%d type=%s", asset_id, asset_type)
+
+    await write_audit_log(
+        db,
+        user_id=current_user.id,
+        action="asset_delete",
+        target_type="asset",
+        target_id=str(asset_id),
+        detail={"result": "success", "request_id": request.headers.get("X-Request-ID"), "asset_type": asset_type},
+        ip=request.client.host if request.client else None,
+    )
 
     return None

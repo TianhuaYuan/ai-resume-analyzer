@@ -94,6 +94,7 @@ async def get_public_feedback_list(
 
 @router.post("/public/{fb_id}/like", response_model=LikeResponse)
 async def like_feedback(
+    request: Request,
     fb_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -106,4 +107,17 @@ async def like_feedback(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="反馈不存在",
         )
+    await write_audit_log(
+        db,
+        user_id=current_user.id,
+        action="feedback_like_toggle",
+        target_type="feedback",
+        target_id=str(fb_id),
+        detail={
+            "result": "success",
+            "request_id": request.headers.get("X-Request-ID"),
+            "is_liked": is_liked,
+        },
+        ip=request.client.host if request.client else None,
+    )
     return LikeResponse(likes_count=likes_count, is_liked=is_liked)

@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["run_id", "commit", "dataset_sha256", "config", "metrics", "failures"],
+  "additionalProperties": false,
+  "properties": {
+    "run_id": {"type": "string", "minLength": 1},
+    "commit": {"type": "string", "minLength": 1},
+    "dataset_sha256": {"type": "string", "minLength": 1},
+    "config": {"type": "object"},
+    "metrics": {"type": "object"},
+    "failures": {"type": "array", "items": {"type": "object"}}
+  }
+}

@@ -380,6 +380,7 @@ async def ask_agent(
                 question=effective_question,
                 tool_mode=data.tool_mode or "agent",
                 conversation_id=data.conversation_id,
+                tool_hint=data.tool_hint,
             ):
                 if event.get("type") == "agent_done":
                     # PII 脱敏（对 agent_done 的 answer）

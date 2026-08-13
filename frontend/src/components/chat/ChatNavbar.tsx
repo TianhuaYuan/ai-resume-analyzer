@@ -1,4 +1,4 @@
-import { ArrowRightLeft, Search, Trash2, X } from "lucide-react";
+import { ArrowRightLeft, FileText, Search, Trash2, X } from "lucide-react";
 import type { ResumeItem } from "../../api/resumes";
 import type { QuotaResponse } from "../../api/qa";
 
@@ -65,12 +65,12 @@ export default function ChatNavbar({
       }`}
     >
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 basis-full sm:basis-auto sm:flex-1">
           {/* 简历切换下拉（多简历时切换会话/对话；对话按简历隔离） */}
           <select
             value={resumeId || ""}
             onChange={(e) => onSwitchResume(Number(e.target.value))}
-            className="max-w-[280px] text-base font-semibold text-[var(--color-text)] truncate
+            className="w-full max-w-[280px] text-base font-semibold text-[var(--color-text)] truncate
               bg-transparent border border-transparent rounded-md px-1 py-0.5
               hover:border-[var(--color-border)] focus:border-brand/40 focus:outline-none
               cursor-pointer"
@@ -142,7 +142,7 @@ export default function ChatNavbar({
             onChange={(e) => onKeywordChange(e.target.value)}
             placeholder="搜索问答"
             disabled={searchDisabled}
-            className="w-40 sm:w-56 pl-8 pr-8 py-1.5 rounded-list text-xs text-[var(--color-text)]
+            className="w-32 sm:w-56 pl-8 pr-8 py-1.5 rounded-list text-xs text-[var(--color-text)]
               bg-[var(--color-bg-secondary)] border border-transparent
               placeholder:text-[var(--color-text-muted)]
               focus:outline-none focus:ring-2 focus:ring-brand/40
@@ -190,7 +190,8 @@ export default function ChatNavbar({
             }`}
             title={showPreview ? "关闭预览" : "打开简历预览"}
           >
-            📄 {showPreview ? "关闭预览" : "预览简历"}
+            <FileText size={14} aria-hidden="true" />
+            {showPreview ? "关闭预览" : "预览简历"}
           </button>
         )}
       </div>

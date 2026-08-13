@@ -433,8 +433,9 @@ export async function uploadAvatar(
 /** 反解析纯文本→模块列表 */
 export async function parseToModules(
   text: string,
+  filename?: string,
 ): Promise<ParseToModulesResult> {
-  return api.post("/api/v1/resumes/parse-to-modules", { text }) as Promise<ParseToModulesResult>;
+  return api.post("/api/v1/resumes/parse-to-modules", { text, filename }) as Promise<ParseToModulesResult>;
 }
 
 // ── 内联 AI API（UP 简历对齐：一键优化 / 智能检查 / 智能改写） ──

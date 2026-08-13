@@ -170,6 +170,68 @@ class TestMergeModulesToText:
         assert "广东海洋大学" in text
         assert "软件工程" in text
 
+    def test_v2_items_preserve_current_form_content(self):
+        """v2 items 必须完整进入 parsed_text，不能只留下模块标题。"""
+        mods = [
+            ResumeModule(
+                id=1,
+                module_type="education",
+                content={
+                    "metadata": {"title": "教育经历", "hidden": False},
+                    "items": [
+                        {
+                            "id": "edu-1",
+                            "school": "华东理工大学",
+                            "major": "软件工程",
+                            "description": "专业前 15%",
+                        }
+                    ],
+                },
+                sort_order=0,
+            ),
+            ResumeModule(
+                id=2,
+                module_type="work_experience",
+                content={
+                    "items": [
+                        {
+                            "id": "work-1",
+                            "company": "示例科技",
+                            "position": "后端开发实习生",
+                            "achievements": ["接口延迟降低 30%"],
+                        }
+                    ]
+                },
+                sort_order=1,
+            ),
+            ResumeModule(
+                id=3,
+                module_type="project_experience",
+                content={
+                    "items": [
+                        {
+                            "id": "project-1",
+                            "name": "校招求职工作台",
+                            "tech_stack": ["FastAPI", "React"],
+                        }
+                    ]
+                },
+                sort_order=2,
+            ),
+        ]
+
+        text = _merge_modules_to_text(mods)
+
+        assert "华东理工大学" in text
+        assert "专业前 15%" in text
+        assert "示例科技" in text
+        assert "接口延迟降低 30%" in text
+        assert "校招求职工作台" in text
+        assert "FastAPI, React" in text
+        assert "项目名称: 校招求职工作台" in text
+        assert "edu-1" not in text
+        assert "work-1" not in text
+
     def test_skills_to_text(self):
         """skills 模块转文本包含分类和技能项。"""
         mod = ResumeModule(

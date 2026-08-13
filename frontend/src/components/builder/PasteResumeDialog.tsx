@@ -13,7 +13,7 @@ import type { ResumeModuleInput } from "../../api/builder";
 interface PasteResumeDialogProps {
   open: boolean;
   onClose: () => void;
-  onParsed: (modules: ResumeModuleInput[]) => void;
+  onParsed: (modules: ResumeModuleInput[], filename?: string) => void;
 }
 
 export default function PasteResumeDialog({ open, onClose, onParsed }: PasteResumeDialogProps) {
@@ -49,16 +49,17 @@ export default function PasteResumeDialog({ open, onClose, onParsed }: PasteResu
     setParsing(true);
     setError("");
     try {
-      const result = await parseToModules(text);
-      // 加上标题到 basic_info（如果用户填了标题的话）
+      const filename = title.trim() || undefined;
+      const result = await parseToModules(text, filename);
       const modules: ResumeModuleInput[] = result.modules.map((m: ResumeModuleInput, i: number) => ({
         ...m,
         sort_order: i,
-        content: m.module_type === "basic_info" && title.trim()
-          ? { ...m.content, name: title.trim() }
-          : m.content,
       }));
-      onParsed(modules);
+      // 标题仍是文件名；后端仅在正文确实缺失姓名、且文件名以 2-4 个中文姓名开头时
+      // 将该显式元数据用于补齐姓名，不会把整个标题写进姓名字段。
+      onParsed(modules, filename);
+      setTitle("");
+      setContent("");
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : "解析失败，请稍后重试");
@@ -107,7 +108,7 @@ export default function PasteResumeDialog({ open, onClose, onParsed }: PasteResu
           {/* 标题 */}
           <div>
             <label className="block text-xs font-medium text-[var(--color-text-muted)] mb-1.5">
-              请输入简历标题（如：张三-Java开发工程师）
+              简历文件名（可选，如：张三-Java开发工程师）
             </label>
             <input
               type="text"

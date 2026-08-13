@@ -195,8 +195,8 @@ export default function ChatInput({
                 disabled
                   ? "请先创建或上传简历开始对话..."
                   : asking
-                  ? "AI 思考中，可输入补充信息（发送给正在思考的 AI）..."
-                  : "告诉 AI 助手你的需求...（输入 / 唤起快捷命令）"
+                  ? "正在处理，可继续补充关键信息…"
+                  : "输入求职问题…（输入 / 查看快捷任务）"
               }
               disabled={disabled}
               rows={1}
@@ -304,7 +304,7 @@ export default function ChatInput({
                       active:scale-90 motion-reduce:active:scale-100
                       disabled:opacity-40 disabled:cursor-not-allowed
                       transition-all cursor-pointer"
-                    aria-label="补充信息（发送给正在思考的 AI）"
+                    aria-label="补充信息"
                     title="补充信息"
                   >
                     <ArrowUp size={16} strokeWidth={2.25} aria-hidden="true" />

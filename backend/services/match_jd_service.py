@@ -9,6 +9,7 @@ A3 评分契约升级（Magic-Resume fit-report.ts 对照）：JSON-first 结构
 
 import json
 import logging
+import re
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
@@ -61,6 +62,53 @@ def _extract_json_object(raw: str) -> dict:
 
 
 _FIT_DIMENSIONS = ("technical", "experience", "behavioral", "career")
+
+_KEYWORD_ALIASES: tuple[set[str], ...] = (
+    {"kubernetes", "k8s"},
+    {"continuous integration", "ci/cd", "github actions"},
+    {"large language model", "llm", "大模型"},
+)
+
+
+def _resume_contains_keyword(resume_text: str, keyword: str) -> bool:
+    """Deterministically reject an LLM 'missing' claim contradicted by the CV."""
+    haystack = resume_text.casefold()
+    needle = str(keyword or "").strip().casefold()
+    if not needle:
+        return False
+    if needle in haystack:
+        return True
+    for aliases in _KEYWORD_ALIASES:
+        if any(alias in needle for alias in aliases):
+            return any(alias in haystack for alias in aliases)
+    # Phrases such as "Kubernetes 经验" should still match an explicit skill.
+    technical_tokens = re.findall(r"[a-z][a-z0-9.+#/-]{1,}", needle)
+    return bool(technical_tokens) and all(token in haystack for token in technical_tokens)
+
+
+def _normalize_matched_evidence(resume_text: str, item: str) -> str:
+    """Keep exact evidence verbatim; downgrade loose keyword co-occurrence.
+
+    An LLM may turn a skill-list keyword into an unsupported depth claim such as
+    “Kubernetes deployment experience”.  When the complete phrase cannot be
+    located, expose only the technical keywords and mark depth as unverified.
+    """
+    raw = str(item or "").strip()
+    compact_resume = re.sub(r"\s+", "", resume_text).casefold()
+    compact_item = re.sub(r"\s+", "", raw).casefold()
+    if compact_item and compact_item in compact_resume:
+        return raw
+
+    original_tokens = re.findall(r"[A-Za-z][A-Za-z0-9.+#/-]{1,}", raw)
+    present_tokens = []
+    for token in original_tokens:
+        if token.casefold() in resume_text.casefold() and token.casefold() not in {
+            existing.casefold() for existing in present_tokens
+        }:
+            present_tokens.append(token)
+    if present_tokens:
+        return f"{' / '.join(present_tokens)}（关键词出现，关联实践深度待核对）"
+    return raw
 
 
 def _clamp_score(value) -> int:
@@ -172,9 +220,57 @@ async def match_jd(
     # LLM 一次输出 score/matched/missing/gaps/reason，失败降级 markdown 分析
     structured = await _structured_match(user_prompt, user_id)
     if structured is not None:
-        reason = structured["reason"] or (
-            f"匹配度 {structured['score']} 分：匹配 {len(structured['matched'])} 项，"
-            f"缺失 {len(structured['missing'])} 项"
+        # band 由分数派生，拒绝 LLM/缓存返回的旧字母档位，避免响应模型 500。
+        structured["band"] = derive_band(_clamp_score(structured.get("score", 0)))
+        # LLM 只负责抽取候选匹配项；最终“已匹配”必须能在简历原文中定位。
+        # 这样不会把相近概念（例如 Reflexion 与 ReAct）直接当作同一项。
+        validated_matched = [
+            _normalize_matched_evidence(parsed_text, item)
+            for item in structured["matched"]
+            if _resume_contains_keyword(parsed_text, item)
+        ]
+        # 保持原顺序语义去重，避免 “Kubernetes” 与降级后的 Kubernetes 说明重复。
+        unique_matched: list[str] = []
+        seen_matched: set[str] = set()
+        for item in validated_matched:
+            key = item.split("（", 1)[0].strip().casefold()
+            if key in seen_matched:
+                continue
+            seen_matched.add(key)
+            unique_matched.append(item)
+        structured["matched"] = unique_matched
+        contradicted_missing = [
+            item for item in structured["missing"]
+            if _resume_contains_keyword(parsed_text, item)
+        ]
+        if contradicted_missing:
+            structured["missing"] = [
+                item for item in structured["missing"]
+                if item not in contradicted_missing
+            ]
+            # A missing claim may be contradicted only by a skill-list keyword. Do not
+            # promote the LLM's original depth claim (for example “Kubernetes 部署经验”)
+            # back into matched after the evidence-normalization pass above.
+            existing = {
+                item.split("（", 1)[0].strip().casefold()
+                for item in structured["matched"]
+            }
+            for raw_item in contradicted_missing:
+                normalized = _normalize_matched_evidence(parsed_text, raw_item)
+                key = normalized.split("（", 1)[0].strip().casefold()
+                if key in existing:
+                    continue
+                existing.add(key)
+                structured["matched"].append(normalized)
+            structured["gaps"] = [
+                gap for gap in structured["gaps"]
+                if not any(item.casefold() in gap.casefold() for item in contradicted_missing)
+            ]
+        reason = (
+            f"文本匹配参考分 {structured['score']}/100；"
+            f"简历原文可定位 {len(structured['matched'])} 项，"
+            f"证据不足或缺失 {len(structured['missing'])} 项。"
+            "该分数只反映当前文本覆盖，不代表 ATS 通过率或录用概率。"
         )
         return {
             "resume_id": resume_id,

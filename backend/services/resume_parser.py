@@ -17,10 +17,12 @@
 4. JSON 解析失败 → 同样回灌错误重试 1 次
 """
 
+import asyncio
 import json
 import logging
 import re
 import unicodedata
+from pathlib import Path
 
 from pydantic import ValidationError
 
@@ -51,6 +53,14 @@ _PARSE_MAX_TOKENS: int = min(_MAX_TOKENS, 8000)
 
 _SYSTEM_PROMPT = """你是一个专业的简历解析助手。你的任务是将用户提供的简历纯文本解析为结构化的 JSON 模块列表。
 
+真实性是最高优先级：这是结构提取，不是改写、总结或匿名化。
+- 除日期格式规范化外，所有字符串值必须逐字来自输入原文；优先复制原文或使用 lines 引用
+- 禁止把学校、公司、项目、奖项替换成“示例大学/示例公司/智能问答系统”等占位内容
+- 禁止推断性别、年龄、熟练度、用户规模、成绩、岗位或任何原文未明确写出的事实
+- description、summary、achievements 也不得概括或润色；使用原文或 lines 引用
+- 无法从原文定位证据的字段直接省略，绝不能用合理猜测补齐
+- source_filename 是用户上传的文件名，可且仅可用于补充文件名中明确出现的姓名/目标岗位；不得据此生成经历
+
 输出格式要求：
 - 输出一个 JSON 数组，每个元素是一个模块对象
 - 每个模块对象包含三个字段：
@@ -62,7 +72,9 @@ _SYSTEM_PROMPT = """你是一个专业的简历解析助手。你的任务是将
 
 1. basic_info（基本信息，单值）:
    content: {"name": "姓名（必填）", "phone": "手机", "email": "邮箱", "gender": "性别",
-             "age": 年龄, "location": "城市", "job_title": "求职意向", "summary": "个人总结"}
+             "age": 年龄, "location": "城市", "job_title": "求职意向", "status": "当前状态",
+             "hometown": "籍贯", "github_url": "GitHub URL", "blog_url": "博客 URL",
+             "homepage_url": "个人主页 URL", "summary": "个人总结"}
 
 2. education（教育背景，列表）:
    content: {"items": [{"school": "学校（必填）", "degree": "学历", "major": "专业",
@@ -77,9 +89,13 @@ _SYSTEM_PROMPT = """你是一个专业的简历解析助手。你的任务是将
    content: {"items": [{"name": "项目名（必填）", "role": "角色",
              "start_date": "2023-01", "end_date": "2023-06",
              "url": "链接", "description": "描述", "tech_stack": ["Python", "FastAPI"]}]}
+   - 每个项目的 description 必须覆盖该项目标题到下一个项目标题之间的全部职责、方案、指标和成果行，
+     使用一个 {"lines": [开始行, 结束行]} 或单个字符串；禁止只保留一句项目副标题
 
 5. skills（专业技能，列表）:
    content: {"items": [{"name": "技能名（必填）", "level": 3, "category": "分类"}]}
+   - “AI 核心 / 后端工程 / 计算机基础”这类小标题只能放 category，不能作为 name
+   - 小标题后的每个具体技术或能力分别生成 item；原文没有熟练度时省略 level，禁止默认填 3
 
 6. language（语言能力，列表）:
    content: {"items": [{"name": "英语（必填）", "proficiency": "流利", "score": "CET-6"}]}
@@ -124,10 +140,10 @@ _SYSTEM_PROMPT = """你是一个专业的简历解析助手。你的任务是将
 【长文本字段优化（A2，借鉴 SmartResume 索引指针机制）】
 输入文本每行带 [行号] 前缀（如 "[3] 负责xx系统的开发"）。
 对于长文本字段（description / achievements 的元素 / summary / content），
-可以省略完整原文，只引用原文行号区间，格式：{"lines": [开始行, 结束行]}。
+优先省略完整原文，只引用原文行号区间，格式：{"lines": [开始行, 结束行]}。
 例如某工作描述对应原文第 10-12 行，输出 "description": {"lines": [10, 12]}。
 规则：
-- 只在字段值确实与原文行内容一致时使用引用；需要改写/提炼时仍输出字符串
+- 只在字段值确实与原文行内容一致时使用引用；本任务禁止改写或提炼
 - 引用必须真实指向原文行号，禁止编造行号
 - 其余字段（日期/公司/技能名等短字段）一律输出字符串，不要用 lines"""
 
@@ -199,17 +215,34 @@ def _index_lines(text: str) -> tuple[str, list[str]]:
     return indexed, lines
 
 
-def _build_user_prompt(text: str, error_feedback: str | None = None) -> str:
+def _build_user_prompt(
+    text: str,
+    error_feedback: str | None = None,
+    source_filename: str | None = None,
+) -> str:
     """构建用户 prompt。
 
     Args:
         text: 简历纯文本（A2 起为带 [行号] 前缀的索引文本）
         error_feedback: 上次校验的错误反馈（重试时传入）
     """
-    prompt = f"请将以下简历文本解析为结构化 JSON 模块列表：\n\n---\n{text}\n---"
+    filename_context = (
+        f"\n<source_filename>{source_filename}</source_filename>"
+        if source_filename
+        else ""
+    )
+    prompt = (
+        "请将 <resume_source> 内的文本解析为结构化 JSON 模块列表。"
+        "只做逐字提取，不要匿名化、概括、改写或补全：\n\n"
+        f"<resume_source>\n{text}\n</resume_source>{filename_context}"
+    )
 
     if error_feedback:
-        prompt += f"\n\n上次解析存在以下错误，请修正后重新输出：\n{error_feedback}"
+        prompt += (
+            "\n\n上次解析包含无原文证据或不符合 schema 的字段。"
+            "请删除这些字段，或从 <resume_source> 逐字复制正确值后重新输出：\n"
+            f"{error_feedback}"
+        )
 
     return prompt
 
@@ -426,14 +459,133 @@ def _normalize_modules(raw_modules: list[dict]) -> list[dict]:
     return raw_modules
 
 
+_RICH_TEXT_FIELDS = {"summary", "description", "content"}
+
+
+def _coerce_rich_text_fields(
+    raw_modules: list[dict],
+    original_lines: list[str],
+) -> list[dict]:
+    """Normalize model-preserved paragraph arrays into the schema's text fields.
+
+    Models frequently return ``description`` as a list of source-line references or
+    paragraphs even when the schema asks for a string. Joining those already-resolved
+    source strings is lossless and avoids dropping an otherwise valid whole module.
+    """
+    for module in raw_modules:
+        content = module.get("content")
+        if not isinstance(content, dict):
+            continue
+        targets = [content]
+        targets.extend(
+            item for item in content.get("items", []) if isinstance(item, dict)
+        )
+        for target in targets:
+            for key in _RICH_TEXT_FIELDS:
+                value = target.get(key)
+                if isinstance(value, list) and all(isinstance(item, str) for item in value):
+                    target[key] = "\n".join(item for item in value if item.strip())
+                elif (
+                    isinstance(value, list)
+                    and value
+                    and all(isinstance(item, int) and 1 <= item <= len(original_lines) for item in value)
+                ):
+                    # Some providers shorten {"lines":[a,b]} into [a,c,e] for
+                    # non-contiguous bullets. Resolve every referenced source line.
+                    target[key] = "\n".join(original_lines[item - 1] for item in value)
+                elif isinstance(value, str) and re.fullmatch(r"\[\s*\d+(?:\s*,\s*\d+)*\s*\]", value):
+                    indexes = [int(item) for item in re.findall(r"\d+", value)]
+                    if indexes and all(1 <= item <= len(original_lines) for item in indexes):
+                        target[key] = "\n".join(original_lines[item - 1] for item in indexes)
+                elif isinstance(value, dict) and isinstance(value.get("text"), str):
+                    target[key] = value["text"]
+                elif isinstance(value, dict) and isinstance(value.get("lines"), list):
+                    indexes = value["lines"]
+                    if indexes and all(
+                        isinstance(item, int) and 1 <= item <= len(original_lines)
+                        for item in indexes
+                    ):
+                        # Two values mean a contiguous range (documented prompt
+                        # contract); three or more mean explicit non-contiguous
+                        # source lines. Both forms preserve source wording.
+                        if len(indexes) == 2 and indexes[0] <= indexes[1]:
+                            target[key] = "\n".join(
+                                original_lines[indexes[0] - 1 : indexes[1]]
+                            )
+                        else:
+                            target[key] = "\n".join(
+                                original_lines[item - 1] for item in indexes
+                            )
+    return raw_modules
+
+
+def _name_from_filename(filename: str | None) -> str | None:
+    if not filename:
+        return None
+    stem = Path(filename).stem.strip()
+    first = re.split(r"[_\-—\s]", stem, maxsplit=1)[0].strip()
+    return first if re.fullmatch(r"[\u3400-\u9fff]{2,4}", first) else None
+
+
+def _enrich_basic_info(
+    raw_modules: list[dict],
+    original_text: str,
+    source_filename: str | None,
+) -> list[dict]:
+    """Deterministically fill contact fields that do not need an LLM.
+
+    The filename is accepted only as explicit user metadata for a missing Chinese
+    candidate name. Email/phone and labelled profile URLs must occur in source text.
+    Project repository URLs are deliberately excluded from profile URL inference.
+    """
+    basic = next(
+        (m for m in raw_modules if m.get("module_type") == "basic_info" and isinstance(m.get("content"), dict)),
+        None,
+    )
+    name = _name_from_filename(source_filename)
+    emails = re.findall(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", original_text)
+    phones = re.findall(r"(?<!\d)(?:\+?86[- ]?)?1[3-9]\d{9}(?!\d)", original_text)
+    facts: dict[str, object] = {}
+    if name:
+        facts["name"] = name
+    if emails:
+        facts["email"] = emails[0]
+    if phones:
+        facts["phone"] = re.sub(r"\D", "", phones[0])[-11:]
+
+    for line in original_text.splitlines():
+        urls = re.findall(r"https?://[^\s<>]+", line)
+        for raw_url in urls:
+            url = raw_url.rstrip(".,;，。；、)]）")
+            lowered = line.lower()
+            path_parts = [part for part in re.sub(r"^https?://", "", url).split("/")[1:] if part]
+            if "github" in lowered and "github.com" in url.lower() and len(path_parts) <= 1:
+                facts.setdefault("github_url", url)
+            elif "博客" in line or re.search(r"\bblog\b", lowered):
+                facts.setdefault("blog_url", url)
+            elif "个人主页" in line or "主页" in line or re.search(r"\bhomepage\b", lowered):
+                facts.setdefault("homepage_url", url)
+
+    if basic is None:
+        if not name:
+            return raw_modules
+        basic = {"module_type": "basic_info", "content": {}, "sort_order": 0}
+        raw_modules.insert(0, basic)
+    content = basic["content"]
+    for key, value in facts.items():
+        if not content.get(key):
+            content[key] = value
+    for index, module in enumerate(raw_modules):
+        module["sort_order"] = index
+    return raw_modules
+
+
 def verify_fields_in_original_text(modules: list[dict], original_lines: list[str]) -> list[dict]:
     """A2 深化：字段级溯源验证（借鉴 SmartResume _validate_fields_in_text）。
 
-    对关键短字段（姓名/手机/公司/岗位/学校/专业）做规范化包含检查——
-    必须在原文中出现（substring 匹配），否则标记 provenance="missing"。
-
-    不做删除（避免破坏 schema 校验），返回报告供诊断/日志使用；
-    完整接入 E1 可溯源诊断展示。
+    对会进入用户表单的事实字段做规范化包含检查。解析是结构提取而非生成：
+    除日期规范化外，字符串必须能在原文中定位，否则标记 provenance="missing"，
+    由上层回灌重试并在最终失败时拒绝整次导入，避免静默污染表单。
 
     Args:
         modules: 规范化后的原始模块字典列表（读取用）
@@ -452,7 +604,6 @@ def verify_fields_in_original_text(modules: list[dict], original_lines: list[str
 
     corpus = _norm("\n".join(original_lines))
 
-    # 需要验证的字段映射：module_type → (key 路径, 取值函数)
     def _verify_text(value) -> bool:
         if not value or not isinstance(value, str):
             return False
@@ -465,30 +616,42 @@ def verify_fields_in_original_text(modules: list[dict], original_lines: list[str
         if not isinstance(content, dict):
             continue
 
-        checks: list[tuple[str, str]] = []
+        checks: list[tuple[str, object]] = []
         if module_type == "basic_info":
-            checks = [("name", content.get("name", "")), ("phone", content.get("phone", ""))]
-        elif module_type == "work_experience":
-            for item in content.get("items", []) or []:
-                if isinstance(item, dict):
-                    checks.extend(
-                        [
-                            ("company", item.get("company", "")),
-                            ("position", item.get("position", "")),
-                        ]
-                    )
-        elif module_type == "education":
-            for item in content.get("items", []) or []:
-                if isinstance(item, dict):
-                    checks.extend(
-                        [
-                            ("school", item.get("school", "")),
-                            ("major", item.get("major", "")),
-                        ]
-                    )
+            for key, value in content.items():
+                if key not in {"metadata", "age", "work_years", "highest_education"}:
+                    checks.append((key, value))
+        else:
+            sourced_fields: dict[str, set[str]] = {
+                "education": {"school", "degree", "major", "description"},
+                "work_experience": {"company", "position", "description", "achievements"},
+                "project_experience": {"name", "role", "url", "description", "tech_stack"},
+                "skills": {"name", "category"},
+                "language": {"name", "proficiency", "score"},
+                "honors": {"title", "description"},
+                "certificates": {"name", "issuer", "score"},
+                "interests": {"name"},
+                "club_activities": {"name", "role", "description"},
+                "publications": {"title", "authors", "venue", "url"},
+                "recommendation": {"name", "title", "organization", "contact", "email"},
+                "social_links": {"platform", "url"},
+            }
+            fields = sourced_fields.get(module_type, set())
+            for index, item in enumerate(content.get("items", []) or []):
+                if not isinstance(item, dict):
+                    continue
+                for key in fields:
+                    value = item.get(key)
+                    if isinstance(value, list):
+                        checks.extend((f"items[{index}].{key}", part) for part in value)
+                    else:
+                        checks.append((f"items[{index}].{key}", value))
+
+            if module_type in {"other", "custom"}:
+                checks.extend((key, content.get(key)) for key in ("title", "content"))
 
         for field, value in checks:
-            if not value:
+            if not value or not isinstance(value, str):
                 continue
             report.append(
                 {
@@ -582,6 +745,9 @@ def _validate_parsed_modules(
 async def parse_text_to_modules(
     text: str,
     user_id: int | None = None,
+    *,
+    thinking_enabled: bool | None = None,
+    source_filename: str | None = None,
 ) -> list[ResumeModuleCreate]:
     """将简历纯文本反解析为结构化模块列表。
 
@@ -594,6 +760,9 @@ async def parse_text_to_modules(
     Args:
         text: 简历纯文本
         user_id: 用户 ID（传入时记录 LLM usage）
+        thinking_enabled: 评测用显式开关。生产默认关闭；实测复杂简历开启思考
+            约 180 秒仍未通过校验，因此结构提取依赖确定性规范化而非延长推理。
+        source_filename: 用户上传文件名，仅用作缺失姓名的显式元数据证据。
 
     Returns:
         校验通过的模块列表
@@ -614,21 +783,24 @@ async def parse_text_to_modules(
     for attempt in range(_MAX_RETRIES + 1):
         # 构建 prompt（重试时带错误反馈）
         error_feedback = _build_error_feedback(errors_history) if errors_history else None
-        user_prompt = _build_user_prompt(indexed_text, error_feedback)
+        user_prompt = _build_user_prompt(indexed_text, error_feedback, source_filename)
 
-        # 调 LLM（传输/超时错误经 with_retry 指数退避重试，避免一次失败就整个物化失败；
-        # temperature 传 None（不传给 API）规避推理模型对 temperature 参数的 400 拒绝）
+        # llm_generate 内部已有一次受控重试；这里仅加 30s 总时限，避免嵌套
+        # retry budget 把一次上传放大到数分钟。temperature=None 兼容推理模型。
         try:
-            from core.retry import RetryBudget, with_retry
-
-            response = await with_retry(
-                llm_generate,
-                system=_SYSTEM_PROMPT,
-                user=user_prompt,
-                temperature=None,
-                max_tokens=_PARSE_MAX_TOKENS,
-                user_id=user_id,
-                budget=RetryBudget(max_retries=2, base_delay=1.5, timeout=90),
+            repair_with_thinking = bool(thinking_enabled)
+            response = await asyncio.wait_for(
+                llm_generate(
+                    system=_SYSTEM_PROMPT,
+                    user=user_prompt,
+                    temperature=None,
+                    max_tokens=_PARSE_MAX_TOKENS,
+                    user_id=user_id,
+                    thinking_enabled=repair_with_thinking,
+                    thinking_effort="high" if repair_with_thinking else None,
+                    scenario="resume_extract",
+                ),
+                timeout=30,
             )
         except Exception as e:
             logger.exception(
@@ -651,12 +823,19 @@ async def parse_text_to_modules(
             # A2 深化: 溯源证据保留——行号引用在替换前收集（SmartResume refer_index_range 对应物）
             line_refs = _collect_line_refs(raw_modules, original_lines)
             raw_modules = _resolve_line_refs(raw_modules, original_lines)
+            raw_modules = _coerce_rich_text_fields(raw_modules, original_lines)
+            raw_modules = _enrich_basic_info(raw_modules, text, source_filename)
             # A2 深化: 字段级溯源验证（缺失字段记日志，供 E1 诊断展示）
-            provenance_report = verify_fields_in_original_text(raw_modules, original_lines)
+            provenance_lines = [*original_lines, source_filename] if source_filename else original_lines
+            provenance_report = verify_fields_in_original_text(raw_modules, provenance_lines)
             if line_refs:
                 provenance_report.extend(line_refs)
                 logger.info("解析行号引用（溯源证据）: %d 个", len(line_refs))
             missing = [r for r in provenance_report if r["provenance"] == "missing"]
+            provenance_errors = [
+                f"模块 {r['module_type']} 字段 {r['field']} 的值 {r['value']!r} 无法在原文定位，禁止推断或匿名化"
+                for r in missing
+            ]
             if missing:
                 logger.warning(
                     "解析字段未在原文中找到（%d 个）: %s",
@@ -671,7 +850,15 @@ async def parse_text_to_modules(
             raise ValueError(f"LLM 输出 JSON 解析失败（重试后仍失败）: {e}") from e
 
         # 校验模块
-        validated, errors = _validate_parsed_modules(raw_modules)
+        validated, validation_errors = _validate_parsed_modules(raw_modules)
+        errors = [*validation_errors, *provenance_errors]
+        if errors:
+            logger.warning(
+                "resume extraction validation errors attempt=%d thinking=%s: %s",
+                attempt + 1,
+                thinking_enabled if thinking_enabled is not None else attempt > 0,
+                errors,
+            )
 
         if not errors:
             if not validated:
@@ -700,16 +887,8 @@ async def parse_text_to_modules(
             )
             continue
 
-        # 重试后仍有错误，返回校验通过的部分（如果有）
-        if validated:
-            logger.warning(
-                "parse_text_to_modules partial success: %d valid, %d invalid modules",
-                len(validated),
-                len(errors),
-            )
-            return validated
-
-        # 全部失败
+        # 禁止“局部成功”静默写入表单：少一个基本信息/项目模块，比明确失败更危险，
+        # 用户会误以为系统已完整识别。原始文本始终保留，调用方显示结构化失败并允许重试。
         error_details = _build_error_feedback(errors)
         raise ValueError(f"模块校验失败（重试后仍失败）:\n{error_details}")
 

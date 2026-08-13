@@ -285,7 +285,7 @@ export default function AssetsPage() {
               />
               <p className="text-base text-[var(--color-text-secondary)]">还没有知识资产</p>
               <p className="text-sm text-[var(--color-text-muted)] mt-1.5">
-                点击「新建资产」，沉淀一条 JD、面试记录或笔记
+                点击「新建笔记」记录内容；JD 与面试记录会从对应业务页面自动沉淀
               </p>
             </div>
           ) : (

@@ -119,6 +119,41 @@ def sanitize_for_ai(content: dict | list | Any) -> dict | list | Any:
     return content
 
 
+def sanitize_resume_module_for_ai(module_type: str, content: Any) -> Any:
+    """按简历模块语义脱敏，避免把项目名、技能名误当作候选人姓名。
+
+    ``name`` 在 basic_info / recommendation 中是人名，但在 project_experience、
+    skills、certificates 等模块中是业务内容。旧的无上下文递归脱敏会把这些值
+    全部替换为 ``[姓名]``，直接破坏检查、改写与诊断质量。
+    """
+    if module_type == "basic_info":
+        return sanitize_for_ai(content)
+
+    person_name_modules = {"recommendation"}
+
+    def _sanitize(value: Any, key: str | None = None) -> Any:
+        if isinstance(value, dict):
+            result: dict[str, Any] = {}
+            for child_key, child_value in value.items():
+                if child_key == "avatar":
+                    continue
+                if child_key in {"phone", "email", "contact"}:
+                    result[child_key] = SENSITIVE_LABELS.get(child_key) or "[已脱敏]"
+                    continue
+                if child_key == "name" and module_type in person_name_modules:
+                    result[child_key] = SENSITIVE_LABELS["name"]
+                    continue
+                result[child_key] = _sanitize(child_value, child_key)
+            return result
+        if isinstance(value, list):
+            return [_sanitize(item, key) for item in value]
+        if isinstance(value, str):
+            return sanitize_text_for_ai(value)
+        return value
+
+    return _sanitize(content)
+
+
 # ---------------------------------------------------------------------------
 # Freeform text sanitization (regex-based)
 # ---------------------------------------------------------------------------

@@ -242,6 +242,9 @@ export interface AgentSSEEvent {
     | "turn_restarting";
 
   // ── agent_start ──
+  protocol_version?: string;
+  event_type?: string;
+  sequence?: number;
   resume_id?: number;
   turn_id?: string;
   tools?: { name: string; description: string }[];
@@ -323,6 +326,7 @@ export function askAgentStream(
     moduleType?: string;
     entryId?: string;
     action?: string;
+    toolHint?: string;
   },
 ): () => void {
   const abort = new AbortController();
@@ -348,6 +352,7 @@ export function askAgentStream(
     ...(options?.moduleType ? { module_type: options.moduleType } : {}),
     ...(options?.entryId ? { entry_id: options.entryId } : {}),
     ...(options?.action ? { action: options.action } : {}),
+    ...(options?.toolHint ? { tool_hint: options.toolHint } : {}),
   });
 
   (async () => {

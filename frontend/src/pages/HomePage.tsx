@@ -13,14 +13,14 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import LandingNav from "../components/LandingNav";
 import { Button, Badge } from "../components/ui";
-import { Sparkles, ArrowRight, MessagesSquare, FileText, Target, BadgeCheck, Briefcase, Mic, Upload, Compass } from "lucide-react";
+import { ArrowRight, MessagesSquare, FileText, Target, BadgeCheck, Briefcase, Mic, Upload, Compass } from "lucide-react";
 
 // ── Hero 信任数据 ──
 
 const HERO_STATS = [
-  { value: "6+", label: "智能分析维度" },
-  { value: "30s", label: "快速简历诊断" },
-  { value: "3 步", label: "简历→投递闭环" },
+  { value: "22 项", label: "求职任务" },
+  { value: "18 套", label: "简历模板" },
+  { value: "全链路", label: "修改可确认" },
 ];
 
 // ── Bento 功能卡 ──
@@ -34,20 +34,20 @@ interface Feature {
 }
 
 const FEATURES: Feature[] = [
-  { icon: MessagesSquare, title: "AI 智能对话", desc: "与 AI Agent 实时对话，一步步引导完成简历构建与优化", tint: "bg-brand/10 text-brand" },
+  { icon: MessagesSquare, title: "对话式任务台", desc: "诊断、改写、岗位匹配和检索都从明确任务进入，过程与结果可回看", tint: "bg-brand/10 text-brand" },
   { icon: FileText, title: "专业简历编辑器", desc: "Tiptap 所见即所得，模块自由增删排序，一键预览与导出", tint: "bg-sky-500/10 text-sky-500" },
-  { icon: BadgeCheck, title: "ATS 深度诊断", desc: "多维度评分定位简历短板，关键词命中与结构优化一目了然", tint: "bg-success-soft text-success" },
-  { icon: Briefcase, title: "校招情报实时同步", desc: "校招/社招岗位信息聚合，投递跟踪与截止提醒一站掌握", tint: "bg-warning-soft text-warning" },
-  { icon: Mic, title: "面试模拟指导", desc: "基于你的简历生成模拟面试，针对性提问并给出回答建议", tint: "bg-purple-500/10 text-purple-500" },
-  { icon: Target, title: "求职全程护航", desc: "从简历到投递到复盘，求职链路完整闭环，Offer 尽在掌握", tint: "bg-rose-500/10 text-rose-500" },
+  { icon: BadgeCheck, title: "证据化诊断", desc: "区分原文已证明、证据不足和明确缺失，不把参考分包装成通过率", tint: "bg-success-soft text-success" },
+  { icon: Briefcase, title: "投递工作台", desc: "保存岗位、跟踪进度与关键时间点，JD 可沉淀为后续检索资料", tint: "bg-warning-soft text-warning" },
+  { icon: Mic, title: "面试训练与复盘", desc: "围绕目标岗位练习，记录问题、回答、评分维度和下一步行动", tint: "bg-purple-500/10 text-purple-500" },
+  { icon: Target, title: "个人求职知识库", desc: "把简历、JD、面试记录和笔记放在同一套可检索的资料中", tint: "bg-rose-500/10 text-rose-500" },
 ];
 
 // ── 三步工作流 ──
 
 const STEPS = [
   { icon: Upload, step: "01", title: "上传简历", desc: "PDF / DOCX 一键上传，自动解析为结构化内容" },
-  { icon: Sparkles, step: "02", title: "AI 诊断优化", desc: "多维度评分 + 针对性建议，逐条接受或拒绝" },
-  { icon: Briefcase, step: "03", title: "投递校招", desc: "匹配校招岗位，跟踪投递进度，备战面试" },
+  { icon: Target, step: "02", title: "核对并修改", desc: "检查解析结果和岗位证据，逐条确认修改，不自动覆盖" },
+  { icon: Briefcase, step: "03", title: "投递与复盘", desc: "跟踪申请进度，沉淀面试问题、评分和训练计划" },
 ];
 
 // ── 产品展示模型（浏览器窗口 + Agent 聊天 + 简历预览） ──
@@ -56,7 +56,7 @@ function ProductMockup() {
   return (
     <div className="relative max-w-5xl mx-auto mt-12 px-4">
       {/* 外层容器：模拟浏览器窗口 */}
-      <div className="rounded-[24px] overflow-hidden border border-[var(--color-border)] bg-white/80 backdrop-blur-xl shadow-2xl shadow-black/10">
+      <div className="rounded-[24px] overflow-hidden border border-[var(--color-border)] bg-[var(--color-surface)] shadow-xl shadow-black/8">
         {/* 浏览器顶栏 */}
         <div className="flex items-center gap-2 px-4 py-2.5 bg-[var(--color-bg-secondary)] border-b border-[var(--color-border)]">
           <div className="flex gap-1.5">
@@ -83,13 +83,13 @@ function ProductMockup() {
                 <Compass size={12} fill="currentColor" className="text-brand" />
               </div>
               <div className="bg-[var(--color-bg-secondary)] rounded-list rounded-tl-sm px-3 py-2 text-xs text-[var(--color-text-secondary)] leading-relaxed max-w-[85%]">
-                你好！我是你的 AI 简历助手。请先告诉我你的基本信息，我来帮你构建简历。
+                已读取当前简历。你可以先做岗位匹配，也可以从某个具体条目开始检查。
               </div>
             </div>
             {/* 用户消息 */}
             <div className="flex gap-2 justify-end">
               <div className="bg-brand text-white rounded-list rounded-tr-sm px-3 py-2 text-xs leading-relaxed max-w-[85%]">
-                我是清华大学计算机专业的学生，GPA 3.7/4.0
+                检查项目经历和目标岗位的证据是否对应。
               </div>
             </div>
             {/* ATS 诊断卡（模拟实时分析结果） */}
@@ -99,14 +99,14 @@ function ProductMockup() {
               </div>
               <div className="flex-1 max-w-[85%] bg-white/70 dark:bg-white/5 border border-[var(--color-border)] rounded-list p-3">
                 <div className="flex items-center justify-between text-[10px] mb-1.5">
-                  <span className="text-[var(--color-text-muted)] font-medium">ATS 匹配度</span>
-                  <span className="text-brand font-semibold tabular-nums">92%</span>
+                  <span className="text-[var(--color-text-muted)] font-medium">文本证据检查</span>
+                  <span className="text-brand font-semibold tabular-nums">3 / 5</span>
                 </div>
                 <div className="h-1.5 rounded-full bg-[var(--color-bg-secondary)] overflow-hidden">
-                  <div className="h-full w-[92%] rounded-full bg-gradient-to-r from-brand to-[#5856d6]" />
+                  <div className="h-full w-[60%] rounded-full bg-brand" />
                 </div>
                 <div className="flex flex-wrap gap-1 mt-2">
-                  {["关键词命中", "结构清晰", "量化突出"].map((t) => (
+                  {["3 条直接证据", "2 条待补充", "来源可回看"].map((t) => (
                     <span key={t} className="px-1.5 py-0.5 rounded-full bg-success-soft text-success text-[9px] font-medium">
                       ✓ {t}
                     </span>
@@ -120,7 +120,7 @@ function ProductMockup() {
                 <Compass size={12} fill="currentColor" className="text-brand" />
               </div>
               <div className="bg-[var(--color-bg-secondary)] rounded-list rounded-tl-sm px-3 py-2 text-xs text-[var(--color-text-secondary)] leading-relaxed max-w-[85%]">
-                太棒了！诊断完成，建议补充 2 个量化指标，我来帮你优化。
+                当前有 3 条要求能在简历中直接定位；另外 2 条只有技能关键词，项目深度仍需补充。
               </div>
             </div>
             {/* 打字指示器（Open WebUI 风格两粒圆点） */}
@@ -144,7 +144,7 @@ function ProductMockup() {
               {/* 简历头部 */}
               <div className="text-center mb-3">
                 <div className="text-sm font-bold text-gray-900">轻舟简历</div>
-                <div className="text-[10px] text-gray-500 mt-0.5">前端开发实习生</div>
+                <div className="text-[10px] text-gray-500 mt-0.5">软件开发实习生</div>
                 <div className="flex items-center justify-center gap-3 mt-1.5 text-[9px] text-gray-400">
                   <span>北京</span>
                   <span>139-0000-0000</span>
@@ -166,11 +166,11 @@ function ProductMockup() {
                 <div className="text-[10px] font-bold text-blue-600 border-b border-blue-200 pb-0.5 mb-1">教育经历</div>
                 <div className="text-[9px]">
                   <div className="flex justify-between">
-                    <span className="font-medium">清华大学</span>
+                    <span className="font-medium">示例大学</span>
                     <span className="text-gray-400">2022.09 - 2026.07</span>
                   </div>
                   <div>计算机科学与技术 · 本科</div>
-                  <div className="text-gray-500 mt-0.5">GPA: 3.7/4.0，专业排名前15%</div>
+                  <div className="text-gray-500 mt-0.5">主修课程与成绩信息由候选人确认后填写</div>
                 </div>
               </div>
               {/* 项目经历 */}
@@ -178,12 +178,12 @@ function ProductMockup() {
                 <div className="text-[10px] font-bold text-blue-600 border-b border-blue-200 pb-0.5 mb-1">项目经历</div>
                 <div className="text-[9px]">
                   <div className="flex justify-between">
-                    <span className="font-medium">XX项目名称</span>
+                    <span className="font-medium">课程项目示例</span>
                     <span className="text-gray-400">2024.09 - 2025.01</span>
                   </div>
                   <div className="text-gray-500">前端负责人 · 使用 React + TypeScript 开发</div>
                   <div className="text-gray-600 mt-0.5">
-                    实现 10+ 功能模块，<span className="text-success font-medium">性能提升 30%</span>
+                    完成列表渲染与加载优化，<span className="text-success font-medium">效果数据待补充</span>
                   </div>
                 </div>
               </div>
@@ -218,29 +218,28 @@ export default function HomePage() {
       {/* 顶部导航（共享） */}
       <LandingNav />
 
-      {/* Hero（Aurora 氛围由全局背景光球提供） */}
+      {/* Hero: product value first, with restrained visual hierarchy. */}
       <section className="relative">
         <div className="max-w-7xl mx-auto px-6 pt-24 pb-8 text-center">
           {/* 徽章 */}
           <div className="animate-fade-in-up">
             <Badge variant="brand" className="mb-6">
-              <Sparkles size={12} fill="currentColor" aria-hidden="true" />
-              AI 驱动 · 校招/社招数据实时同步
+              <Compass size={12} aria-hidden="true" />
+              面向校招与社招 · 从简历到复盘
             </Badge>
           </div>
 
           {/* 大标题：品牌渐变强调 */}
-          <h1 className="text-5xl md:text-7xl font-bold text-[var(--color-text)] mb-6 display-tight leading-[1.05] animate-fade-in-up" style={{ animationDelay: "80ms" }}>
-            AI 简历，帮你
+          <h1 className="text-4xl sm:text-5xl md:text-7xl font-bold text-[var(--color-text)] mb-6 display-tight leading-[1.08] animate-fade-in-up" style={{ animationDelay: "80ms" }}>
+            让每次简历修改
             <br />
-            <span className="bg-gradient-to-r from-[var(--color-primary)] to-[#5856d6] bg-clip-text text-transparent">
-              拿下心仪 offer
+            <span className="text-[var(--color-primary)]">
+              都能说明为什么
             </span>
           </h1>
-          <p className="text-lg md:text-xl text-[var(--color-text-secondary)] mb-10 max-w-2xl mx-auto animate-fade-in-up" style={{ animationDelay: "160ms" }}>
-            智能诊断 + 专业编辑器 + 求职护航
-            <br className="sm:hidden" />
-            ——从简历到 offer 的一站式 AI 求职助手
+          <p className="text-base md:text-xl text-[var(--color-text-secondary)] mb-10 max-w-2xl mx-auto animate-fade-in-up" style={{ animationDelay: "160ms" }}>
+            导入简历，核对岗位证据，管理投递与面试复盘
+            ——建议有来源，写回由你确认，重要资料可持续检索
           </p>
 
           {/* 双 CTA */}
@@ -249,7 +248,7 @@ export default function HomePage() {
               {user ? "我的简历" : "开始使用"}
             </Button>
             <Button size="lg" variant="secondary" onClick={scrollToFeatures}>
-              了解 AI 能力
+              查看功能
             </Button>
           </div>
 
@@ -268,24 +267,33 @@ export default function HomePage() {
 
       {/* 功能简介：6 格 Bento */}
       <section id="features" className="max-w-6xl mx-auto px-6 py-24 scroll-mt-16">
-        <h2 className="text-3xl md:text-4xl font-bold text-center text-[var(--color-text)] mb-4 display-tight">
-          一站式求职，从简历开始
-        </h2>
-        <p className="text-center text-[var(--color-text-muted)] text-sm mb-14">
-          六大能力，覆盖简历构建、优化与求职全流程
-        </p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid gap-3 md:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] md:items-end mb-10">
+          <h2 className="text-3xl md:text-4xl font-bold text-[var(--color-text)] display-tight">
+            一套连贯的求职工作流
+          </h2>
+          <p className="text-[var(--color-text-muted)] text-sm md:text-right">
+            核心任务做深，辅助功能保持可用；所有关键修改都留给用户确认
+          </p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 border-y border-[var(--color-border)]">
           {FEATURES.map((item, i) => (
             <div
               key={item.title}
-              className="group glass-card p-7 hover:-translate-y-1 hover:shadow-xl hover:shadow-black/5 transition-all duration-400 animate-fade-in-up"
+              className={`group flex gap-4 py-6 sm:px-5 animate-fade-in-up ${
+                i < FEATURES.length - 2 ? "border-b border-[var(--color-border)]" : ""
+              } ${i % 2 === 0 ? "md:border-r md:border-[var(--color-border)] md:pr-8" : "md:pl-8"}`}
               style={{ animationDelay: `${i * 80}ms` }}
             >
-              <div className={`w-11 h-11 rounded-input flex items-center justify-center mb-5 transition-transform duration-300 group-hover:scale-110 ${item.tint}`}>
-                <item.icon size={20} fill="currentColor" aria-hidden="true" />
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center text-brand">
+                <item.icon size={20} strokeWidth={1.8} aria-hidden="true" />
               </div>
-              <h3 className="text-base font-semibold text-[var(--color-text)] mb-2 display-tight">{item.title}</h3>
-              <p className="text-sm text-[var(--color-text-muted)] leading-relaxed">{item.desc}</p>
+              <div>
+                <div className="mb-1 text-[10px] font-medium tabular-nums text-[var(--color-text-muted)]">
+                  {String(i + 1).padStart(2, "0")}
+                </div>
+                <h3 className="text-base font-semibold text-[var(--color-text)] mb-1.5 display-tight">{item.title}</h3>
+                <p className="text-sm text-[var(--color-text-muted)] leading-relaxed">{item.desc}</p>
+              </div>
             </div>
           ))}
         </div>
@@ -293,59 +301,55 @@ export default function HomePage() {
 
       {/* 三步工作流 */}
       <section className="max-w-6xl mx-auto px-6 pb-24">
-        <h2 className="text-3xl md:text-4xl font-bold text-center text-[var(--color-text)] mb-14 display-tight">
-          三步拿到心仪 Offer
+        <h2 className="text-3xl md:text-4xl font-bold text-[var(--color-text)] mb-10 display-tight">
+          三步形成可复用的求职材料
         </h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-10 relative">
-          {/* 连接线（md 以上显示） */}
-          <div className="hidden md:block absolute top-8 left-[16.67%] right-[16.67%] h-px bg-gradient-to-r from-transparent via-brand/30 to-transparent" aria-hidden="true" />
+        <div className="grid grid-cols-1 md:grid-cols-3 border-t border-[var(--color-border)]">
           {STEPS.map((item, i) => (
-            <div key={item.step} className="relative text-center animate-fade-in-up" style={{ animationDelay: `${i * 120}ms` }}>
-              <div className="relative mx-auto w-16 h-16 rounded-full bg-white/80 dark:bg-[var(--color-bg-secondary)] border border-[var(--color-border)] shadow-lg shadow-black/5 flex items-center justify-center mb-5">
-                <item.icon size={22} fill="currentColor" className="text-brand" aria-hidden="true" />
-                <span className="absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full bg-brand text-white text-[10px] font-semibold flex items-center justify-center shadow-sm">
-                  {item.step}
-                </span>
+            <div
+              key={item.step}
+              className={`py-7 animate-fade-in-up ${i > 0 ? "md:border-l md:border-[var(--color-border)] md:pl-8" : ""} ${i < STEPS.length - 1 ? "border-b md:border-b-0 border-[var(--color-border)] md:pr-8" : ""}`}
+              style={{ animationDelay: `${i * 120}ms` }}
+            >
+              <div className="flex items-center justify-between mb-6">
+                <span className="text-3xl font-semibold tabular-nums text-[var(--color-text-muted)]">{item.step}</span>
+                <item.icon size={20} strokeWidth={1.8} className="text-brand" aria-hidden="true" />
               </div>
               <h3 className="text-base font-semibold text-[var(--color-text)] mb-1.5 display-tight">{item.title}</h3>
-              <p className="text-sm text-[var(--color-text-muted)] leading-relaxed max-w-xs mx-auto">{item.desc}</p>
+              <p className="text-sm text-[var(--color-text-muted)] leading-relaxed">{item.desc}</p>
             </div>
           ))}
         </div>
       </section>
 
-      {/* 底部 CTA：品牌渐变卡片 */}
+      {/* 底部 CTA */}
       <section className="max-w-6xl mx-auto px-6 pb-24">
-        <div className="relative overflow-hidden rounded-modal bg-gradient-to-br from-[#0071e3] via-[#0a6cd6] to-[#5856d6] px-8 py-16 text-center text-white shadow-2xl shadow-brand/30">
-          {/* 装饰光晕 */}
-          <div className="absolute -top-24 -right-16 w-72 h-72 rounded-full bg-white/15 blur-3xl" aria-hidden="true" />
-          <div className="absolute -bottom-24 -left-16 w-72 h-72 rounded-full bg-white/10 blur-3xl" aria-hidden="true" />
-          <div className="relative">
-            <h2 className="text-3xl md:text-4xl font-bold display-tight mb-4">现在就开始，让 AI 帮你写简历</h2>
-            <p className="text-white/80 text-sm md:text-base mb-8 max-w-xl mx-auto">
-              上传简历即可获得多维诊断与优化建议，全程 AI 护航，助你拿下心仪 offer
+        <div className="grid gap-6 border-y border-[var(--color-border)] py-10 md:grid-cols-[1fr_auto] md:items-center">
+          <div>
+            <h2 className="text-3xl md:text-4xl font-bold text-[var(--color-text)] display-tight mb-3">从一份可核对的简历开始</h2>
+            <p className="text-[var(--color-text-muted)] text-sm md:text-base max-w-xl">
+              上传现有简历或从结构化表单开始。先确认事实，再诊断、匹配岗位和跟踪投递。
             </p>
-            <Button
-              size="lg"
-              onClick={handlePrimaryCta}
-              className="!bg-white !text-[#0071e3] hover:!bg-white/90 hover:!shadow-white/30"
-              iconRight={<ArrowRight size={18} strokeWidth={2.25} aria-hidden="true" />}
-            >
-              {user ? "进入工作台" : "免费开始使用"}
-            </Button>
           </div>
+          <Button
+            size="lg"
+            onClick={handlePrimaryCta}
+            iconRight={<ArrowRight size={18} strokeWidth={2.25} aria-hidden="true" />}
+          >
+            {user ? "进入工作台" : "开始使用"}
+          </Button>
         </div>
       </section>
 
       {/* C2: 信任合规页脚 */}
       <footer className="border-t border-black/5 py-6">
         <div className="max-w-6xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-[var(--color-text-muted)]">
-          <span>© 2026 AI 简历求职助手</span>
+          <span>© 2026 轻舟简历</span>
           <div className="flex items-center gap-5">
-            <Link to="/privacy" className="hover:text-[var(--color-text)] transition-colors">
+            <Link to="/privacy" className="inline-flex min-h-11 items-center hover:text-[var(--color-text)] transition-colors">
               隐私政策
             </Link>
-            <Link to="/terms" className="hover:text-[var(--color-text)] transition-colors">
+            <Link to="/terms" className="inline-flex min-h-11 items-center hover:text-[var(--color-text)] transition-colors">
               用户协议
             </Link>
           </div>

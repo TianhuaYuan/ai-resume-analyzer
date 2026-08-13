@@ -184,7 +184,7 @@ describe("QAPage 基本交互 (Task 4)", () => {
   it("空历史显示引导空状态", async () => {
     renderPage();
     await waitFor(() => {
-      expect(screen.getByText(/从简历打磨到面试准备/)).toBeInTheDocument();
+      expect(screen.getByText("求职工作台")).toBeInTheDocument();
     });
   });
 
@@ -302,7 +302,7 @@ describe("QAPage 基本交互 (Task 4)", () => {
   it("chat 为空时清除历史按钮禁用", async () => {
     renderPage();
     await waitFor(() => {
-      expect(screen.getByText(/从简历打磨到面试准备/)).toBeInTheDocument();
+      expect(screen.getByText("求职工作台")).toBeInTheDocument();
     });
 
     const clearBtn = screen.getByText("清除历史").closest("button");
@@ -330,23 +330,36 @@ describe("QAPage 草稿 dirty 防线", () => {
     vi.useRealTimers();
   });
 
-  it("用户直接编辑后才触发自动保存", async () => {
+  it("用户直接编辑后保持未保存，等待不会写入草稿", async () => {
     renderPage();
     await openModuleEditor();
     vi.mocked(saveDraft).mockClear();
 
     vi.useFakeTimers();
     fireEvent.click(screen.getByRole("button", { name: "修改模块" }));
-    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(30000); });
+
+    expect(saveDraft).not.toHaveBeenCalled();
+    expect(screen.getByRole("status")).toHaveTextContent("未保存");
+    vi.useRealTimers();
+  });
+
+  it("只有点击保存草稿才持久化当前修改", async () => {
+    renderPage();
+    await openModuleEditor();
+    vi.mocked(saveDraft).mockClear();
+
+    fireEvent.click(screen.getByRole("button", { name: "修改模块" }));
+    fireEvent.click(screen.getByRole("button", { name: /保存草稿/ }));
+    await act(async () => { await Promise.resolve(); });
 
     expect(saveDraft).toHaveBeenCalledTimes(1);
     expect(saveDraft).toHaveBeenCalledWith(42, expect.objectContaining({
       modules: [expect.objectContaining({ module_type: "basic_info", content: { name: "Changed" } })],
     }));
-    vi.useRealTimers();
   });
 
-  it("自动保存失败保留 dirty，允许用户重试", async () => {
+  it("手动保存失败保留 dirty，允许用户重试", async () => {
     renderPage();
     await openModuleEditor();
     vi.mocked(saveDraft)
@@ -354,15 +367,15 @@ describe("QAPage 草稿 dirty 防线", () => {
       .mockRejectedValueOnce(new Error("network"))
       .mockResolvedValue({ ...BUILDER_RESUME, status: "draft" });
 
-    vi.useFakeTimers();
     fireEvent.click(screen.getByRole("button", { name: "修改模块" }));
-    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    fireEvent.click(screen.getByRole("button", { name: /保存草稿/ }));
+    await act(async () => { await Promise.resolve(); });
     expect(saveDraft).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("status")).toHaveTextContent("未保存");
 
     fireEvent.click(screen.getByRole("button", { name: /保存草稿/ }));
     await act(async () => { await Promise.resolve(); });
     expect(saveDraft).toHaveBeenCalledTimes(2);
-    vi.useRealTimers();
   });
 
   it("refresh 响应晚到时不覆盖期间的用户编辑", async () => {
@@ -398,6 +411,7 @@ describe("QAPage 草稿 dirty 防线", () => {
     fireEvent.click(screen.getByRole("button", { name: /保存草稿/ }));
     await waitFor(() => expect(saveDraft).toHaveBeenCalledWith(42, expect.anything()));
 
+    vi.spyOn(window, "confirm").mockReturnValue(true);
     fireEvent.change(screen.getByRole("combobox", { name: "切换简历" }), { target: { value: "43" } });
     await waitFor(() => expect(getBuilderResume).toHaveBeenCalledWith(43));
     await act(async () => { rejectSave(new Error("A 保存失败")); await Promise.resolve(); });

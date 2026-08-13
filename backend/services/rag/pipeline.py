@@ -22,6 +22,7 @@ from services.rag.clients import (
     reconnect_chroma,
 )
 from services.rag.provider_profiles import get_provider_profile
+from services.ai_contracts import AIRequest, AIResponse, UsageRecord
 from services.rag.metadata import META_ASSET_ID
 from services.vector_store import get_vector_store
 from services.rag.retrieval import (
@@ -59,6 +60,29 @@ class LLMToolResponse:
     tool_calls: list[ToolCall] = field(default_factory=list)
     reasoning_content: str | None = None
     usage: dict = field(default_factory=lambda: {"prompt_tokens": 0, "completion_tokens": 0})
+
+    def as_ai_response(
+        self,
+        *,
+        model: str | None = None,
+        scenario: str | None = None,
+        user_id: int | None = None,
+    ) -> AIResponse:
+        """Expose legacy response through the provider-neutral contract."""
+        return AIResponse(
+            content=self.content,
+            tool_calls=[
+                {"id": call.id, "name": call.name, "arguments": call.arguments}
+                for call in self.tool_calls
+            ],
+            reasoning_content=self.reasoning_content,
+            usage=UsageRecord.from_usage(
+                self.usage,
+                model=model,
+                scenario=scenario,
+                user_id=user_id,
+            ),
+        )
 
 
 def _select_client_and_model(model: str | None) -> tuple:
@@ -217,25 +241,36 @@ def _build_llm_kwargs(
 
     语义：`thinking_enabled=False`（默认）→ 显式关闭思考；True → 开启 + effort。
     """
-    profile = get_provider_profile(scenario, use_tools=bool(tools))
-    effective_thinking = profile.thinking if thinking_enabled is None else thinking_enabled
-    effective_effort = thinking_effort or profile.effort
-    kwargs: dict = {"model": model_name, "messages": messages}
-    if temperature is not None:
-        kwargs["temperature"] = temperature
-    if max_tokens is not None:
-        kwargs["max_tokens"] = max_tokens
+    request = AIRequest(
+        scenario=scenario or "qa_simple",
+        messages=messages,
+        model=model_name,
+        tools=tools,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        thinking_enabled=thinking_enabled,
+        thinking_effort=thinking_effort,
+        stream=stream,
+    )
+    profile = get_provider_profile(request.scenario, use_tools=bool(request.tools))
+    effective_thinking = profile.thinking if request.thinking_enabled is None else request.thinking_enabled
+    effective_effort = request.thinking_effort or profile.effort
+    kwargs: dict = {"model": request.model, "messages": request.messages}
+    if request.temperature is not None:
+        kwargs["temperature"] = request.temperature
+    if request.max_tokens is not None:
+        kwargs["max_tokens"] = request.max_tokens
     elif profile.max_tokens is not None:
         kwargs["max_tokens"] = profile.max_tokens
-    if tools:
-        kwargs["tools"] = tools
-    if model_name != settings.JUDGE_MODEL:
+    if request.tools:
+        kwargs["tools"] = request.tools
+    if request.model != settings.JUDGE_MODEL:
         kwargs["extra_body"] = {
             "thinking": {"type": "enabled" if effective_thinking else "disabled"}
         }
         if effective_thinking:
             kwargs["reasoning_effort"] = effective_effort
-    if stream:
+    if request.stream:
         kwargs["stream"] = True
         kwargs["stream_options"] = {"include_usage": True}
     return kwargs
@@ -318,7 +353,7 @@ async def llm_generate_with_tools(
         usage["prompt_tokens"] = pt
         usage["completion_tokens"] = ct
         if user_id is not None:
-            await record_llm_usage(user_id, pt, ct)
+            await record_llm_usage(user_id, pt, ct, model=model_name, scenario=scenario)
 
     message = response.choices[0].message
     content = message.content or "" if hasattr(message, "content") else ""
@@ -379,7 +414,7 @@ async def llm_generate_with_tools_stream(
             pt = getattr(chunk.usage, "prompt_tokens", 0) or 0
             ct = getattr(chunk.usage, "completion_tokens", 0) or 0
             if user_id is not None:
-                await record_llm_usage(user_id, pt, ct)
+                await record_llm_usage(user_id, pt, ct, model=model_name, scenario=scenario)
             yield {"type": "usage", "prompt_tokens": pt, "completion_tokens": ct}
             continue
 
@@ -519,7 +554,7 @@ async def llm_generate(
     if user_id is not None and hasattr(response, "usage") and response.usage:
         pt = getattr(response.usage, "prompt_tokens", 0) or 0
         ct = getattr(response.usage, "completion_tokens", 0) or 0
-        await record_llm_usage(user_id, pt, ct)
+        await record_llm_usage(user_id, pt, ct, model=model_name, scenario=scenario)
 
     return (response.choices[0].message.content or "").strip()
 
@@ -568,7 +603,7 @@ async def _llm_generate_stream(
             ct = getattr(chunk.usage, "completion_tokens", 0) or 0
             # T3: 流式 usage 记账
             if user_id is not None:
-                await record_llm_usage(user_id, pt, ct)
+                await record_llm_usage(user_id, pt, ct, model=settings.CHAT_MODEL, scenario=scenario)
             yield {
                 "type": "usage",
                 "prompt_tokens": pt,

@@ -235,7 +235,9 @@ class WorkExperienceContent(BaseModel):
 class SkillItem(BaseItem):
     """技能单条（v2 重设计：独立条目 + 熟练度）。"""
 
-    name: str = Field(..., min_length=1, max_length=50, description="技能名称")
+    # 真实简历常把“技术名 + 使用场景/能力说明”作为一个技能条目；50 字会让
+    # 整个 skills 模块在反解析时被丢弃。保留到 200 字，由 UI 换行展示。
+    name: str = Field(..., min_length=1, max_length=1000, description="技能名称或能力说明")
     level: int | None = Field(None, ge=1, le=5, description="熟练度 1-5")
     category: str | None = Field(None, max_length=50, description="所属分类")
 

@@ -76,6 +76,39 @@ class TestParsePdfPdfplumber:
         assert result == "content"
 
 
+def test_extract_link_evidence_keeps_labelled_pdf_uri():
+    """可点击 GitHub 注释必须进入文本证据，不能只留下“主页链接”标签。"""
+    from utils.file_parser import _extract_link_evidence
+
+    links = [
+        {
+            "uri": "https://github.com/candidate",
+            "x0": 10,
+            "x1": 90,
+            "top": 20,
+            "bottom": 40,
+        }
+    ]
+    words = [
+        {"text": "GitHub主页链接", "x0": 12, "x1": 88, "top": 22, "bottom": 38}
+    ]
+
+    assert _extract_link_evidence(links, words, "GitHub主页链接") == [
+        "GitHub主页链接: https://github.com/candidate"
+    ]
+
+
+def test_extract_link_evidence_deduplicates_visible_and_rejects_unsafe_scheme():
+    from utils.file_parser import _extract_link_evidence
+
+    links = [
+        {"uri": "https://example.com", "x0": 0, "x1": 1, "top": 0, "bottom": 1},
+        {"uri": "javascript:alert(1)", "x0": 0, "x1": 1, "top": 0, "bottom": 1},
+    ]
+
+    assert _extract_link_evidence(links, [], "项目：https://example.com") == []
+
+
 # ═══════════════════════════════════════════════════════════
 # RED: parse_docx 表格 + 段落
 # ═══════════════════════════════════════════════════════════

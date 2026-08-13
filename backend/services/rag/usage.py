@@ -10,6 +10,7 @@
 """
 
 import logging
+import re
 import time
 from datetime import datetime, timezone
 
@@ -29,6 +30,8 @@ async def record_llm_usage(
     completion_tokens: int,
     *,
     model: str | None = None,
+    scenario: str | None = None,
+    turn_id: str | None = None,
 ) -> None:
     """记录 LLM token 使用量到 Redis（日统计）。
 
@@ -86,6 +89,24 @@ async def record_llm_usage(
         await redis.expire(f"{base}:calls", ttl)
         for suffix in ("cost_input_micro_usd", "cost_output_micro_usd", "cost_total_micro_usd"):
             await redis.expire(f"{base}:{suffix}", ttl)
+
+        # Detail ledger keeps the legacy aggregate keys compatible while
+        # exposing the dimensions needed for cost control and evaluation.
+        if model or scenario:
+            safe_scenario = _safe_key_part(scenario or "unknown")
+            safe_model = _safe_key_part(model or "unknown")
+            detail_base = f"llm_usage_detail:{user_id}:{date_str}:{safe_scenario}:{safe_model}"
+            await redis.incrby(f"{detail_base}:prompt", prompt_tokens)
+            await redis.incrby(f"{detail_base}:completion", completion_tokens)
+            await redis.incrby(f"{detail_base}:total", total)
+            await redis.incrby(f"{detail_base}:calls", 1)
+            if input_micro_usd or output_micro_usd:
+                await redis.incrby(
+                    f"{detail_base}:cost_total_micro_usd",
+                    input_micro_usd + output_micro_usd,
+                )
+            for suffix in ("prompt", "completion", "total", "calls", "cost_total_micro_usd"):
+                await redis.expire(f"{detail_base}:{suffix}", ttl)
     except Exception:
         _log_redis_fail_limited()
 
@@ -111,7 +132,8 @@ async def get_usage_summary(days: int = 7) -> list[dict]:
 
     # 解析 key → (date, total/calls 值)，跨用户聚合
     merged: dict[str, dict] = {}
-    for key in keys:
+    for raw_key in keys:
+        key = raw_key.decode("utf-8", errors="replace") if isinstance(raw_key, bytes) else str(raw_key)
         parts = key.split(":")
         if len(parts) < 4:
             continue
@@ -145,7 +167,60 @@ async def get_usage_summary(days: int = 7) -> list[dict]:
         except Exception:
             pass
 
+    # Optional detail dimensions. Legacy installations simply return no detail.
+    try:
+        detail_keys = await redis.keys("llm_usage_detail:*:*:*:*:total")
+    except Exception:
+        detail_keys = []
+    for raw_key in detail_keys or []:
+        key = raw_key.decode("utf-8", errors="replace") if isinstance(raw_key, bytes) else str(raw_key)
+        parts = key.split(":")
+        if len(parts) != 6:
+            continue
+        _, _user_id, date_str, scenario, model, _ = parts
+        try:
+            total = int(await redis.get(key) or 0)
+        except Exception:
+            total = 0
+        entry = merged.setdefault(
+            date_str,
+            {"date": date_str, "total_tokens": 0, "calls": 0, "cost_usd": 0.0},
+        )
+        by_scenario = entry.setdefault("by_scenario", {})
+        scenario_entry = by_scenario.setdefault(
+            scenario,
+            {"total_tokens": 0, "calls": 0, "cost_usd": 0.0, "by_model": {}},
+        )
+        scenario_entry["total_tokens"] += total
+        calls_key = ":".join(parts[:-1] + ["calls"])
+        try:
+            scenario_entry["calls"] += int(await redis.get(calls_key) or 0)
+        except Exception:
+            pass
+        cost_key = ":".join(parts[:-1] + ["cost_total_micro_usd"])
+        try:
+            cost = int(await redis.get(cost_key) or 0) / 1_000_000
+        except Exception:
+            cost = 0.0
+        scenario_entry["cost_usd"] += cost
+        model_entry = scenario_entry["by_model"].setdefault(
+            model, {"total_tokens": 0, "calls": 0, "cost_usd": 0.0}
+        )
+        model_entry["total_tokens"] += total
+        model_calls_key = ":".join(parts[:-1] + ["calls"])
+        try:
+            model_entry["calls"] += int(await redis.get(model_calls_key) or 0)
+        except Exception:
+            pass
+        model_entry["cost_usd"] += cost
+
     return [merged[d] for d in sorted(merged)]
+
+
+def _safe_key_part(value: str) -> str:
+    """Keep provider/model labels safe and bounded inside Redis keys."""
+    normalized = re.sub(r"[^a-zA-Z0-9._-]+", "_", value.strip())
+    return (normalized or "unknown")[:80]
 
 
 def _log_redis_fail_limited() -> None:

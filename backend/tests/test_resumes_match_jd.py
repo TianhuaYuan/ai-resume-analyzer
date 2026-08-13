@@ -17,7 +17,20 @@ import pytest
 from httpx import AsyncClient
 
 from models.resume import Resume
+from services.match_jd_service import _normalize_matched_evidence, _resume_contains_keyword
 from tests.conftest import AsyncSessionTest
+
+
+def test_resume_keyword_evidence_handles_aliases_and_phrases():
+    resume = "技术视野：Kubernetes、Docker；使用 GitHub Actions CI/CD。"
+    assert _resume_contains_keyword(resume, "Kubernetes 经验")
+    assert _resume_contains_keyword(resume, "K8s")
+    assert _resume_contains_keyword(resume, "Continuous Integration")
+    assert not _resume_contains_keyword(resume, "正式实习经历")
+    assert not _resume_contains_keyword(resume, "Reflexion 与 ReAct 等价")
+    assert _normalize_matched_evidence(resume, "Kubernetes 部署经验") == (
+        "Kubernetes（关键词出现，关联实践深度待核对）"
+    )
 
 
 async def _insert_resume(
@@ -191,6 +204,40 @@ async def test_match_jd_success(
     assert data["resume_id"] == resume_id
     assert "analysis" in data
     assert "85" in data["analysis"]
+
+
+@pytest.mark.asyncio
+async def test_match_jd_does_not_promote_keyword_to_deployment_experience(
+    client: AsyncClient, auth_headers: dict, registered_user: dict
+):
+    """A contradicted missing item may clear missing, but cannot invent depth evidence."""
+    resume_id = await _insert_resume(
+        registered_user["id"], parsed_text="技能：Python、Kubernetes、Docker"
+    )
+    structured = {
+        "score": 70,
+        "band": "B",
+        "dims": {},
+        "matched": ["Kubernetes"],
+        "missing": ["Kubernetes 部署经验"],
+        "gaps": ["补充 Kubernetes 部署经验"],
+        "reason": "",
+    }
+    with patch(
+        "services.match_jd_service._structured_match",
+        new_callable=AsyncMock,
+        return_value=structured,
+    ):
+        resp = await client.post(
+            f"/api/v1/resumes/{resume_id}/match-jd",
+            json={"jd_text": "要求 Kubernetes 部署经验"},
+            headers=auth_headers,
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["matched_keywords"] == ["Kubernetes"]
+    assert data["missing_keywords"] == []
 
 
 @pytest.mark.asyncio

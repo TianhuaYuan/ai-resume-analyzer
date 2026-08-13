@@ -38,10 +38,10 @@ export default function WelcomeState({
     <div className="flex-1 flex flex-col items-center justify-center py-10 px-6">
       {/* 大字标题 + tagline（Open WebUI 欢迎页风格） */}
       <h2 className="welcome-item text-2xl sm:text-3xl font-semibold text-[var(--color-text)] text-center display-tight">
-        简历 AI 助手
+        求职工作台
       </h2>
       <p className="welcome-item text-sm text-[var(--color-text-muted)] text-center mt-2 mb-8 max-w-lg leading-relaxed">
-        从简历打磨到面试准备，陪你从简历到 Offer，每一步都不孤单。
+        选择一个任务开始，或直接输入你现在要解决的问题。
       </p>
 
       {/* 不对称功能卡片网格：大卡跨 2 列 + 4 张小卡（瀑布动画，45ms 递增延迟） */}
