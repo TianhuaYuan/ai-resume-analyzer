@@ -11,7 +11,6 @@
 - render_resume_from_dict
 """
 
-import pytest
 
 from schemas.resume_module import ResumeStyle
 from services.resume_template import (
@@ -22,7 +21,6 @@ from services.resume_template import (
     _render_md,
     preparse_css_variables,
     render_module,
-    render_resume,
     render_resume_from_dict,
 )
 

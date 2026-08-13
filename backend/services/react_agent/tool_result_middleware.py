@@ -21,7 +21,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Awaitable, Callable, Protocol
+from typing import Protocol
 
 
 class ToolResultMiddleware(Protocol):

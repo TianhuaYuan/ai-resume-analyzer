@@ -462,8 +462,11 @@ async def save_jd_report(
 ) -> bool:
     """JD 6-block 报告落库（同 (user, resume, jd_hash) 幂等 upsert）。
 
+    本函数自管事务（内部 commit/rollback）；调用方（JDMatchTool）使用独立 session。
+    best-effort：失败只记日志，不阻断主流程。
+
     Args:
-        db: DB session（调用方负责 commit；best-effort 失败只记日志）
+        db: DB session（事务由本函数管理）
         user_id / resume_id / jd_text: 归属与幂等键
         report: 6-block 报告 dict
         overall / band: 汇总匹配分

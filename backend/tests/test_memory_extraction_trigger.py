@@ -159,7 +159,6 @@ async def _run_stream(tool_mode: str = "agent"):
 @pytest.mark.asyncio
 async def test_react_loop_stream_schedules_extraction():
     """开关开启 + agent 模式 → maybe_extract_memories 被调度。"""
-    from services.memory.extraction_trigger import maybe_extract_memories
 
     with patch.object(settings, "MEMORY_EXTRACTION_ENABLED", True), patch(
         "services.memory.extraction_trigger.maybe_extract_memories",
@@ -176,7 +175,6 @@ async def test_react_loop_stream_schedules_extraction():
 @pytest.mark.asyncio
 async def test_react_loop_stream_skips_builder():
     """builder 模式 → 不调度提炼（编辑器操作不是用户个人事实）。"""
-    from services.memory.extraction_trigger import maybe_extract_memories
 
     with patch.object(settings, "MEMORY_EXTRACTION_ENABLED", True), patch(
         "services.memory.extraction_trigger.maybe_extract_memories",

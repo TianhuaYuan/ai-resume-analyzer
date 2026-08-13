@@ -17,7 +17,6 @@ TTL: 120s（2 分钟），前端每 60s 发心跳续期
 """
 
 import logging
-import time
 import uuid
 
 from core.redis_client import get_redis

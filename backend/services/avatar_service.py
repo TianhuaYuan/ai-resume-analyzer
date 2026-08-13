@@ -16,12 +16,13 @@
 """
 
 import logging
-import os
 import uuid
 from pathlib import Path
 
 from fastapi import UploadFile, HTTPException, status
 from PIL import Image
+
+from core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -94,12 +95,19 @@ def delete_avatar(avatar_url: str) -> bool:
     if not avatar_url:
         return False
 
-    # 从URL提取文件路径
-    # avatar_url 格式: /uploads/avatars/uuid.jpg
-    if avatar_url.startswith("/"):
-        avatar_url = avatar_url[1:]
+    # avatar_url 形如 "/uploads/avatars/uuid.jpg"。剥离 "/uploads/" 前缀后
+    # 得到相对 UPLOAD_DIR 的路径（如 "avatars/uuid.jpg"），再解析并强约束
+    # 目标文件必须落在 uploads/avatars 目录内，杜绝路径穿越删除任意文件。
+    clean = avatar_url.lstrip("/")
+    if clean.startswith("uploads/"):
+        clean = clean[len("uploads/") :]
+    uploads_root = Path(settings.UPLOAD_DIR).resolve()
+    avatars_dir = (uploads_root / "avatars").resolve()
+    file_path = (uploads_root / clean).resolve()
+    if not file_path.is_relative_to(avatars_dir):
+        logger.warning("拒绝删除非头像目录文件: %s", avatar_url)
+        return False
 
-    file_path = Path(avatar_url)
     if file_path.exists():
         try:
             file_path.unlink()

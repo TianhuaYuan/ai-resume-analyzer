@@ -4,7 +4,7 @@
 → 每次 TypeError 被吞 → 记忆从未写入。修复后改用 with_retry(llm_generate, ..., fallback="[]")。
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 

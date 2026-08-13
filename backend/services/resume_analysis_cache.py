@@ -12,7 +12,6 @@ import json
 import logging
 from typing import Optional
 
-from core.config import settings
 from core.redis_client import get_redis
 
 logger = logging.getLogger(__name__)

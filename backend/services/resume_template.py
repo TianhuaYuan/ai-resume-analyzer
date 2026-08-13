@@ -17,7 +17,7 @@ from html import escape
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from schemas.resume_module import ResumeStyle, DEFAULT_MODULE_LABELS, get_content_items, get_content_title
+from schemas.resume_module import ResumeStyle, get_content_items, get_content_title
 
 logger = logging.getLogger(__name__)
 

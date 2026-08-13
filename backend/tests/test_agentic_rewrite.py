@@ -8,7 +8,6 @@ Agentic RAG — rewrite_node + route_node 单元测试。
 import pytest
 from unittest.mock import AsyncMock, patch
 
-from core.config import settings
 from services.agentic_rag.rewrite import (
     rewrite_node,
     route_node,

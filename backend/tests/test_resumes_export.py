@@ -11,7 +11,6 @@ P1.2 导出报告功能：
 - 401/404/409 错误场景
 """
 
-from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import AsyncClient

@@ -1,7 +1,7 @@
 """QA 对话会话模型 — 一份简历可以有多个独立对话线程。"""
 
 from datetime import datetime, timezone
-from sqlalchemy import Integer, String, ForeignKey, DateTime
+from sqlalchemy import String, ForeignKey, DateTime
 from sqlalchemy.orm import Mapped, mapped_column
 from core.database import Base
 

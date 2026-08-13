@@ -9,7 +9,6 @@ RED-GREEN-REFACTOR cycle:
 import sys
 import types
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 # aio_pika 是 requirements 声明的可选依赖，但开发机可能未安装。

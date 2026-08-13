@@ -786,8 +786,25 @@ async def _find_entities_in_query(
 
     hits: list[ResumeEntity] = []
     # 通道 ① 子串匹配（实体名出现在 query 中，如「我在字节的经历」命中「字节」）
+    # 加英文词边界检查：防 "java" 误命中 "javascript"（英文字母/数字两侧才算独立词）
     for e in entities:
-        if e.name_normalized and e.name_normalized in q_norm:
+        name = e.name_normalized or ""
+        if len(name) < 2:
+            continue
+        start = q_norm.find(name)
+        if start < 0:
+            continue
+
+        def _ascii_alnum(ch: str) -> bool:
+            return ch.isascii() and ch.isalnum()
+
+        before = q_norm[start - 1] if start > 0 else ""
+        after = (
+            q_norm[start + len(name)]
+            if start + len(name) < len(q_norm)
+            else ""
+        )
+        if not _ascii_alnum(before) and not _ascii_alnum(after):
             hits.append(e)
     if hits:
         return hits

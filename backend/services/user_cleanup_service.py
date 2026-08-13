@@ -22,7 +22,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core import cache as embedding_cache
-from core.config import settings
 from models.resume import Resume
 from models.user import User
 from services.rag.clients import knowledge_collection_name

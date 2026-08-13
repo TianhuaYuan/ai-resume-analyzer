@@ -22,6 +22,22 @@ async def save_qa(
     token_usage: int = 0,
     conversation_id: int | None = None,
 ) -> QAHistory:
+    # 归属校验：conversation_id 必须属于当前用户，否则忽略该对话
+    # （防把问答挂到他人对话下造成历史聚合污染）
+    if conversation_id is not None:
+        conv = await db.execute(
+            select(QAConversation).where(
+                QAConversation.id == conversation_id,
+                QAConversation.user_id == user_id,
+            )
+        )
+        if conv.scalar_one_or_none() is None:
+            logger.warning(
+                "conversation_id=%s 不存在或不属于 user=%d，忽略关联",
+                conversation_id, user_id,
+            )
+            conversation_id = None
+
     record = QAHistory(
         user_id=user_id,
         resume_id=resume_id,

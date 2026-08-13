@@ -1256,7 +1256,7 @@ class TestDbTraceCapture:
     @pytest.mark.asyncio
     async def test_db_trace_captures_model_per_round(self):
         """db_trace 记录每轮使用的模型（中间轮 judge，最终轮 chat）。"""
-        from services.react_agent.loop import react_loop, MIDDLE_MODEL, FINAL_MODEL
+        from services.react_agent.loop import react_loop, MIDDLE_MODEL
 
         mock_tool_class = MagicMock()
         mock_tool_class.return_value.execute = AsyncMock(return_value="结果")

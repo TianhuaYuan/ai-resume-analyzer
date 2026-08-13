@@ -8,7 +8,6 @@
 """
 
 import asyncio
-from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -24,7 +23,7 @@ class TestCircuitBreakerStates:
     @pytest.mark.asyncio
     async def test_closed_allows_calls(self):
         """CLOSED 状态允许调用通过。"""
-        from core.circuit_breaker import CircuitBreaker, CircuitBreakerOpenError
+        from core.circuit_breaker import CircuitBreaker
 
         cb = CircuitBreaker("test", failure_threshold=3, recovery_timeout=1)
         assert cb.state == "closed"
@@ -39,7 +38,7 @@ class TestCircuitBreakerStates:
     @pytest.mark.asyncio
     async def test_opens_after_failures(self):
         """连续失败达到阈值后进入 OPEN。"""
-        from core.circuit_breaker import CircuitBreaker, CircuitBreakerOpenError
+        from core.circuit_breaker import CircuitBreaker
 
         cb = CircuitBreaker("test", failure_threshold=2, recovery_timeout=60)
 

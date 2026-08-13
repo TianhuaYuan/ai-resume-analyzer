@@ -1147,6 +1147,47 @@ def _coerce_modules(raw) -> list | None:
     return None
 
 
+def _restore_sensitive_placeholders(
+    modules: list[dict], original_modules: list[dict]
+) -> list[dict]:
+    """落库前把脱敏占位符还原为原始快照中的真实值。
+
+    改写/翻译/整份重写路径先用 ``sanitize_resume_module_for_ai`` 脱敏
+    （basic_info 的 name→[姓名]、phone→[手机号]、email→[邮箱]）再喂 LLM，
+    LLM 按「保持结构」原样回传占位符。此处用改写前快照的 basic_info 真实值
+    做占位符替换，避免 ``[姓名]`` 等字面量写入简历模块造成数据损坏。
+    仅当 before 快照存在对应真实值时才还原；否则保留原样。
+    """
+    original_basic: dict = {}
+    for m in original_modules or []:
+        if m.get("module_type") == "basic_info" and isinstance(m.get("content"), dict):
+            original_basic = m["content"]
+            break
+    if not original_basic:
+        return modules
+    mapping = {
+        "[姓名]": str(original_basic.get("name") or "").strip(),
+        "[手机号]": str(original_basic.get("phone") or "").strip(),
+        "[邮箱]": str(original_basic.get("email") or "").strip(),
+    }
+    mapping = {k: v for k, v in mapping.items() if v}
+    if not mapping:
+        return modules
+
+    def _walk(value):
+        if isinstance(value, str):
+            for placeholder, real in mapping.items():
+                value = value.replace(placeholder, real)
+            return value
+        if isinstance(value, list):
+            return [_walk(item) for item in value]
+        if isinstance(value, dict):
+            return {k: _walk(v) for k, v in value.items()}
+        return value
+
+    return [{**m, "content": _walk(m.get("content"))} for m in modules]
+
+
 async def _read_modules_context(db, user_id: int, resume_id: int):
     """读简历 + 模块上下文。返回 (resume, input_context)。
 
@@ -1271,6 +1312,12 @@ async def _submit_modules_via_llm(
         # 全部模块校验失败 → A3 回灌自愈（LLM 修正后重试），而非直接失败
         raise ToolRetryError("重写结果校验失败，无有效模块:\n" + "\n".join(errors))
 
+    # G 脱敏还原：AI 改写/翻译输入经 sanitize_resume_module_for_ai 脱敏
+    # （name→[姓名] 等），LLM 原样回传占位符。落库前用 before 快照还原真实值，
+    # 避免占位符写入简历模块造成数据损坏。
+    if before_modules:
+        validated_modules = _restore_sensitive_placeholders(validated_modules, before_modules)
+
     result = await _replace_all_modules_short_txn(
         user_id, resume_id, validated_modules, complete=complete
     )
@@ -1308,6 +1355,8 @@ async def _update_module_short_txn(
     resume_id: int,
     module_type: str,
     new_content: dict,
+    *,
+    restore_content: dict | None = None,
 ) -> str:
     """短事务独立写入模块（独立 session + commit）。
 
@@ -1334,6 +1383,14 @@ async def _update_module_short_txn(
         raise ToolRetryError(f"模块 {module_type} content 校验失败: {e}") from e
 
     async with AsyncSessionLocal() as session:
+        # 脱敏还原：modify/generate basic_info 场景输入经 sanitize 脱敏，
+        # 用原始 content 还原 [姓名] 等占位符后再写入。
+        if restore_content:
+            new_content = _restore_sensitive_placeholders(
+                [{"module_type": module_type, "content": new_content}],
+                [{"module_type": module_type, "content": restore_content}],
+            )[0]["content"]
+
         # 校验归属
         result = await session.execute(
             select(Resume).where(Resume.id == resume_id, Resume.user_id == user_id)
@@ -1371,6 +1428,29 @@ async def _update_module_short_txn(
                 sort_order=(max_order + 1) if max_order is not None else 0,
             )
             session.add(module)
+
+        await session.flush()  # 新建模块立即可见（供下方全量合并）
+
+        # 同步 parsed_text + content_hash + 状态：与整份重写草稿路径一致。
+        # ready 简历被 AI 单模块修改后内容与 Chroma 索引不一致 → 置 draft，
+        # 避免 Agent 检索到旧索引内容。
+        from services.resume_builder import _merge_modules_to_text
+
+        all_modules = (
+            await session.execute(
+                select(ResumeModule)
+                .where(ResumeModule.resume_id == resume_id)
+                .order_by(ResumeModule.sort_order, ResumeModule.id)
+            )
+        ).scalars().all()
+        merged = _merge_modules_to_text(list(all_modules))
+        resume.parsed_text = merged
+        resume.content_hash = hashlib.sha256(merged.encode("utf-8")).hexdigest()
+        resume.updated_at = datetime.now(timezone.utc)
+        if resume.status == "ready":
+            from services.resume_service import set_resume_status
+
+            await set_resume_status(session, resume, "draft", reason="Agent 修改待确认")
 
         await session.commit()
 
@@ -1616,11 +1696,13 @@ class GenerateModuleTool(Tool):
             return f"⚠️ AI 生成失败：{e}"
 
         # 短事务写入（内部 validate_module_content 严格校验 + 失败回灌含修复指引）
+        existing = next((m for m in modules if m.module_type == module_type), None)
         result = await _update_module_short_txn(
             self.user_id,
             resume_id,
             module_type,
             content,
+            restore_content=existing.content if existing is not None else None,
         )
         return result
 
@@ -1773,6 +1855,7 @@ class ModifyModuleTool(Tool):
             resume_id,
             module_type,
             content,
+            restore_content=module.content if module is not None else None,
         )
         return result
 

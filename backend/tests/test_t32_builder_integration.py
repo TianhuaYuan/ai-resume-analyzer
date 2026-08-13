@@ -14,7 +14,6 @@ asyncio_mode = auto（无需 @pytest.mark.asyncio 装饰器）
 import json
 from unittest.mock import AsyncMock, patch
 
-import pytest
 from httpx import AsyncClient
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -813,7 +812,7 @@ class TestParseToModules:
         with patch("services.rag.pipeline.llm_generate", new_callable=AsyncMock, return_value=llm_response):
             resp = await client.post(
                 "/api/v1/resumes/parse-to-modules",
-                json={"text": "张三，男，24岁，广东海洋大学软件工程本科，精通Python和JavaScript"},
+                json={"text": "张三，男，24岁，电话13800138000，邮箱zhangsan@test.com，广东海洋大学软件工程本科，精通Python和JavaScript"},
                 headers=auth_headers,
             )
 

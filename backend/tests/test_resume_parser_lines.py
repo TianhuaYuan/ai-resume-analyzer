@@ -125,7 +125,7 @@ def test_resolve_scalars_and_arrays_untouched():
 @pytest.mark.asyncio
 async def test_parse_with_line_refs_resolves_long_fields():
     """LLM 输出长字段用 lines 引用 → 校验通过，字段为原文切片。"""
-    resume_text = "张三\nPython 工程师\n负责后端系统开发\n性能提升 30%"
+    resume_text = "张三\nPython 工程师\n在腾讯担任后端开发\n负责系统性能优化提升 30%"
     llm_response = json.dumps(
         [
             {
@@ -138,8 +138,8 @@ async def test_parse_with_line_refs_resolves_long_fields():
                 "content": {
                     "items": [
                         {
-                            "company": "某公司",
-                            "position": "后端工程师",
+                            "company": "腾讯",
+                            "position": "后端开发",
                             "description": {"lines": [3, 4]},
                         }
                     ],
@@ -155,7 +155,7 @@ async def test_parse_with_line_refs_resolves_long_fields():
         modules = await parse_text_to_modules(resume_text)
 
     work = modules[1]
-    assert work.content["items"][0]["description"] == "负责后端系统开发\n性能提升 30%"
+    assert work.content["items"][0]["description"] == "在腾讯担任后端开发\n负责系统性能优化提升 30%"
 
 
 @pytest.mark.asyncio
@@ -365,10 +365,10 @@ def test_verify_fields_provenance():
     by_field = {r["field"]: r["provenance"] for r in report}
     assert by_field["name"] == "verified"
     assert by_field["phone"] == "missing"  # 原文没有手机号
-    assert by_field["company"] == "verified"  # "腾讯"是"腾讯公司"子串
-    assert by_field["position"] == "verified"
-    assert by_field["school"] == "verified"
-    assert by_field["major"] == "missing"
+    assert by_field["items[0].company"] == "verified"  # "腾讯"是"腾讯公司"子串
+    assert by_field["items[0].position"] == "verified"
+    assert by_field["items[0].school"] == "verified"
+    assert by_field["items[0].major"] == "missing"
 
 
 @pytest.mark.asyncio

@@ -13,7 +13,7 @@ jd_scorecard 形状（fieldwork JD 评分卡对照）：
 
 from datetime import date, datetime, timezone
 
-from sqlalchemy import JSON, Date, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Date, DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.database import Base

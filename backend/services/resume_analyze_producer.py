@@ -4,9 +4,7 @@
 如果 MQ 不可用，降级为直接同步执行（走 BackgroundTasks）。
 """
 
-import json
 import logging
-from typing import Optional
 
 from core.config import settings
 from core import rabbitmq_client

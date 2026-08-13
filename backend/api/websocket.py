@@ -54,6 +54,10 @@ async def websocket_endpoint(
     # 验证 JWT
     try:
         payload = decode_token(jwt)
+        # refresh token 仅限 /auth/refresh 使用，不得打开通知通道
+        if payload.get("type") != "access":
+            await websocket.close(code=4001, reason="Invalid token")
+            return
         user_id = payload.get("sub") or payload.get("user_id")
         if user_id is None:
             await websocket.close(code=4001, reason="Invalid token")
@@ -65,6 +69,29 @@ async def websocket_endpoint(
             logger.warning("WebSocket 连接被拒：token 已撤销 user_id=%d", user_id)
             await websocket.close(code=4001, reason="Token revoked")
             return
+        # 改密后旧 token 失效（iat < password_changed_at，与 deps.py 语义一致）
+        iat = payload.get("iat")
+        if iat is not None:
+            try:
+                from datetime import datetime, timezone
+
+                from core.database import AsyncSessionLocal
+                from models.user import User
+                from sqlalchemy import select
+
+                async with AsyncSessionLocal() as ws_db:
+                    row = await ws_db.execute(select(User).where(User.id == user_id))
+                    user = row.scalar_one_or_none()
+                if user is not None and user.password_changed_at is not None:
+                    iat_dt = datetime.fromtimestamp(iat, tz=timezone.utc)
+                    pwd = user.password_changed_at
+                    if pwd.tzinfo is None:
+                        pwd = pwd.replace(tzinfo=timezone.utc)
+                    if iat_dt < pwd.replace(microsecond=0):
+                        await websocket.close(code=4001, reason="Token expired")
+                        return
+            except Exception:
+                logger.warning("WebSocket 改密校验失败（放行）: user_id=%d", user_id)
     except Exception as e:
         logger.warning("WebSocket 认证失败: %s", e)
         await websocket.close(code=4001, reason="Invalid token")

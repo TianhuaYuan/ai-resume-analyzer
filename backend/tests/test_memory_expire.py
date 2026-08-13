@@ -10,7 +10,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.memory import memory_store
 from services.memory.consolidation import consolidate
 from services.memory.memory_store import MEM_EXPIRED, expire_memory, recall_memory
 

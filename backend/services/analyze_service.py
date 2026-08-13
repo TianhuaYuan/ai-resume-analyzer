@@ -610,13 +610,13 @@ async def analyze_resume_roles(
                 pt,
                 ct,
                 model=settings.CHAT_MODEL,
-                scenario=f"analysis:{analysis_type}",
+                scenario="analysis:roles",
             )
     except Exception as e:
         logger.exception("analyze_resume_roles failed for resume %d", resume_id)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"多角色评分失败: {e}",
+            detail="多角色评分失败，请稍后重试",
         )
 
     roles = _parse_roles(analysis)
@@ -627,7 +627,7 @@ async def analyze_resume_roles(
             "analysis_type": "roles",
             "analysis": "多角色评分失败：AI 输出无法解析，请重试。",
             "roles": {},
-            "aggregate": None,
+            "aggregate": {"score": 0, "band": "needsWork", "weights": {}},
             "target_position": target_position,
             "usage": usage_info,
             "evidence": [],

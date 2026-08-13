@@ -4,7 +4,6 @@
 修复: 加 asyncio.Lock 保证单例。
 """
 import asyncio
-from unittest.mock import MagicMock, patch
 
 import pytest
 

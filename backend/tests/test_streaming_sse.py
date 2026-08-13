@@ -11,7 +11,6 @@ done           {type, qa_id, answer, sources, token_usage, process_trace, degrad
 error          {type, message, code}
 """
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest

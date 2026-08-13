@@ -547,7 +547,7 @@ async def materialize_modules_from_text(
     db: AsyncSession,
     user_id: int,
     resume_id: int,
-) -> tuple[list[ResumeModule], bool]:
+) -> tuple[Resume, list[ResumeModule], bool]:
     """懒物化：上传简历（source=upload）首次进 Builder 编辑器时，从 parsed_text 反解析生成模块。
 
     打通"上传（内容在 parsed_text）"→"Builder（内容在 ResumeModule）"两条内容源，

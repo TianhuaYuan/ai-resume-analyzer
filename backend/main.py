@@ -381,15 +381,17 @@ try:
 except Exception as e:
     logger.warning("MCP Server mount skipped: %s", e)
 
-# 挂载 uploads 静态文件（头像等），供预览 iframe 和 WeasyPrint 访问
+# 挂载 uploads/avatars 静态目录（头像）。原始简历文件存 uploads/resumes/ 不公开，
+# 避免含 PII 的简历 PDF 被匿名下载；简历导出走鉴权端点（WeasyPrint 用本地 file 路径）。
 try:
     from fastapi.staticfiles import StaticFiles
     import os
 
     _uploads_dir = os.path.abspath(settings.UPLOAD_DIR)
-    os.makedirs(_uploads_dir, exist_ok=True)
-    app.mount("/uploads", StaticFiles(directory=_uploads_dir), name="uploads")
-    logger.info("Static files mounted at /uploads → %s", _uploads_dir)
+    _avatars_dir = os.path.join(_uploads_dir, "avatars")
+    os.makedirs(_avatars_dir, exist_ok=True)
+    app.mount("/uploads/avatars", StaticFiles(directory=_avatars_dir), name="avatars")
+    logger.info("Static files mounted at /uploads/avatars → %s", _avatars_dir)
 except Exception as e:
     logger.warning("Static files mount skipped: %s", e)
 

@@ -15,7 +15,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from services.rag.pipeline import LLMToolResponse, ToolCall
-from services.react_agent.loop import ReactLoopResult
 
 
 # ── 辅助函数 ──────────────────────────────────────────────────

@@ -7,7 +7,6 @@
 - match_jd_service.py match_jd 接入
 """
 
-import asyncio
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest

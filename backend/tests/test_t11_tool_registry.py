@@ -5,11 +5,10 @@
 - TOOL_REGISTRY：3 类 21 工具（qa16 + builder5 + unified21）+ 名称唯一 + /ask/agent 取 unified(21)
 """
 
-import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.react_agent.tools.base import Tool

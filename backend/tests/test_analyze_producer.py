@@ -9,7 +9,6 @@ RED-GREEN-REFACTOR:
 import asyncio
 from unittest.mock import AsyncMock, patch
 
-import pytest
 
 
 class TestAnalyzeProducer:

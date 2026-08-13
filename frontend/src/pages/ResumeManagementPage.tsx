@@ -63,7 +63,7 @@ function clampScore(v: number): number {
  */
 function RoleScoreView({ result }: { result: RoleScoreResult }) {
   const agg = result.aggregate;
-  const band = scoreBandKey(agg.score ?? 0);
+  const band = scoreBandKey(agg?.score ?? 0);
   const meta = BAND_META[band];
   const roles = Object.entries(result.roles ?? {});
 
@@ -81,7 +81,7 @@ function RoleScoreView({ result }: { result: RoleScoreResult }) {
           </p>
         </div>
         <span className="text-2xl font-semibold tabular-nums text-[var(--color-text)] shrink-0">
-          {Math.round(clampScore(agg.score ?? 0))}
+          {Math.round(clampScore(agg?.score ?? 0))}
         </span>
       </div>
 

@@ -5,6 +5,10 @@ import QAPage from "../QAPage";
 import { AppChatProvider } from "../../context/AppChatContext";
 import { ToastProvider } from "../../components/Toast";
 
+// 全量 vitest 运行时首次编译/导入极慢（transform/import 数百 ms 级），
+// 放宽本文件异步测试超时，避免环境慢导致 flaky 超时（单独跑约 143ms）。
+vi.setConfig({ testTimeout: 20000 });
+
 // v2 重构后 QAPage 用 askAgentStream（旧 askQuestionStream 已移除），
 // 且挂载时自动创建/读取对话会话，需全部 mock（jsdom 无 fetch）。
 vi.mock("../../api/qa", () => ({

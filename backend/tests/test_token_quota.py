@@ -1,7 +1,7 @@
 """Token 限额服务测试。"""
 
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch
 
 from services.token_quota import (
     check_quota,

@@ -36,7 +36,6 @@ from services.rag.clients import get_embedding_client, knowledge_collection_name
 from services.rag.metadata import (
     ASSET_TYPE_RESUME,
     META_ASSET_ID,
-    META_ASSET_TYPE,
     META_IS_LATEST,
 )
 from services.vector_store import get_vector_store

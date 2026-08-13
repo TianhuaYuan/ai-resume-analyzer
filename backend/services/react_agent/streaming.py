@@ -103,11 +103,19 @@ def _transform_event(event: dict) -> dict:
 
     loop.py 内部用 {name, arguments, result}，
     SSE 协议要求 {tool_name, args, summary, detail}。
+    返回新 dict 时透传 envelope 附加的所有权元数据（protocol_version/turn_id/
+    sequence），否则前端按 turn_id/sequence 过滤的契约失效。
     """
     etype = event.get("type")
+    env_meta = {
+        k: v
+        for k, v in event.items()
+        if k in {"protocol_version", "event_type", "turn_id", "sequence"}
+    }
 
     if etype == "tool_call":
         return {
+            **env_meta,
             "type": "tool_call",
             "id": event.get("id"),
             "tool_name": event.get("name"),
@@ -117,6 +125,7 @@ def _transform_event(event: dict) -> dict:
     if etype == "tool_result":
         result_text = event.get("result", "")
         return {
+            **env_meta,
             "type": "tool_result",
             "id": event.get("id"),
             "tool_name": event.get("name"),
@@ -126,6 +135,7 @@ def _transform_event(event: dict) -> dict:
 
     if etype == "tool_error":
         return {
+            **env_meta,
             "type": "tool_error",
             "id": event.get("id"),
             "tool_name": event.get("name"),
@@ -135,6 +145,7 @@ def _transform_event(event: dict) -> dict:
     if etype == "usage":
         usage = event.get("usage", {})
         return {
+            **env_meta,
             "type": "usage",
             "prompt_tokens": usage.get("prompt_tokens", 0),
             "completion_tokens": usage.get("completion_tokens", 0),
@@ -360,7 +371,7 @@ async def react_loop_stream(
         if first_event is _SENTINEL:
             await cleanup_active_key()
             if loop_error:
-                yield envelope({"type": "error", "message": f"Agent 内部错误: {loop_error}"})
+                yield envelope({"type": "error", "message": "Agent 处理失败，请重试"})
             else:
                 yield envelope({"type": "error", "message": "Agent 未产出任何事件"})
             return

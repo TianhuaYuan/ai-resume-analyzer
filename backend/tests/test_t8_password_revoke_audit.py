@@ -12,7 +12,6 @@ import asyncio
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.audit_log import AuditLog
 from models.user import User

@@ -5,7 +5,6 @@
 - process_parse_task：成功不重试 / 失败按 retry_count 重试入队 / 超上限停止 / 缺参直接返回
 """
 
-import asyncio
 from unittest.mock import AsyncMock, patch
 
 import pytest

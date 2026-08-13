@@ -7,7 +7,6 @@
 """
 
 import pytest
-from fastapi import FastAPI, Request, Response
 from fastapi.testclient import TestClient
 from unittest.mock import patch
 

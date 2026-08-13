@@ -79,8 +79,17 @@ async def list_interviews(
     """
     items, total = await interview_service.get_interviews(db, current_user.id, page, limit)
     total_pages = (total + limit - 1) // limit
+    # 列表项派生 weak_count（薄弱维度数），供前端"薄弱维度"徽标展示
+    from services.interview_service import derive_weak_competencies
+
+    items_out = []
+    for i in items:
+        item = InterviewListItem.model_validate(i)
+        if i.scorecard:
+            item.weak_count = len(derive_weak_competencies(i.scorecard))
+        items_out.append(item)
     return InterviewListResponse(
-        items=[InterviewListItem.model_validate(i) for i in items],
+        items=items_out,
         total=total,
         page=page,
         limit=limit,

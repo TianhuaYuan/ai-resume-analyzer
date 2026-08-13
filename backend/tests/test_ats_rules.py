@@ -4,7 +4,6 @@ ATS 审计规则纯函数测试（P0-A）。
 覆盖：乱码检测 / 空白段检测 / 特殊符号检测 / 表格检测 / 评分函数。
 """
 
-import pytest
 
 from schemas.resume import AtsIssueType
 from services.ats_audit_service import (

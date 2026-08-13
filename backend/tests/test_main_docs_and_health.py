@@ -7,7 +7,6 @@
 4. app.state.mcp_healthy 反映到 /health 的 mcp 字段
 """
 
-import pytest
 
 from core.config import settings
 

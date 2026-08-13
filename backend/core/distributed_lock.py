@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 # 锁 key 前缀
 LOCK_PREFIX = "analysis_lock:"
+WRITE_LOCK_PREFIX = "resume_write_lock:"  # Agent 写工具专用，与分析任务锁隔离
 INDEX_LOCK_PREFIX = "index_lock:"
 
 # 默认锁超时（秒）
@@ -24,6 +25,7 @@ async def acquire_lock(
     user_id: int,
     resume_id: int,
     ttl_seconds: int = DEFAULT_LOCK_TTL,
+    prefix: str = LOCK_PREFIX,
 ) -> Optional[str]:
     """获取分布式锁。
 
@@ -31,6 +33,8 @@ async def acquire_lock(
         user_id: 用户 ID
         resume_id: 简历 ID
         ttl_seconds: 锁超时时间（秒）
+        prefix: 锁 key 前缀（默认分析任务锁；Agent 写工具传 ``WRITE_LOCK_PREFIX`` 隔离，
+                避免与分析任务共锁导致编辑期间被阻塞）
 
     Returns:
         lock_id 获取成功返回唯一锁标识（用于释放），None 表示获取失败
@@ -41,7 +45,7 @@ async def acquire_lock(
             logger.warning("Redis 不可用，跳过分布式锁获取")
             return str(uuid.uuid4())  # 降级：直接返回假锁 ID
 
-        lock_key = f"{LOCK_PREFIX}{user_id}:{resume_id}"
+        lock_key = f"{prefix}{user_id}:{resume_id}"
         lock_id = str(uuid.uuid4())
 
         # SET NX EX：不存在时设置，带过期时间
@@ -64,7 +68,9 @@ async def acquire_lock(
         return f"local-fallback:{uuid.uuid4()}"
 
 
-async def release_lock(user_id: int, resume_id: int, lock_id: str) -> bool:
+async def release_lock(
+    user_id: int, resume_id: int, lock_id: str, prefix: str = LOCK_PREFIX
+) -> bool:
     """释放分布式锁。
 
     只释放自己持有的锁（通过比对 lock_id 防止误删）。
@@ -72,6 +78,7 @@ async def release_lock(user_id: int, resume_id: int, lock_id: str) -> bool:
     Args:
         user_id: 用户 ID
         lock_id: 获取锁时返回的唯一标识
+        prefix: 锁 key 前缀（须与 acquire_lock 一致）
 
     Returns:
         True 释放成功，False 释放失败
@@ -81,7 +88,7 @@ async def release_lock(user_id: int, resume_id: int, lock_id: str) -> bool:
         if redis is None:
             return True  # 降级：Redis 不可用时直接放行
 
-        lock_key = f"{LOCK_PREFIX}{user_id}:{resume_id}"
+        lock_key = f"{prefix}{user_id}:{resume_id}"
 
         # Lua 脚本：原子性地检查并删除锁
         lua_script = """

@@ -22,7 +22,6 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.exceptions import AppException
 from models.knowledge_asset import KnowledgeAsset
 from services.rag.clients import knowledge_collection_name
 from services.rag.ensure_indexed import ensure_indexed

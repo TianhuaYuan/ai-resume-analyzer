@@ -6,14 +6,11 @@
 - orphan_scan: 扫描磁盘孤儿文件、Chroma 孤儿 collection
 """
 
-import asyncio
-import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from sqlalchemy import select
 
 
 # ═══════════════════════════════════════════════════════════

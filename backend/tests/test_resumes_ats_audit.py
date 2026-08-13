@@ -6,7 +6,7 @@ ATS 审计 API 测试（P0-A）。
 
 import pytest
 from httpx import AsyncClient
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import patch
 
 from models.resume import Resume
 from models.resume_module import ResumeModule
@@ -77,7 +77,6 @@ async def test_ats_audit_resume_not_found(client: AsyncClient, auth_headers: dic
 async def test_ats_audit_resume_not_ready(client: AsyncClient, auth_headers: dict):
     """审计未就绪的简历 → 409。"""
     async with AsyncSessionTest() as session:
-        from core.security import hash_password
         # 获取当前测试用户 ID
         from sqlalchemy import select
         from models.user import User

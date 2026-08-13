@@ -19,7 +19,7 @@ import logging
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 

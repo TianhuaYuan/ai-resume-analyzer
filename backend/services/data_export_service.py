@@ -291,7 +291,7 @@ async def build_resume_markdown(db: AsyncSession, user_id: int) -> str:
     给人读的概览：每份简历 → 基本信息/教育/工作/技能等模块条目摘要，
     与 CSV 长表互补（不是它的重复）。
     """
-    from schemas.resume_module import DEFAULT_MODULE_LABELS, get_content_title
+    from schemas.resume_module import get_content_title
 
     resumes = (await db.execute(select(Resume).where(Resume.user_id == user_id))).scalars().all()
     resume_ids = [r.id for r in resumes]

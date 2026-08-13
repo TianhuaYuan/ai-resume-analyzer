@@ -13,7 +13,7 @@
 import json
 import logging
 import re
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from sqlalchemy import func, or_, select
@@ -212,7 +212,17 @@ def _template_scorecard(jd_text: str) -> dict:
 
 async def generate_jd_scorecard(db, user_id: int, jd_text: str) -> dict:
     """生成 JD 评分卡（LLM + 模板兜底，best-effort 不抛错）。"""
+    from core.security import detect_prompt_injection
     from services.rag.pipeline import llm_generate
+
+    # JD 文本进模型前过注入安检（与 /match-jd 的 _guard_jd_text 对齐），
+    # 命中注入模板时跳过 LLM 走确定性模板，防恶意 JD 劫持评分输出。
+    suspicious, reason = detect_prompt_injection(jd_text or "")
+    if suspicious:
+        logger.warning("JD 评分卡检测到疑似提示注入，跳过 LLM: %s", reason)
+        card = _template_scorecard(jd_text or "")
+        card["generated_at"] = datetime.now(timezone.utc).isoformat()
+        return card
 
     card: dict | None = None
     try:

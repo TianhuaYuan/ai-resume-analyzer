@@ -11,7 +11,6 @@ import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi import HTTPException
 
 from services.react_agent.tools import (
     TOOL_REGISTRY,

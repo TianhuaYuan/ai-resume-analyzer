@@ -45,32 +45,25 @@ async def test_compare_requires_resume_ids(client: AsyncClient, auth_headers: di
 
 
 @pytest.mark.asyncio
-async def test_compare_accepts_one_resume(client: AsyncClient, auth_headers: dict, registered_user: dict):
-    """当前简历已包含在上下文中，因此允许仅选择 1 份。"""
+async def test_compare_rejects_single_resume(client: AsyncClient, auth_headers: dict, registered_user: dict):
+    """少于 2 份简历被拒绝（CompareRequest min_length=2）。"""
     resume_id = await _insert_resume(
         registered_user["id"], filename="single-compare.pdf", parsed_text="Python"
     )
-    from unittest.mock import AsyncMock, patch
-
-    with patch(
-        "services.analyze_service.llm_generate",
-        new_callable=AsyncMock,
-        return_value="分析结果",
-    ):
-        resp = await client.post(
-            "/api/v1/resumes/compare",
-            json={"resume_ids": [resume_id], "dimensions": ["skills"]},
-            headers=auth_headers,
-        )
-    assert resp.status_code == 200
+    resp = await client.post(
+        "/api/v1/resumes/compare",
+        json={"resume_ids": [resume_id], "dimensions": ["skills"]},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422
 
 
 @pytest.mark.asyncio
-async def test_compare_limits_to_five_resumes(client: AsyncClient, auth_headers: dict):
-    """最多 5 份简历。"""
+async def test_compare_limits_to_six_resumes(client: AsyncClient, auth_headers: dict):
+    """最多 6 份简历（超限 422）。"""
     resp = await client.post(
         "/api/v1/resumes/compare",
-        json={"resume_ids": [1, 2, 3, 4, 5, 6], "dimensions": ["skills"]},
+        json={"resume_ids": [1, 2, 3, 4, 5, 6, 7], "dimensions": ["skills"]},
         headers=auth_headers,
     )
     assert resp.status_code == 422
@@ -186,7 +179,6 @@ async def test_compare_skills_from_cache(
 ):
     """skills 维度优先从 Redis 缓存取，命中时不调用 LLM。"""
     from unittest.mock import AsyncMock, patch
-    import json
 
     resume_id_1 = await _insert_resume(
         registered_user["id"],

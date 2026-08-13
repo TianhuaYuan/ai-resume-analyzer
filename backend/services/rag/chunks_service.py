@@ -10,7 +10,6 @@ chunks，组装成统一的 dict 列表返回。
 """
 
 import logging
-from typing import Any
 
 from fastapi import HTTPException, status
 

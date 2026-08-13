@@ -7,8 +7,7 @@
 - 共享函数可被上传路径和 builder 路径复用
 """
 
-import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -126,7 +125,19 @@ class TestReadyTransitionHook:
              patch("services.resume_builder.materialize_modules_from_text", new_callable=AsyncMock,
                    return_value=(None, [], True)) as mock_materialize, \
              patch("services.react_agent.memory.build_l3_profile_background", new_callable=AsyncMock) as mock_build_l3:
+            # process_resume_background 依赖 db.get 返回带合法 status 的简历对象，
+            # 否则状态机校验（RESUME_STATUS_FLOW）会因 AsyncMock.status 无法匹配而抛错。
+            from types import SimpleNamespace
+
             mock_db = AsyncMock()
+            mock_db.get = AsyncMock(
+                return_value=SimpleNamespace(
+                    id=1, user_id=10, status="draft", parsed_text="", filename="t.pdf",
+                    file_path="/test.pdf", chunk_count=0, source="upload", style=None,
+                    version=1, content_hash=None, indexed_hash=None,
+                    parse_progress=None, status_message=None, updated_at=None,
+                )
+            )
             mock_session_cls.return_value.__aenter__ = AsyncMock(return_value=mock_db)
             mock_session_cls.return_value.__aexit__ = AsyncMock(return_value=None)
 

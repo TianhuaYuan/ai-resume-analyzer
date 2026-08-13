@@ -26,8 +26,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
 from core.database import AsyncSessionLocal
-from core.distributed_lock import acquire_lock as acquire_resume_write_lock
-from core.distributed_lock import release_lock as release_resume_write_lock
+from core.distributed_lock import (
+    WRITE_LOCK_PREFIX,
+    acquire_lock as acquire_resume_write_lock,
+    release_lock as release_resume_write_lock,
+)
 from services.rag.pipeline import (
     LLMToolResponse,
     ToolCall,
@@ -95,7 +98,23 @@ def _extract_direct_answer(tool_result: str) -> tuple[str | None, str]:
     return (answer or None), visible_result
 
 
+_RESUME_WRITE_LOCKS_MAX = 1000  # 防长运行进程字典无限增长
+
+
 def _resume_write_lock(resume_id: int) -> asyncio.Lock:
+    # 达容量上限时清理空闲锁（无等待者且未锁定），防内存缓慢增长
+    if len(_resume_write_locks) >= _RESUME_WRITE_LOCKS_MAX:
+        idle = [
+            rid
+            for rid, lk in list(_resume_write_locks.items())
+            if not lk.locked()
+            and not (
+                getattr(lk, "_waiters", None)
+                and any(not w.done() for w in lk._waiters)
+            )
+        ]
+        for rid in idle:
+            _resume_write_locks.pop(rid, None)
     lock = _resume_write_locks.get(resume_id)
     if lock is None:
         lock = asyncio.Lock()
@@ -1628,7 +1647,7 @@ async def _execute_tool_call(
     except Exception as e:
         logger.warning("工具执行失败: %s, args=%s, error=%s", tc.name, tc.arguments, e)
         logger.info("tool_exec: %s %.0fms (error)", tc.name, (time.perf_counter() - _tool_t0) * 1000)
-        return f"工具执行失败: {e}", True, [], {"prompt_tokens": 0, "completion_tokens": 0}
+        return f"工具执行失败，请稍后重试或换一种方式。", True, [], {"prompt_tokens": 0, "completion_tokens": 0}
     finally:
         # 释放授权槽（串行化高代价工具：无论成功/失败/超时/异常都释放，防死锁）
         await _auth_gate.release(user_id, tc.name)
@@ -1826,7 +1845,12 @@ async def _execute_tool_call_with_limit(
                 # Redis is unavailable rather than dropping the tool call.
                     distributed_id = None
                     for _ in range(120):
-                        distributed_id = await acquire_resume_write_lock(user_id, resume_id, ttl_seconds=600)
+                        distributed_id = await acquire_resume_write_lock(
+                            user_id,
+                            resume_id,
+                            ttl_seconds=600,
+                            prefix=WRITE_LOCK_PREFIX,
+                        )
                         if distributed_id:
                             break
                         await asyncio.sleep(0.25)
@@ -1836,7 +1860,9 @@ async def _execute_tool_call_with_limit(
                         return await run()
                     finally:
                         if distributed_id and not distributed_id.startswith("local-fallback:"):
-                            await release_resume_write_lock(user_id, resume_id, distributed_id)
+                            await release_resume_write_lock(
+                                user_id, resume_id, distributed_id, prefix=WRITE_LOCK_PREFIX
+                            )
             finally:
                 _cleanup_resume_write_lock(resume_id, resume_lock)
         return await run()

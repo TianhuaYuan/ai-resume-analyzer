@@ -519,13 +519,25 @@ def _coerce_rich_text_fields(
     return raw_modules
 
 
+# 简历文件名中不应作为姓名的词（"简历-张三.pdf" 的"简历"段）
+_FILENAME_STOPWORDS = {"简历", "个人简历", "求职简历", "履历", "resume", "cv", "简历模板"}
+
+
 def _name_from_filename(filename: str | None) -> str | None:
     if not filename:
         return None
     stem = Path(filename).stem.strip()
-    first = re.split(r"[_\-—\s]", stem, maxsplit=1)[0].strip()
-    return first if re.fullmatch(r"[\u3400-\u9fff]{2,4}", first) else None
-
+    parts = [p.strip() for p in re.split(r"[_\-\s]", stem) if p.strip()]
+    if not parts:
+        return None
+    # 优先取最后一段（"张三-简历"/"简历-张三" 都能命中真实姓名），
+    # 排除"简历"等占位词避免把文件名当姓名写进表单。
+    for cand in (parts[-1], parts[0]):
+        if cand in _FILENAME_STOPWORDS:
+            continue
+        if re.fullmatch(r"[㐀-鿿]{2,4}", cand):
+            return cand
+    return None
 
 def _enrich_basic_info(
     raw_modules: list[dict],

@@ -8,7 +8,6 @@
 - orphan_scan：识别用户已不存在的 memory_{user_id} 孤儿集合
 """
 
-import os
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest

@@ -9,7 +9,6 @@
 - assemble_system_prompt: 装配分段 system prompt
 """
 
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest

@@ -5,7 +5,6 @@
 """
 from unittest.mock import Mock
 
-import pytest
 
 from core.limiter import get_real_ip
 

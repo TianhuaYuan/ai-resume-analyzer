@@ -18,11 +18,3 @@ const store = new Map<number, CachedProgress>();
 export function setCachedProgress(resumeId: number, progress: CachedProgress) {
   store.set(resumeId, progress);
 }
-
-export function getCachedProgress(resumeId: number): CachedProgress | undefined {
-  return store.get(resumeId);
-}
-
-export function clearCachedProgress(resumeId: number) {
-  store.delete(resumeId);
-}

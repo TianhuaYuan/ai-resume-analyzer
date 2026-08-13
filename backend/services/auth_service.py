@@ -6,6 +6,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.config import settings
 from core.security import (
     hash_password,
     verify_password,
@@ -111,8 +112,8 @@ async def refresh_token(db: AsyncSession, token_str: str, access_token_jti: str 
                     detail="密码已修改，请重新登录",
                 )
 
-    # 撤销旧 refresh token，防止 token 轮换后旧 token 仍可使用
-    await revoke_token(payload.get("jti"))
+    # 撤销旧 refresh token（TTL 对齐 refresh 生命周期，防 30 分钟后撤销失效可复用）
+    await revoke_token(payload.get("jti"), expire_seconds=settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400)
 
     # P0-4：撤销旧 access token
     if access_token_jti:
@@ -142,6 +143,9 @@ async def admin_reset_password(db: AsyncSession, email: str) -> str:
 
     new_password = _generate_temp_password()
     user.password_hash = hash_password(new_password)
+    from datetime import datetime, timezone
+
+    user.password_changed_at = datetime.now(timezone.utc)
     await db.commit()
     logger.info("管理员重置密码: email=%s", email)
     return new_password
@@ -164,6 +168,9 @@ async def reset_password_by_verification(
         return False
 
     user.password_hash = hash_password(new_password)
+    from datetime import datetime, timezone
+
+    user.password_changed_at = datetime.now(timezone.utc)
     await db.commit()
     logger.info("密码重置成功（验证码）: user_id=%s", user.id)
     return True

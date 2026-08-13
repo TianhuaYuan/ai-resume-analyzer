@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.deps import get_current_user
 from core.config import settings
 from core.database import get_db
+from core.limiter import limiter
 from core.security import detect_prompt_injection
 from models.resume import Resume
 from models.resume_module import ResumeModule
@@ -62,7 +63,6 @@ from services.analytics_service import record_event
 from services.edit_lock import (
     acquire_edit_lock,
     get_lock_holder,
-    is_edit_locked,
     release_edit_lock,
     renew_edit_lock,
 )
@@ -77,7 +77,6 @@ from services.resume_builder import (
     complete_resume,
     copy_resume_as_new,
     create_builder_resume,
-    get_resume_with_modules,
     update_resume_draft,
 )
 
@@ -107,6 +106,24 @@ def _guard_jd_text(jd_text: str) -> None:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="JD 文本含疑似提示注入内容，已拒绝处理",
+        )
+
+
+async def _check_llm_quota(user_id: int) -> None:
+    """LLM 高耗端点配额预检（TOKEN_QUOTA_ENABLED 时生效），不足抛 429。
+
+    Agent 路径（react_loop）已内置 check_quota；此处在 REST 分析/评分端点
+    补一道预检，避免启用配额后 /analyze、/role-score 等绕过限额无限烧 token。
+    """
+    if not settings.TOKEN_QUOTA_ENABLED:
+        return
+    from services.token_quota import check_quota
+
+    allowed, quota_msg = await check_quota(user_id)
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=quota_msg or "今日额度已用完",
         )
 
 
@@ -546,7 +563,9 @@ async def retry_resume(
 
 
 @router.post("/{resume_id}/analyze", response_model=AnalyzeResponse)
+@limiter.limit(settings.RATE_LIMIT_LLM)
 async def post_analyze_resume(
+    request: Request,
     resume_id: int,
     body: AnalyzeRequest,
     db: AsyncSession = Depends(get_db),
@@ -561,6 +580,7 @@ async def post_analyze_resume(
     - 422 非法 analysis_type（Pydantic Literal 拦截）或简历内容为空
     - 500 LLM 调用失败
     """
+    await _check_llm_quota(current_user.id)
     result = await analyze_service.analyze_resume(
         db, current_user.id, resume_id, body.analysis_type
     )
@@ -585,6 +605,7 @@ async def get_full_analyze(
     - 422 简历内容为空
     - 500 LLM 调用失败
     """
+    await _check_llm_quota(current_user.id)
     result = await analyze_service.get_full_analysis(
         db, current_user.id, resume_id
     )
@@ -783,7 +804,9 @@ async def get_resume_versions(
 
 
 @router.post("/{resume_id}/match-jd", response_model=MatchJDResponse)
+@limiter.limit(settings.RATE_LIMIT_LLM)
 async def post_match_jd(
+    request: Request,
     resume_id: int,
     body: MatchJDRequest,
     db: AsyncSession = Depends(get_db),
@@ -1167,7 +1190,9 @@ class AICheckResponse(BaseModel):
 
 
 @router.post("/{resume_id}/ai/optimize")
+@limiter.limit(settings.RATE_LIMIT_LLM)
 async def ai_optimize(
+    request: Request,
     resume_id: int,
     body: AIOptimizeRequest,
     db: AsyncSession = Depends(get_db),
@@ -1182,6 +1207,8 @@ async def ai_optimize(
 
     错误码：401 / 404 / 422 文本为空 / 500 LLM 调用失败
     """
+    await resume_service.get_resume(db, resume_id, current_user.id)
+
     if not body.text or len(body.text.strip()) < 5:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -1236,6 +1263,7 @@ async def ai_optimize(
 async def ai_check(
     resume_id: int,
     body: AICheckRequest,
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """智能检查模块文本。
@@ -1248,6 +1276,8 @@ async def ai_check(
 
     错误码：401 / 404 / 422 文本为空 / 500 LLM 调用失败
     """
+    await resume_service.get_resume(db, resume_id, current_user.id)
+
     if not body.text or len(body.text.strip()) < 5:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -1323,6 +1353,8 @@ async def ai_rewrite(
 
     错误码：401 / 404 / 422 文本为空 / 500 LLM 调用失败
     """
+    await resume_service.get_resume(db, resume_id, current_user.id)
+
     if not body.text or len(body.text.strip()) < 5:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -1374,7 +1406,9 @@ async def ai_rewrite(
 
 
 @router.post("/{resume_id}/role-score")
+@limiter.limit(settings.RATE_LIMIT_LLM)
 async def post_role_score(
+    request: Request,
     resume_id: int,
     body: RoleScoreRequest,
     db: AsyncSession = Depends(get_db),
@@ -1384,6 +1418,7 @@ async def post_role_score(
 
     聚合权重来自 rubric.json（I2 可编辑，热重载）。含证据锚定。
     """
+    await _check_llm_quota(current_user.id)
     result = await analyze_service.analyze_resume_roles(
         db, current_user.id, resume_id, body.target_position
     )

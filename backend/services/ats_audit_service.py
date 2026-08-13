@@ -21,8 +21,6 @@ from html.parser import HTMLParser
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models.resume import Resume
-from models.resume_module import ResumeModule
 from schemas.resume import (
     AtsAuditIssue,
     AtsAuditResponse,

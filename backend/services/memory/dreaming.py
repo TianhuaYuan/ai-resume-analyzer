@@ -24,7 +24,6 @@ from services.memory.memory_store import (
     _collection,
     save_memory,
 )
-from services.rag.retrieval import get_embeddings
 from services.vector_store import get_vector_store
 
 logger = logging.getLogger(__name__)

@@ -179,7 +179,10 @@ async def logout(request: Request, response: Response):
     if refresh_token_str:
         refresh_payload = decode_token(refresh_token_str)
         if refresh_payload is not None:
-            await revoke_token(refresh_payload.get("jti"))
+            await revoke_token(
+                refresh_payload.get("jti"),
+                expire_seconds=settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400,
+            )
 
     clear_auth_cookies(response)
     return {"detail": "已登出"}

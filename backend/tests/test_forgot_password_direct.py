@@ -10,8 +10,6 @@
    - 邮箱不存在 → 静默返回 200（防用户枚举）
    - 弱密码 → 422（Pydantic 校验）
 """
-import logging
-import pytest
 from httpx import AsyncClient
 
 

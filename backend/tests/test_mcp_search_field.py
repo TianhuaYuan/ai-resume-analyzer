@@ -68,7 +68,6 @@ class TestMCPSearchFieldName:
     @pytest.mark.asyncio
     async def test_mcp_search_uses_text_field(self):
         """mcp_search 正确读取 'text' 字段用于生成上下文。"""
-        from mcp_client.tools import mcp_generate
 
         mock_chunks = [
             {

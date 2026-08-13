@@ -25,7 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.resume import Resume
 from models.resume_module import ResumeModule
 from schemas.resume_module import ResumeStyle, get_content_items
-from services.resume_builder import _label, _merge_modules_to_text, _MODULE_SECTION_HEADERS
+from services.resume_builder import _label, _MODULE_SECTION_HEADERS
 from services.resume_template import render_resume
 
 logger = logging.getLogger(__name__)

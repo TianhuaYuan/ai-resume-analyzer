@@ -1,6 +1,5 @@
 """T2: config 10 项新配置 + limiter Redis storage + .env.example 同步。"""
 
-import pytest
 
 
 # ═══════════════════════════════════════════════════════════

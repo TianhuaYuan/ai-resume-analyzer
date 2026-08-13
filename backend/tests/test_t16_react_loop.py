@@ -149,8 +149,6 @@ class TestBadToolCallFeedback:
         from services.react_agent.loop import react_loop
 
         # 构造一个 execute 会 raise ValidationError 的 mock tool
-        from pydantic import ValidationError
-        from services.react_agent.tools import SearchResumeArgs
 
         mock_tool_instance = MagicMock()
         mock_tool_instance.execute = AsyncMock(side_effect=Exception("参数校验失败"))

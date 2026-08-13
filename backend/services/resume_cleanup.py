@@ -171,6 +171,13 @@ async def orphan_scan() -> dict[str, list[str]]:
                     if full_path.is_file() and entry not in referenced_avatars:
                         # 用相对路径标识，auto_cleanup 按目录删除
                         orphans["files"].append(f"avatars/{entry}")
+            # resumes 子目录：未被任何简历 file_path 引用的原始文件为孤儿
+            resumes_dir = UPLOAD_DIR / "resumes"
+            if isinstance(resumes_dir, Path) and resumes_dir.is_dir():
+                for entry in os.listdir(resumes_dir):
+                    full_path = resumes_dir / entry
+                    if full_path.is_file() and entry not in db_file_names:
+                        orphans["files"].append(f"resumes/{entry}")
         except Exception as e:
             logger.warning("Failed to scan upload directory: %s", e)
 

@@ -10,7 +10,7 @@
 4. 不残留 failed 状态
 """
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 from sqlalchemy import select
@@ -78,8 +78,8 @@ async def test_background_success_marks_resume_ready():
     assert resume.status == "ready"
     assert resume.parsed_text == fake_parsed_text
     assert resume.chunk_count == 0  # 懒索引：上传后未建索引
-    # 成功时 status_message 应为空或 None
-    assert not resume.status_message
+    # 成功完成时 status_message 为完成提示（实现语义：状态迁移同步更新消息）
+    assert resume.status_message == "解析完成"
 
 
 @pytest.mark.asyncio

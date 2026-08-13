@@ -1075,8 +1075,6 @@ export default function QAPage() {
             toast.success("已收到，正在重答");
           } else if (result.status === "queued") {
             toast.success("已收到，将在下一轮处理");
-          } else if (result.status === "accepted") {
-            toast.success("已生效");
           } else {
             toast.error("补充信息未生效");
           }

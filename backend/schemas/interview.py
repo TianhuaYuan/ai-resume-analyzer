@@ -43,6 +43,7 @@ class InterviewListItem(BaseModel):
     questions: list | None = None
     notes: str | None = None
     status: str
+    weak_count: int | None = None  # 薄弱维度数（由 scorecard 派生，未录入评分为 None）
     created_at: datetime
     updated_at: datetime
 

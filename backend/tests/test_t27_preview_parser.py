@@ -61,6 +61,14 @@ _VALID_EDUCATION = {"entries": [{"school": "广东海洋大学", "degree": "本�
 _VALID_SKILLS = {"categories": [{"name": "编程语言", "items": ["Python", "Java"]}]}
 _VALID_WORK = {"entries": [{"company": "字节跳动", "position": "后端开发", "description": "负责 API 开发"}]}
 
+# 解析反解析测试的源文本：必须包含上方所有 _VALID_* 字段值，
+# 否则 A2 字段级溯源校验（verify_fields_in_original_text）会因字段无法在原文定位而失败。
+_FULL_PARSE_TEXT = (
+    "张三\n13800138000\nzhangsan@example.com\n"
+    "广东海洋大学\n本科\n软件工程\n"
+    "字节跳动\n后端开发\n负责 API 开发"
+)
+
 
 # ═══════════════════════════════════════════════════════════
 # 1. Content Hash 计算测试
@@ -183,7 +191,7 @@ class TestPreviewCache:
 
     def test_cache_lru_update_on_get(self):
         """get 操作更新 LRU 顺序。"""
-        from services.resume_preview import _MAX_CACHE_ENTRIES, _preview_cache
+        from services.resume_preview import _MAX_CACHE_ENTRIES
 
         # 填满缓存
         for i in range(_MAX_CACHE_ENTRIES):
@@ -529,13 +537,13 @@ class TestPromptBuilder:
     def test_user_prompt_without_feedback(self):
         """无错误反馈时 prompt 不包含反馈部分。"""
         prompt = _build_user_prompt("简历文本")
-        assert "上次解析存在以下错误" not in prompt
+        assert "上次解析包含无原文证据" not in prompt
 
     def test_user_prompt_with_feedback(self):
         """有错误反馈时 prompt 包含反馈。"""
         feedback = "模块 0: 缺少 name 字段"
         prompt = _build_user_prompt("简历文本", feedback)
-        assert "上次解析存在以下错误" in prompt
+        assert "上次解析包含无原文证据" in prompt
         assert feedback in prompt
 
     def test_error_feedback_format(self):
@@ -569,7 +577,7 @@ class TestParseTextToModules:
         ])
 
         with patch("services.rag.pipeline.llm_generate", new_callable=AsyncMock, return_value=llm_response):
-            modules = await parse_text_to_modules("张三的简历文本内容")
+            modules = await parse_text_to_modules(_FULL_PARSE_TEXT)
 
         assert len(modules) == 2
         assert modules[0].module_type.value == "basic_info"
@@ -585,7 +593,7 @@ class TestParseTextToModules:
         ])
 
         with patch("services.rag.pipeline.llm_generate", new_callable=AsyncMock, side_effect=[bad_response, good_response]):
-            modules = await parse_text_to_modules("张三的简历文本内容")
+            modules = await parse_text_to_modules(_FULL_PARSE_TEXT)
 
         assert len(modules) == 1
         assert modules[0].module_type.value == "basic_info"
@@ -599,7 +607,7 @@ class TestParseTextToModules:
         ])
 
         with patch("services.rag.pipeline.llm_generate", new_callable=AsyncMock, side_effect=[bad_response, good_response]):
-            modules = await parse_text_to_modules("张三的简历文本内容")
+            modules = await parse_text_to_modules(_FULL_PARSE_TEXT)
 
         assert len(modules) == 1
 
@@ -611,7 +619,7 @@ class TestParseTextToModules:
 
         with patch("services.rag.pipeline.llm_generate", new_callable=AsyncMock, return_value=bad_response):
             with pytest.raises(ValueError, match="校验失败"):
-                await parse_text_to_modules("张三的简历文本内容")
+                await parse_text_to_modules(_FULL_PARSE_TEXT)
 
     async def test_empty_llm_response_retry(self):
         """LLM 返回空 → 重试 → 成功。"""
@@ -620,7 +628,7 @@ class TestParseTextToModules:
         ])
 
         with patch("services.rag.pipeline.llm_generate", new_callable=AsyncMock, side_effect=["", good_response]):
-            modules = await parse_text_to_modules("张三的简历文本内容")
+            modules = await parse_text_to_modules(_FULL_PARSE_TEXT)
 
         assert len(modules) == 1
 
@@ -628,13 +636,13 @@ class TestParseTextToModules:
         """LLM 两次都返回空 → ValueError。"""
         with patch("services.rag.pipeline.llm_generate", new_callable=AsyncMock, return_value=""):
             with pytest.raises(ValueError, match="空响应"):
-                await parse_text_to_modules("张三的简历文本内容")
+                await parse_text_to_modules(_FULL_PARSE_TEXT)
 
     async def test_empty_array_raises(self):
         """LLM 返回空数组 [] → 重试 → 仍为空 → ValueError（不静默返回空列表）。"""
         with patch("services.rag.pipeline.llm_generate", new_callable=AsyncMock, return_value="[]"):
             with pytest.raises(ValueError, match="空数组"):
-                await parse_text_to_modules("张三的简历文本内容")
+                await parse_text_to_modules(_FULL_PARSE_TEXT)
 
     async def test_empty_array_retry_success(self):
         """LLM 先返回空数组 [] → 重试成功。"""
@@ -643,7 +651,7 @@ class TestParseTextToModules:
         ])
 
         with patch("services.rag.pipeline.llm_generate", new_callable=AsyncMock, side_effect=["[]", good_response]):
-            modules = await parse_text_to_modules("张三的简历文本内容")
+            modules = await parse_text_to_modules(_FULL_PARSE_TEXT)
 
         assert len(modules) == 1
         assert modules[0].module_type.value == "basic_info"
@@ -660,31 +668,27 @@ class TestParseTextToModules:
         )
 
         with patch("services.rag.pipeline.llm_generate", new_callable=AsyncMock, return_value=response):
-            modules = await parse_text_to_modules("张三的简历文本内容")
+            modules = await parse_text_to_modules(_FULL_PARSE_TEXT)
 
         assert len(modules) == 1
         assert modules[0].module_type.value == "basic_info"
 
-    async def test_partial_success_after_retry(self):
-        """重试后部分成功（部分合法 + 部分非法）。"""
-        # 第二次返回 2 个模块，1 个合法 1 个非法
+    async def test_rejects_partial_success(self):
+        """部分非法模块 → 拒绝局部成功（宁可失败，防 LLM 编造污染表单）。"""
         partial_response = json.dumps([
             {"module_type": "basic_info", "content": _VALID_BASIC_INFO, "sort_order": 0},
             {"module_type": "basic_info", "content": {}, "sort_order": 1},  # 缺 name
         ])
 
         with patch("services.rag.pipeline.llm_generate", new_callable=AsyncMock, return_value=partial_response):
-            modules = await parse_text_to_modules("张三的简历文本内容")
-
-        # 返回合法的 1 个
-        assert len(modules) == 1
-        assert modules[0].content["name"] == "张三"
+            with pytest.raises(ValueError):
+                await parse_text_to_modules(_FULL_PARSE_TEXT)
 
     async def test_llm_call_failure_raises(self):
         """LLM 调用异常 → ValueError。"""
         with patch("services.rag.pipeline.llm_generate", new_callable=AsyncMock, side_effect=RuntimeError("API 挂了")):
             with pytest.raises(ValueError, match="LLM 调用失败"):
-                await parse_text_to_modules("张三的简历文本内容")
+                await parse_text_to_modules(_FULL_PARSE_TEXT)
 
     async def test_json_in_code_block(self):
         """LLM 输出 ```json 代码块 → 正确解析。"""
@@ -695,7 +699,7 @@ class TestParseTextToModules:
 ```"""
 
         with patch("services.rag.pipeline.llm_generate", new_callable=AsyncMock, return_value=llm_response):
-            modules = await parse_text_to_modules("张三的简历文本内容")
+            modules = await parse_text_to_modules(_FULL_PARSE_TEXT)
 
         assert len(modules) == 1
 
@@ -706,7 +710,7 @@ class TestParseTextToModules:
         ])
 
         with patch("services.rag.pipeline.llm_generate", new_callable=AsyncMock, return_value=llm_response) as mock_llm:
-            await parse_text_to_modules("张三的简历文本内容", user_id=42)
+            await parse_text_to_modules(_FULL_PARSE_TEXT, user_id=42)
             # 检查 user_id 被传递
             assert mock_llm.call_args.kwargs.get("user_id") == 42
 
@@ -805,7 +809,7 @@ class TestParseToModulesAPI:
         with patch("services.rag.pipeline.llm_generate", new_callable=AsyncMock, return_value=llm_response):
             resp = await client.post(
                 "/api/v1/resumes/parse-to-modules",
-                json={"text": "张三，男，24岁，广东海洋大学软件工程本科"},
+                json={"text": _FULL_PARSE_TEXT},
                 headers=auth_headers,
             )
 
@@ -857,7 +861,7 @@ class TestParseToModulesAPI:
         with patch("services.rag.pipeline.llm_generate", new_callable=AsyncMock, side_effect=[bad, good]):
             resp = await client.post(
                 "/api/v1/resumes/parse-to-modules",
-                json={"text": "张三，广东海洋大学学生"},
+                json={"text": _FULL_PARSE_TEXT},
                 headers=auth_headers,
             )
 
@@ -871,7 +875,7 @@ class TestParseToModulesAPI:
         with patch("services.rag.pipeline.llm_generate", new_callable=AsyncMock, return_value=bad):
             resp = await client.post(
                 "/api/v1/resumes/parse-to-modules",
-                json={"text": "张三，广东海洋大学学生"},
+                json={"text": _FULL_PARSE_TEXT},
                 headers=auth_headers,
             )
 

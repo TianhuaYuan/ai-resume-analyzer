@@ -108,8 +108,11 @@ class Settings(BaseSettings):
     # 监控配置
     METRICS_TOKEN: str = ""  # Prometheus /metrics 抓取所需的 Bearer token，生产环境必填
 
-    # 运行时配置
-    UVICORN_WORKERS: int = 4  # 生产环境 worker 数，可通过环境变量覆盖
+    # ── 运行时配置 ──
+    # 固定单 worker：审批注册表（_approval_registry）/授权门/简历写锁均为进程内状态，
+    # 多 worker 下审批决议会打到非持有 worker 导致审批门失效。Dockerfile 也固定单 worker。
+    # 若未来需要水平扩展，须先把这些状态迁移到 Redis（见架构决策）。
+    UVICORN_WORKERS: int = 1
 
     # ── Docker 部署变量（仅用于 docker compose 环境，Python 不直接使用） ──
     DOCKER_REGISTRY: str = "docker.io"
@@ -204,6 +207,8 @@ class Settings(BaseSettings):
 
     # ── /ask/agent 独立限流（LLM 调用放大器） ──
     RATE_LIMIT_ASK_AGENT: str = "8/minute"
+    # LLM 高耗 REST 端点统一限流（analyze/match-jd/role-score/ai 等）
+    RATE_LIMIT_LLM: str = "10/minute"
 
     # ── RAG 共享常量 ──
     DEFAULT_HYBRID_TOP_K: int = 20

@@ -63,8 +63,9 @@ async def set_resume_status(
         )
     )
     resume.status = new_status
-    if reason:
-        resume.status_message = reason
+    # 状态迁移时同步重置 status_message：reason 为空则清空，
+    # 避免 ready 等成功态残留中间状态消息（如"材料化中"）。
+    resume.status_message = reason
 
 
 UPLOAD_DIR = Path(settings.UPLOAD_DIR).resolve()
@@ -108,9 +109,11 @@ async def save_upload_file(file: UploadFile) -> tuple[str, str]:
             detail=f"文件大小 {file.size / (1024 * 1024):.1f}MB 超过限制 {settings.MAX_UPLOAD_SIZE_MB}MB",
         )
 
-    # 4. 流式写入 + 实时大小检查
+    # 4. 流式写入 + 实时大小检查（简历文件存 resumes/ 子目录，与公开的头像目录隔离）
     unique_name = f"{uuid.uuid4().hex}{ext}"
-    save_path = UPLOAD_DIR / unique_name
+    resumes_dir = UPLOAD_DIR / "resumes"
+    resumes_dir.mkdir(parents=True, exist_ok=True)
+    save_path = resumes_dir / unique_name
     written = 0
 
     with open(save_path, "wb") as f:

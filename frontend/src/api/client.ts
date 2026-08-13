@@ -26,9 +26,15 @@ async function doRefresh(): Promise<boolean> {
   const token = localStorage.getItem("refresh_token");
   if (!token) return false;
   try {
+    // 随请求携带旧 access token（如仍在 localStorage），供后端撤销其 jti——
+    // 否则刷新后旧 access token 直到自然过期都有效。
+    const accessToken = localStorage.getItem("access_token");
     const res = await fetch(`${BASE}/api/v1/auth/refresh`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      },
       body: JSON.stringify({ refresh_token: token }),
     });
     if (!res.ok) return false;
@@ -86,8 +92,19 @@ async function handleResponse(res: Response) {
   if (!res.ok) {
     const err = await res.json().catch(() => null);
     // 兼容新格式 {"error": {"code", "message", "request_id"}} 和旧格式 {"detail": "..."}
+    // FastAPI 422 校验错误的 detail 是数组（如 [{loc, msg}]），需拍平为可读文本。
+    const detail = err?.detail;
     const message =
-      err?.error?.message || err?.detail || "请求失败";
+      err?.error?.message ||
+      (Array.isArray(detail)
+        ? detail
+            .map((d: unknown) =>
+              typeof d === "string" ? d : (d as { msg?: string })?.msg || ""
+            )
+            .filter(Boolean)
+            .join("；") || "请求参数错误"
+        : detail) ||
+      "请求失败";
     throw new Error(message);
   }
   return res.json();

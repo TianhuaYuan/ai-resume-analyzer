@@ -215,7 +215,7 @@ const MessageBubble = memo(function MessageBubble({ msg, deleting, onDelete, onF
                     {formatTimestamp(msg.created_at)}
                   </span>
                 )}
-                {/* Token 消耗：文本徽标 + TokenBar 可视化（P4-11 借鉴 Hermes TokenBar） */}
+                {/* Token 消耗：文本徽标可视化（P4-11 借鉴 Hermes TokenBar 思路） */}
               </div>
               <div className="shrink-0 flex items-center gap-1 mt-2">
                 {/* Task 5.1: 质量反馈按钮（点同按钮=取消，点异按钮=切换） */}

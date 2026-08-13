@@ -14,8 +14,6 @@ import pytest
 
 from services.rag.pipeline import LLMToolResponse, ToolCall
 from services.react_agent.loop import (
-    NEXT_STEP_PROMPT,
-    STUCK_PROMPT,
     _tool_round_signature,
 )
 

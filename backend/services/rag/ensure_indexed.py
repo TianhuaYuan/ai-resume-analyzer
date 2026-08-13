@@ -143,7 +143,10 @@ async def ensure_indexed(
         )
 
         # ── 5. 成功才更新 indexed_hash / index_version / chunk_count（失败保留旧索引可重试）──
-        row.indexed_hash = row.content_hash
+        # indexed_hash 必须存「实际被索引文本」的 hash（_load_asset 返回的模块合并文本），
+        # 而非 row.content_hash（parsed_text 的 hash，随 complete 更新）。
+        # 否则已物化/已编辑简历每次检索都判定脏 → 全量重嵌 + 旧版本快照无限累积。
+        row.indexed_hash = _text_hash(text)
         row.index_version = new_version
         if hasattr(row, "chunk_count"):
             row.chunk_count = chunk_count  # 懒重建后同步 chunk 数（信息性字段）

@@ -129,8 +129,8 @@ class TestModuleToMarkdown:
         mod = ResumeModule(module_type="basic_info", content=_basic_info_content(), sort_order=0)
         md = _module_to_markdown(mod)
         assert "## 个人简介" in md
-        assert "**name**: 张三" in md
-        assert "**phone**: 13800138000" in md
+        assert "**姓名**：张三" in md
+        assert "**手机**：13800138000" in md
 
     def test_education_to_md(self):
         mod = ResumeModule(module_type="education", content=_education_content(), sort_order=0)
@@ -313,7 +313,6 @@ class TestAvatarValidation:
 
     def test_validate_mime_jpeg(self):
         from services.avatar_service import _validate_mime
-        from fastapi import UploadFile
         file = MagicMock()
         file.content_type = "image/jpeg"
         assert _validate_mime(file) == "image/jpeg"
@@ -407,7 +406,7 @@ class TestSaveAvatar:
 
     async def test_save_avatar_success(self, tmp_path):
         """成功保存头像。"""
-        from services.avatar_service import save_avatar, _AVATAR_UPLOAD_DIR
+        from services.avatar_service import save_avatar
         from PIL import Image
 
         # 创建有效 PNG

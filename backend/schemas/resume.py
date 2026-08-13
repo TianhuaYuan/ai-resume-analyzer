@@ -220,6 +220,8 @@ class MatchJDResponse(BaseModel):
     matched_keywords: list[str] = Field(default_factory=list)
     missing_keywords: list[str] = Field(default_factory=list)
     gaps: list[str] = Field(default_factory=list)
+    # I1: 6-block 求职评估报告（仅 Agent 工具路径生成；REST /match-jd 不生成，为 None）
+    report: dict | None = None
 
 
 class AnalysisStatusResponse(BaseModel):

@@ -549,9 +549,9 @@ export async function injectToActiveTurn(
   resumeId: number,
   content: string,
   conversationId?: number,
-): Promise<{ injected: boolean; status: "accepted" | "restarting" | "queued" | "failed"; turn_id: string | null }> {
+): Promise<{ injected: boolean; status: "restarting" | "queued" | "failed"; turn_id: string | null }> {
   return api.post(`/api/v1/qa/${resumeId}/inject`, {
     content,
     conversation_id: conversationId ?? null,
-    }) as Promise<{ injected: boolean; status: "accepted" | "restarting" | "queued" | "failed"; turn_id: string | null }>;
+    }) as Promise<{ injected: boolean; status: "restarting" | "queued" | "failed"; turn_id: string | null }>;
 }

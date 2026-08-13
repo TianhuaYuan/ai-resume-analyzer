@@ -153,7 +153,7 @@ export interface RoleScoreResult {
   analysis_type: string;
   analysis: string;
   roles: Record<string, RoleScoreItem>;
-  aggregate: { score: number; band: string; weights: Record<string, number> };
+  aggregate: { score: number; band: string; weights: Record<string, number> } | null;
   target_position: string | null;
   evidence?: { start: number; end: number; quote: string }[];
   evidence_quote?: string | null;
