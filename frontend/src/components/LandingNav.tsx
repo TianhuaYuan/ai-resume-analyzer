@@ -30,7 +30,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { key: "ai", label: "AI简历", route: "/qa", requireAuth: true },
-  { key: "feedback", label: "用户反馈", shortLabel: "反馈", route: "/feedback" },
+  // 个人工具定位：意见箱入口隐藏（路由与页面保留）
 ];
 
 // ── P1: 主题 4 模式选项（浅色/深色/跟随系统/OLED） ──

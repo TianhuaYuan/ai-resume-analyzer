@@ -1,14 +1,12 @@
 """工具结果中间件 — 链式处理工具执行结果。
 
-与 tool_hooks 的分工：
-- tool_hooks：**执行前后**拦截（before: 审批/参数重写；after: 覆盖结果/终止循环）
-- 本模块：**结果纯变换管线**——对工具返回的字符串结果做链式清洗
-  （截断/脱敏/来源标注），处理函数无副作用，可组合、可复用。
+对工具返回的字符串结果做链式清洗（截断/脱敏/来源标注），
+处理函数无副作用，可组合、可复用。
 
 预置中间件：
 1. TruncationMiddleware：截断超长结果（预算随上下文窗口自适应）
 2. SanitizationMiddleware：脱敏敏感信息（手机号/邮箱/身份证/密钥）
-3. SourceTagMiddleware：为结果附加来源标注（配合 Provenance 追踪）
+3. SourceTagMiddleware：为结果附加来源标注
 
 用法：
     pipeline = ToolResultPipeline([
@@ -70,7 +68,7 @@ class SanitizationMiddleware:
 
 
 class SourceTagMiddleware:
-    """来源标注中间件：为结果附加来源标记（配合 Provenance 追踪）。
+    """来源标注中间件：为结果附加来源标记。
 
     仅对非系统工具结果附加（避免污染系统脚手架内容）。
     """

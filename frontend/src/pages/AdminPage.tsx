@@ -712,7 +712,7 @@ function GrafanaSection() {
               <div><code className="font-mono">VITE_GRAFANA_URL=http://127.0.0.1:3000</code></div>
             </div>
             <p className="mt-2 text-[11px] text-[var(--color-text-muted)]">
-              生产环境请使用同源反向代理地址，并限制为管理员访问。
+              监控面板默认仅供本机访问；如需跨机访问，请配置同源反向代理并限制为管理员。
             </p>
           </div>
         </div>
@@ -821,7 +821,7 @@ export default function AdminPage() {
         </div>
         <h2 className="text-base font-semibold text-[var(--color-text)] mb-1.5">无访问权限</h2>
         <p className="text-sm text-[var(--color-text-muted)] mb-5">
-          管理员后台仅对授权账号开放。如需访问，请联系管理员将你的邮箱加入白名单。
+          管理员后台仅对授权账号开放。本地 Docker 下首个注册用户自动为管理员；指定管理员见 README 的 ADMIN_EMAILS 配置。
         </p>
         <Link
           to="/"

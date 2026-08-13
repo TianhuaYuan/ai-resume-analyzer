@@ -92,6 +92,12 @@ class Settings(BaseSettings):
     # 预检查时的最小预留额度（低于此值就拒绝请求）
     TOKEN_QUOTA_MIN_RESERVE: int = 500
 
+    # ── 本地个人工具开关 ──
+    # 注册免邮箱验证码（本地 Docker 默认开；测试走 .env.test 隔离）
+    SKIP_EMAIL_VERIFICATION: bool = True
+    # 首个注册用户自动成为管理员（本地 Docker 置 True；代码默认 False 保测试）
+    BOOTSTRAP_FIRST_USER_ADMIN: bool = False
+
     # ── RabbitMQ 消息队列配置 ──
     RABBITMQ_ENABLED: bool = False  # 是否启用 RabbitMQ
     RABBITMQ_URL: str = "amqp://guest:guest@localhost:5672/"  # AMQP 连接 URL

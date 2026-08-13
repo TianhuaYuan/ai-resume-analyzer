@@ -226,6 +226,7 @@ def _build_llm_kwargs(
     thinking_effort: str | None,
     scenario: str | None = None,
     stream: bool = False,
+    is_judge: bool = False,
 ) -> dict:
     """组装 LLM 请求 kwargs（非流式和流式共用）。
 
@@ -264,7 +265,7 @@ def _build_llm_kwargs(
         kwargs["max_tokens"] = profile.max_tokens
     if request.tools:
         kwargs["tools"] = request.tools
-    if request.model != settings.JUDGE_MODEL:
+    if not is_judge:
         kwargs["extra_body"] = {
             "thinking": {"type": "enabled" if effective_thinking else "disabled"}
         }
@@ -329,6 +330,7 @@ async def llm_generate_with_tools(
         thinking_enabled=thinking_enabled,
         thinking_effort=thinking_effort,
         scenario=scenario,
+        is_judge=(model == "judge"),
     )
     try:
         response = await _call_completion_with_retry(client, kwargs, model=model)
@@ -399,6 +401,7 @@ async def llm_generate_with_tools_stream(
         thinking_effort=thinking_effort,
         scenario=scenario,
         stream=True,
+        is_judge=(model == "judge"),
     )
     # 流创建阶段接入重试 + 熔断（尚未产出 chunk，重试安全）。
     # 流中途断流由调用方现有墙钟超时/降级兜底。

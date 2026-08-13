@@ -90,7 +90,7 @@ async def require_admin(
     else:
         admin_emails = list(admin_emails_setting)
 
-    if current_user.email not in admin_emails:
+    if not current_user.is_admin and current_user.email not in admin_emails:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="需要管理员权限",

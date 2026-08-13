@@ -4,7 +4,7 @@ React 19 + TypeScript + Vite 8 + Tailwind CSS 4 单页应用。
 
 ## 构建配置
 
-**Vite** (`vite.config.ts`)：dev server 在 5173 端口，`/api/*` 自动代理到 `http://127.0.0.1:8000`。插件：`@vitejs/plugin-react` + `@tailwindcss/vite`。
+**Vite** (`vite.config.ts`)：dev server 在 5173 端口，`/api/*` 自动代理到 `http://127.0.0.1:8081`。插件：`@vitejs/plugin-react` + `@tailwindcss/vite`。
 
 **TypeScript** (`tsconfig*.json`)：3 个配置文件——`tsconfig.json`（引用入口）、`tsconfig.app.json`（应用源码）、`tsconfig.node.json`（Vite/ESLint 配置）。strict 模式。
 

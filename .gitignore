@@ -37,7 +37,6 @@ venv.bak/
 .env.*
 !.env.example
 !.env.test
-!.env.prod.example
 *.pem
 *.key
 

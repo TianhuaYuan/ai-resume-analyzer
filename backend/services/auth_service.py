@@ -3,7 +3,7 @@ import secrets
 import string
 
 from fastapi import HTTPException, status
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
@@ -32,10 +32,13 @@ async def register_user(db: AsyncSession, data: RegisterRequest) -> User:
         logger.warning("注册冲突: username=%s, email=%s", data.username, data.email)
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="用户名或邮箱已被注册")
 
+    # 首注册用户自动成为管理员（本地个人工具；开关默认 False 保测试）
     user = User(
         username=data.username,
         email=data.email,
         password_hash=hash_password(data.password),
+        is_admin=settings.BOOTSTRAP_FIRST_USER_ADMIN
+        and (await db.scalar(select(func.count()).select_from(User))) == 0,
     )
     db.add(user)
     await db.commit()

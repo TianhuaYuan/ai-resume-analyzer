@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import String, DateTime
+from sqlalchemy import Boolean, String, DateTime
 from sqlalchemy.orm import Mapped, mapped_column
 from core.database import Base
 
@@ -20,3 +20,5 @@ class User(Base):
         default=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
+    # 本地个人工具：首注册用户自动为管理员（BOOTSTRAP_FIRST_USER_ADMIN 开关）
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="0")

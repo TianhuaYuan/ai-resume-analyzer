@@ -5,7 +5,7 @@
 1. **不绑死邮件服务商**：通过 `EmailSender` Protocol 抽象，开发/测试用 `LogEmailSender`，
    生产用 `SmtpEmailSender`（标准 `smtplib`，兼容阿里云/QQ/163/SendGrid 等任意 SMTP）。
 2. **零门槛起步**：开发环境默认 `EMAIL_PROVIDER=log`，无 SMTP 账号也能跑通流程。
-3. **生产可平滑切换**：仅需在 `.env.prod` 改 `EMAIL_PROVIDER=smtp` + 配置 SMTP_*。
+3. **可平滑切换**：仅需在 `.env` 改 `EMAIL_PROVIDER=smtp` + 配置 SMTP_*。
 
 接口契约
 --------

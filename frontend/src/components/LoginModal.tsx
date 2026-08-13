@@ -69,6 +69,9 @@ export function LoginModal({
 }: LoginModalProps) {
   const { login, register, sendCode } = useAuth();
 
+  // 本地个人工具：注册免邮箱验证码（Docker 构建由 VITE_SKIP_EMAIL_VERIFICATION 传入，默认 true）
+  const SKIP_VERIFY = (import.meta.env.VITE_SKIP_EMAIL_VERIFICATION ?? "true") === "true";
+
   const [tab, setTab] = useState<"login" | "register">(initialTab);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -162,13 +165,13 @@ export function LoginModal({
       setError("两次密码不一致");
       return;
     }
-    if (!regCode || regCode.length !== 6) {
+    if (!SKIP_VERIFY && (!regCode || regCode.length !== 6)) {
       setError("请输入6位验证码");
       return;
     }
     setLoading(true);
     try {
-      await register(regUsername, regEmail, regPassword, regConfirm, regCode);
+      await register(regUsername, regEmail, regPassword, regConfirm, SKIP_VERIFY ? "000000" : regCode);
       await login(regEmail, regPassword);
       onClose();
     } catch (err: unknown) {
@@ -305,26 +308,28 @@ export function LoginModal({
               <AppleInput type="email" value={regEmail} onChange={setRegEmail} placeholder="邮箱" icon={Mail} />
               <AppleInput type="password" value={regPassword} onChange={setRegPassword} placeholder="密码（至少8位）" icon={Lock} />
               <AppleInput type="password" value={regConfirm} onChange={setRegConfirm} placeholder="确认密码" icon={Lock} />
-              <div className="flex gap-2">
-                <div className="flex-1">
-                  <AppleInput value={regCode} onChange={setRegCode} placeholder="6位验证码" icon={Hash} maxLength={6} />
+              {!SKIP_VERIFY && (
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <AppleInput value={regCode} onChange={setRegCode} placeholder="6位验证码" icon={Hash} maxLength={6} />
+                  </div>
+                  <button
+                    type="button"
+                    disabled={sendCodeLoading || cooldown > 0}
+                    onClick={handleSendCode}
+                    className="px-4 py-2.5 rounded-list bg-[var(--color-bg-secondary)] text-xs font-medium text-[var(--color-text-secondary)]
+                      hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed shrink-0"
+                  >
+                    {sendCodeLoading ? (
+                      <span className="inline-block w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                    ) : cooldown > 0 ? (
+                      `${cooldown}s`
+                    ) : (
+                      "发送"
+                    )}
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  disabled={sendCodeLoading || cooldown > 0}
-                  onClick={handleSendCode}
-                  className="px-4 py-2.5 rounded-list bg-[var(--color-bg-secondary)] text-xs font-medium text-[var(--color-text-secondary)]
-                    hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed shrink-0"
-                >
-                  {sendCodeLoading ? (
-                    <span className="inline-block w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                  ) : cooldown > 0 ? (
-                    `${cooldown}s`
-                  ) : (
-                    "发送"
-                  )}
-                </button>
-              </div>
+              )}
               <button
                 type="submit"
                 disabled={loading}

@@ -64,8 +64,8 @@ async def register(
     db: AsyncSession = Depends(get_db),
     _: bool = Depends(verify_origin),
 ):
-    """注册。需要先调用 /send-code 获取验证码。"""
-    if not await verify_code(data.email, data.verification_code):
+    """注册。默认需要先调用 /send-code 获取验证码；本地模式（SKIP_EMAIL_VERIFICATION）免验证码。"""
+    if not settings.SKIP_EMAIL_VERIFICATION and not await verify_code(data.email, data.verification_code):
         raise HTTPException(status_code=400, detail="验证码无效或已过期")
     user = await register_user(db, data)
     # 漏斗埋点（best-effort，失败不影响注册主流程）
@@ -189,7 +189,9 @@ async def logout(request: Request, response: Response):
 
 
 def _is_admin(user: User) -> bool:
-    """检查用户是否在管理员邮箱列表中。"""
+    """管理员判定：is_admin 列（首注册用户）或 ADMIN_EMAILS 白名单。"""
+    if getattr(user, "is_admin", False):
+        return True
     admin_emails_setting = settings.ADMIN_EMAILS
     if isinstance(admin_emails_setting, str):
         admin_emails = [e.strip() for e in admin_emails_setting.split(",") if e.strip()]

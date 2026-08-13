@@ -124,7 +124,7 @@ SECTION_HEADERS = [
 # 注意：实际简历文件使用 ## 教育背景 格式，测试用例使用纯文本 教育背景 格式，
 # 两者都必须匹配。
 SECTION_PATTERN = re.compile(
-    r"(?:^|\n)\s*(?:#{1,6}\s*)?(?:(?:[一二三四五六七八九十]+|\d+)[、.）\)]?\s*)?("
+    r"(?:^|\n)\s*(?:(?:#\s*){1,6})?(?:(?:[一二三四五六七八九十]+|\d+)[、.）\)]?\s*)?("
     + "|".join(re.escape(h) for h in SECTION_HEADERS)
     + r")[\s:：]*\n",
     re.IGNORECASE,

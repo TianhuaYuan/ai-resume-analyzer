@@ -1,10 +1,8 @@
 """
 MCP Search 字段名测试：验证 search_knowledge_base 返回结果包含 'text' 字段。
 
-问题：search.py 返回 "content" 字段，但 mcp_client/tools.py 读取 "text" 字段，
-导致 MCP 模式产出空答案。
-
-修复：将 "content" 改为 "text"。
+字段契约：search_knowledge_base 统一返回 'text' 字段。历史版本曾用 'content'，
+导致 MCP 客户端读取不到内容，后将 'content' 统一为 'text'。
 """
 
 import pytest

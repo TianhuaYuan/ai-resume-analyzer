@@ -63,6 +63,7 @@ def test_judge_does_not_receive_deepseek_only_fields():
         thinking_enabled=True,
         thinking_effort="high",
         scenario="judge",
+        is_judge=True,
     )
     assert "extra_body" not in body
     assert "reasoning_effort" not in body

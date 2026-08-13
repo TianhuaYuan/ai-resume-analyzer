@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { MessagesSquare, FileText, MessageCircle, Library, Plus, Trash2, Pencil, ChevronLeft, Settings, LogOut, KeyRound, Mail, User, ChevronDown, LoaderCircle, Gauge, Sun, Sparkles, Mic, UserMinus, Send } from "lucide-react";
+import { MessagesSquare, FileText, Library, Plus, Trash2, Pencil, ChevronLeft, Settings, LogOut, KeyRound, Mail, User, ChevronDown, LoaderCircle, Gauge, Sun, Sparkles, Mic, UserMinus, Send } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { deleteAccount } from "../api/auth";
 import { useToast } from "./Toast";
@@ -33,7 +33,7 @@ const NAV_ITEMS: NavItem[] = [
   { path: "/applications", label: "投递看板", icon: Send, match: "exact" },
   { path: "/interviews", label: "面试复盘", icon: Mic, match: "exact" },
   { path: "/assets", label: "知识资产", icon: Library, match: "exact" },
-  { path: "/feedback", label: "用户反馈", icon: MessageCircle, match: "exact" },
+  // 个人工具定位：意见箱入口隐藏（路由 /feedback 与 FeedbackPage 保留）
 ];
 
 interface SidebarProps {
