@@ -26,7 +26,7 @@ def _compute_composite(completeness: float, accuracy: float, source_credibility:
 
 
 def _extract_sources(chunks: list[dict]) -> list[dict]:
-    """抽取来源（T10 多源归因：携带 asset_id/asset_type/version 供溯源）。"""
+    """抽取来源。"""
     return [
         {
             "chunk_index": c.get("chunk_index", i),
@@ -54,7 +54,7 @@ def _format_failed_tools(tool_errors: list[dict]) -> str:
 
 
 def _build_generate_prompt(chunks: list[dict], query: str, tool_errors: list[dict]) -> dict:
-    """组装生成用 prompt（T10 多源归因）。
+    """组装生成用 prompt。
 
     来源带 [asset_id:v版本] 标注，要求答案对关键事实溯源；支持多份知识资产。
     阶段4 错误透传：tool_errors 非空时注入降级说明，告知 LLM 仅基于已有内容作答。
@@ -168,7 +168,7 @@ _EVAL_SYSTEM = (
     "- 3-4: 大量错误\n"
     "- 1-2: 严重不准确\n"
     "- 0: 完全错误\n\n"
-    "**来源可信度（source_credibility）**：引用的来源是否可靠、归因是否正确（T10）\n"
+    "**来源可信度（source_credibility）**：引用的来源是否可靠、归因是否正确\n"
     "- 9-10: 来源直接相关、可信，且归因到正确的资产/版本\n"
     "- 7-8: 来源基本相关，归因基本正确\n"
     "- 5-6: 来源部分相关，或归因模糊（未指明具体资产）\n"
@@ -240,7 +240,7 @@ async def evaluate_node(state: AgenticRAGState) -> dict:
     if not answer or is_rejected:
         elapsed = time.monotonic() - timer_start
         trace = dict(state.get("trace", {}))
-        # P2-2 修复：拒答/零召回时不再直接短路，而是允许 Reflexion 重试
+        # 修复：拒答/零召回时不再直接短路，而是允许 Reflexion 重试
         # （should_retry=True）。零召回是最需要补充查询（supplement_queries）救场的
         # 场景，原实现把 should_retry 置 False，反思循环完全绕开——最该反思时不反思。
         # 轮数仍由 _route_after_evaluate 的 search_round <= 2 约束，不会无限循环；

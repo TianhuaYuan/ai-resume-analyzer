@@ -1,4 +1,4 @@
-"""P0-9: 限流 key_func 应从反向代理头获取真实客户端 IP。
+"""限流 key_func 应从反向代理头获取真实客户端 IP。
 
 原 bug：使用 slowapi.util.get_remote_address 直接读 request.client.host，
 在 nginx 反代后所有请求 IP 都是 127.0.0.1，导致全局限流而非按用户限流。

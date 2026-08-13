@@ -106,7 +106,7 @@ async def init_consumer(
         _connection = await aio_pika.connect_robust(settings.RABBITMQ_URL)
         _channel = await _connection.channel()
         queue = await _channel.declare_queue(settings.RABBITMQ_QUEUE, durable=True)
-        # P2-5：prefetch 限制——慢 LLM 任务队列若无限 in-flight 会堆积。
+        # prefetch 限制——慢 LLM 任务队列若无限 in-flight 会堆积。
         # 设为 1 实现"单消费者顺序处理 + 失败可重试"，配合消息失败 nack requeue。
         try:
             prefetch_count = max(1, int(settings.RABBITMQ_PREFETCH_COUNT))
@@ -125,10 +125,10 @@ async def init_consumer(
                 await message_handler(body)
                 await message.ack()
             except Exception as e:
-                # P2-5：失败语义修复——原先 try/except 在 process() 内吞异常会 ack 丢消息
+                # 失败语义修复——原先 try/except 在 process() 内吞异常会 ack 丢消息
                 # （"分析重试"是死代码）。改为显式 nack：
-                #   - retry_count 未超限 → requeue（指数退避由 payload 内 retry_count 控制）
-                #   - 已超限 → 不 requeue（ack），由消费端落库 failed（避免无限重试）
+                # - retry_count 未超限 → requeue（指数退避由 payload 内 retry_count 控制）
+                # - 已超限 → 不 requeue（ack），由消费端落库 failed（避免无限重试）
                 logger.exception("RabbitMQ 消息消费失败: %s", e)
                 retry_count = 0
                 try:

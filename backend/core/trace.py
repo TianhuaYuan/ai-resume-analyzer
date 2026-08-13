@@ -55,7 +55,7 @@ def install_trace_middleware(app) -> None:
     app.add_middleware(TraceMiddleware)
 
 
-# 日志关联：把 trace_id 注入每条日志，便于检索 
+# 日志关联：把 trace_id 注入每条日志，便于检索
 class TraceIDFilter(logging.Filter):
     """为每条日志记录附加 `trace_id` 字段（默认 '-'）。"""
     def filter(self, record: logging.LogRecord) -> bool:

@@ -1,4 +1,4 @@
-"""P2-2: Embedding cache _resume_texts 无限增长修复测试。
+"""Embedding cache _resume_texts 无限增长修复测试。
 
 核心问题：_cache LRU 淘汰时，_resume_texts 中的对应 text 没被清理，
 导致 _resume_texts 无限增长（内存泄漏）。
@@ -31,7 +31,7 @@ async def test_clear_resume_returns_evicted_count():
 
 @pytest.mark.asyncio
 async def test_lru_eviction_clears_resume_texts():
-    """P2-2 核心：LRU 淘汰时同步清理 _resume_texts，避免内存泄漏。
+    """ 核心：LRU 淘汰时同步清理 _resume_texts，避免内存泄漏。
 
     场景：
     1. 写入 1 条 embedding（resume_id=1, text="A"）

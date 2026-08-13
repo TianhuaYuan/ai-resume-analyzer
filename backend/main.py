@@ -42,7 +42,7 @@ async def lifespan(app: FastAPI):
     # 3.6 N6：启动期 fail-fast 配置校验（生产/预发缺关键变量直接启动失败）
     validate_required_settings()
 
-    # T17 性能护栏：启动时预热 Redis 探测——Redis 不可用则在此触发降级冷却期，
+    # 性能护栏：启动时预热 Redis 探测——Redis 不可用则在此触发降级冷却期，
     # 避免首个用户交互白付连接超时延迟。
     try:
         from core.redis_client import get_redis
@@ -66,7 +66,7 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.warning("Orphan cleanup skipped", exc_info=True)
 
-    # P1-13：恢复卡住的简历（进程崩溃后 status=processing 的记录永远无法完成）
+    # 恢复卡住的简历（进程崩溃后 status=processing 的记录永远无法完成）
     try:
         from services.resume_service import recover_stuck_resumes
 
@@ -259,7 +259,7 @@ async def limit_request_body_stream(request: Request, call_next):
 
 @app.exception_handler(RateLimitExceeded)
 async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
-    # P2-14：添加 Retry-After 头，让用户知道多久后可重试
+    # 添加 Retry-After 头，让用户知道多久后可重试
     # slowapi 的 exc.limit.period 是限流窗口秒数（如 60s 内 10 次）
     retry_after = getattr(getattr(exc, "limit", None), "period", 60) or 60
     return Response(
@@ -285,7 +285,7 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", "X-Request-ID", "Idempotency-Key"],
 )
 
-# P0-9：代理头处理（必须在 CORS 之后添加 → 执行顺序在 CORS 之前）
+# 代理头处理（必须在 CORS 之后添加 → 执行顺序在 CORS 之前）
 # 重写 request.client.host 为 X-Forwarded-For 中的真实 IP，trusted_hosts 限制为 Docker 内网
 # 注意：Starlette 1.x 无 ProxyHeadersMiddleware，自实现轻量版
 import ipaddress
@@ -342,7 +342,7 @@ app.add_middleware(
 async def security_headers(request: Request, call_next):
     response: Response = await call_next(request)
     # 3.1 SEC-006：HSTS（仅 HTTPS 生效，HTTP 下浏览器忽略）
-    # P2-5: CSP 已迁移到 nginx（后端只服务 API，CSP 由 nginx 统一管理前端+API 响应）
+    # CSP 已迁移到 nginx（后端只服务 API，CSP 由 nginx 统一管理前端+API 响应）
     response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
     # 3.3 SEC-018：禁用浏览器敏感权限特性
     response.headers["Permissions-Policy"] = (
@@ -358,7 +358,7 @@ async def security_headers(request: Request, call_next):
     # SEC-017：API 响应一律禁止缓存（防止令牌/隐私数据被代理或浏览器落盘）
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, private"
     # SEC-015：删除 Server 头，避免泄露后端技术栈（uvicorn 在 HTTP 层可能补回，
-    #           这里尽力在应用层剥离；生产由反代/nginx 兜底）
+    # 这里尽力在应用层剥离；生产由反代/nginx 兜底）
     if "Server" in response.headers:
         del response.headers["Server"]
     # SEC-015：跨源隔离相关头，缩小被嵌入/被跨源读取的攻击面
@@ -367,7 +367,7 @@ async def security_headers(request: Request, call_next):
     # SEC-017：老 IE 下载嗅探防护 + 禁止跨域 Flash/PDF 策略文件
     response.headers["X-Download-Options"] = "noopen"
     response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
-    # P2-5：CSP 已迁移到 frontend/nginx.conf，后端不再下发（避免与 nginx 重复/冲突）
+    # CSP 已迁移到 frontend/nginx.conf，后端不再下发（避免与 nginx 重复/冲突）
     return response
 
 

@@ -60,7 +60,7 @@ async def delete_user_account(db: AsyncSession, user: User) -> None:
             logger.warning("ChromaDB cleanup skipped for %s", collection_name, exc_info=True)
 
     # 3. 逐简历清 Redis 分析缓存 + Embedding 内存缓存
-    #    invalidate_resume_cache 内部已吞异常（best-effort）；embedding_cache 为纯内存不抛
+    # invalidate_resume_cache 内部已吞异常（best-effort）；embedding_cache 为纯内存不抛
     for rid in resume_ids:
         await invalidate_resume_cache(rid)
         await embedding_cache.clear_resume(rid)
@@ -79,7 +79,7 @@ async def delete_user_account(db: AsyncSession, user: User) -> None:
             logger.warning("Failed to delete file: %s", fp, exc_info=True)
 
     # 5.5 删头像文件（basic_info 模块 content.avatar，uploads/avatars/）
-    #     DB 级联只删记录不删磁盘文件，否则头像成为孤儿文件
+    # DB 级联只删记录不删磁盘文件，否则头像成为孤儿文件
     if resumes:
         from services.avatar_service import delete_avatar
         from services.resume_builder import get_resume_with_modules

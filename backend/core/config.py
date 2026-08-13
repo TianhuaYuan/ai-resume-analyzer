@@ -63,7 +63,7 @@ class Settings(BaseSettings):
     RATE_LIMIT_ASK: str = "20/minute"
     # refresh 端点单独限流（刷新凭证是高频爆破目标）
     RATE_LIMIT_REFRESH: str = "5/minute"
-    # P1-23: 忘记密码端点限流（爆破/滥用防御，3 次/分钟）
+    # 忘记密码端点限流（爆破/滥用防御，3 次/分钟）
     RATE_LIMIT_PASSWORD_RESET: str = "3/minute"
 
     # 防止超大请求体打满内存（DoS）。与上传上限解耦：上传走 multipart 单独校验。
@@ -96,12 +96,12 @@ class Settings(BaseSettings):
     RABBITMQ_ENABLED: bool = False  # 是否启用 RabbitMQ
     RABBITMQ_URL: str = "amqp://guest:guest@localhost:5672/"  # AMQP 连接 URL
     RABBITMQ_QUEUE: str = "ai_resume_analyze"  # 分析任务队列名
-    # P2-5: 消费者 prefetch（单消费者 in-flight 上限）——慢 LLM 任务防堆积
+    # 消费者 prefetch（单消费者 in-flight 上限）——慢 LLM 任务防堆积
     RABBITMQ_PREFETCH_COUNT: int = 1
-    # P2-5: 消息失败重试上限（受控重试，超过则丢弃并落库 failed）
+    # 消息失败重试上限（受控重试，超过则丢弃并落库 failed）
     RABBITMQ_MAX_RETRIES: int = 3
 
-    # ── P2-8: WebSocket 加固 ──
+    # ── WebSocket 加固 ──
     WS_MAX_CONNECTIONS_PER_USER: int = 5  # 每用户最大连接数（DoS 防护）
     WS_IDLE_TIMEOUT_SECONDS: float = 300.0  # 服务端心跳超时（客户端静默掉线清理）
 
@@ -124,7 +124,7 @@ class Settings(BaseSettings):
     FRONTEND_HTTPS_PORT: int = 443
     BACKEND_PORT: int = 8000
 
-    # P1-23: 管理员邮箱列表（逗号分隔），拥有管理员重置密码等权限
+    # 管理员邮箱列表（逗号分隔），拥有管理员重置密码等权限
     ADMIN_EMAILS: str = ""
 
     # ── Task 1.2: 邮件发送配置 ──
@@ -150,22 +150,22 @@ class Settings(BaseSettings):
     REACT_MAX_DURATION_SEC: float = 180
     # 同步分析路径（analyze_resume）LLM 调用上限
     ANALYZE_LLM_TIMEOUT: float = 90
-    # P2-6: 分析任务分布式锁 TTL（秒）。分析最多 4 类型 × ANALYZE_LLM_TIMEOUT(90s)
+    # 分析任务分布式锁 TTL（秒）。分析最多 4 类型 × ANALYZE_LLM_TIMEOUT(90s)
     # ≈ 360s，默认锁 TTL(120s) 会中途过期导致同 (user,resume) 并发二进分析。
     # 设 > 任务最大时长，杜绝锁过期竞态（重复烧 token）。
     ANALYZE_LOCK_TTL_SECONDS: int = 600
-    # P0-2: LLM 生成调用单次墙钟超时（秒）——经 with_retry 的 RetryBudget 落实
+    # LLM 生成调用单次墙钟超时（秒）——经 with_retry 的 RetryBudget 落实
     LLM_GENERATE_TIMEOUT: float = 60.0
-    # P1-4: Chat 主模型失败时的备用模型链（逗号分隔，如 "deepseek-v4,moonshot-v1-32k"）。
+    # Chat 主模型失败时的备用模型链（逗号分隔，如 "deepseek-v4,moonshot-v1-32k"）。
     # 主模型欠费/认证/网络失败（可重试类）时逐个尝试备用模型，最后兜底才报错。
     # 注意：备用模型需与 CHAT_BASE_URL/CHAT_API_KEY 兼容（同一 OpenAI 兼容端点）。
     CHAT_FALLBACK_MODELS: str = ""
-    # P0-4: 工具审批门模式。
-    #   "sse"（默认）: 仅存在 SSE 事件通道（emit 非 None）时拦截审批——测试/直接调用放行
-    #   "always": 无论是否 SSE，命中 requires_approval 的工具一律先过审批门（最安全，防 emit=None 绕过）
-    #   "off": 关闭审批门（不推荐，写库工具将直接执行）
+    # 工具审批门模式。
+    # "sse"（默认）: 仅存在 SSE 事件通道（emit 非 None）时拦截审批——测试/直接调用放行
+    # "always": 无论是否 SSE，命中 requires_approval 的工具一律先过审批门（最安全，防 emit=None 绕过）
+    # "off": 关闭审批门（不推荐，写库工具将直接执行）
     TOOL_APPROVAL_MODE: str = "sse"
-    # P0-2: LLM 上游熔断器参数（连续失败阈值 / OPEN→HALF_OPEN 恢复等待秒数）
+    # LLM 上游熔断器参数（连续失败阈值 / OPEN→HALF_OPEN 恢复等待秒数）
     LLM_BREAKER_FAILURE_THRESHOLD: int = 5
     LLM_BREAKER_RECOVERY_SECONDS: float = 30.0
     # LLM 失败落盘诊断目录（SmartResume 对照；空 = 关闭）
@@ -249,11 +249,11 @@ class Settings(BaseSettings):
         return v
 
 
-# P3-12: 包装 Settings() 实例化，捕获 ValidationError 给出友好中文提示
+# 包装 Settings() 实例化，捕获 ValidationError 给出友好中文提示
 # 原行为：pydantic 校验失败直接抛 ValidationError，错误信息含 traceback 但缺：
-#   - 当前 APP_ENV 对应哪个 .env 文件
-#   - 哪个字段缺失/不合法
-#   - 解决方向
+# - 当前 APP_ENV 对应哪个 .env 文件
+# - 哪个字段缺失/不合法
+# - 解决方向
 # 修复后：输出友好错误后重新抛出原始异常，保留 traceback 便于调试
 def _format_settings_error(e: ValidationError, app_env: str) -> str:
     """格式化 Settings 校验错误为友好中文提示。独立函数便于测试。"""

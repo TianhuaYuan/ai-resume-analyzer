@@ -4,7 +4,7 @@ Revision ID: 003_uq_resume_user_idempotency
 Revises: 002_add_resume_idempotency_key
 Create Date: 2026-07-24 22:00:00.000000
 
-P1-9: 给 resumes 表 (user_id, idempotency_key) 加 UNIQUE 约束，
+给 resumes 表 (user_id, idempotency_key) 加 UNIQUE 约束，
 让并发同 key 上传在 DB 层兜底（应用层短路检查 + DB 唯一约束双重防御）。
 
 注意：

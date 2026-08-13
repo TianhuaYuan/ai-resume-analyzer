@@ -1,11 +1,11 @@
-"""T14/T15: memory 装配 + L3 画像构建钩子。
+"""/T15: memory 装配 + L3 画像构建钩子。
 
 三层记忆架构：
 - L1 工作记忆：当前循环 messages，16k token 预算逐出（先丢最旧工具轮 → 再丢最旧对话轮）
 - L2 情景记忆：qa_history 取最近 10 条
 - L3 语义记忆：Redis 缓存的 summary+skills 紧凑画像（不调 get_full_analysis 四连发）
 
-L3 画像构建钩子（T15）：
+L3 画像构建钩子：
 - ready 转换共享点后台构建（上传 + builder 双路径）
 - 只调 summary + skills 两种分析类型（2 次 LLM，不调全量 4 种）
 - 不阻塞热路径，错误不外抛
@@ -16,7 +16,7 @@ L3 画像构建钩子（T15）：
 - 支持增量更新：多次压缩时叠加摘要而非重复生成
 - 降级路径：compact_l1_context 在无法压缩时回退到 manage_l1_context
 
-决策依据：spec A#11/#12, B 层四层记忆表。
+ 
 """
 
 import logging
@@ -47,7 +47,7 @@ DEFAULT_L2_LIMIT = 10
 def truncate_tool_result(text: str, max_chars: int | None = None) -> str:
     """截断工具结果到 ≤ max_chars 字符，超长部分用 ... 省略。
 
-    max_chars=None 时用动态预算（P1-5 工具结果预算管理：随上下文窗口自适应，
+    max_chars=None 时用动态预算（工具结果预算管理：随上下文窗口自适应，
     避免与 loop 层回灌截断口径不一致导致双重截断错乱）。
     """
     if not text:
@@ -324,9 +324,9 @@ class ContextCompactor:
         prompt = (
             "请将以下对话历史压缩为结构化摘要，保留关键信息。\n"
             "输出格式（Markdown）：\n"
-            "### 用户目标\n- 最近的用户意图（2-3 条）\n"
-            "### 已完成\n- 工具调用和结果摘要（3-5 条）\n"
-            "### 关键上下文\n- 重要结论和决策（2-3 条）\n\n"
+            "### 用户目标\n- 最近的用户意图\n"
+            "### 已完成\n- 工具调用和结果摘要\n"
+            "### 关键上下文\n- 重要结论和决策\n\n"
             f"对话历史：\n{messages_text}"
         )
 
@@ -547,7 +547,7 @@ async def get_l2_history(
 
     返回 [{"question": ..., "answer": ...}, ...]
 
-    ``exclude_questions``（P2-9）：已作为完整 user/assistant 轮次注入的消息问题集合。
+    ``exclude_questions``：已作为完整 user/assistant 轮次注入的消息问题集合。
     同一批历史若既以 L2 摘要（200 字截断）注入 system prompt、又以完整轮次注入
     messages，会 token 重复携带。此处过滤掉已完整注入的问答，仅保留其余历史摘要。
     """
@@ -688,7 +688,7 @@ async def assemble_system_prompt(
     """装配 system prompt：基础指令 + 当前简历上下文 + L3 画像 + L2 历史。
 
     Args:
-        builder: True 时用 builder 专属指令（允许按用户要求生成内容），
+        builder: True 时用 builder 专属指令，
                  False 用通用指令（QA 分析，禁止编造简历事实）。
 
     分段标记用 # 标题，便于 LLM 理解结构。
@@ -735,7 +735,7 @@ async def assemble_system_prompt(
             profile_parts.append(f"**技能**：{skills_text}")
         sections.append("\n".join(profile_parts))
 
-    # L2 历史（P2-9：排除已作为完整轮次注入的问答，避免同一历史双重携带）
+    # L2 历史
     l2_history = await get_l2_history(
         db, user_id, resume_id, exclude_questions=exclude_questions
     )
@@ -747,11 +747,11 @@ async def assemble_system_prompt(
             history_parts.append(f"   A: {qa['answer'][:200]}")
         sections.append("\n".join(history_parts))
 
-    # L4 长期语义记忆（T15）：按当前问题语义召回，注入 system prompt（跨会话一致性）。
+    # L4 长期语义记忆：按当前问题语义召回，注入 system prompt（跨会话一致性）。
     # A3 实体增强：recall_with_entity_boost 在语义召回基础上，命中实体时把该实体有效事实
-    # （resume_entity_facts，invalid_at IS NULL）RRF 融合进候选（借鉴 mem0 entity boost）。
-    # 性能护栏（T17 修复）：仅 QA 模式召回，编辑器 builder 流程不用「回忆偏好」。
-    # P2-3 修复：不再"查询 embedding 未缓存则跳过"——那会让进程重启后冷缓存下
+    # （resume_entity_facts，invalid_at IS NULL）RRF 融合进候选。
+    # 性能护栏：仅 QA 模式召回，编辑器 builder 流程不用「回忆偏好」。
+    # 修复：不再"查询 embedding 未缓存则跳过"——那会让进程重启后冷缓存下
     # 首轮交互永远拿不到长期记忆（功能被性能优化静默关闭）。recall_with_entity_boost
     # 内部 get_embeddings 本身有缓存，未缓存时补一次 API 往返（功能必需），失败静默
     # 降级为子串匹配，不阻塞主流程。
@@ -772,7 +772,7 @@ async def assemble_system_prompt(
         except Exception as e:
             logger.warning("L4 记忆召回失败（不影响主流程）: %s", e)
 
-    # T12: 工具路由引导（事实性整文直读，模糊/跨模块才检索）
+    # 工具路由引导（事实性整文直读，模糊/跨模块才检索）
     sections.append(
         "\n# 工具使用指南\n"
         "- 事实性/定向问题（毕业院校、技能清单、某段经历细节）→ 优先 get_resume_content 读实时简历内容\n"
@@ -790,7 +790,7 @@ async def assemble_system_prompt(
 
 
 # ═══════════════════════════════════════════════════════════════
-# T15: L3 画像构建钩子 — ready 转换共享点
+# L3 画像构建钩子 — ready 转换共享点
 # ═══════════════════════════════════════════════════════════════
 
 # L3 画像只需 summary + skills 两种（不调全量 4 种）

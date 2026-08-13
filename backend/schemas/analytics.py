@@ -1,4 +1,4 @@
-"""T37: 产品分析相关 Pydantic schema。"""
+"""产品分析相关 Pydantic schema。"""
 
 from datetime import datetime
 from typing import Any

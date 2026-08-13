@@ -11,7 +11,7 @@ from .config import settings
 def get_real_ip(request: Request) -> str:
     """限流 key 来源：只信 request.client.host，不读可伪造的代理头。
 
-    安全理由（P0-3）：直接读 X-Real-IP / X-Forwarded-For 会被客户端伪造头绕过限流。
+    安全理由：直接读 X-Real-IP / X-Forwarded-For 会被客户端伪造头绕过限流。
     真实 IP 的改写由 SimpleProxyHeadersMiddleware 完成——它只对可信来源
     （nginx 内网 CIDR / loopback，见 main.py trusted_hosts）信任代理头，
     并把结果写回 request.client.host。限流器位于该中间件之后执行，

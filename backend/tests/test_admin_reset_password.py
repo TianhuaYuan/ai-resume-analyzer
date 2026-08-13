@@ -1,4 +1,4 @@
-"""P1-23: 管理员重置密码功能测试。
+"""管理员重置密码功能测试。
 
 方案 A：管理员后台手动重置密码 API
 - POST /api/v1/auth/admin/reset-password

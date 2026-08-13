@@ -3,7 +3,7 @@
 使用 OrderedDict 实现 LRU 淘汰：每次访问/写入时 move_to_end，
 淘汰时删除最久未使用的条目。
 
-P2-2 修复：
+修复：
 - _resume_texts 的 value 从原始 text 改为 embedding_key，方便 O(1) 反查
 - 新增反向索引 _text_to_resume（embedding_key → resume_id），
   保证 LRU 淘汰 / clear_resume / text 重分配时能双向清理，避免内存泄漏

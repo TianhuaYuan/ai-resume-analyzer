@@ -1,6 +1,6 @@
 """工具注册表 — unified 21 工具（v2 合并 qa + builder，M2 加 search_jobs_live，A1 加 web_search，I3 加 negotiation_brief）。
 
-T11 创建骨架 + 注册表；T12/T13/T28 填充 _execute 实现。
+创建骨架 + 注册表；T12/T13/T28 填充 _execute 实现。
 v2 统一 Agent 编辑器：合并 qa(16) + builder(5) → unified(21)。
 M1 移除 recommend_jobs（静态爬虫岗位管线）；M2 以 search_jobs_live（实时搜索）替代。
 v2 A1 新增 web_search（博查联网搜索：面经/薪资/公司评价/招聘资讯）。
@@ -46,7 +46,7 @@ from services.react_agent.tools.base import Tool, ToolRetryError, format_validat
 from services.react_agent.tools.negotiation_brief import NegotiationBriefTool
 from services.react_agent.tools.search_corpus import SearchCorpusTool
 from services.react_agent.tools.search_jobs_live import SearchJobsLiveTool
-from services.react_agent.tools.spawn import SpawnTool  # P1-1 子代理委派
+from services.react_agent.tools.spawn import SpawnTool  # 子代理委派
 from services.react_agent.tools.web_search import WebSearchTool
 from services.resume_builder import get_resume_with_modules
 from services.resume_service import compare_resumes
@@ -169,7 +169,7 @@ class SearchResumeTool(Tool):
         if resume.status != "ready":
             return f"⚠️ 简历当前状态为 {resume.status}，暂不可检索。"
 
-        # T6 懒索引：首次检索 / 内容变更后触发重建
+        # 懒索引：首次检索 / 内容变更后触发重建
         await ensure_indexed(
             self.db,
             user_id=self.user_id,
@@ -186,7 +186,7 @@ class SearchResumeTool(Tool):
         if not reranked:
             return "未找到相关内容。"
 
-        # 填充结构化来源（Spec A#10: 用于 agent_done.sources 聚合去重）
+        # 填充结构化来源（ : 用于 agent_done.sources 聚合去重）
         self.sources = [
             {
                 "section": chunk.get("section", "未知"),
@@ -271,7 +271,7 @@ class SearchAssetsArgs(BaseModel):
 
 
 class SearchAssetsTool(Tool):
-    """T12：知识资产库检索（T7 每用户集合 + scope 过滤）。"""
+    """T12：知识资产库检索。"""
 
     name = "search_assets"
     description = "在知识资产库（可跨多份简历/JD/面试记录）中检索与查询语义相关的段落，返回 top5 结构化结果（含来源资产与版本）。"
@@ -322,7 +322,7 @@ class AnswerFromIndexArgs(BaseModel):
 
 
 class AnswerFromIndexTool(Tool):
-    """T12：agentic RAG 深度检索回答（T11 run_answer_from_index 入口）。"""
+    """T12：agentic RAG 深度检索回答。"""
 
     name = "answer_from_index"
     description = "对知识资产库进行深度检索回答（agentic RAG：改写→检索→重排→生成→反思）。适合复杂/跨模块/需要依据的问题。"
@@ -894,7 +894,7 @@ class CoverLetterArgs(BaseModel):
 class CoverLetterTool(Tool):
     """G 功能空白：针对岗位一键生成求职信/打招呼语。
 
-    借鉴 InterviewCoachTool 的文本生成模式（llm_generate 出自由文本），
+ 的文本生成模式（llm_generate 出自由文本），
     never-exceed 约束对齐 RewriteStarTool：「只基于简历实际经历，不编造」。
     """
 
@@ -1367,7 +1367,7 @@ async def _update_module_short_txn(
     from models.resume_module import ResumeModule
     from schemas.resume_module import validate_module_content
 
-    # 入口校验 content（T22 四方契约）——失败抛 ToolRetryError 走 A3 回灌自愈：
+    # 入口校验 content——失败抛 ToolRetryError 走 A3 回灌自愈：
     # loop 收到后标记坏调用并回灌结构化错误，LLM 补齐缺失/空字段后重试。
     from pydantic import ValidationError
 
@@ -2038,7 +2038,7 @@ TOOL_REGISTRY: dict[str, list[type[Tool]]] = {
         WebSearchTool,
         NegotiationBriefTool,  # I3: 谈薪简报（qa 16）
         SearchCorpusTool,  # B3: 公共语料检索（面经/题库/范文，qa 17）
-        SpawnTool,  # P1-1: 子代理委派（qa 18）
+        SpawnTool,  # 子代理委派（qa 18）
     ],
     "builder": [
         GenerateModuleTool,

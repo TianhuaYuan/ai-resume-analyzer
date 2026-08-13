@@ -1,4 +1,4 @@
-"""P1-8: /ask/stream 端点支持 mode=agentic 走 Agentic RAG 图。
+"""/ask/stream 端点支持 mode=agentic 走 Agentic RAG 图。
 
 原 bug：流式端点只走普通 RAG 流式路径，无法使用 Agentic RAG 的
 改写→检索→重排→生成→评估→反思完整管线。

@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 def _deduplicate_chunks(chunks: list[dict]) -> list[dict]:
-    """跨文档去重（T10）：同 (asset_id, chunk_index, 文本前缀) 视为同一来源。"""
+    """跨文档去重：同 (asset_id, chunk_index, 文本前缀) 视为同一来源。"""
     seen = set()
     unique = []
     for chunk in chunks:
@@ -27,7 +27,7 @@ def _deduplicate_chunks(chunks: list[dict]) -> list[dict]:
 
 async def search_node(state: AgenticRAGState) -> dict:
     query = state.get("rewritten_query") or state["question"]
-    # T10：按 scope（asset_type → asset_ids）检索知识资产库，默认只命中 is_latest
+    # 按 scope（asset_type → asset_ids）检索知识资产库，默认只命中 is_latest
     scope = state.get("scope") or {ASSET_TYPE_RESUME: [state["resume_id"]]}
     round_num = state.get("search_round", 0)
     supplement_queries = state.get("supplement_queries", [])

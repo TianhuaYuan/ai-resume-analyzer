@@ -38,7 +38,7 @@ FALLBACK_MESSAGE = "服务暂时不可用，请稍后重试。"
 
 
 # ═══════════════════════════════════════════════════════════
-# T10: llm_generate_with_tools — ReAct Agent 的 LLM 调用基座
+# llm_generate_with_tools — ReAct Agent 的 LLM 调用基座
 # 支持：tools（函数调用）/ thinking（推理链）/ include_usage / 流式 delta 解析
 # ═══════════════════════════════════════════════════════════
 
@@ -93,7 +93,7 @@ def _select_client_and_model(model: str | None) -> tuple:
 
 
 def _llm_retry_budget() -> RetryBudget:
-    """LLM 调用的重试预算（P0-2 接入项目已有 with_retry 体系）。
+    """LLM 调用的重试预算。
 
     语义对齐 core/retry 的默认分类策略：限流多重试、超时少重试、
     网络正常重试、编程错误不重试。timeout 经 asyncio.wait_for 落实
@@ -112,13 +112,13 @@ def _breaker_for_model(model: str | None):
 
 
 def _fallback_model_names() -> list[str]:
-    """P1-4: 解析 CHAT_FALLBACK_MODELS（逗号分隔）为备用模型名列表。"""
+    """ 解析 CHAT_FALLBACK_MODELS（逗号分隔）为备用模型名列表。"""
     raw = getattr(settings, "CHAT_FALLBACK_MODELS", "") or ""
     return [m.strip() for m in raw.split(",") if m.strip()]
 
 
 def _should_fallback_to_other_model(err: Exception) -> bool:
-    """P1-4: 判断错误是否值得切备用模型。
+    """ 判断错误是否值得切备用模型。
 
     可回退：认证/欠费、限流、网络、未知（上游不稳定）。
     不可回退：编程错误（TypeError/ValueError 等，重试无意义）、资源不存在。
@@ -155,7 +155,7 @@ async def _call_completion_with_retry(
     *,
     model: str | None,
 ) -> Any:
-    """带重试 + 熔断 + 模型 fallback 链的 LLM 完成调用（P0-2 + P1-4）。
+    """带重试 + 熔断 + 模型 fallback 链的 LLM 完成调用。
 
     1. 主模型经 with_retry（Full Jitter 退避 + 错误分类 + 失败落盘诊断）调用。
     2. 主模型重试耗尽且错误为「可回退类」（欠费/认证/网络/限流/超时/未知）时，
@@ -400,7 +400,7 @@ async def llm_generate_with_tools_stream(
         scenario=scenario,
         stream=True,
     )
-    # P0-2：流创建阶段接入重试 + 熔断（尚未产出 chunk，重试安全）。
+    # 流创建阶段接入重试 + 熔断（尚未产出 chunk，重试安全）。
     # 流中途断流由调用方现有墙钟超时/降级兜底。
     stream = await _call_completion_with_retry(client, kwargs, model=model)
 
@@ -535,7 +535,7 @@ async def llm_generate(
         thinking_effort=thinking_effort,
         scenario=scenario,
     )
-    # P0-2：接入 with_retry（Full Jitter + 错误分类）+ 熔断器。
+    # 接入 with_retry（Full Jitter + 错误分类）+ 熔断器。
     # max_retries=1 提供一次重试保护；调用方若另有 with_retry 包裹（如
     # rewrite_query），外层仍会兜底，不构成有害的双重重试（内层先耗尽）。
     # 注意：必须用 _create_coroutine 包装——SDK bound method 在 Python 3.14 下
@@ -550,7 +550,7 @@ async def llm_generate(
         breaker=get_chat_breaker(),
     )
 
-    # T3: 统一记账（只记成功）
+    # 统一记账（只记成功）
     if user_id is not None and hasattr(response, "usage") and response.usage:
         pt = getattr(response.usage, "prompt_tokens", 0) or 0
         ct = getattr(response.usage, "completion_tokens", 0) or 0
@@ -576,7 +576,7 @@ async def _llm_generate_stream(
         user_id: 传入时，收到 usage 后记录 LLM usage。
     """
     client = get_chat_client()
-    # P0-2：流创建阶段接入重试 + 熔断（未产出 chunk，重试安全）。
+    # 流创建阶段接入重试 + 熔断（未产出 chunk，重试安全）。
     kwargs = _build_llm_kwargs(
         model_name=settings.CHAT_MODEL,
         messages=[
@@ -601,7 +601,7 @@ async def _llm_generate_stream(
         if hasattr(chunk, "usage") and chunk.usage:
             pt = getattr(chunk.usage, "prompt_tokens", 0) or 0
             ct = getattr(chunk.usage, "completion_tokens", 0) or 0
-            # T3: 流式 usage 记账
+            # 流式 usage 记账
             if user_id is not None:
                 await record_llm_usage(user_id, pt, ct, model=settings.CHAT_MODEL, scenario=scenario)
             yield {
@@ -706,7 +706,7 @@ async def ask_question_stream(resume_id: int, question: str, user_id: int | None
 
 
 async def clear_resume_vectors(user_id: int, resume_id: int) -> None:
-    """删该简历的向量分块 + 清 BM25 内存缓存（T7 每用户集合内按 asset_id 删除）。
+    """删该简历的向量分块 + 清 BM25 内存缓存。
 
     不整集合删除：同用户的 resume/jd 等资产共用一个 knowledge_{user_id} 集合，
     只删本资产的分块，避免误删其他资产。

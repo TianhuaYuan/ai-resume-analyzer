@@ -268,7 +268,7 @@ async def update_scorecard(
 async def build_review_summary(db: AsyncSession, user_id: int) -> dict:
     """复盘汇总：高频薄弱点 + 训练推荐（最弱优先）+ 历史面试趋势。
 
-    对照 DeepInterview run_coach_plan：weak_competencies → 学习模块，最弱优先。
+ run_coach_plan：weak_competencies → 学习模块，最弱优先。
     只读 created_at + scorecard 两列（避免拉取 transcript 大字段）。
     """
     result = await db.execute(

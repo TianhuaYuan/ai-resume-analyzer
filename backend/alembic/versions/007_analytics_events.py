@@ -4,7 +4,7 @@ Revision ID: 007_analytics_events
 Revises: 006_qa_conversations
 Create Date: 2026-08-01 07:00:00.000000
 
-T37: 产品分析事件表（models/analytics_event.py 一直无对应 migration，
+产品分析事件表（models/analytics_event.py 一直无对应 migration，
 导致 /api/v1/track/events 写入报 500「事件写入失败」）。
 """
 from typing import Sequence, Union

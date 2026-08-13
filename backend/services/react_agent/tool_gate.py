@@ -1,4 +1,4 @@
-"""agent 工具闸门（T17 优化②）。
+"""agent 工具闸门。
 
 - 问候/感谢快路径：零 LLM、零工具，模板直接回复（agent1 与 builder 通用）
 - 工具相关性过滤（保守启用）：按关键词裁剪传入 ReAct 的 tool schemas，

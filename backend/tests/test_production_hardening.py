@@ -10,7 +10,7 @@ from core.config import settings
 
 
 # ── 3.1 / 3.3 安全响应头（HSTS / Permissions-Policy + 基础防护头）──
-# P2-5: CSP 已迁移到 nginx，后端不再下发 Content-Security-Policy 头
+# CSP 已迁移到 nginx，后端不再下发 Content-Security-Policy 头
 async def test_security_headers_present(client: AsyncClient):
     resp = await client.get("/")  # / 是 health 路由，中间件对全部响应生效
     h = resp.headers
@@ -22,7 +22,7 @@ async def test_security_headers_present(client: AsyncClient):
 
 
 async def test_csp_header_migrated_to_nginx(client: AsyncClient):
-    """P2-5: 后端不再下发 CSP 头，由 nginx 统一管理。"""
+    """ 后端不再下发 CSP 头，由 nginx 统一管理。"""
     resp = await client.get("/")
     assert "Content-Security-Policy" not in resp.headers, (
         "CSP 应迁移到 nginx，后端不应再下发 Content-Security-Policy 头"

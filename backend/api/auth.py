@@ -68,7 +68,7 @@ async def register(
     if not await verify_code(data.email, data.verification_code):
         raise HTTPException(status_code=400, detail="验证码无效或已过期")
     user = await register_user(db, data)
-    # T37: 漏斗埋点（best-effort，失败不影响注册主流程）
+    # 漏斗埋点（best-effort，失败不影响注册主流程）
     await record_event(db, user.id, "user.register", source=data.source)
     return user
 
@@ -140,7 +140,7 @@ async def refresh(
 ):
     """刷新 token。用 refresh_token 换新的 access_token 对。
 
-    P0-4：提取旧 access token 的 jti，传入 refresh_token 函数撤销。
+    提取旧 access token 的 jti，传入 refresh_token 函数撤销。
     """
     # 提取旧 access token 的 jti
     access_token = extract_token_from_request(request)
@@ -174,7 +174,7 @@ async def logout(request: Request, response: Response):
         if payload is not None:
             await revoke_token(payload.get("jti"))
 
-    # 同时撤销 refresh token（P0-3 修复）
+    # 同时撤销 refresh token
     refresh_token_str = request.cookies.get(settings.REFRESH_COOKIE_NAME)
     if refresh_token_str:
         refresh_payload = decode_token(refresh_token_str)

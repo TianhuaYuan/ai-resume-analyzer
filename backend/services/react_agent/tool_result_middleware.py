@@ -1,4 +1,4 @@
-"""工具结果中间件 — 链式处理工具执行结果（借鉴 OpenClaw ToolResultMiddleware）。
+"""工具结果中间件 — 链式处理工具执行结果。
 
 与 tool_hooks 的分工：
 - tool_hooks：**执行前后**拦截（before: 审批/参数重写；after: 覆盖结果/终止循环）

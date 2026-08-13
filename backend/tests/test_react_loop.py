@@ -1,4 +1,4 @@
-"""T21: ReAct 循环集成测试。
+"""ReAct 循环集成测试。
 
 补充 T16 单元测试未覆盖的场景：
 1. token 入账：多轮 LLM 调用的 usage 累加正确
@@ -587,7 +587,7 @@ class TestHistoryParameter:
 
 
 # ═══════════════════════════════════════════════════════════════
-# 7. MAX_ROUNDS 读 config + 每轮 quota 复查（Spec A#5/A#6 对齐）
+# 7. MAX_ROUNDS 读 config + 每轮 quota 复查（ /A#6 对齐）
 # ═══════════════════════════════════════════════════════════════
 
 
@@ -647,7 +647,7 @@ class TestMaxRoundsAndPerRoundQuota:
 
 
 # ═══════════════════════════════════════════════════════════════
-# 8. 工具并行执行（Spec A#21/A#32 对齐）
+# 8. 工具并行执行（ /A#32 对齐）
 # ═══════════════════════════════════════════════════════════════
 
 
@@ -835,7 +835,7 @@ class TestParallelToolExecution:
 
 
 # ═══════════════════════════════════════════════════════════════
-# 9. agent_thought + usage 事件分拣（Spec A#7/A#28 对齐）
+# 9. agent_thought + usage 事件分拣（ /A#28 对齐）
 # ═══════════════════════════════════════════════════════════════
 
 
@@ -1015,7 +1015,7 @@ class TestAgentThoughtAndUsageEvents:
 
 
 # ═══════════════════════════════════════════════════════════════
-# 10. sources 聚合（Spec A#10: search_resume 来源去重进 done.sources）
+# 10. sources 聚合（ : search_resume 来源去重进 done.sources）
 # ═══════════════════════════════════════════════════════════════
 
 
@@ -1362,7 +1362,7 @@ class TestDbTraceCapture:
 
 
 class TestBuilderModeWiring:
-    """tool_mode='builder' 时统一工具集 schema 传给流式 LLM（T17 重构后经 get_tools_for_agent 装配）。"""
+    """tool_mode='builder' 时统一工具集 schema 传给流式 LLM。"""
 
     @pytest.mark.asyncio
     async def test_builder_mode_passes_builder_schemas_to_llm(self):

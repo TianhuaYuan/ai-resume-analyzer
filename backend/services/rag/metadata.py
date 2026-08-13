@@ -4,7 +4,7 @@
 - 字段名跨实现稳定（Qdrant/Milvus 同样支持 dict metadata，字段名不绑 Chroma）
 - 避免业务代码手拼字符串字段名造成漂移
 - 为 T5 版本化（version / is_latest）与 T7 每用户集合（user_id / asset_id）预埋字段，
-  本次仅写入、读取路径不动（T2 收缩方案）。
+  本次仅写入、读取路径不动。
 """
 
 from typing import Any
@@ -15,7 +15,7 @@ META_ASSET_TYPE = "asset_type"
 META_ASSET_ID = "asset_id"
 META_VERSION = "version"
 META_IS_LATEST = "is_latest"
-# T8：索引时快照的 content_hash，兜底校验 chunk 是否与当前内容一致
+# 索引时快照的 content_hash，兜底校验 chunk 是否与当前内容一致
 META_CONTENT_HASH = "content_hash"
 META_CHUNK_INDEX = "chunk_index"
 META_SECTION = "section"

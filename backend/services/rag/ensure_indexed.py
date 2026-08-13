@@ -1,4 +1,4 @@
-"""懒索引入口（T6, D3 草稿工作区隔离 + 懒索引 + D2 版本化快照；T8 兜底）。
+"""懒索引入口。
 
 脏标记：``content_hash != indexed_hash`` → 索引过期。
 
@@ -6,7 +6,7 @@
 与 complete 预热共用。并发经 per-asset 分布式锁去重（Redis）；
 重建失败保留旧索引（``indexed_hash`` 不更新），调用方用 ``is_stale`` 声明降级。
 
-T8 兜底：脏标记干净不代表向量库有数据（崩溃在 commit 与索引之间、或手动删库）。
+兜底：脏标记干净不代表向量库有数据（崩溃在 commit 与索引之间、或手动删库）。
 ``_is_ready`` 额外校验 collection 确有该资产最新 chunks，缺失则强制重建。
 """
 
@@ -44,7 +44,7 @@ async def _load_asset(
     """加载资产行 + 源文本；不存在返回 (None, "")。
 
     简历源文本优先最新模块（resume_modules 表 = 草稿编辑态实时同步）：
-    草稿保存（T6 设计）不更新 parsed_text/content_hash，若只读 parsed_text
+    草稿保存不更新 parsed_text/content_hash，若只读 parsed_text
     会在用户编辑后检索到旧内容（「检索的简历不是最新的」根因）。
     modules 为空才用 parsed_text。
     """
@@ -65,7 +65,7 @@ async def _load_asset(
 
 
 async def _is_ready(row: object, text: str, collection: str, asset_id: int) -> bool:
-    """索引就绪判定（T8 兜底）：源文本 hash == indexed_hash AND collection 确有该资产最新 chunks。
+    """索引就绪判定：源文本 hash == indexed_hash AND collection 确有该资产最新 chunks。
 
     用源文本（modules 合并文本）的 hash 而非 row.content_hash 判定：
     content_hash 只随 complete 更新，草稿编辑后不反映 modules 变化，用它判定

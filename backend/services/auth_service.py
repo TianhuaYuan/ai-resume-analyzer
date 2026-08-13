@@ -66,7 +66,7 @@ async def refresh_token(db: AsyncSession, token_str: str, access_token_jti: str 
     """用 refresh_token 换新 token 对。过期或 type 非 refresh→401。
 
     SEC-005：已被撤销的 refresh token（如其他端登出/改密后）直接拒。
-    P0-4：同时撤销旧 access token，防止旧 token 在剩余有效期内被使用。
+    同时撤销旧 access token，防止旧 token 在剩余有效期内被使用。
     """
     payload = decode_token(token_str)
     if payload is None or payload.get("type") != "refresh":
@@ -115,7 +115,7 @@ async def refresh_token(db: AsyncSession, token_str: str, access_token_jti: str 
     # 撤销旧 refresh token（TTL 对齐 refresh 生命周期，防 30 分钟后撤销失效可复用）
     await revoke_token(payload.get("jti"), expire_seconds=settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400)
 
-    # P0-4：撤销旧 access token
+    # 撤销旧 access token
     if access_token_jti:
         await revoke_token(access_token_jti)
 

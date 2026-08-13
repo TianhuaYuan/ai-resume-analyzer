@@ -20,7 +20,7 @@ class WebSocketManager:
         self._connections: dict[int, set[WebSocket]] = {}
 
     def try_connect(self, user_id: int, websocket: WebSocket) -> bool:
-        """尝试注册连接；超上限返回 False（P2-8 DoS 防护）。
+        """尝试注册连接；超上限返回 False。
 
         Args:
             user_id: 用户 ID

@@ -4,7 +4,7 @@ Revision ID: 008_knowledge_asset_idx
 Revises: 007_analytics_events
 Create Date: 2026-08-02
 
-T3 (D2 版本化快照 + 资产模型)：
+(D2 版本化快照 + 资产模型)：
 - resumes 增加 content_hash / indexed_hash（脏标记：content_hash != indexed_hash → 索引过期）
 - 新增 knowledge_assets 通用表承载 jd/interview/note 资产
 

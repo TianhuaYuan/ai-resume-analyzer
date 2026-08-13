@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 # 所有 Chroma 操作必须通过 with_chroma 串行化。
 _chroma_lock = asyncio.Lock()
 
-# 熔断器：按外部依赖独立实例化（P0-2 接入 ReAct LLM 基座）。
+# 熔断器：按外部依赖独立实例化。
 # - chat 熔断：Chat 主模型 + 传统 RAG 生成共用（同一上游 API）
 # - judge 熔断：JUDGE_MODEL 快速推理独立上游（独立 key/base_url）
 # 连续失败阈值/recovery 来自 settings（缺省 5 次/30s，与 circuit_breaker 默认一致）。
@@ -133,7 +133,7 @@ def reconnect_chroma():
 
 
 def knowledge_collection_name(user_id: int) -> str:
-    """每用户知识资产集合名（T7, D1）。
+    """每用户知识资产集合名。
 
     一个用户的所有资产（resume/jd/interview/note）共用一个集合，
     内部按 metadata（asset_id/version/is_latest）过滤，支持跨资产单查询。

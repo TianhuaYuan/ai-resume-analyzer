@@ -1,4 +1,4 @@
-"""P3-11: 验证错误返回完整列表测试。
+"""验证错误返回完整列表测试。
 
 原行为：RequestValidationError 仅返回第一个错误，前端只能展示 1 个字段错误。
 修复后：返回完整 details 列表，前端可逐字段渲染错误提示。
@@ -50,7 +50,7 @@ def test_single_field_error_returns_details():
 
 
 def test_multiple_field_errors_returns_full_list():
-    """P3-11 核心：多字段错误 → details 含全部错误，message 取第一条（向后兼容）。"""
+    """ 核心：多字段错误 → details 含全部错误，message 取第一条（向后兼容）。"""
     app = _build_app()
     client = TestClient(app)
 

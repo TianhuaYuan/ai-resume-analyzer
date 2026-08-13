@@ -1,4 +1,4 @@
-"""L4 向量语义记忆存储（T15, D8）。
+"""L4 向量语义记忆存储。
 
 - 集合：``memory_{user_id}``（每用户一个，entry 粒度）
 - 一条记忆 = 一个 entry，``id = sha256(内容)`` 前 32 位 → upsert 幂等（同内容不重复）
@@ -6,7 +6,7 @@
 - 写：save_memory；读：recall_memory（语义召回 + metadata 过滤 + 分数阈值）
 - 无 chunk 污染问题：entry 粒度天然稳定，upsert 即覆盖
 
-T16 的合并/衰减/过期在此基础上扩展（last_accessed_at / importance / ttl）。
+的合并/衰减/过期在此基础上扩展（last_accessed_at / importance / ttl）。
 """
 
 import hashlib
@@ -31,14 +31,14 @@ MEM_CREATED_AT = "created_at"
 MEM_LAST_ACCESSED = "last_accessed_at"
 MEM_TTL = "ttl"
 MEM_EXPIRED = "expired"  # A3: 失效标记（true=过期/被推翻，默认召回隐藏）
-MEM_PROJECT = "project"  # P2-13: 项目作用域标记（跨项目不串扰）
+MEM_PROJECT = "project"  # 项目作用域标记（跨项目不串扰）
 
 # 默认记忆层级：L4 全部归 episodic（原始情节），L3 画像为压缩后的 semantic
 DEFAULT_TIER = "episodic"
 DEFAULT_IMPORTANCE = 0.5
 # 召回分数阈值：低于视为噪声
 DEFAULT_RECALL_THRESHOLD = 0.5
-# F2 三信号召回（mem0 借鉴）加性融合权重（总和=1.0）：向量 / 实体命中 / BM25。
+# F2 三信号召回加性融合权重（总和=1.0）：向量 / 实体命中 / BM25。
 # 权重为可调常量：调高 W_BM25 强化关键词命中，调高 W_VECTOR 强化语义泛化。
 # entity 与 vector 对等：query 明确命中实体名是强意图锚点，应能压过不相关的向量噪声。
 W_VECTOR = 0.4
@@ -71,7 +71,7 @@ async def save_memory(
         memory_type: episodic（原始情节）/ semantic（提炼后的语义事实）。
         importance: 重要度 0-1。
         ttl: 过期秒数（None = 永久；T16 衰减据此）。
-        project: 项目作用域标记（P2-13，借鉴 OpenClaw 项目作用域记忆）。
+        project: 项目作用域标记。
             同一记忆只归属一个项目；召回时按项目过滤/加权，跨项目不串扰。
     """
     snippet = (snippet or "").strip()
@@ -93,7 +93,7 @@ async def save_memory(
     if ttl:
         meta[MEM_TTL] = int(ttl)
     if project:
-        meta[MEM_PROJECT] = project  # P2-13: 项目作用域标记
+        meta[MEM_PROJECT] = project  # 项目作用域标记
 
     await get_vector_store().upsert(
         _collection(user_id),
@@ -118,10 +118,10 @@ async def recall_memory(
 ) -> list[dict]:
     """按语义召回用户记忆片段（按用户隔离 + 分数阈值过滤）。
 
-    A3 失效不删除（借鉴 mem0 expiration 隐藏 + graphiti invalid_at 保留历史）：
+    A3 失效不删除（ 隐藏 + graphiti invalid_at 保留历史）：
     默认过滤 expired 标记的记忆；show_expired=True 可见全部（审计/回溯）。
 
-    P2-13 项目作用域（借鉴 OpenClaw）：
+    项目作用域：
     - project 传入时：只召回该项目标记的记忆（跨项目不串扰）
     - active_project 传入时：活跃项目记忆加权 1.5x，非活跃项目 0.8x，
       无项目标记保持中性 1.0x（活跃项目信号更强，不活跃项目降噪）
@@ -159,7 +159,7 @@ async def recall_memory(
 
 
 # ═══════════════════════════════════════════════════════════════
-# F2 三信号召回（mem0 借鉴）：向量 / 实体 / BM25 加性融合
+# F2 三信号召回：向量 / 实体 / BM25 加性融合
 # ═══════════════════════════════════════════════════════════════
 
 
@@ -207,7 +207,7 @@ def fuse_three_signals(
     w_entity: float = W_ENTITY,
     w_bm25: float = W_BM25,
 ) -> list[dict]:
-    """三信号加性融合（mem0 借鉴），返回新 dict 列表（含 score + score_details），按融合分降序。
+    """三信号加性融合，返回新 dict 列表（含 score + score_details），按融合分降序。
 
     信号取值约定（同一 [0,1] 量纲，权重才可解释）：
     - ``vector``：embedding 余弦相似度原值（clamp 0-1，来自 recall_memory）

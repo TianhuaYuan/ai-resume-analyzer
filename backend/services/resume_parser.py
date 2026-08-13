@@ -1,8 +1,8 @@
-"""T27: 简历文本反解析 — LLM 将纯文本解析为结构化模块。
+"""简历文本反解析 — LLM 将纯文本解析为结构化模块。
 
 职责：
 - parse_text_to_modules: 调 LLM 将简历文本解析为 [{module_type, content, sort_order}] 列表
-- pydantic 校验每个模块 content（T22 validate_module_content）
+- pydantic 校验每个模块 content
 - 格式错误回灌 1 次重试（将错误信息拼入 prompt 让 LLM 修正）
 
 设计依据：
@@ -137,7 +137,7 @@ _SYSTEM_PROMPT = """你是一个专业的简历解析助手。你的任务是将
 - 日期格式统一为 "YYYY-MM"
 - 如果某个字段在简历中没有提到，不要编造，直接省略
 
-【长文本字段优化（A2，借鉴 SmartResume 索引指针机制）】
+【长文本字段优化】
 输入文本每行带 [行号] 前缀（如 "[3] 负责xx系统的开发"）。
 对于长文本字段（description / achievements 的元素 / summary / content），
 优先省略完整原文，只引用原文行号区间，格式：{"lines": [开始行, 结束行]}。
@@ -376,7 +376,7 @@ def _extract_json_from_response(response: str) -> list[dict]:
 
 
 # ═══════════════════════════════════════════════════════════
-# A2 深化：规范化流水线（借鉴 alibaba/SmartResume data_processor.py）
+# A2 深化：规范化流水线
 # ═══════════════════════════════════════════════════════════
 
 # 日期格式：YYYY年M月 / YYYY.M / YYYY-MM → YYYY-MM
@@ -425,7 +425,7 @@ def _normalize_text_field(value, field_key: str):
 
 
 def _normalize_modules(raw_modules: list[dict]) -> list[dict]:
-    """规范化 LLM 输出（A2 深化，借鉴 SmartResume 规范化阶段）。
+    """规范化 LLM 输出。
 
     在 pydantic 校验前原地规范化 content 中的日期（"2024年9月" → "2024-09"）
     与邮箱（OCR 混淆纠错），避免非标准格式污染后续评分/JD 匹配。
@@ -593,7 +593,7 @@ def _enrich_basic_info(
 
 
 def verify_fields_in_original_text(modules: list[dict], original_lines: list[str]) -> list[dict]:
-    """A2 深化：字段级溯源验证（借鉴 SmartResume _validate_fields_in_text）。
+    """A2 深化：字段级溯源验证（ _validate_fields_in_text）。
 
     对会进入用户表单的事实字段做规范化包含检查。解析是结构提取而非生成：
     除日期规范化外，字符串必须能在原文中定位，否则标记 provenance="missing"，
@@ -765,7 +765,7 @@ async def parse_text_to_modules(
 
     流程：
     1. 调 LLM 解析文本 → JSON 数组
-    2. 逐模块 pydantic 校验（T22 validate_module_content）
+    2. 逐模块 pydantic 校验
     3. 校验失败 → 回灌错误信息重试 1 次
     4. 重试后仍失败 → 抛异常
 

@@ -1,4 +1,4 @@
-"""P2-11: Agentic Graph 集成测试 — 降 mock 策略。
+"""Agentic Graph 集成测试 — 降 mock 策略。
 
 与 test_agentic_graph.py 的区别：
 - test_agentic_graph.py：mock 每个节点的入口函数（rewrite/generate/evaluate）

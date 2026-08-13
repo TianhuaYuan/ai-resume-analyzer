@@ -115,7 +115,7 @@ async def release_lock(
 
 
 # ─────────────────────────────────────────────────────────────
-# T6：索引分布式锁（按 user_id + asset_type + asset_id 粒度）
+# 索引分布式锁（按 user_id + asset_type + asset_id 粒度）
 # 防止同一资产多个请求同时触发懒重建。
 # ─────────────────────────────────────────────────────────────
 
@@ -164,7 +164,7 @@ async def acquire_index_lock(
     asset_id: int,
     ttl_seconds: int = DEFAULT_LOCK_TTL,
 ) -> Optional[str]:
-    """按 (user_id, asset_type, asset_id) 获取索引分布式锁（T6）。"""
+    """按 (user_id, asset_type, asset_id) 获取索引分布式锁。"""
     return await _acquire_lock_key(
         f"{INDEX_LOCK_PREFIX}{user_id}:{asset_type}:{asset_id}", ttl_seconds
     )

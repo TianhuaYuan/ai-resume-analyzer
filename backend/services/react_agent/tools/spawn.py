@@ -1,4 +1,4 @@
-"""P1-1: spawn — 子代理/多 agent 委派工具。
+"""spawn — 子代理/多 agent 委派工具。
 
 在主 agent 的回合内，把独立子任务委派给一个"子代理"执行并返回结果。
 子代理是一个轻量 ReAct 循环：携带只读工具子集（不含 spawn，防递归），
@@ -55,7 +55,7 @@ class SpawnArgs(BaseModel):
 
 
 class SpawnTool(Tool):
-    """P1-1: 委派子任务给子代理执行并返回结果（只读，多 agent 协作）。"""
+    """ 委派子任务给子代理执行并返回结果（只读，多 agent 协作）。"""
 
     name = "spawn"
     description = (

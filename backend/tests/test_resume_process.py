@@ -1,4 +1,4 @@
-"""P2-7: process_resume_background 成功路径测试。
+"""process_resume_background 成功路径测试。
 
 已有的 test_background_task_safety.py 只测失败路径（异常 / 信息泄露 / 二次 commit 失败），
 这里补成功路径：解析成功 → 分块 → 向量化 → 状态变 ready。

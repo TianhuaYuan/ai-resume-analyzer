@@ -1,4 +1,4 @@
-"""T28: 编辑锁服务 — Redis 分布式锁 + TTL 2min + 心跳续期。
+"""编辑锁服务 — Redis 分布式锁 + TTL 2min + 心跳续期。
 
 职责：
 - acquire_edit_lock: 获取简历编辑锁（SET NX EX，互斥）

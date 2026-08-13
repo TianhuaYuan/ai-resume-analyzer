@@ -99,7 +99,7 @@ def _enrich_source(s: dict) -> dict:
 async def _run_agentic_rag(user_id: int, resume_id: int, question: str) -> tuple[str, list[dict], list[dict]]:
     """跑 Agentic RAG 图，返回 (answer, sources, tool_errors)。
 
-    收敛到 run_answer_from_index（T11 统一入口，单简历 = scope 只含该简历）。
+    收敛到 run_answer_from_index。
     - sources: 生成节点抽出的 per-asset 来源列表
     - tool_errors: 检索/重排子步骤中累加的失败记录；非空即「部分降级」
     """
@@ -123,10 +123,10 @@ async def ask_question(
 ):
     """对简历提问。走 Agentic RAG 图（改写→检索→重排→生成→评估），
     若检索/重排存在失败则置 degraded，让前端提示『答案基于部分信息』。"""
-    #用户问题进模型前先过注入安检
+    # 用户问题进模型前先过注入安检
     _guard_question(data.question)
     await resume_service.get_resume(db, data.resume_id, current_user.id)
-    # T6 懒索引：首次问答触发重建（脏标记 content_hash != indexed_hash）
+    # 懒索引：首次问答触发重建（脏标记 content_hash != indexed_hash）
     await ensure_indexed(
         db,
         user_id=current_user.id,
@@ -188,7 +188,7 @@ async def ask_question_stream(
     """
     _guard_question(data.question)
     await resume_service.get_resume(db, data.resume_id, current_user.id)
-    # T6 懒索引：首次问答触发重建（脏标记 content_hash != indexed_hash）
+    # 懒索引：首次问答触发重建（脏标记 content_hash != indexed_hash）
     await ensure_indexed(
         db,
         user_id=current_user.id,
@@ -350,7 +350,7 @@ async def ask_agent(
     _guard_question(data.question)
     await resume_service.get_resume(db, data.resume_id, current_user.id)
 
-    # T19: 如果带 compare_ids，注入到问题上下文供 Agent 的 compare_resumes 工具使用
+    # 如果带 compare_ids，注入到问题上下文供 Agent 的 compare_resumes 工具使用
     effective_question = data.question
     if data.compare_ids:
         ids_str = ", ".join(str(i) for i in data.compare_ids)
@@ -419,7 +419,7 @@ async def ask_agent(
 
 
 class InjectRequest(BaseModel):
-    """P1-2: 回合中追加消息请求体。"""
+    """ 回合中追加消息请求体。"""
 
     content: str = Field(..., min_length=1, max_length=500, description="追加给当前回合的消息")
     conversation_id: int | None = None  # 不传则注入默认流（同 ask/agent 语义）
@@ -434,7 +434,7 @@ async def inject_into_active_turn(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """P1-2: 把追加消息注入当前活跃的 agent 回合（若正在运行）。
+    """ 把追加消息注入当前活跃的 agent 回合（若正在运行）。
 
     用户在 agent 思考期间发送的追问/补充会并入当前回合的下一轮 LLM 调用，
     而非排队到回合结束后才处理。若当前无活跃回合（未运行 /ask/agent），
@@ -490,7 +490,7 @@ async def get_history(
     可选 conversation_id 参数：只查指定对话的问答。
     空字符串或 None → 不过滤。
 
-    P1-16: limit/offset 加上限校验，防止恶意大请求拉取全量数据。
+    limit/offset 加上限校验，防止恶意大请求拉取全量数据。
     """
     await resume_service.get_resume(db, resume_id, current_user.id)
     items, total = await qa_service.get_history(

@@ -91,8 +91,8 @@ async def process_analyze_task(payload: dict) -> None:
 
     lock_id = None
     try:
-        # 1. 获取分布式锁（P2-6：TTL 显式设 > 任务最大时长，防锁中途过期
-        #    导致同 (user,resume) 并发二进分析）
+        # 1. 获取分布式锁（TTL 显式设 > 任务最大时长，防锁中途过期
+        # 导致同 (user,resume) 并发二进分析）
         lock_id = await acquire_lock(
             user_id, resume_id, ttl_seconds=settings.ANALYZE_LOCK_TTL_SECONDS
         )
@@ -136,7 +136,7 @@ async def process_analyze_task(payload: dict) -> None:
 
         async with async_session() as db:
             # 5. 批量分析 4 种类型（per-type 隔离：DeepInterview _guarded 对照——
-            #    单类型失败 drop 记日志，绝不因一个类型毁掉整批已成功的工作）
+            # 单类型失败 drop 记日志，绝不因一个类型毁掉整批已成功的工作）
             results = {}
             total_tokens = 0
             failed_types: list[str] = []

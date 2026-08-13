@@ -1,4 +1,4 @@
-"""授权门控系统 — 工具执行权限控制（借鉴 Hermes _authorization_gate_lock_timeout）。
+"""授权门控系统 — 工具执行权限控制（ _authorization_gate_lock_timeout）。
 
 与 D1 审批门的分工：
 - 审批门（base.py _approval_gate_active）：**逐次**确认——每次工具调用前弹窗让用户批准/拒绝

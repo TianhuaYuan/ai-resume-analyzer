@@ -1,4 +1,4 @@
-"""P1-9: 上传幂等并发竞态测试。
+"""上传幂等并发竞态测试。
 
 验证 (user_id, idempotency_key) UNIQUE 约束 + IntegrityError 兜底逻辑：
 当应用层短路检查被并发请求同时通过时，DB 唯一约束让第二个 commit 失败，

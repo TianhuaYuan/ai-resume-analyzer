@@ -1,4 +1,4 @@
-"""T37: 产品分析 API。
+"""产品分析 API。
 
 - POST /analytics/events    记录产品事件（登录用户，30/min 限流防滥用）
 - GET  /analytics/events    管理员查询事件列表

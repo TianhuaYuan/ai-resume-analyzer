@@ -1,4 +1,4 @@
-"""P2-9: 简历删除级联测试。
+"""简历删除级联测试。
 
 验证 delete_resume 完整执行四层清理：
 1. MySQL：resume 行删除后，qa_history 通过外键 CASCADE 自动清理

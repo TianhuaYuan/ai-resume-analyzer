@@ -205,7 +205,7 @@ def _normalize_text(text: str) -> str:
 def detect_prompt_injection(text: str) -> tuple[bool, str | None]:
     """检测文本是否含提示注入话术。返回 (是否可疑, 命中原因)。
     
-    P3-1 增强：支持 URL 编码、Unicode 同形字、零宽字符绕过检测。
+    增强：支持 URL 编码、Unicode 同形字、零宽字符绕过检测。
     """
     if not text:
         return False, None

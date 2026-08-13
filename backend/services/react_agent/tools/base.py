@@ -1,13 +1,13 @@
 """Tool 基类 — Agent 工具的统一接口。
 
-T11 实现：
+实现：
 - db / user_id 构造器注入
 - args pydantic 校验（execute 入口）
 - 注入检测（detect_prompt_injection 对文本参数）
 - 归属校验（resume_id(s) 归属当前 user）
 - OpenAI function calling schema 生成
 
-A3 工具契约化（借鉴 pydantic-ai 的 ModelRetry/ToolFailed 双通道）：
+A3 工具契约化（ 的 ModelRetry/ToolFailed 双通道）：
 - ToolRetryError：可重试错误（参数格式错/暂时不可用）→ loop 累计坏调用，LLM 可修复重试
 - ToolFailed：终端失败（业务确定性失败，如简历不存在/无权访问）→ loop 不累计坏调用
 - args 校验失败格式化为逐字段错误回灌（替代 str(e) 黑盒，模型可自愈）
@@ -53,7 +53,7 @@ def normalize_tool_result(result, *, tool_name: str) -> str:
 
 
 class ToolRetryError(Exception):
-    """工具可重试错误（A3，借鉴 pydantic-ai ModelRetry）。
+    """工具可重试错误。
 
     语义：参数格式错误 / 资源暂时不可用——LLM 收到结构化错误后可修复参数重试，
     loop 会累计该工具的失败次数（per-tool 重试预算）。
@@ -61,7 +61,7 @@ class ToolRetryError(Exception):
 
 
 class ToolFailed(Exception):
-    """工具终端失败（A3，借鉴 pydantic-ai ToolFailed）。
+    """工具终端失败。
 
     语义：业务确定性失败（简历不存在/无权访问/草稿未就绪）——重试也不会成功，
     loop 不累计坏调用；错误文本回灌给 LLM 让其换路径。
@@ -69,7 +69,7 @@ class ToolFailed(Exception):
 
 
 class ApprovalRequired:
-    """工具执行被审批门拦截的特殊结果（D1，借鉴 pydantic-ai Deferred tools）。
+    """工具执行被审批门拦截的特殊结果。
 
     命中 ``requires_approval`` 的工具在 ``execute()`` 中不实际执行，返回本对象：
     - 携带待审批信息（工具名 + 参数 + 摘要），由 react_agent.loop 发射
@@ -77,7 +77,7 @@ class ApprovalRequired:
     - 用户批准后 loop 调用 ``mark_approval_granted()`` 重新执行；拒绝则把
       「用户拒绝」文本回灌 LLM（不累计坏调用，区别于 ToolRetryError / ToolFailed）
 
-    severity（审批增强，借鉴 OpenClaw 严重度分级）：
+    severity：
     - info：信息性工具调用，前端仅提示（可自动允许）
     - warning（默认）：写库/外部请求，需要用户确认
     - critical：高风险操作（如批量修改/删除），需要确认 + 审计日志
@@ -98,7 +98,7 @@ class ApprovalRequired:
 def format_validation_error(e: ValidationError) -> str:
     """把 pydantic ValidationError 压缩为逐字段错误文本（A3 契约化回灌）。
 
-    借鉴 pydantic-ai _format_error_details：逐字段输出 loc + type + msg，
+ _format_error_details：逐字段输出 loc + type + msg，
     让 LLM 能精确定位哪个参数错了、怎么改。
     """
     lines = []
@@ -118,10 +118,10 @@ _APPROVAL_REQUIRED: dict[str, bool] = {
     "rewrite_star": True,       # STAR 改写（写库）
     "translate": True,          # 翻译重写（写库）
     "search_jobs_live": True,   # 实时联网搜索（外部请求）
-    "web_search": True,         # P0-4：通用联网搜索同为外部请求，与 search_jobs_live 口径一致
+    "web_search": True,         # 通用联网搜索同为外部请求，与 search_jobs_live 口径一致
 }
 
-# 审批严重度集中映射（审批增强，借鉴 OpenClaw severity 分级）：
+# 审批严重度集中映射：
 # 与 _APPROVAL_REQUIRED 同口径，标注每个需审批工具的风险等级。
 # critical = 高风险（批量/破坏性写库），warning = 常规写库/外部请求，info = 低风险提示。
 _APPROVAL_SEVERITY: dict[str, str] = {
@@ -159,11 +159,11 @@ class Tool(ABC):
     args_model: type[BaseModel]
     category: str = ""
 
-    # D1 审批门（借鉴 pydantic-ai Deferred tools）：命中 requires_approval 的工具
+    # D1 审批门：命中 requires_approval 的工具
     # 执行前需用户确认。子类可直接置 True，或通过下方集中映射 _APPROVAL_REQUIRED
     # 按工具名命中（优先用映射，避免逐个改 tools/ 下子类文件与阶段 1 冲突）。
     requires_approval: bool = False
-    # 审批严重度（审批增强，借鉴 OpenClaw）："info" | "warning" | "critical"
+    # 审批严重度："info" | "warning" | "critical"
     # 子类可覆盖；未设置时按 _APPROVAL_SEVERITY 集中映射兜底，再默认 "warning"。
     approval_severity: str = ""
 
@@ -178,7 +178,7 @@ class Tool(ABC):
         # 可选事件回调：工具内部 LLM 流式 token 经此推给前端（tool_stream 事件）。
         # 由 react_agent.loop 在实例化工具时注入；缺省为 None（工具退化为非流式内部 LLM）。
         self.emit = emit
-        self.sources: list[dict] = []  # 侧信道：工具执行后可填充结构化来源（Spec A#10）
+        self.sources: list[dict] = []  # 侧信道：工具执行后可填充结构化来源（ ）
         self.last_usage: dict = {"prompt_tokens": 0, "completion_tokens": 0}  # 工具内部 LLM 调用的 token 消耗
 
     @abstractmethod
@@ -217,12 +217,12 @@ class Tool(ABC):
                     return f"⚠️ 检测到潜在提示注入（{reason}），请提供正常的内容。"
 
         # 2.5 D1 审批拦截钩子：命中 requires_approval 的工具不实际执行。
-        #     参数已校验；返回 ApprovalRequired 携带待审批信息，由 loop 走审批门。
-        #     拦截条件由 TOOL_APPROVAL_MODE 控制（P0-4）：
-        #     - "sse"（默认）：仅存在前端通道（emit 非 None）时拦截；
-        #        emit=None（测试/直接调用/无前端）退化为直接执行（旧行为）
-        #     - "always"：无论是否有 emit 一律拦截——杜绝 emit=None 静默绕过
-        #     - "off"：不拦截（不推荐，写库工具将直接执行）
+        # 参数已校验；返回 ApprovalRequired 携带待审批信息，由 loop 走审批门。
+        # 拦截条件由 TOOL_APPROVAL_MODE 控制：
+        # - "sse"（默认）：仅存在前端通道（emit 非 None）时拦截；
+        # emit=None（测试/直接调用/无前端）退化为直接执行（旧行为）
+        # - "always"：无论是否有 emit 一律拦截——杜绝 emit=None 静默绕过
+        # - "off"：不拦截（不推荐，写库工具将直接执行）
         if (
             self._approval_gate_active()
             and not getattr(self, "_approval_granted", False)
@@ -242,7 +242,7 @@ class Tool(ABC):
                     raise ToolFailed(f"简历 {rid} 不存在或无权访问，请先确认简历 ID。")
 
         # 4. 执行（子类可抛 ToolRetryError / ToolFailed 表达业务语义）
-        # P2-10：执行前清空侧信道，避免上一轮残留（工具异常提前返回时，
+        # 执行前清空侧信道，避免上一轮残留（工具异常提前返回时，
         # loop 读到的是本轮空 sources 而非上一轮值）。
         self.sources = []
         self.last_usage = {"prompt_tokens": 0, "completion_tokens": 0}
@@ -265,7 +265,7 @@ class Tool(ABC):
         return sev if sev in ("info", "warning", "critical") else "warning"
 
     def _approval_gate_active(self) -> bool:
-        """D1（P0-4）: 审批门在当前模式下是否拦截。
+        """D1: 审批门在当前模式下是否拦截。
 
         - mode=="off" 恒 False（关闭审批）
         - mode=="always" 恒等于 is_approval_required()（无论 emit 有无都拦）

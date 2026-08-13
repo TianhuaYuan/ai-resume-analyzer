@@ -1,4 +1,4 @@
-"""P3-12: config.py Settings 启动崩溃友好提示测试。
+"""config.py Settings 启动崩溃友好提示测试。
 
 原行为：pydantic 校验失败抛 ValidationError，错误信息缺：
 - 当前 APP_ENV 对应哪个 .env 文件

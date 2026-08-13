@@ -1,4 +1,4 @@
-"""MCP Tool: get_asset — 按 (asset_type, asset_id) 读取资产源文本（T13）。
+"""MCP Tool: get_asset — 按 (asset_type, asset_id) 读取资产源文本。
 
 供 Agent 整文直读（绕过检索）与版本浏览前置取文本。强制 scope 归属校验。
 """
@@ -49,7 +49,7 @@ async def get_asset(
     except (ValueError, TypeError):
         return [TextContent(type="text", text=f'{{"error": "Invalid asset_id: {asset_id}"}}')]
 
-    # SEC-003（T13）：资产必须归属当前用户，越权 403。
+    # SEC-003：资产必须归属当前用户，越权 403。
     try:
         await assert_user_owns_assets(user_id, {asset_type: [asset_id_int]})
     except HTTPException as e:

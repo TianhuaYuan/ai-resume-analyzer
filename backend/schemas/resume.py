@@ -15,7 +15,7 @@ class ResumeResponse(BaseModel):
     status_message: str
     created_at: datetime
     updated_at: datetime
-    # T17：索引新鲜度（脏标记 content_hash != indexed_hash → 需要懒重建）
+    # 索引新鲜度（脏标记 content_hash != indexed_hash → 需要懒重建）
     content_hash: str | None = None
     indexed_hash: str | None = None
     is_indexed: bool = False
@@ -194,7 +194,7 @@ class ChunksResponse(BaseModel):
 
 
 class MatchJDRequest(BaseModel):
-    # P1-17: schema 层长度校验，防止空文本和恶意超长输入撑爆 LLM token
+    # schema 层长度校验，防止空文本和恶意超长输入撑爆 LLM token
     # service 层的 strip() 校验仍保留，拦截纯空格字符串（如 "   "）
     jd_text: str = Field(..., min_length=1, max_length=5000, description="JD 文本，1-5000 字符")
 

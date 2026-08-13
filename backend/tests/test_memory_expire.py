@@ -1,4 +1,4 @@
-"""A3 记忆增强测试（借鉴 mem0 expiration 隐藏 + graphiti 失效不删除）。
+"""A3 记忆增强测试（ 隐藏 + graphiti 失效不删除）。
 
 覆盖：
 - expire_memory → update_metadata 标记 expired，不删除

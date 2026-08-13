@@ -1,6 +1,6 @@
-"""记忆合并/衰减（T16, D8 遗忘机制）。
+"""记忆合并/衰减。
 
-A3 失效不删除（借鉴 mem0 expiration 隐藏 + graphiti invalid_at 保留历史）：
+A3 失效不删除（ 隐藏 + graphiti invalid_at 保留历史）：
 - 过期标记：``last_accessed_at + ttl < now`` → 标记 expired=true（默认召回隐藏，
   数据保留供回溯；同内容重新保存自动复活）——不再物理删除
 - 语义去重合并：两条记忆相似度超过阈值 → 保留重要度高的，删除另一条

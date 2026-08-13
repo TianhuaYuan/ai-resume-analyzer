@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-08-06",
+  "description": "评分权重 / 角色评估 / JD fit / 6-block 报告的可编辑配置。改此文件热重载（按 mtime），无需改代码。参考 JobMcp modes/rubric.md 的热重载思路。",
+  "score_bands": {
+    "excellent": 85,
+    "good": 70,
+    "medium": 50
+  },
+  "score_dimensions": {
+    "ats_match": 0.35,
+    "keyword_coverage": 0.25,
+    "skill_density": 0.20,
+    "overall": 0.20
+  },
+  "roles": {
+    "peer": {
+      "weight": 0.35,
+      "label": "同级别评估",
+      "description": "与候选人同级别的工程师/同事视角：技术深度、协作与执行力的同级感知"
+    },
+    "lead": {
+      "weight": 0.35,
+      "label": "团队负责人评估",
+      "description": "团队负责人/主管视角：产出影响力、领导力、成长潜力与晋升依据"
+    },
+    "hrbp": {
+      "weight": 0.30,
+      "label": "HRBP 评估",
+      "description": "HR 视角：文化契合、稳定性、软技能与沟通表达"
+    }
+  },
+  "jd_fit_dims": {
+    "technical": 0.35,
+    "experience": 0.30,
+    "behavioral": 0.20,
+    "career": 0.15
+  },
+  "jd_report_blocks": [
+    { "key": "role_summary", "label": "角色摘要", "enabled": true },
+    { "key": "cv_match", "label": "CV 匹配表", "enabled": true },
+    { "key": "level_strategy", "label": "级别策略", "enabled": true },
+    { "key": "comp_market", "label": "薪酬市场", "enabled": true },
+    { "key": "personalization_plan", "label": "个性化计划", "enabled": true },
+    { "key": "interview_stories", "label": "面试故事映射", "enabled": true },
+    { "key": "job_credibility", "label": "岗位可信度防坑", "enabled": true }
+  ]
+}

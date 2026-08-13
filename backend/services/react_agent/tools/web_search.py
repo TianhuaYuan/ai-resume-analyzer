@@ -208,7 +208,7 @@ class WebSearchTool(Tool):
         return results
 
     def _render(self, items: list[dict], query: str, site: str = "", degraded_site: bool = False) -> str:
-        # 侧信道：结构化来源供 agent_done.sources 聚合（Spec A#10）
+        # 侧信道：结构化来源供 agent_done.sources 聚合（ ）
         self.sources = [
             {"title": it["title"], "url": it["url"], "text": it.get("snippet", "")}
             for it in items

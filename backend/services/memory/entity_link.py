@@ -1,4 +1,4 @@
-"""A3 实体链接服务（借鉴 third_party/mem0 + graphiti，用户要求实施前参看源码）。
+"""A3 实体链接服务。
 
 三表：``resume_entities`` / ``resume_entity_facts`` / ``resume_episodes``（见 models/resume_entity.py）
 
@@ -17,7 +17,7 @@
    索引）。写入前检测同实体同属性值明确矛盾且仍有效的旧事实（graphiti invalid_at 双时态）→ 置
    ``invalid_at`` 并同步失效其 L4 记忆；只对明确矛盾的值生效，不误伤补充性事实（新增技能）
 4. **recall boost（F2 三信号）**：query 命中实体（子串/语义双通道）→ 该实体有效事实
-   （``invalid_at IS NULL``）与语义召回记忆做 向量 / 实体 / BM25 三信号加性融合（mem0 借鉴，
+   （``invalid_at IS NULL``）与语义召回记忆做 向量 / 实体 / BM25 三信号加性融合（ ，
    权重默认 0.4/0.4/0.2），输出 ``score_details`` 供前端/调试 explain
 """
 
@@ -383,7 +383,7 @@ def _fact_norm(fact_text: str) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════
-# F1 矛盾型时序失效（graphiti invalid_at 双时态借鉴）
+# F1 矛盾型时序失效
 # ═══════════════════════════════════════════════════════════════
 # 单值谓词：同一时刻一个值，值变化即矛盾（如职业/求职意向/所在城市）
 _SINGLE_VALUE_PREDICATES = frozenset(
@@ -830,7 +830,7 @@ async def recall_with_entity_boost(
     query: str,
     top_k: int = 5,
 ) -> list[dict]:
-    """语义召回 + 实体链接增强（F2 三信号加性融合，mem0 借鉴）。
+    """语义召回 + 实体链接增强。
 
     三信号：
     - **vector**：recall_memory 的 embedding 余弦相似度原值（clamp 0-1）

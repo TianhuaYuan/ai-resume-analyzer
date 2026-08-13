@@ -1,4 +1,4 @@
-"""T8 provider profile contract tests."""
+"""provider profile contract tests."""
 
 from core.config import settings
 from services.rag.pipeline import _build_llm_kwargs

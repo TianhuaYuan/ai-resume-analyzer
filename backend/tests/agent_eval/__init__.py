@@ -1,7 +1,7 @@
 """A3 Agent 评估框架（黄金任务 + 状态哈希 + pass^k）。
 
-借鉴 third_party/tau-bench（黄金指令/动作/输出三元组 + pass^k 超几何公式）与
-pydantic-ai TestModel（脚本化假模型驱动 + 工具调用序列断言，用户要求实施前参看源码）。
+（黄金指令/动作/输出三元组 + pass^k 超几何公式）与
+pydantic-ai TestModel 设计对齐。
 
 设计要点：
 - 确定性：mock LLM 按脚本驱动 agent 轨迹，无真实 LLM 调用 → CI 稳定可回归

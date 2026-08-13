@@ -1,4 +1,4 @@
-"""T34: 管理员后台相关 Pydantic schema。"""
+"""管理员后台相关 Pydantic schema。"""
 
 from datetime import datetime
 from typing import Any

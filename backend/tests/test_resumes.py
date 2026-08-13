@@ -70,7 +70,7 @@ async def test_list_resumes_empty(client: AsyncClient, auth_headers: dict):
     assert data["total"] == 0
 
 
-# ── P1-16: 分页参数校验 ──────────────────────────────
+# ── 分页参数校验 ──────────────────────────────
 
 
 @pytest.mark.asyncio

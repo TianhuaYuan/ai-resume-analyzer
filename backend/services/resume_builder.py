@@ -1,4 +1,4 @@
-"""T23+T24: resume_builder 新建 / 草稿 / 保存并完成。
+"""+T24: resume_builder 新建 / 草稿 / 保存并完成。
 
 职责：
 - POST /resumes/builder → 创建 source=builder, status=draft 简历 + 初始模块
@@ -213,7 +213,7 @@ async def create_builder_resume(
 
     流程：
     1. 确定模块列表：请求带 modules 用传入的；否则预置 4 个核心默认模块
-    2. 校验每个模块 content（T22 validate_module_content）
+    2. 校验每个模块 content
     3. 创建 Resume 行（source=builder, status=draft, parsed_text=""）
     4. 批量插入 ResumeModule
 
@@ -281,7 +281,7 @@ async def copy_resume_as_new(
 ) -> tuple[Resume, list[ResumeModule]]:
     """复制一份简历为新草稿记录（含全部模块），用于多语言版本管理等。
 
-    借鉴 Magic-Resume createVersion 的「整份快照」思路，但存为**独立新简历**
+ 的「整份快照」思路，但存为**独立新简历**
     而非覆盖原稿——保证一份简历可同时保有中文/英文等多个语言版本。
     新副本 status=draft、version=1、content_hash/indexed_hash 为空（独立懒索引）。
 
@@ -673,7 +673,7 @@ async def update_resume_draft(
             db.add(module)
             new_modules.append(module)
 
-    # T6 (D3 草稿工作区隔离)：草稿保存不更新 content_hash（parsed_text 未变 → 检索内容未变），
+    # (D3 草稿工作区隔离)：草稿保存不更新 content_hash（parsed_text 未变 → 检索内容未变），
     # 不置脏也不触发索引；内容变更发生在 complete（重新合并 parsed_text 后统一算 hash）。
 
     # version 不变（last-write-wins）
@@ -1052,7 +1052,7 @@ async def complete_resume(
             db.add(module)
             current_modules.append(module)
 
-    # 4.5 派生字段增强（SmartResume 对照）：公司/校名清洗 + 工作年限/最高学历推导（缺失时补）
+    # 4.5 派生字段增强：公司/校名清洗 + 工作年限/最高学历推导（缺失时补）
     try:
         _enrich_derived_fields(current_modules)
     except Exception as e:

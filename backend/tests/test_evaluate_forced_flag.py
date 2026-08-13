@@ -1,4 +1,4 @@
-"""P1-12: evaluate_node 假分数应标记 eval_forced。
+"""evaluate_node 假分数应标记 eval_forced。
 
 原 bug：达到 max_retries 时返回 0.5 假分数，但无法与真实 0.5 分区分。
 下游无法判断「评估真的打了 0.5 分」还是「没评估直接放行」。

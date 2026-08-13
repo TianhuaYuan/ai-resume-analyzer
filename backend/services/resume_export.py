@@ -1,4 +1,4 @@
-"""T26: 简历导出服务 — PDF + Markdown + 零模块守卫。
+"""简历导出服务 — PDF + Markdown + 零模块守卫。
 
 职责：
 - export_resume_pdf: 用 WeasyPrint 将 render_resume HTML → PDF bytes

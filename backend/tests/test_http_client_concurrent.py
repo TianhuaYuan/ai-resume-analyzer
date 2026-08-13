@@ -1,4 +1,4 @@
-"""P1-11: _get_http_client 并发安全测试。
+"""_get_http_client 并发安全测试。
 
 原 bug: check-then-act 模式在多协程下可能创建多个 httpx 客户端实例。
 修复: 加 asyncio.Lock 保证单例。

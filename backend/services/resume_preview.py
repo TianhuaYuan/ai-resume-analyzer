@@ -1,4 +1,4 @@
-"""T27: 简历预览服务 — content hash 缓存 + 零模块守卫。
+"""简历预览服务 — content hash 缓存 + 零模块守卫。
 
 职责：
 - get_resume_preview: 获取简历 + 模块 → 计算内容 hash → 缓存命中则返回缓存 HTML，

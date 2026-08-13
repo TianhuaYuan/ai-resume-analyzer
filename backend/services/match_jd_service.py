@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 _SYSTEM_PROMPT = (
     "你是一个专业的招聘分析师。请将以下简历内容与职位描述（JD）进行对比分析。\n\n"
     "请按以下格式输出：\n"
-    "## 匹配分数\n（0-100 分，整数）\n\n"
+    "## 匹配分数\n\n\n"
     "## 匹配点\n（列出简历中与 JD 要求匹配的技能、经验和经历）\n\n"
     "## 差距分析\n（列出 JD 要求但简历中缺失或不足的技能/经验）\n\n"
     "## 改进建议\n（针对差距给出具体可执行的改进建议）"
@@ -119,7 +119,7 @@ def _clamp_score(value) -> int:
 
 
 def _parse_fit_dims(data: dict) -> dict[str, int]:
-    """解析四维分数（0-100 夹紧）。缺维 → 该维 0（整体不参与）。"""
+    """解析四维分数。缺维 → 该维 0（整体不参与）。"""
     dims_raw = data.get("dims")
     dims: dict[str, int] = {}
     if isinstance(dims_raw, dict):

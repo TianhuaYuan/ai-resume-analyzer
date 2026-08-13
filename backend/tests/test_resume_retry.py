@@ -1,12 +1,12 @@
 """
-P1-13：后台处理无容错 — 进程崩溃后简历永久卡 processing。
-P1-24：简历处理失败后无法手动重试。
+后台处理无容错 — 进程崩溃后简历永久卡 processing。
+简历处理失败后无法手动重试。
 
 验证点：
-P1-13:
+
   - 启动时检测到 status=processing 的简历应标记为 failed（因后台任务已丢失）
 
-P1-24:
+
   - POST /resumes/{id}/retry 对 failed 简历应重新触发处理
   - POST /resumes/{id}/retry 对 ready 简历应返回 409
   - POST /resumes/{id}/retry 对 processing 简历应返回 409
@@ -62,7 +62,7 @@ async def _insert_resume(
         return resume.id
 
 
-# ── P1-13：启动恢复 ──────────────────────────────────────
+# ── 启动恢复 ──────────────────────────────────────
 
 
 @pytest.mark.asyncio
@@ -113,7 +113,7 @@ async def test_recover_stuck_resumes_does_not_touch_failed():
         assert resume.status == "failed"
 
 
-# ── P1-24：手动重试 ──────────────────────────────────────
+# ── 手动重试 ──────────────────────────────────────
 
 
 @pytest.mark.asyncio

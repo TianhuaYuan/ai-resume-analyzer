@@ -112,7 +112,7 @@ class ChromaAdapter:
             coll = get_chroma_client().get_or_create_collection(
                 name=collection, metadata={"hnsw:space": "cosine"}
             )
-            # P2-4：用 upsert 而非 add——契约要求"同 id 覆盖"（ports.py），
+            # 用 upsert 而非 add——契约要求"同 id 覆盖"（ports.py），
             # memory_store 也承诺 hash id 幂等。add 对已存在 id 抛
             # DuplicateIDError，save_memory 同内容重复调用/同版本索引失败重试会踩雷。
             coll.upsert(

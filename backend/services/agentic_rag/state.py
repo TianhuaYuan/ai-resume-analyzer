@@ -3,12 +3,12 @@ from typing import TypedDict
 
 class AgenticRAGState(TypedDict):
     question: str
-    resume_id: int  # legacy：单简历模式（T9 过渡期保留）
+    resume_id: int  # legacy：单简历模式
     user_id: int
-    # T9 泛化：检索 scope（asset_type → asset_ids）+ 过滤条件（默认 version=latest）
+    # 泛化：检索 scope（asset_type → asset_ids）+ 过滤条件（默认 version=latest）
     scope: dict[str, list[int]]
     filters: dict
-    # T10 反思：识别"当前 scope 缺哪类资产"时写入，供图扩展 scope 或返回 agent
+    # 反思：识别"当前 scope 缺哪类资产"时写入，供图扩展 scope 或返回 agent
     scope_expansion: list[str]
     rewritten_query: str
     route_decision: str  # "search" | "direct_answer"
@@ -27,7 +27,7 @@ class AgenticRAGState(TypedDict):
     # 下游可据此区分「真实 0.5 分」和「没评估直接放行」。
     eval_forced: bool
     reflection_result: str
-    # D2 失败分类定向恢复（借鉴 tau-bench）：反思节点判定的失败类型 + 归因，
+    # D2 失败分类定向恢复：反思节点判定的失败类型 + 归因，
     # 写入 state（LangGraph channel）供追踪/下游读取；侧信道另供 react_agent.loop 使用。
     fault_type: str
     fault_assignment: str

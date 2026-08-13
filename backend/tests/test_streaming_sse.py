@@ -1,4 +1,4 @@
-"""T4: SSE 协议字段对齐测试（Spec SSE 事件协议）。
+"""SSE 协议字段对齐测试（Spec SSE 事件协议）。
 
 验证 streaming.py 产出的事件符合 Spec：
 agent_start    {type, resume_id, tools:[{name,description}...]}

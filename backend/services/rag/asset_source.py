@@ -1,4 +1,4 @@
-"""资产源文本解析（T3）。
+"""资产源文本解析。
 
 检索/索引/整文直读统一按 (asset_type, asset_id) 取源，不关心实体存哪张表：
 - asset_type == "resume"   → resumes.parsed_text（复用现有表，D3）

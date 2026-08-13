@@ -6,10 +6,10 @@
 各函数与 SmartResume 原始实现的对应：
 - derive_work_years      ← _calculate_work_years（L736-766：跳过实习 → 最早工作起始年，回退最新毕业年）
 - derive_highest_education ← _extract_highest_education（L795-844：最近 startDate 优先 + 学历优先级表）
-- extract_age            ← _extract_age_number（L409-428：16-99 校验）
-- extract_gpa            ← _extract_gpa_number（L430-451：取最小数、0-5 校验）
-- clean_company_name     ← _clean_company_name（L372-384：重复后缀折叠）
-- clean_school_name      ← _clean_school_name（L386-396：去括号）
+- extract_age            ← _extract_age_number
+- extract_gpa            ← _extract_gpa_number
+- clean_company_name     ← _clean_company_name
+- clean_school_name      ← _clean_school_name
 """
 
 import re

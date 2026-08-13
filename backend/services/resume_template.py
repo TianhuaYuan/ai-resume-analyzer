@@ -1,4 +1,4 @@
-"""T25: 简历模板注册/渲染 + CSS 变量服务端预解析。
+"""简历模板注册/渲染 + CSS 变量服务端预解析。
 
 职责：
 - 从 backend/templates/ 加载 3 套 HTML 模板（default/minimal/business）

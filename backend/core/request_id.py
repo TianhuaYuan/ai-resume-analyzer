@@ -18,7 +18,7 @@ def get_request_id() -> str:
 
 class RequestIDMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-        # P2-7：优先复用 Trace 中间件已生成的 trace_id（中间件反序包裹，Trace 在
+        # 优先复用 Trace 中间件已生成的 trace_id（中间件反序包裹，Trace 在
         # 外层先执行）。客户端不带 X-Request-ID 时，若各自 uuid4() 会产生
         # request_id != trace_id，破坏全链路对账。以 trace_id 为权威源，
         # request_id 跟随，二者恒一致。

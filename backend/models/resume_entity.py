@@ -1,6 +1,6 @@
 """A3 实体链接三表：简历实体 / 实体事实 / 来源情节。
 
-机制参考（third_party/graphiti + mem0，用户硬性要求实施前参看源码）：
+机制参考：
 - **graphiti 双时态**：fact 永不物理删除，矛盾/失效只标 ``invalid_at``（业务失效时间）
   + ``expired_at``（系统发现时间），查询一律 ``WHERE invalid_at IS NULL`` 取当前有效事实
 - **graphiti 消解**：``name_normalized`` 精确匹配快路径 → 低可信（短名/模糊）升级 LLM 兜底判定；

@@ -1,4 +1,4 @@
-"""P2-6: SSE 流式端点 API 级测试。
+"""SSE 流式端点 API 级测试。
 
 覆盖 /api/v1/qa/ask/stream 的成功/错误/认证/注入检测等场景。
 不测底层 RAG 管道（已在 test_stream_bug.py / test_rag_service.py 覆盖），

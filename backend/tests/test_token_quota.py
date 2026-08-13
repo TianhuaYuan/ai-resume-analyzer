@@ -41,7 +41,7 @@ class TestGetTodayKey:
         assert len(key.split(":")) == 3
         # 日期部分应该是 YYYY-MM-DD 格式
         date_part = key.split(":")[-1]
-        assert len(date_part) == 10  # 2026-07-29
+        assert len(date_part) == 10  # -29
         assert date_part.count("-") == 2
 
 

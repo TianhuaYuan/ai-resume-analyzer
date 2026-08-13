@@ -248,7 +248,7 @@ async def test_rewrite_query_tool_fallback():
 
 @pytest.mark.asyncio
 async def test_search_ownership_denied():
-    """search_knowledge_base：scope 越权 → 错误（T13 泛化后走 assert_user_owns_assets）。"""
+    """search_knowledge_base：scope 越权 → 错误。"""
     from fastapi import HTTPException
     from mcp_server.tools.search import search_knowledge_base
 

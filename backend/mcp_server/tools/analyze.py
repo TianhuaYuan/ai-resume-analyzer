@@ -111,14 +111,14 @@ async def analyze_asset(
     except (ValueError, TypeError):
         return [TextContent(type="text", text=f'{{"error": "Invalid asset_id: {asset_id}"}}')]
 
-    # SEC-003（T13）：资产必须归属当前用户，越权 403。
+    # SEC-003：资产必须归属当前用户，越权 403。
     try:
         await assert_user_owns_assets(user_id, {asset_type: [asset_id_int]})
     except HTTPException as e:
         return [TextContent(type="text", text=json.dumps({"error": e.detail}, ensure_ascii=False))]
 
     if asset_type != ASSET_TYPE_RESUME:
-        # T13 泛化方向：analyze_service 目前只支持 resume（LLM prompt / 缓存都按 resume 键）。
+        # 泛化方向：analyze_service 目前只支持 resume（LLM prompt / 缓存都按 resume 键）。
         # 泛化需把 _ANALYSIS_PROMPTS / 分析缓存从 resume_id 键改为 (asset_type, asset_id) 键。
         return [
             TextContent(
@@ -127,7 +127,7 @@ async def analyze_asset(
                     {
                         "error": (
                             f"analysis for asset_type='{asset_type}' is not supported yet; "
-                            "currently only 'resume' is supported (T13 generalization pending)"
+                            "currently only 'resume' is supported "
                         )
                     },
                     ensure_ascii=False,

@@ -1,4 +1,4 @@
-"""assets.py — 知识资产 CRUD API（T3, D2 脏标记模式 + 懒索引触发）。
+"""assets.py — 知识资产 CRUD API。
 
 JD / 面试记录 / 笔记三类求职知识资产的增删改查：
 - 创建/更新写 ``content_hash = sha256(content)`` 启用脏标记（D2），

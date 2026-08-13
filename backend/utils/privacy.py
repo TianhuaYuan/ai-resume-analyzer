@@ -25,7 +25,7 @@ from typing import Any
 # Sensitive field definitions
 # ---------------------------------------------------------------------------
 
-#: Fields that are sensitive and should never be sent to LLMs.
+# : Fields that are sensitive and should never be sent to LLMs.
 SENSITIVE_FIELDS: set[str] = {
     "name",
     "phone",
@@ -36,8 +36,8 @@ SENSITIVE_FIELDS: set[str] = {
     "contact",
 }
 
-#: Chinese display labels for sensitive fields.
-#: ``None`` means the field should be completely removed rather than replaced.
+# : Chinese display labels for sensitive fields.
+# : ``None`` means the field should be completely removed rather than replaced.
 SENSITIVE_LABELS: dict[str, str | None] = {
     "name": "[姓名]",
     "phone": "[手机号]",

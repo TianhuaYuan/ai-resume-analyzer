@@ -1,4 +1,4 @@
-"""通用知识资产表（T3）。
+"""通用知识资产表。
 
 承载 resume 之外的求职知识资产：JD、面试记录、笔记等。
 与 resumes 表遵循同一套"内容哈希 + 索引哈希"脏标记模式（D2），
@@ -42,7 +42,7 @@ class KnowledgeAsset(Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     # 资产源文本（唯一内容载体，索引与整文直读都从这里取）
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    # T3 (D2)：脏标记模式，同 resumes
+    # (D2)：脏标记模式，同 resumes
     content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     indexed_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # 草稿中间态：is_draft=True 只进工作区，不触发索引（D3）
@@ -52,7 +52,7 @@ class KnowledgeAsset(Base):
     # 手动新建的 note 资产为 NULL；来源相同则归档幂等（upsert 覆盖）。
     source_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
     source_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # T6：向量索引版本号（单调递增，独立于 document version）
+    # 向量索引版本号（单调递增，独立于 document version）
     index_version: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

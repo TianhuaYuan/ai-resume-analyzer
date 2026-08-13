@@ -40,29 +40,29 @@ LONG_SECTION_RESUME = """
 
 
 MD_RESUME = """
-## 个人信息
+# # 个人信息
 姓名：张三 | 邮箱: zhangsan@email.com
 
-## 教育背景
+# # 教育背景
 2018-2022  清华大学  计算机科学与技术  本科
 GPA 3.8/4.0，英语六级 528
 
-## Work Experience
+# # Work Experience
 2022-2024  ByteDance  Software Engineer
 Responsible for order fulfillment system development.
 
-## 专业技能
+# # 专业技能
 精通 Python、Java、FastAPI、Spring Boot
 
-## Projects
+# # Projects
 - Online Exam System: Spring Boot + Redis + RabbitMQ
 - Blog Platform: Spring Boot + Thymeleaf
 
-## Certifications
+# # Certifications
 - AWS Certified Solutions Architect
 - 全国大学生算法竞赛铜奖
 
-## 自我评价
+# # 自我评价
 热爱技术，持续学习。
 """.strip()
 

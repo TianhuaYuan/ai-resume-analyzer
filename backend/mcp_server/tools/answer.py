@@ -1,7 +1,7 @@
-"""MCP Tool: answer_from_index — 按 scope 原子生成答案（T13）。
+"""MCP Tool: answer_from_index — 按 scope 原子生成答案。
 
 把 agentic RAG 的「检索 → 反思 → 生成」折叠为单个原子工具，
-取代旧 mcp_graph / mcp_nodes 的节点级 MCP 调用链（T14）。
+取代旧 mcp_graph / mcp_nodes 的节点级 MCP 调用链。
 调用链：scope 鉴权 → run_answer_from_index → 结构化结果。
 """
 
@@ -44,7 +44,7 @@ async def answer_from_index(
             )
         ]
 
-    # SEC-003（T13）：scope 内每个资产都必须归属当前用户，越权 403。
+    # SEC-003：scope 内每个资产都必须归属当前用户，越权 403。
     try:
         normalized_scope = await assert_user_owns_assets(user_id, scope)
     except HTTPException as e:

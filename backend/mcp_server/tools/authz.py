@@ -1,4 +1,4 @@
-"""MCP 鉴权（T13）：scope 资产归属校验。
+"""MCP 鉴权：scope 资产归属校验。
 
 所有带 scope 的 MCP 工具（search_index / answer_from_index / get_asset 等）必须先过
 ``assert_user_owns_assets``：对 scope 内每个 (asset_type, asset_id) 调

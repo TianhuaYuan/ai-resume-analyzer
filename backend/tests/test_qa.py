@@ -98,7 +98,7 @@ async def test_history_nonexistent_resume(client: AsyncClient, auth_headers: dic
     assert resp.status_code == 404
 
 
-# ── P1-16: 分页参数校验 ──────────────────────────────
+# ── 分页参数校验 ──────────────────────────────
 
 
 @pytest.mark.asyncio

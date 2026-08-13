@@ -39,7 +39,7 @@ async def delete_resume_full(db: AsyncSession, resume: Resume) -> None:
 
     外部资源清理失败不抛异常，仅记录 warning，避免阻塞主流程。
 
-    保留待账户删除功能落地时接入；当前 DELETE 端点不替换（保持 P2-4 外部-first 顺序）。
+    保留待账户删除功能落地时接入；当前 DELETE 端点不替换（保持外部优先的处理顺序）。
     """
     resume_id = resume.id
     user_id = resume.user_id

@@ -1,4 +1,4 @@
-"""T17: 流式 SSE + /ask/agent 支持。
+"""流式 SSE + /ask/agent 支持。
 
 react_loop_stream 包装 react_loop，以 async generator 形式产出 SSE 事件：
 - agent_start: 流开始
@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 _SENTINEL = object()
 
-# 工具结果截断阈值（Spec A#11: summary ≤2000 字符）
+# 工具结果截断阈值（ : summary ≤2000 字符）
 _RESULT_SUMMARY_MAX = 2000
 
 # 注入上下文的历史轮次上限 / 每条 answer 截断（多轮上下文注入）。
@@ -221,7 +221,7 @@ async def update_qa_answer(
 
     record.answer = answer
     record.sources = sources
-    record.process_trace = db_trace  # Spec 行 459: 完整 prompt 进 DB
+    record.process_trace = db_trace  # 行 459: 完整 prompt 进 DB
     record.status = "complete"
     record.token_usage = (
         token_usage.get("prompt_tokens", 0)
@@ -322,7 +322,7 @@ async def react_loop_stream(
         finally:
             await queue.put(_SENTINEL)
 
-    # P1-3 回合 checkpoint + P1-2 回合注入队列共用 key 结构。
+    # 回合 checkpoint 与回合注入队列共用 key 结构。
     # 定义在生成器作用域（而非 run_loop）——run_loop 的局部变量对外层不可见，
     # 若在 run_loop 内赋值，下方回合结束清理注入队列时会抛 NameError。
     checkpoint_key = None
@@ -416,7 +416,7 @@ async def react_loop_stream(
 
         await task
 
-        # P1-2：回合结束清理注入队列（残留消息不污染下一回合）
+        # 回合结束清理注入队列（残留消息不污染下一回合）
         await cleanup_active_key()
 
         # ── 检查异常 ──────────────────────────────────────────
@@ -449,18 +449,18 @@ async def react_loop_stream(
             return
 
         # ── 更新 QA 记录（完整 prompt trace 存 DB） ──────────
-        sources = getattr(loop_result, "sources", [])  # Spec A#10: search_resume 来源聚合
+        sources = getattr(loop_result, "sources", [])  # : search_resume 来源聚合
         await update_qa_answer(
             db=db,
             qa_id=qa_id,
             answer=loop_result.answer,
             sources=sources,
             token_usage=loop_result.usage,
-            db_trace=loop_result.db_trace,  # Spec 行 459: 完整 prompt 进 DB
+            db_trace=loop_result.db_trace,  # 行 459: 完整 prompt 进 DB
         )
 
         # ── 记录 quota 消耗（analytics 已由 llm_generate_with_tools_stream 内部 record_llm_usage 完成，
-        #    此处仅记录 quota 消耗，与传统 RAG 路径对齐） ──────
+        # 此处仅记录 quota 消耗，与传统 RAG 路径对齐） ──────
         pt = loop_result.usage.get("prompt_tokens", 0)
         ct = loop_result.usage.get("completion_tokens", 0)
         if pt > 0 or ct > 0:
@@ -484,7 +484,7 @@ async def react_loop_stream(
             except Exception:
                 logger.warning("记忆提炼调度失败（不影响主流程）", exc_info=True)
 
-        # ── 产出最终 agent_done 事件（Spec 字段对齐） ────────
+        # ── 产出最终 agent_done 事件（ 字段对齐） ────────
         # SSE done.process_trace = 紧凑摘要（轮数/工具序列/耗时），非全量事件列表
         duration_ms = int((time.monotonic() - start_time) * 1000)
         logger.info("agent_sse done_ms=%d", duration_ms)
@@ -564,7 +564,7 @@ def _build_compact_trace(trace: list[dict], duration_ms: int) -> dict:
 
 
 # ═══════════════════════════════════════════════════════════════
-# T25: 中断消息注入 + 压缩后恢复用户消息（OpenClaw turn_aborted + Hermes 借鉴）
+# 中断消息注入 + 压缩后恢复用户消息
 # ═══════════════════════════════════════════════════════════════
 
 
@@ -583,7 +583,7 @@ class InterruptHandler:
 
     断连/异常时 record_interrupt 记录；checkpoint 恢复后
     get_interrupt_message 生成 turn_aborted 风格提示，让 LLM
-    感知上一轮被中断、工具可能部分执行（OpenClaw 借鉴）。
+    感知上一轮被中断、工具可能部分执行。
     """
 
     def __init__(self) -> None:
@@ -619,7 +619,7 @@ class InterruptHandler:
 
 
 class UserMessageRestorer:
-    """压缩后恢复用户原始问题（Hermes _restore_user_after_reference_handoff 借鉴）。
+    """压缩后恢复用户原始问题。
 
     L1 结构化压缩后用户消息可能被摘要 handoff 顶掉，模型会误解上下文。
     该工具确保用户当前问题始终在消息列表末尾，避免"模型答非所问"。

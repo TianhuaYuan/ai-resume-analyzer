@@ -167,7 +167,7 @@ def _filter_by_site(items: list[dict], include: str) -> list[dict]:
 def _job_schema(*, title, url, snippet, source, company="", city="", deadline="") -> dict:
     """统一 Job schema：{title, company, salary, city, url, deadline, source, snippet}。
 
-    借鉴 third_party/JobHunter/crawler/api_crawler.py 的 field_mapping 归一化思路：
+    field_mapping 归一化思路（各引擎原始字段不一，统一收敛为结构化输出）：
     各引擎原始字段不一，统一收敛为结构化输出；缺字段用空串，
     薪资从「标题 + 摘要」文本正则提取（没有则空）。
     """

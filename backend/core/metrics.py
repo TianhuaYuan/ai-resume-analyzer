@@ -321,8 +321,8 @@ def timer_context(step: str):
 # 注意：不能用 `async def` + `yield` 的异步生成器直接配 `async with`
 # （它缺少 __aenter__/__aexit__ 协议），故用类实现。
 # 用法：
-#   async with async_timer_context("retrieve"):
-#       docs = await vector_search(...)
+# async with async_timer_context("retrieve"):
+# docs = await vector_search(...)
 # 同步代码仍用 timer_context（保持向后兼容，不删不改）。
 class async_timer_context:
     """`async with` 版的 RAG 步骤计时器（OBS-004）。"""

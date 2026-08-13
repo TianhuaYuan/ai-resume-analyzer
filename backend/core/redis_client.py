@@ -141,7 +141,7 @@ class InMemoryRedis:
 async def get_redis():
     """获取 Redis 客户端。不可用时返回 InMemoryRedis 实例。
 
-    性能护栏（T17）：Redis 不可用时进入「降级冷却期」——冷却期内直接返回
+    性能护栏：Redis 不可用时进入「降级冷却期」——冷却期内直接返回
     InMemoryRedis，不再每次调用都重试连接。否则每次 Redis 访问都白付
     socket_connect_timeout 的连接超时（本机 Redis 未启动时 = 每次 2s+ 延迟，
     会让每个 agent 交互凭空多出数秒）。

@@ -43,7 +43,7 @@ async def websocket_endpoint(
     """WebSocket 连接端点。
 
     认证 token 优先从 header 取（Authorization: Bearer / X-Nanobot-Token），
-    避免经 query 参数进 nginx/uvicorn 访问日志（P2-8 安全）；query ?token=
+    避免经 query 参数进 nginx/uvicorn 访问日志；query ?token=
     保留兼容旧客户端。
     """
     jwt = _extract_token(websocket, token)
@@ -63,7 +63,7 @@ async def websocket_endpoint(
             await websocket.close(code=4001, reason="Invalid token")
             return
         user_id = int(user_id)
-        # P2-8：连接时校验 token 是否已撤销（撤销名单）
+        # 连接时校验 token 是否已撤销（撤销名单）
         jti = payload.get("jti")
         if jti and await is_token_revoked(jti):
             logger.warning("WebSocket 连接被拒：token 已撤销 user_id=%d", user_id)
@@ -97,7 +97,7 @@ async def websocket_endpoint(
         await websocket.close(code=4001, reason="Invalid token")
         return
 
-    # P2-8：每用户连接数上限（DoS 防护）——先 accept 再检查计数，
+    # 每用户连接数上限（DoS 防护）——先 accept 再检查计数，
     # 超限时 close 且不注册。
     await websocket.accept()
     if not ws_manager.try_connect(user_id, websocket):
@@ -116,7 +116,7 @@ async def websocket_endpoint(
         "user_id": user_id,
     }))
 
-    # 保持连接直到断开（P2-8：asyncio.wait_for 做服务端心跳——
+    # 保持连接直到断开（asyncio.wait_for 做服务端心跳——
     # 客户端静默掉线（无 close 帧）时超时关闭，避免连接滞留）
     try:
         while True:

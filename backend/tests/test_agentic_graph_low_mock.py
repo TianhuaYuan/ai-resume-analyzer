@@ -1,4 +1,4 @@
-"""P2-11: Agentic Graph E2E 测试 — 降 mock 策略。
+"""Agentic Graph E2E 测试 — 降 mock 策略。
 
 与 test_agentic_graph.py 的区别：
 - test_agentic_graph.py：mock 每个节点的入口函数（rewrite/generate/evaluate）
@@ -59,7 +59,7 @@ class TestLowMockSearchPath:
         """search 路径：真实节点逻辑 + mock 底层 LLM client + mock 检索。"""
         graph = create_agentic_rag_graph()
 
-        # P2-11：LLM 响应序列严格按节点调用顺序：
+        # LLM 响应序列严格按节点调用顺序：
         # rewrite_query → _classify_route → generate_node → evaluate_node
         def _make_response(content: str):
             resp = AsyncMock()
@@ -88,7 +88,7 @@ class TestLowMockSearchPath:
             {"text": "3年Python开发经验", "chunk_index": 0, "section": "工作经历", "rerank_score": 0.95}
         ]
 
-        # P2-11：get_chat_client 实际由 services.rag.pipeline 导入并调用，
+        # get_chat_client 实际由 services.rag.pipeline 导入并调用，
         # agentic_rag 子模块（rewrite/generate/reflection）通过 llm_generate 间接使用，
         # 因此 patch pipeline.get_chat_client 即可覆盖所有节点的 LLM 调用。
         with patch(
@@ -135,7 +135,7 @@ class TestLowMockDirectAnswer:
             return_value=mock_rewrite_response
         )
 
-        # P2-11：pipeline.get_chat_client 覆盖 rewrite 节点的 llm_generate 调用
+        # pipeline.get_chat_client 覆盖 rewrite 节点的 llm_generate 调用
         with patch(
             "services.rag.pipeline.get_chat_client", return_value=mock_client
         ), patch(
@@ -198,7 +198,7 @@ class TestLowMockReflexion:
             {"text": "3年经验", "chunk_index": 0, "section": "工作", "rerank_score": 0.9}
         ]
 
-        # P2-11：统一 patch pipeline.get_chat_client，覆盖 rewrite/generate/evaluate/reflection 所有 LLM 调用
+        # 统一 patch pipeline.get_chat_client，覆盖 rewrite/generate/evaluate/reflection 所有 LLM 调用
         with patch(
             "services.rag.pipeline.get_chat_client", return_value=mock_client
         ), patch(

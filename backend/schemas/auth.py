@@ -8,7 +8,7 @@ class RegisterRequest(BaseModel):
     password: str
     password_confirm: str
     verification_code: str
-    # T37: CTA 来源渠道（?source=linkedin 之类），记录到产品分析事件
+    # CTA 来源渠道（?source=linkedin 之类），记录到产品分析事件
     source: str | None = Field(None, max_length=50, description="CTA 来源渠道")
 
     @field_validator("username")

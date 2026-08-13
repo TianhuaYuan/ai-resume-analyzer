@@ -1,5 +1,5 @@
 """
-P1-10：Background task 异常信息泄露 + commit 失败被吞。
+Background task 异常信息泄露 + commit 失败被吞。
 
 验证点：
 1. 后台任务失败时 status_message 不应包含原始异常字符串（防信息泄露）

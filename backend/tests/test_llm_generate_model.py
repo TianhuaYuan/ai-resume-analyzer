@@ -237,7 +237,7 @@ class TestRouteNodeUsesJudgeModel:
     async def test_route_node_passes_judge_model(self):
         """_classify_route 调用 llm_generate 时应传入 JUDGE_MODEL
 
-        route_node 已改为启发式路由（T10），不再调用 _classify_route；
+        route_node 已改为启发式路由，不再调用 _classify_route；
         此处直接验证 LLM 路由分类器仍透传 JUDGE_MODEL。
         """
         from services.agentic_rag import rewrite as rewrite_mod

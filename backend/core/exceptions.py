@@ -27,7 +27,7 @@ def _error_response(status_code: int, code: str, message: str, details: list | N
         status_code: HTTP 状态码
         code: 业务错误码（如 VALIDATION_ERROR）
         message: 人类可读的主错误消息（向后兼容）
-        details: P3-11 完整错误列表，每个元素含 {loc, msg, type}，
+        details: 完整错误列表，每个元素含 {loc, msg, type}，
                  前端可逐字段渲染错误提示。仅校验类错误填充。
     """
     body: dict = {
@@ -58,7 +58,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     async def validation_exception_handler(
         request: Request, exc: RequestValidationError
     ) -> JSONResponse:
-        # P3-11: 返回完整错误列表而非仅第一个，前端可逐字段展示
+        # 返回完整错误列表而非仅第一个，前端可逐字段展示
         raw_errors = exc.errors()
         details: list[dict] = []
         for err in raw_errors:

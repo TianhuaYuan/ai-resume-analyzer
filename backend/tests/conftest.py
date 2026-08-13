@@ -49,7 +49,7 @@ import atexit
 atexit.register(_cleanup_test_db)
 
 
-# P2-9: SQLite 默认关闭外键约束，CASCADE 不会生效。生产 MySQL 默认开启，
+# SQLite 默认关闭外键约束，CASCADE 不会生效。生产 MySQL 默认开启，
 # 测试环境需通过 event listener 在每个连接建立时执行 PRAGMA foreign_keys=ON，
 # 让测试 DB 行为接近生产，确保 ondelete=CASCADE 配置被真实验证。
 @event.listens_for(engine_test.sync_engine, "connect")
@@ -98,7 +98,7 @@ class _FakeToolAsyncSession:
 def _mock_loop_tool_db():
     """react_loop 工具执行的独立 session 用 mock 替代，避免测试连真实 MySQL。
 
-    P0-4：loop._execute_tool_call_with_limit 为每个工具开独立 AsyncSessionLocal，
+    loop._execute_tool_call_with_limit 为每个工具开独立 AsyncSessionLocal，
     测试中不需要真实 DB，全局 mock 掉该工厂。
     """
     with patch("services.react_agent.loop.AsyncSessionLocal", new=_FakeToolAsyncSession):

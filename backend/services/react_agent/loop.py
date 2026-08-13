@@ -1,4 +1,4 @@
-"""T16: ReAct 核心循环。
+"""ReAct 核心循环。
 
 手写 asyncio ReAct 循环（非 LangGraph）：
 - 配额预检 → 不足则直接返回
@@ -9,7 +9,7 @@
 - 工具并行执行（asyncio.gather + Semaphore 限单轮并发）
 - 中间轮 JUDGE_MODEL（flash 快）/ 最终轮 CHAT_MODEL
 
-决策依据：spec T16, 风险与缓解表。
+ 
 """
 
 import asyncio
@@ -62,8 +62,8 @@ from services.token_quota import check_quota
 logger = logging.getLogger(__name__)
 
 # ── 常量 ──────────────────────────────────────────────────────
-MAX_ROUNDS = settings.REACT_MAX_TOOL_ROUNDS  # Spec A#6: 6 轮工具上限（config 可调）
-# A3 契约化：per-tool 重试预算（借鉴 pydantic-ai _check_max_retries）——
+MAX_ROUNDS = settings.REACT_MAX_TOOL_ROUNDS  # : 6 轮工具上限（config 可调）
+# A3 契约化：per-tool 重试预算——
 # 同一工具连续失败超限即终止本轮，成功一次即清零
 MAX_TOOL_RETRIES = 3
 AGENT_CONCURRENCY_LIMIT = 5
@@ -169,7 +169,7 @@ def _tool_exec_timeout(tool_name: str) -> float:
 MIDDLE_MODEL = "judge"
 FINAL_MODEL = None  # None → 默认 CHAT_MODEL
 
-# ── M3 OpenManus 借鉴：next_step_prompt + is_stuck 防卡死 ──
+# ── M3 next_step_prompt + is_stuck 防卡死 ──
 # next_step_prompt：每轮 LLM 调用前注入引导，收敛重复工具调用 / 引导直接回答
 NEXT_STEP_PROMPT = (
     "如果你已经获得足够的信息可以直接回答用户的问题，请直接给出最终回答，"
@@ -183,7 +183,7 @@ STUCK_PROMPT = (
 STUCK_WINDOW = 3  # 回溯窗口：最近 N 轮
 STUCK_THRESHOLD = 2  # 签名重复 ≥2 次判为 stuck
 
-# ── 工具结果预算管理（借鉴 Hermes budget_for_context_window）──
+# ── 工具结果预算管理──
 # 单个工具结果回灌 LLM 前的预算上限（字符数）。超出预算的结果被截断，
 # 避免单一超长工具结果（如整份简历/批量搜索）挤爆 L1 上下文窗口。
 # 预算随上下文窗口大小自适应：窗口越大，允许的单结果预算越高。
@@ -202,7 +202,7 @@ def _tool_result_budget(context_window: int | None = None) -> int:
     budget = TOOL_RESULT_BUDGET_CHARS + max(0, window - DEFAULT_CONTEXT_WINDOW) // 8192 * _TOOL_RESULT_BUDGET_STEP
     return max(4000, min(budget, 20000))
 
-# ── D1 工具审批门（借鉴 pydantic-ai Deferred tools）──
+# ── D1 工具审批门──
 # 命中 requires_approval 的工具执行前需用户确认；SSE 单向流，
 # 决议经独立端点回传（api/qa.py POST /qa/approval）。
 APPROVAL_TIMEOUT_SEC = 120  # 审批挂起超时（秒）；超时按拒绝处理，避免无响应挂死
@@ -211,7 +211,7 @@ APPROVAL_TIMEOUT_SEC = 120  # 审批挂起超时（秒）；超时按拒绝处�
 # 模型连续 N 次「空 content + 无 tool_calls」即直接收敛，不占用工具重试预算。
 OUTPUT_RETRY_LIMIT = 2
 
-# ── D2 失败分类定向恢复（借鉴 tau-bench fault_type）──
+# ── D2 失败分类定向恢复──
 # 按最近一次失败类型选择 stuck 换策略提示；未分类回退现有 STUCK_PROMPT。
 _FAULT_TYPE_HINTS: dict[str, str] = {
     "used_wrong_tool": (
@@ -245,10 +245,10 @@ _approval_registry: dict[str, _ApprovalEntry] = {}
 # ── M3 增强：结构化工具调用记录 + 多模式循环检测 ──────────────
 # 相比旧方案（简单签名重复 ≥2 次），新增：
 # - 结构化调用记录（ToolCallRecord）：记录工具名、参数哈希、结果哈希、时间戳等，
-#   为后续审计和调试提供完整调用链路信息。
+# 为后续审计和调试提供完整调用链路信息。
 # - 交替模式检测（A→B→A→B）：旧方案只检测相同签名重复，无法识别交替循环。
 # - 分级响应（critical/warning）：critical 级别强制终止循环避免烧 token，
-#   warning 级别注入换策略提示允许模型自愈。
+# warning 级别注入换策略提示允许模型自愈。
 
 
 @dataclass
@@ -373,7 +373,7 @@ def _pick_stuck_hint(fault_type: str | None) -> str:
     return _FAULT_TYPE_HINTS.get(fault_type, STUCK_PROMPT)
 
 
-# ── P1-3: 回合 checkpoint（崩溃/断连恢复续答）────────────────
+# ── 回合 checkpoint（崩溃/断连恢复续答）────────────────
 # 每轮工具执行后把 messages 快照存 Redis（TTL 短），正常结束清除。
 # 下次同 resume 同问题提问时，若 checkpoint 未过期则从断点续跑，
 # 不再重跑已完成的工具（省 token）。key 由 streaming 层注入。
@@ -443,7 +443,7 @@ async def _clear_react_checkpoint(key: str) -> None:
         logger.debug("清除回合 checkpoint 失败（忽略）", exc_info=True)
 
 
-# ── P1-2: 回合中注入（用户在 agent 思考期间追加消息）────────────────
+# ── 回合中注入（用户在 agent 思考期间追加消息）────────────────
 # 前端经 POST /qa/inject 把追加消息写入 Redis list（inject_key），
 # react_loop 每轮 LLM 调用前 drain 并入 messages。回合结束删除队列。
 # 用 Redis list 的 LPUSH/RPOP 实现 FIFO；不依赖 list TTL（回合结束清理），
@@ -537,7 +537,7 @@ async def wait_for_approval(approval_id: str, timeout: float = APPROVAL_TIMEOUT_
         drop_approval(approval_id)
 
 
-# ── 审批增强（借鉴 OpenClaw allow-always + severity）──────────────
+# ── 审批增强──────────────
 # 用户对某工具选择"始终允许"后，记录到 Redis（TTL 7 天），后续同工具
 # 审批请求自动放行，减少重复弹窗。best-effort：Redis 不可用降级为不记忆。
 
@@ -579,16 +579,16 @@ class ReactLoopResult:
     answer: str
     process_trace: list[dict] = field(default_factory=list)
     usage: dict = field(default_factory=lambda: {"prompt_tokens": 0, "completion_tokens": 0})
-    sources: list[dict] = field(default_factory=list)  # Spec A#10: search_resume 来源去重
-    db_trace: dict = field(default_factory=dict)  # Spec 行 459: 完整 prompt 进 DB
-    # T17.1: checkpoint 恢复标记——streaming 层据此注入中断提示 + 恢复用户消息
+    sources: list[dict] = field(default_factory=list)  # : search_resume 来源去重
+    db_trace: dict = field(default_factory=dict)  # 行 459: 完整 prompt 进 DB
+    # .1: checkpoint 恢复标记——streaming 层据此注入中断提示 + 恢复用户消息
     checkpoint_restored: bool = False
 
 
-# 工具并行执行 Semaphore（Spec A#32：限单轮工具并发，非整个 Agent 循环）
+# 工具并行执行 Semaphore（ ：限单轮工具并发，非整个 Agent 循环）
 _tool_semaphore: asyncio.Semaphore | None = None
 
-# P1-10 授权门控实例（模块级单例：跨 ReAct 会话共享 in-flight 授权槽）
+# 授权门控实例（模块级单例：跨 ReAct 会话共享 in-flight 授权槽）
 _auth_gate = AuthorizationGate()
 
 
@@ -641,8 +641,8 @@ async def react_loop(
     """
     process_trace: list[dict] = []
     total_usage = {"prompt_tokens": 0, "completion_tokens": 0}
-    all_sources: list[dict] = []  # Spec A#10: 聚合 search_resume 来源
-    db_rounds: list[dict] = []  # Spec 行 459: 每轮 prompt 信息（完整 prompt 进 DB）
+    all_sources: list[dict] = []  # : 聚合 search_resume 来源
+    db_rounds: list[dict] = []  # 行 459: 每轮 prompt 信息（完整 prompt 进 DB）
 
     async def _emit(event: dict) -> None:
         """写入 process_trace 并调用事件回调（供 streaming 层使用）。
@@ -688,7 +688,7 @@ async def react_loop(
             db_trace={"system_prompt": "", "rounds": [], "total_rounds": 0},
         )
 
-    # T17 优化② 问候/感谢零 LLM 快路径（agent1 + builder 通用）：
+    # 优化② 问候/感谢零 LLM 快路径（agent1 + builder 通用）：
     # 放在 system prompt 装配之前——问候不需要 L2/L3/L4，模板直接秒回。
     from services.react_agent.tool_gate import greeting_reply, is_trivial_greeting
 
@@ -706,7 +706,7 @@ async def react_loop(
 
     # 2. 装配 system prompt（L2 历史 + L3 画像 + L4 记忆注入；builder 模式用允许生成的专属指令）
     _phases["prompt_assembly_ms"] = round((time.perf_counter() - _t0) * 1000)
-    # P2-9：history（多轮完整轮次）已作为 user/assistant 消息注入 messages，
+    # history（多轮完整轮次）已作为 user/assistant 消息注入 messages，
     # 其 question 集合传给 L2 摘要做排除，避免同一历史双重携带。
     _injected_questions: set[str] = set()
     if history:
@@ -737,7 +737,7 @@ async def react_loop(
         messages.extend(history)
     messages.append({"role": "user", "content": question})
 
-    # P1-3：回合 checkpoint 恢复——若存在未过期且问题一致的 checkpoint
+    # 回合 checkpoint 恢复——若存在未过期且问题一致的 checkpoint
     # （上次回合中断/断连留下），从断点续跑，不重跑已完成的工具。
     # 恢复的消息含上次的 system prompt + 历史 + 已执行工具结果。
     restored_from_checkpoint = False
@@ -748,7 +748,7 @@ async def react_loop(
             restored_from_checkpoint = True
             # 恢复后清理（本次续跑若再中断会重新存）
             await _clear_react_checkpoint(checkpoint_key)
-            # T25: 中断消息注入（借鉴 OpenClaw turn_aborted）——恢复时 LLM 感知
+            # 中断消息注入——恢复时 LLM 感知
             # 上一轮被中断、后台进程/工具可能部分执行，避免"当作全新会话"误答。
             # 插入到 system prompt 之后（第 0 条之后）。
             insert_at = 1
@@ -797,7 +797,7 @@ async def react_loop(
     # D2 最近一次失败分类（stuck 时按此选变体换策略提示）
     recent_fault_type: str | None = None
 
-    # T17 优化① builder 意图直达：跳过 ReAct「决定轮」，直接执行解析出的工具。
+    # 优化① builder 意图直达：跳过 ReAct「决定轮」，直接执行解析出的工具。
     # 编辑器命令明确（生成/检查/修改 X 模块），一次操作从 3 轮 LLM 压到 1 次工具调用。
     if tool_mode == "builder":
         from services.react_agent.builder_intent import resolve_builder_intent
@@ -883,7 +883,7 @@ async def react_loop(
                 checkpoint_restored=restored_from_checkpoint,
             )
 
-        # 每轮 LLM 调用前复查配额（Spec A#5：超限立即停止）
+        # 每轮 LLM 调用前复查配额（ ：超限立即停止）
         if rounds > 1:
             allowed, quota_msg = await check_quota(user_id)
             if not allowed:
@@ -907,7 +907,7 @@ async def react_loop(
             compactor=context_compactor,
         )
 
-        # T25: 压缩后恢复用户原始问题（Hermes 借鉴）——L1 结构化压缩可能把
+        # 压缩后恢复用户原始问题——L1 结构化压缩可能把
         # 用户消息顶成摘要 handoff，末尾恢复确保模型不"答非所问"。幂等：question
         # 已存在于消息列表（任何位置）则跳过，避免 L1 未逐出时重复注入。
         if not any(
@@ -916,7 +916,7 @@ async def react_loop(
         ):
             messages.append({"role": "user", "content": question})
 
-        # P1-2：回合中注入——用户在 agent 思考期间追加的消息并入当前回合
+        # 回合中注入——用户在 agent 思考期间追加的消息并入当前回合
         # （FIFO，每轮最多 2 条）。让 agent 感知"追问/补充"，无需等回合结束。
         if inject_key:
             injections = await _drain_injections(inject_key)
@@ -1034,7 +1034,7 @@ async def react_loop(
                 checkpoint_restored=restored_from_checkpoint,
             )
 
-        # 有 tool_call → 并行执行工具（Spec A#21: asyncio.gather）
+        # 有 tool_call → 并行执行工具（ : asyncio.gather）
         messages.append(_build_assistant_message(response))
 
         # 先发所有 tool_call 事件（让用户立刻看到 Agent 在调哪些工具）
@@ -1048,7 +1048,7 @@ async def react_loop(
                 }
             )
 
-        # 并行执行所有工具（Spec A#32: Semaphore 限单轮并发）
+        # 并行执行所有工具（ : Semaphore 限单轮并发）
         # D1: 传入本轮 approval_lock 串行化审批请求 + round_no 供 approval_request 展示
         tool_semaphore = _get_tool_semaphore()
         _tool_start = time.perf_counter()
@@ -1069,7 +1069,7 @@ async def react_loop(
         _tool_exec_ms += (time.perf_counter() - _tool_start) * 1000
         _phases["tool_exec_ms"] = round(_tool_exec_ms)
 
-        # 记录本轮 prompt 信息到 db_rounds（Spec 行 459: 完整 prompt 进 DB）
+        # 记录本轮 prompt 信息到 db_rounds（ 行 459: 完整 prompt 进 DB）
         db_round: dict = {
             "round": rounds,
             "model": MIDDLE_MODEL,
@@ -1113,7 +1113,7 @@ async def react_loop(
             # 累计工具内部 LLM 调用的 token 消耗到主 usage（builder 工具内部有独立 LLM 调用）
             _accumulate_usage(total_usage, tool_usage)
 
-            # 收集工具来源（Spec A#10: search_resume 来源聚合）
+            # 收集工具来源（ : search_resume 来源聚合）
             all_sources.extend(tool_sources)
 
             # tool 结果/错误回灌到 messages（工具结果中间件：脱敏 + 按上下文窗口
@@ -1139,7 +1139,7 @@ async def react_loop(
         # 工具执行完毕后推送累计 usage（含工具内部 LLM 消耗），让前端实时更新 token 计数
         await _emit({"type": "usage", "usage": dict(total_usage), "total": dict(total_usage)})
 
-        # P1-3：本轮工具执行完成 → 存 checkpoint（中断/断连后可从断点续跑）
+        # 本轮工具执行完成 → 存 checkpoint（中断/断连后可从断点续跑）
         if checkpoint_key:
             await _save_react_checkpoint(
                 checkpoint_key, question, messages, checkpoint_ttl_seconds
@@ -1171,7 +1171,7 @@ async def react_loop(
             )
 
         # A3: per-tool 重试预算——同一工具连续失败超限即终止本轮（避免烧 token 反复重试同一错误）
-        # 借鉴 pydantic-ai：retries[tool_name] 记账 + _check_max_retries 超限终止
+        # retries[tool_name] 记账 + _check_max_retries 超限终止
         if all_bad:
             exceeded = False
             for tc in response.tool_calls:
@@ -1535,7 +1535,7 @@ async def _execute_tool_call(
             {"prompt_tokens": 0, "completion_tokens": 0},
         )
 
-    # 2. 查找工具（A3: 未知工具附可用列表，模型几乎必然自愈——借鉴 pydantic-ai _resolve_tool）
+    # 2. 查找工具
     tool_class = get_tool_by_name(tc.name)
     if tool_class is None:
         available = ", ".join(sorted(t.name for t in get_tools_for_agent()))
@@ -1548,7 +1548,7 @@ async def _execute_tool_call(
 
     # 3. 实例化并执行（注入 emit 供工具内部 LLM 流式推送）
     tool = tool_class(db=db, user_id=user_id, emit=emit)
-    # D1（P0-4）: 无事件通道（测试/无前端）且审批模式为 "sse" 时无用户可确认，
+    # D1: 无事件通道（测试/无前端）且审批模式为 "sse" 时无用户可确认，
     # 审批门退化为直接执行（保持旧行为）。mode="always" 时 emit=None 也拦截审批。
     if (
         emit is None
@@ -1565,7 +1565,7 @@ async def _execute_tool_call(
     ):
         tool.mark_approval_granted()
 
-    # P1-10 授权门控（借鉴 Hermes authorization_gate_lock_timeout）：
+    # 授权门控：
     # 黑名单工具直接拒绝（不回灌 LLM 重试，杜绝绕过）；高代价工具串行化
     # 授权（一次一个在途，有限等待防并发风暴）。黑名单命中返回 blocked。
     if _auth_gate.is_blocked(tc.name):
@@ -1687,7 +1687,7 @@ async def _handle_tool_approval(
                         "args": json.dumps(approval.arguments, ensure_ascii=False),
                         "summary": approval.summary,
                         "round": round_no,
-                        # 审批增强（借鉴 OpenClaw severity）：info/warning/critical，
+                        # 审批增强：info/warning/critical，
                         # 前端据此区分弹窗样式；critical 触发审计日志。
                         "severity": getattr(approval, "severity", "warning"),
                     }
@@ -1813,7 +1813,7 @@ async def _execute_tool_call_with_limit(
 ) -> tuple[str, bool, list[dict], dict]:
     """带 Semaphore 限流的工具执行（Spec A#32：限单轮工具并发）。
 
-    P0-4 修复：并行工具不再共享请求 session —— 每个工具用独立 AsyncSessionLocal，
+    修复：并行工具不再共享请求 session —— 每个工具用独立 AsyncSessionLocal，
     避免同一 aiomysql 连接被多个 coroutine 并发 execute
     （readexactly() called while another coroutine is already waiting / Command Out of Sync）。
     """

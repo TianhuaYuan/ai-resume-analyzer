@@ -1,4 +1,4 @@
-"""MCP Tool: 知识库检索（T13）。
+"""MCP Tool: 知识库检索。
 
 - ``search_index``            泛化工具：按 scope（asset_type → asset_ids）混合检索，强制 scope 鉴权。
 - ``search_knowledge_base``   旧工具保留为别名：内部 scope={resume: [resume_id]}，行为收敛到 search_index。
@@ -65,7 +65,7 @@ async def search_index(
     except LookupError:
         return _auth_error_text()
 
-    # SEC-003（T13）：scope 内每个资产都必须归属当前用户，越权 403。
+    # SEC-003：scope 内每个资产都必须归属当前用户，越权 403。
     try:
         normalized_scope = await assert_user_owns_assets(user_id, scope)
         _parse_filters(filters)  # 仅校验格式，版本过滤走后端 is_latest

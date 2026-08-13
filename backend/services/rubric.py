@@ -94,7 +94,7 @@ def get_jd_fit_dims() -> dict[str, float]:
 
 
 def role_aggregate(role_scores: dict[str, int]) -> int:
-    """多角色分数 → 加权聚合（0-100 取整）。角色权重来自 rubric。"""
+    """多角色分数 → 加权聚合。角色权重来自 rubric。"""
     weights = get_role_weights()
     total_w = 0.0
     acc = 0.0
@@ -110,7 +110,7 @@ def role_aggregate(role_scores: dict[str, int]) -> int:
 
 
 def jd_fit_overall(dims: dict[str, int]) -> int:
-    """JD fit 四维 → 加权 overall（0-100 取整）。维度权重来自 rubric。"""
+    """JD fit 四维 → 加权 overall。维度权重来自 rubric。"""
     dim_weights = get_jd_fit_dims()
     total_w = 0.0
     acc = 0.0

@@ -75,7 +75,7 @@ async def _verify_score_llm(label: str, score: int, excerpt: str, user_id: int) 
         if data.get("justified") is True:
             return None  # 分数站得住 → 保原分
         adjusted = int(data.get("adjusted_score", score))
-        return max(0, min(100, adjusted))  # 0-100 夹紧（_clamp_score 对照）
+        return max(0, min(100, adjusted))  # 夹紧（_clamp_score 对照）
     except Exception as e:
         logger.warning("评分二评失败（保原分）: %s: %s", label, e)
         return None
@@ -146,7 +146,7 @@ _ANALYSIS_PROMPTS: dict[str, str] = {
         "2. 教育背景\n"
         "3. 工作/实习经历概览\n"
         "4. 核心技能\n"
-        "5. 整体评价（2-3句话）\n"
+        "5. 整体评价\n"
         "请用简洁的结构化格式输出。"
     ),
     "skills": (
@@ -168,11 +168,11 @@ _ANALYSIS_PROMPTS: dict[str, str] = {
     ),
     "score": (
         "你是一个专业的简历评分专家。请从以下四个维度对简历进行量化评分：\n\n"
-        "1. **ATS 匹配率**（0-100）：简历结构是否清晰、关键词是否丰富、"
+        "1. **ATS 匹配率**：简历结构是否清晰、关键词是否丰富、"
         "格式是否 ATS（Applicant Tracking System）友好\n"
-        "2. **关键词覆盖率**（0-100）：技术关键词、行业术语的覆盖广度\n"
-        "3. **技能密度**（0-100）：技能的深度和广度，是否有跨领域技能\n"
-        "4. **综合评价**（0-100）：综合以上维度的加权评分\n\n"
+        "2. **关键词覆盖率**：技术关键词、行业术语的覆盖广度\n"
+        "3. **技能密度**：技能的深度和广度，是否有跨领域技能\n"
+        "4. **综合评价**：综合以上维度的加权评分\n\n"
         "请给出支撑各维度评分的简历原文字符区间 refer_index_range（如 "
         "[120, 260]，对应简历内容的字符位置，指向包含相关关键词或句子的"
         "最小原文段落），并遵循证据锚定原则：每个分数必须能被该区间内的"
@@ -420,7 +420,7 @@ async def analyze_resume(
             pt = getattr(response.usage, "prompt_tokens", 0) or 0
             ct = getattr(response.usage, "completion_tokens", 0) or 0
             usage_info = {"total_tokens": pt + ct, "prompt_tokens": pt, "completion_tokens": ct}
-            # T3: 统一记账
+            # 统一记账
             await record_llm_usage(
                 user_id,
                 pt,
@@ -493,7 +493,7 @@ _ROLES_SYSTEM = (
 
 
 def _parse_roles(analysis: str) -> dict | None:
-    """从 LLM JSON 输出解析三角色分数（0-100 夹紧 + 校验）。"""
+    """从 LLM JSON 输出解析三角色分数。"""
     if not analysis:
         return None
     try:

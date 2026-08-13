@@ -1,4 +1,4 @@
-"""P2-14：限流响应应包含 Retry-After 头，让用户知道多久后可重试。"""
+"""限流响应应包含 Retry-After 头，让用户知道多久后可重试。"""
 
 from unittest.mock import MagicMock
 

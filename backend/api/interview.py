@@ -2,7 +2,7 @@
 
 面后记录 → 录入评分卡（status: recorded → reviewed）→ 派生薄弱点 →
 复盘汇总（高频薄弱点 / 训练推荐 / 历史趋势）。
-设计思路对照 DeepInterview sessions + run_coach_plan，翻译为现有
+设计思路 run_coach_plan，翻译为现有
 FastAPI + SQLAlchemy 风格。错误码统一走 AppException（core/exceptions.py），
 非本人记录一律 404（防枚举）。
 """

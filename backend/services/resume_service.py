@@ -140,7 +140,7 @@ async def create_resume_quick(
 ) -> Resume:
     """快速创建 resume 行（status=processing），不阻塞等 RAG 处理。
 
-    P1-9: idempotency_key 与基本信息在一次 commit 内写入，触发 DB 层 UNIQUE 约束
+    idempotency_key 与基本信息在一次 commit 内写入，触发 DB 层 UNIQUE 约束
     兜底并发竞态——应用层短路检查 + DB 唯一约束双重防御。
 
     Raises:
@@ -163,7 +163,7 @@ async def create_resume_quick(
 
 
 async def recover_stuck_resumes() -> int:
-    """P1-13：启动时恢复卡住的简历。
+    """ 启动时恢复卡住的简历。
 
     进程崩溃/重启后，status=processing 的简历后台任务已丢失，
     永远不会完成。启动时把它们标记为 failed，让用户可以手动重试。
@@ -184,7 +184,7 @@ async def recover_stuck_resumes() -> int:
 
 
 async def retry_resume_processing(db: AsyncSession, resume_id: int, user_id: int) -> Resume:
-    """P1-24：手动重试失败的简历处理。
+    """ 手动重试失败的简历处理。
 
     Args:
         db: 数据库 session
@@ -257,8 +257,8 @@ async def process_resume_background(resume_id: int, file_path: str, user_id: int
     A1：可被 BackgroundTasks / RabbitMQ 消费者 / asyncio.create_task 三种方式调用。
     返回 bool（成功 True / 失败 False），供消费者决定是否重试入队。
 
-    T4 (D3 懒索引)：上传只解析、只写内容，不再分块 + embedding。
-    向量索引延迟到首次 RAG 消费时由 ensure_indexed（T6）触发。
+    (D3 懒索引)：上传只解析、只写内容，不再分块 + embedding。
+    向量索引延迟到首次 RAG 消费时由 ensure_indexed触发。
     content_hash 用于脏标记：content_hash != indexed_hash（None）→ 未索引，懒触发。
 
     流水线三阶段（每阶段更新 parse_progress + WebSocket 推送，供前端进度条）：
@@ -360,7 +360,7 @@ async def process_resume_background(resume_id: int, file_path: str, user_id: int
                 except Exception as e:
                     logger.warning("发布分析任务失败（不影响主流程）: %s", e)
 
-            # T15: L3 画像构建钩子（ready 转换共享点）
+            # L3 画像构建钩子（ready 转换共享点）
             # 只调 summary + skills 两种，不阻塞热路径，错误不外抛
             if user_id:
                 try:
@@ -373,9 +373,9 @@ async def process_resume_background(resume_id: int, file_path: str, user_id: int
             return True
 
         except Exception:
-            # P1-10：logger.exception 保留完整 traceback，便于定位根因
+            # logger.exception 保留完整 traceback，便于定位根因
             logger.exception("Background processing failed for resume %d", resume_id)
-            # P1-10：先 rollback 清理 session 脏状态，否则二次 commit 可能连带失败
+            # 先 rollback 清理 session 脏状态，否则二次 commit 可能连带失败
             await db.rollback()
             try:
                 resume = await db.get(Resume, resume_id)
@@ -400,7 +400,7 @@ async def process_resume_background(resume_id: int, file_path: str, user_id: int
                     )
                 await db.commit()
             except Exception:
-                # P1-10：二次 commit 也可能失败（如 DB 连接断开），不能静默吞掉
+                # 二次 commit 也可能失败（如 DB 连接断开），不能静默吞掉
                 logger.exception("Failed to mark resume %d as failed (commit error)", resume_id)
             return False
 

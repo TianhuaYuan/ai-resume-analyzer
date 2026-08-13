@@ -1,4 +1,4 @@
-"""MCP Resource: resume_list / assets_list — 当前用户资产列表（T13 泛化）。"""
+"""MCP Resource: resume_list / assets_list — 当前用户资产列表。"""
 
 import json
 import logging

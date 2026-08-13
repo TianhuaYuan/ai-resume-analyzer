@@ -88,7 +88,7 @@ class TestToolRoundSignature:
 
 
 class TestNextStepPrompt:
-    """next_step_prompt 注入（M3 OpenManus 借鉴①）。"""
+    """next_step_prompt 注入。"""
 
     @pytest.mark.asyncio
     async def test_injected_from_round_two(self):
@@ -146,7 +146,7 @@ class TestNextStepPrompt:
 
 
 class TestIsStuck:
-    """is_stuck 防卡死（M3 OpenManus 借鉴②）。"""
+    """is_stuck 防卡死。"""
 
     @pytest.mark.asyncio
     async def test_repeated_tool_call_injects_stuck_prompt(self):

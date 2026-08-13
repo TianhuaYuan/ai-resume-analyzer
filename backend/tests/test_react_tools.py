@@ -1,4 +1,4 @@
-"""T21: Agent 工具集成测试。
+"""Agent 工具集成测试。
 
 通过 loop._execute_tool_call 集成入口测试全部 23 工具（unified = 18 qa + 5 builder）：
 1. 注册表完整性：TOOL_REGISTRY 3 类（qa/builder/unified）23 工具
@@ -35,7 +35,7 @@ class TestToolRegistry:
         assert set(TOOL_REGISTRY.keys()) == {"qa", "builder", "unified"}
 
     def test_qa_has_seventeen_tools(self):
-        """qa 类别有 18 个工具（B3 加 search_corpus + P1-1 加 spawn）。"""
+        """qa 类别有 18 个工具（含 search_corpus 与 spawn）。"""
         assert len(TOOL_REGISTRY["qa"]) == 18
 
     def test_builder_has_five_tools(self):
@@ -242,7 +242,7 @@ class TestLLMToolExecution:
     """5 个 LLM 工具通过 _execute_tool_call 执行（mock LLM）。
 
     覆盖：rewrite_star / translate / interview_coach。
-    T12 已测直接调用 _execute，这里测通过 loop 的集成入口。
+    已测直接调用 _execute，这里测通过 loop 的集成入口。
     """
 
     def _make_mock_db_with_resume(self, parsed_text="3年Python后端"):
@@ -415,7 +415,7 @@ class TestExecuteToolCallErrors:
         # 但 diagnose_resume 需要 resume_id → Pydantic 校验失败
         assert is_error is True
         assert "JSON" not in result and "解析" not in result
-# T9: provider strict schema + scalar arguments are rejected at the boundary.
+# provider strict schema + scalar arguments are rejected at the boundary.
 @pytest.mark.asyncio
 async def test_scalar_tool_arguments_are_rejected():
     from services.react_agent.loop import _execute_tool_call

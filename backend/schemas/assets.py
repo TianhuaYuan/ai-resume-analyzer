@@ -1,4 +1,4 @@
-"""知识资产 CRUD Schema（T3, D2 脏标记模式）。
+"""知识资产 CRUD Schema。
 
 JD / 面试记录 / 笔记三类求职知识资产的增删改查契约。
 与 resumes 表同一套 content_hash / indexed_hash 脏标记：

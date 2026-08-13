@@ -95,7 +95,7 @@ async def _find_resume_by_idempotency_key(
 
 
 def _guard_jd_text(jd_text: str) -> None:
-    """P1-18: jd_text 进 LLM 前的注入安检，命中注入模板即拒绝（422）。
+    """ jd_text 进 LLM 前的注入安检，命中注入模板即拒绝（422）。
 
     jd_text 会拼进 user_prompt 发给 LLM，必须和 /qa/ask 的问题一样做注入安检，
     防止 "忽略以上指令" 之类的攻击劫持模型输出。
@@ -148,7 +148,7 @@ async def upload_resume(
     A1: 解析任务通过 publish_parse_task 入队（RabbitMQ 或进程内后台），
     不再依赖 BackgroundTasks（服务重启即丢）。
 
-    P1-9: 应用层短路检查 + DB 层 UNIQUE 约束双重防御并发竞态。
+    应用层短路检查 + DB 层 UNIQUE 约束双重防御并发竞态。
     即使两个请求同时通过短路检查，DB UNIQUE 也会让第二个 commit 抛 IntegrityError，
     回滚后查已有记录返回，并清理本次写入的孤儿文件。
 
@@ -171,7 +171,7 @@ async def upload_resume(
 
     file_path, filename = await resume_service.save_upload_file(file)
 
-    # P1-9: idempotency_key 与基本信息一起写入，触发 UNIQUE 约束兜底并发竞态
+    # idempotency_key 与基本信息一起写入，触发 UNIQUE 约束兜底并发竞态
     try:
         resume = await resume_service.create_resume_quick(
             db, user_id, filename, file_path, idempotency_key=idempotency_key
@@ -204,7 +204,7 @@ async def upload_resume(
             detail="简历上传失败，请重试",
         )
 
-    # T37: 漏斗埋点（best-effort，失败不影响上传主流程）
+    # 漏斗埋点（best-effort，失败不影响上传主流程）
     await record_event(db, user_id, "resume.upload")
 
     # A1: 解析任务入队（RabbitMQ 或进程内后台），不阻塞请求
@@ -274,10 +274,10 @@ async def create_builder_resume_endpoint(
 
     错误码：
     - 401 未登录
-    - 422 模块 content 校验失败（T22 schema）
+    - 422 模块 content 校验失败
     """
     resume, modules = await create_builder_resume(db, current_user.id, body)
-    # T37: 漏斗埋点（best-effort，失败不影响构建主流程）
+    # 漏斗埋点（best-effort，失败不影响构建主流程）
     await record_event(db, current_user.id, "resume.builder_create")
     return _to_builder_response(resume, modules)
 
@@ -291,7 +291,7 @@ async def list_resumes(
 ):
     """分页查当前用户的简历列表。
 
-    P1-16: limit/offset 加上限校验，防止恶意大请求拉取全量数据。
+    limit/offset 加上限校验，防止恶意大请求拉取全量数据。
     同时 eager load resume_modules（批量查询，非 N+1），附带到每个简历的 modules_data 字段，
     前端卡片可用 ResumeTemplateView 渲染缩略预览。
     """
@@ -371,7 +371,7 @@ async def update_resume_endpoint(
 
         resume, modules = await complete_resume(db, current_user.id, resume_id, body)
 
-        # T15: L3 画像构建（后台，不阻塞响应）
+        # L3 画像构建（后台，不阻塞响应）
         if background_tasks is not None:
             from services.react_agent.memory import build_l3_profile_background
             background_tasks.add_task(
@@ -413,7 +413,7 @@ async def copy_resume(
 ):
     """复制简历为新草稿副本（多语言版本管理：复制后对副本翻译即可，不覆盖原稿）。
 
-    借鉴 Magic-Resume createVersion 的整份快照思路，但另存为**独立新简历**：
+ 的整份快照思路，但另存为**独立新简历**：
     一份简历可同时保有中文/英文等多个语言版本。新副本 status=draft、version=1。
     副本继承源简历的 family_id（语言版本族），language 标注副本语言。
     非本人简历 → 404。
@@ -538,7 +538,7 @@ async def retry_resume(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """P1-24：手动重试失败的简历处理。
+    """ 手动重试失败的简历处理。
 
     仅 status=failed 的简历可重试。重试时把状态改回 processing，
     并重新触发后台解析 → 分块 → 向量化流程（A1: 经 publish_parse_task 入队）。
@@ -731,7 +731,7 @@ async def get_resume_chunks(
 
 
 class ResumeVersionInfo(BaseModel):
-    """单个索引版本的概要信息（T18 版本浏览）。"""
+    """单个索引版本的概要信息。"""
 
     version: int
     is_latest: bool
@@ -740,7 +740,7 @@ class ResumeVersionInfo(BaseModel):
 
 
 class ResumeVersionsResponse(BaseModel):
-    """简历索引版本列表（T18 版本浏览）。
+    """简历索引版本列表。
 
     versions 按版本号降序（最新在前），current_version 取简历的 index_version。
     """
@@ -755,7 +755,7 @@ async def get_resume_versions(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """查简历的索引版本历史（T18 版本浏览）。
+    """查简历的索引版本历史。
 
     读取每用户知识集合（knowledge_{user_id}）中该简历（asset_id）的所有版本
     chunks（含已退役旧版本，is_latest=False），按 metadata 的 version 分组返回：
@@ -822,7 +822,7 @@ async def post_match_jd(
     - 422 JD 文本为空、超长或含疑似提示注入
     - 500 LLM 调用失败
     """
-    # P1-18: jd_text 进 LLM 前做注入安检（和 /qa/ask 的问题一样）
+    # jd_text 进 LLM 前做注入安检（和 /qa/ask 的问题一样）
     _guard_jd_text(body.jd_text)
     result = await match_jd_service.match_jd(
         db, current_user.id, resume_id, body.jd_text
@@ -839,7 +839,7 @@ async def export_resume(
 ):
     """导出简历为 PDF 或 Markdown。
 
-    T26: 从 resume_modules 渲染导出，含零模块守卫。
+    从 resume_modules 渲染导出，含零模块守卫。
     - format=markdown: 从模块拼接 Markdown 文本
     - format=pdf: render_resume HTML → WeasyPrint PDF
 
@@ -853,7 +853,7 @@ async def export_resume(
 
     if format == "pdf":
         pdf_bytes, filename = await export_resume_pdf(db, current_user.id, resume_id)
-        # T37: 漏斗埋点（best-effort，失败不影响导出主流程）
+        # 漏斗埋点（best-effort，失败不影响导出主流程）
         await record_event(
             db, current_user.id, "resume.export", metadata={"format": "pdf"}
         )
@@ -865,7 +865,7 @@ async def export_resume(
 
     if format == "markdown":
         markdown_str, filename = await export_resume_markdown(db, current_user.id, resume_id)
-        # T37: 漏斗埋点（best-effort，失败不影响导出主流程）
+        # 漏斗埋点（best-effort，失败不影响导出主流程）
         await record_event(
             db, current_user.id, "resume.export", metadata={"format": "markdown"}
         )
@@ -890,7 +890,7 @@ async def upload_avatar(
 ):
     """上传简历头像。
 
-    T26: 照片安全 — MIME 白名单 / 5MB 限制 / PIL 校验 / UUID 文件名。
+    照片安全 — MIME 白名单 / 5MB 限制 / PIL 校验 / UUID 文件名。
     上传后更新 basic_info 模块的 avatar 字段。
 
     错误码：
@@ -959,7 +959,7 @@ async def get_preview(
 ):
     """获取简历预览 HTML。
 
-    T27: content hash 缓存（TTL 5min）。
+    content hash 缓存（TTL 5min）。
     BuilderPage iframe 实时预览调用此端点。
     零模块时返回空模板（不报 422）。
 
@@ -1027,7 +1027,7 @@ async def parse_to_modules(
 ):
     """将简历纯文本反解析为结构化模块列表。
 
-    T27: LLM 解析 → pydantic 校验 → 格式错误回灌重试 1 次。
+    LLM 解析 → pydantic 校验 → 格式错误回灌重试 1 次。
     用于上传简历后自动填充 builder 模块。
 
     请求体：
@@ -1103,7 +1103,7 @@ _AI_FIELD_ISOLATION_PROMPT = (
     "4. 若指令涉及文本中没有的信息，以文本为准，不自行补全\n"
 )
 
-# E4 事实天花板约束（fieldwork 职业档案天花板对照）：以已保存模块为唯一事实源，
+# E4 事实天花板约束：以已保存模块为唯一事实源，
 # AI 建议只改写不新增事实——不得引入档案外成就/经历/技能，不得编造量化数字。
 _AI_CEILING_CONSTRAINT = (
     "5. 【事实天花板】以提供的「已保存模块事实源」为唯一事实依据：只能改写措辞、"
@@ -1250,7 +1250,7 @@ async def ai_optimize(
         )
         return {"optimized_text": result, "original_text": body.text}
     except Exception as e:
-        # P0-5：不把原始异常回显给客户端（可能泄露 API key 片段/内部错误栈），
+        # 不把原始异常回显给客户端（可能泄露 API key 片段/内部错误栈），
         # 完整 traceback 留在服务端日志（logger.exception）。
         logger.exception("AI optimize failed: resume=%d", resume_id)
         raise HTTPException(
@@ -1475,7 +1475,7 @@ async def ats_audit(
 
 
 # ═══════════════════════════════════════════════════════════════
-# 编辑锁 API（T28 edit_lock 服务层 → HTTP 端点）
+# 编辑锁 API
 # ═══════════════════════════════════════════════════════════════
 
 

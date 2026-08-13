@@ -16,7 +16,7 @@ _MAX_REFLECTION_ROUNDS = 2
 
 
 class FaultType(str, Enum):
-    """D2: 失败类型分类（借鉴 tau-bench fault_type），供定向恢复选择策略。
+    """D2: 失败类型分类，供定向恢复选择策略。
 
     - ``used_wrong_tool``: 用错了工具（应换一个更合适的工具）
     - ``used_wrong_tool_argument``: 工具用对了但参数不正确
@@ -73,7 +73,7 @@ _REFLECTION_SYSTEM = (
     '  "supplement_queries": ["<补充查询1>", "<补充查询2>", ...],\n'
     '  "scope_expansion": ["<缺失资产类型1>", ...]\n'
     "}\n\n"
-    "fault_type 枚举（D2 失败分类，借鉴 tau-bench）：\n"
+    "fault_type 枚举：\n"
     '- "used_wrong_tool"：用错了工具，应换一个更合适的工具\n'
     '- "used_wrong_tool_argument"：工具用对了但参数不正确\n'
     '- "goal_partially_completed"：目标部分完成（覆盖不全/遗漏，无法确定时用此默认值）\n'
@@ -108,7 +108,7 @@ def _build_reflection_user(
             f"- {r}" for r in previous_reflections[-2:]
         )
 
-    # T10：告知当前检索范围，供 scope_expansion 判断缺哪类资产
+    # 告知当前检索范围，供 scope_expansion 判断缺哪类资产
     scope_text = str(scope) if scope else "未知"
 
     return (

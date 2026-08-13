@@ -1,4 +1,4 @@
-"""T34: 管理员后台 API。
+"""管理员后台 API。
 
 所有端点均需 require_admin 依赖（settings.ADMIN_EMAILS 中的邮箱才放行）。
 提供：审计日志、用户列表、系统统计、意见箱反馈、模板列表。

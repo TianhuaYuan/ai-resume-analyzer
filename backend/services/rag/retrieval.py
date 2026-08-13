@@ -23,7 +23,7 @@ _http_client_lock = asyncio.Lock()
 async def _get_http_client() -> httpx.AsyncClient:
     """获取或创建模块级 httpx 客户端（单例，连接池复用）。
 
-    P1-11：加锁避免 TOCTOU 竞态，多协程并发调用只会创建一个实例。
+    加锁避免 TOCTOU 竞态，多协程并发调用只会创建一个实例。
     """
     global _http_client
     async with _http_client_lock:
@@ -86,7 +86,7 @@ async def _load_bm25_index(
 ) -> bool:
     """从向量库按 where 过滤读取文档构建 BM25 索引，返回是否加载成功。
 
-    T7：BM25 只构建 scope 命中的资产 + is_latest 快照，避免旧版本/他人内容污染。
+    BM25 只构建 scope 命中的资产 + is_latest 快照，避免旧版本/他人内容污染。
     """
     items = await get_vector_store().get(collection, where=where)
     if items is None:
@@ -245,7 +245,7 @@ async def hybrid_search_corpus(
     *,
     collection: str | None = None,
 ) -> list[dict]:
-    """知识资产库检索（T7, D1/D4）：稠密 + BM25 → RRF 融合 → 返回 top_k。
+    """知识资产库检索：稠密 + BM25 → RRF 融合 → 返回 top_k。
 
     - collection 默认每用户一个（knowledge_{user_id}）；市场数据显式传
       ``market_collection_name()``（公共集合，所有用户共享）
@@ -285,7 +285,7 @@ def _merge_results(dense: list[dict], sparse: list[dict], top_k: int, k: int = 6
 
     k 为 RRF 平滑常数：k 越小排名敏感度越高（头部优势更大），默认 60 为论文原始值。
 
-    复合键 (asset_id, chunk_index)（P2-1）：多资产 scope 检索时不同资产的
+    复合键 (asset_id, chunk_index)：多资产 scope 检索时不同资产的
     chunk_index 会碰撞，仅用 chunk_index 会把结果错误叠加/覆盖。corpus_retrieval
     已用复合键规避，这里统一。单资产场景 asset_id 相同，行为不变。
     """

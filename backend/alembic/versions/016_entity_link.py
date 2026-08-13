@@ -4,7 +4,7 @@ Revision ID: 016_entity_link
 Revises: 015_job_table_normalize
 Create Date: 2026-08-04 12:00:00.000000
 
-实体链接（借鉴 graphiti 双时态 + mem0 双向索引）：
+实体链接：
 - resume_entities：简历命名实体（name_normalized 消解快路径索引列，linked_memory_ids JSON）
 - resume_entity_facts：实体的原子事实，ADD-only（(entity_id, fact_text_norm) 唯一约束天然去重），
   invalid_at/expired_at 双时态失效标记（不物理删除）

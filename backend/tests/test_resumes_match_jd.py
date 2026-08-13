@@ -115,7 +115,7 @@ async def test_match_jd_empty_text_returns_422(
     assert resp.status_code == 422
 
 
-# ── P1-17: jd_text 长度校验 ──────────────────────────
+# ── jd_text 长度校验 ──────────────────────────
 
 
 @pytest.mark.asyncio
@@ -151,14 +151,14 @@ async def test_match_jd_text_boundary_5000_ok(
     assert resp.status_code == 200
 
 
-# ── P1-18: 提示注入检测 ──────────────────────────────
+# ── 提示注入检测 ──────────────────────────────
 
 
 @pytest.mark.asyncio
 async def test_match_jd_prompt_injection_returns_422(
     client: AsyncClient, auth_headers: dict, registered_user: dict
 ):
-    """P1-18: jd_text 含提示注入话术 → 422（进 LLM 前拦截）。
+    """ jd_text 含提示注入话术 → 422（进 LLM 前拦截）。
 
     jd_text 会拼进 user_prompt 发给 LLM，必须和 /qa/ask 的问题一样做注入安检，
     防止 "忽略以上指令" 之类的攻击劫持模型输出。

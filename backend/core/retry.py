@@ -48,7 +48,7 @@ _CATEGORY_BACKOFF_MULTIPLIER: dict[ErrorCategory, float] = {
 class RetryBudget:
     """重试预算：将最大次数 / 退避基数 / 超时 / 退避封顶收敛为可复用对象。
 
-    P3-10：本类是**不可变的配置对象**（stateless），不保存运行时状态。
+    本类是**不可变的配置对象**（stateless），不保存运行时状态。
     因此可以安全地跨协程/线程共享，无需锁保护。
     """
 
@@ -156,7 +156,7 @@ async def with_retry(
         max_retries = budget.max_retries
         base_delay = budget.base_delay
 
-    # T4: 熔断器前置检查（OPEN 时直接失败，不重试）
+    # 熔断器前置检查（OPEN 时直接失败，不重试）
     if breaker is not None:
         await breaker.check()
 

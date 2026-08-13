@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 async def ats_audit(resume_id: str) -> list[TextContent]:
     """审计简历的 ATS 可读性问题（乱码、特殊符号、表格、空白段等）。
 
-    返回结构化问题清单和 ATS 可读性评分（0-100）。
+    返回结构化问题清单和 ATS 可读性评分。
     纯本地规则引擎，零 LLM 调用。
 
     Args:
