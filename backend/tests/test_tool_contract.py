@@ -107,8 +107,8 @@ async def test_tool_retry_error_maps_to_is_error():
 
 
 @pytest.mark.asyncio
-async def test_tool_failed_maps_to_not_error():
-    """loop 执行层：ToolFailed → is_error=False（不累计坏调用，LLM 换路径）。"""
+async def test_tool_failed_maps_to_non_retryable_business_error():
+    """ToolFailed 必须是失败，但不应混入可重试错误预算。"""
     from services.react_agent.loop import _execute_tool_call
 
     with patch("services.react_agent.loop.get_tool_by_name", return_value=_FailedTool), \
@@ -118,7 +118,8 @@ async def test_tool_failed_maps_to_not_error():
             db=None, user_id=1,
         )
 
-    assert is_error is False
+    assert is_error is True
+    assert getattr(result, "retryable", None) is False
     assert "⛔" in result
 
 

@@ -140,6 +140,7 @@ def _transform_event(event: dict) -> dict:
             "id": event.get("id"),
             "tool_name": event.get("name"),
             "error": event.get("error"),
+            "retryable": event.get("retryable", True),
         }
 
     if etype == "usage":

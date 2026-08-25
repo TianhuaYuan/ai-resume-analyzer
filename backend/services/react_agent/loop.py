@@ -66,6 +66,28 @@ MAX_ROUNDS = settings.REACT_MAX_TOOL_ROUNDS  # : 6 轮工具上限（config 可�
 # A3 契约化：per-tool 重试预算——
 # 同一工具连续失败超限即终止本轮，成功一次即清零
 MAX_TOOL_RETRIES = 3
+
+
+class _ToolFailureText(str):
+    """String-compatible failure text carrying retry semantics inside loop.py.
+
+    This keeps the current tool execution tuple stable until the Phase 4 result
+    envelope migration, while preventing business failures from consuming the
+    retry budget.
+    """
+
+    retryable: bool
+
+    def __new__(cls, value: str, *, retryable: bool):
+        instance = super().__new__(cls, value)
+        instance.retryable = retryable
+        return instance
+
+
+def _is_retryable_tool_error(result: str, is_error: bool) -> bool:
+    return is_error and getattr(result, "retryable", True) is not False
+
+
 AGENT_CONCURRENCY_LIMIT = 5
 # Tools which mutate resume/module state must not overlap for one resume.  The
 # lock is keyed by resume_id, so unrelated resumes still execute concurrently.
@@ -824,6 +846,22 @@ async def react_loop(
                 approval_lock=approval_lock,
                 round_no=1,
             )
+            direct_db_round = {
+                "round": 1,
+                "model": None,
+                "execution_path": "builder_intent_direct",
+                "tool_calls": [
+                    {"name": tc.name, "arguments": tc.arguments, "id": tc.id}
+                ],
+                "tool_results": [
+                    {
+                        "name": tc.name,
+                        "result": result[:500],
+                        "is_error": is_error,
+                        "retryable": _is_retryable_tool_error(result, is_error),
+                    }
+                ],
+            }
             await _emit(
                 {
                     "type": "tool_result" if not is_error else "tool_error",
@@ -831,6 +869,7 @@ async def react_loop(
                     "result": result[:2000],
                     "id": tc.id,
                     "error": result if is_error else None,
+                    "retryable": _is_retryable_tool_error(result, is_error),
                 }
             )
             await _emit({"type": "agent_done", "content": result})
@@ -843,7 +882,7 @@ async def react_loop(
                 process_trace=process_trace,
                 usage=total_usage,
                 sources=_deduplicate_sources(sources),
-                db_trace=_build_db_trace(system_prompt, [], FINAL_MODEL),
+                db_trace=_build_db_trace(system_prompt, [direct_db_round], FINAL_MODEL),
                 checkpoint_restored=restored_from_checkpoint,
             )
 
@@ -1096,6 +1135,7 @@ async def react_loop(
                         "type": "tool_error",
                         "name": tc.name,
                         "error": tool_result,
+                        "retryable": _is_retryable_tool_error(tool_result, is_error),
                         "id": tc.id,
                     }
                 )
@@ -1133,6 +1173,7 @@ async def react_loop(
                     "name": tc.name,
                     "result": visible_tool_result[:500],
                     "is_error": is_error,
+                    "retryable": _is_retryable_tool_error(tool_result, is_error),
                 }
             )
 
@@ -1174,7 +1215,11 @@ async def react_loop(
         # retries[tool_name] 记账 + _check_max_retries 超限终止
         if all_bad:
             exceeded = False
-            for tc in response.tool_calls:
+            for tc, (tool_result, is_error, _sources, _usage) in zip(
+                response.tool_calls, results
+            ):
+                if not _is_retryable_tool_error(tool_result, is_error):
+                    continue
                 tool_retries[tc.name] = tool_retries.get(tc.name, 0) + 1
                 if tool_retries[tc.name] >= MAX_TOOL_RETRIES:
                     exceeded = True
@@ -1643,7 +1688,12 @@ async def _execute_tool_call(
         # A3 契约化：终端失败（业务确定性失败）→ 不累计坏调用，LLM 应换路径
         logger.info("工具终端失败（不重试）: %s, error=%s", tc.name, e)
         logger.info("tool_exec: %s %.0fms (failed)", tc.name, (time.perf_counter() - _tool_t0) * 1000)
-        return f"⛔ {e}", False, [], {"prompt_tokens": 0, "completion_tokens": 0}
+        return (
+            _ToolFailureText(f"⛔ {e}", retryable=False),
+            True,
+            [],
+            {"prompt_tokens": 0, "completion_tokens": 0},
+        )
     except Exception as e:
         logger.warning("工具执行失败: %s, args=%s, error=%s", tc.name, tc.arguments, e)
         logger.info("tool_exec: %s %.0fms (error)", tc.name, (time.perf_counter() - _tool_t0) * 1000)

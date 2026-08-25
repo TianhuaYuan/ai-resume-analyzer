@@ -327,6 +327,121 @@ class TestStreamingToolError:
         error_event = next(e for e in events if e["type"] == "tool_error")
         assert "bad_tool" in error_event.get("tool_name", "") or "bad_tool" in error_event.get("error", "")
 
+    @pytest.mark.asyncio
+    async def test_business_failure_is_tool_error_and_degrades_final_result(self):
+        """ToolFailed 不得伪装成 tool_result，最终回答必须标记降级。"""
+        from services.react_agent.streaming import react_loop_stream
+        from services.react_agent.tools.base import ToolFailed
+
+        mock_tool = MagicMock()
+        mock_tool.execute = AsyncMock(side_effect=ToolFailed("简历不存在或无权访问"))
+        mock_tool.last_usage = {"prompt_tokens": 0, "completion_tokens": 0}
+        mock_tool.sources = []
+        mock_tool_class = MagicMock(return_value=mock_tool)
+        stream_mock = MagicMock(side_effect=[
+            _make_stream_response(tool_calls=[_make_tool_call(name="failed_tool")]),
+            _make_stream_response(content="已换用其他路径回答"),
+        ])
+
+        with patch("services.react_agent.loop.assemble_system_prompt", new_callable=AsyncMock) as mock_sys, \
+             patch("services.react_agent.loop.check_quota", new_callable=AsyncMock) as mock_quota, \
+             patch("services.react_agent.loop.llm_generate_with_tools", new_callable=AsyncMock), \
+             patch("services.react_agent.loop.llm_generate_with_tools_stream", stream_mock), \
+             patch("services.react_agent.loop.get_tool_by_name", return_value=mock_tool_class), \
+             patch("services.react_agent.loop.get_agent_schemas", return_value=[]), \
+             patch("services.react_agent.loop.manage_l1_context") as mock_l1, \
+             patch("services.react_agent.streaming._load_conversation_history", new_callable=AsyncMock, return_value=[]), \
+             patch("services.react_agent.streaming.save_qa_placeholder", new_callable=AsyncMock) as mock_save, \
+             patch("services.react_agent.streaming.update_qa_answer", new_callable=AsyncMock):
+            mock_sys.return_value = "system"
+            mock_quota.return_value = (True, None)
+            mock_l1.side_effect = lambda msgs, **kw: msgs
+            mock_save.return_value = MagicMock(id=42)
+
+            events = []
+            async for event in react_loop_stream(
+                db=AsyncMock(), user_id=1, resume_id=1, question="测试",
+            ):
+                events.append(event)
+
+        types = [e["type"] for e in events]
+        assert "tool_error" in types
+        assert "tool_result" not in types
+        error_event = next(e for e in events if e["type"] == "tool_error")
+        assert error_event["retryable"] is False
+        done_event = next(e for e in events if e["type"] == "agent_done")
+        assert done_event["degraded"] is True
+        assert done_event["answer"] == "已换用其他路径回答"
+
+    @pytest.mark.asyncio
+    async def test_builder_intent_tool_failed_keeps_non_retryable_semantics(self):
+        """Builder 意图直达不得在独立事件分支丢失 ToolFailed 语义。"""
+        from services.react_agent.streaming import react_loop_stream
+        from services.react_agent.tools.base import ToolFailed
+
+        mock_tool = MagicMock()
+        mock_tool.is_approval_required.return_value = False
+        mock_tool.execute = AsyncMock(side_effect=ToolFailed("目标模块不存在"))
+        mock_tool.last_usage = {"prompt_tokens": 0, "completion_tokens": 0}
+        mock_tool.sources = []
+        mock_tool_class = MagicMock(return_value=mock_tool)
+        mock_tool_class.name = "failed_builder_tool"
+        mock_tool_class.category = "builder"
+        mock_tool.to_openai_schema.return_value = {"type": "function"}
+
+        tool_session_context = MagicMock()
+        tool_session_context.__aenter__ = AsyncMock(return_value=AsyncMock())
+        tool_session_context.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("services.react_agent.loop.assemble_system_prompt", new_callable=AsyncMock) as mock_sys, \
+             patch("services.react_agent.loop.check_quota", new_callable=AsyncMock) as mock_quota, \
+             patch("services.react_agent.builder_intent.resolve_builder_intent", new_callable=AsyncMock) as mock_intent, \
+             patch("services.react_agent.loop.get_tools_for_agent", return_value=[mock_tool_class]), \
+             patch("services.react_agent.loop.get_tool_by_name", return_value=mock_tool_class), \
+             patch("services.react_agent.loop.AsyncSessionLocal", return_value=tool_session_context), \
+             patch("services.react_agent.loop._auth_gate.is_blocked", return_value=False), \
+             patch("services.react_agent.loop._auth_gate.authorize", new_callable=AsyncMock, return_value=(True, "ok")), \
+             patch("services.react_agent.loop._auth_gate.release", new_callable=AsyncMock), \
+             patch("services.react_agent.streaming._load_conversation_history", new_callable=AsyncMock, return_value=[]), \
+             patch("services.react_agent.streaming.save_qa_placeholder", new_callable=AsyncMock) as mock_save, \
+             patch("services.react_agent.streaming.update_qa_answer", new_callable=AsyncMock) as mock_update:
+            mock_sys.return_value = "system"
+            mock_quota.return_value = (True, None)
+            mock_intent.return_value = ("failed_builder_tool", {"module_type": "project"})
+            mock_save.return_value = MagicMock(id=42)
+
+            events = []
+            async for event in react_loop_stream(
+                db=AsyncMock(), user_id=1, resume_id=1, question="修改项目模块",
+                tool_mode="builder",
+            ):
+                events.append(event)
+
+        error_event = next(e for e in events if e["type"] == "tool_error")
+        assert error_event["retryable"] is False
+        assert "目标模块不存在" in error_event["error"]
+        assert not any(e["type"] == "tool_result" for e in events)
+        done_event = next(e for e in events if e["type"] == "agent_done")
+        assert done_event["degraded"] is True
+        persisted_trace = mock_update.call_args.kwargs["db_trace"]
+        assert persisted_trace["total_rounds"] == 1
+        persisted_round = persisted_trace["rounds"][0]
+        assert persisted_round["tool_calls"] == [
+            {
+                "name": "failed_builder_tool",
+                "arguments": '{"module_type": "project", "resume_id": 1}',
+                "id": "intent_direct",
+            }
+        ]
+        assert persisted_round["tool_results"] == [
+            {
+                "name": "failed_builder_tool",
+                "result": "⛔ 目标模块不存在",
+                "is_error": True,
+                "retryable": False,
+            }
+        ]
+
 
 # ═══════════════════════════════════════════════════════════════
 # 5. process_trace 双载荷

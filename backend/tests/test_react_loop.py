@@ -342,6 +342,51 @@ class TestEventCallback:
         assert len(error_events) == 1
         assert "bad_tool" in error_events[0]["name"]
 
+    @pytest.mark.asyncio
+    async def test_business_failure_emits_error_but_does_not_exhaust_retry_budget(self):
+        """确定性业务失败连续发生时，仍允许 LLM 换路径并自然收敛。"""
+        from services.react_agent.loop import MAX_TOOL_RETRIES, react_loop
+        from services.react_agent.tools.base import ToolFailed
+
+        mock_tool = MagicMock()
+        mock_tool.execute = AsyncMock(side_effect=ToolFailed("简历不存在或无权访问"))
+        mock_tool.last_usage = {"prompt_tokens": 0, "completion_tokens": 0}
+        mock_tool.sources = []
+        mock_tool_class = MagicMock(return_value=mock_tool)
+
+        failure_rounds = MAX_TOOL_RETRIES + 1
+        stream_mock = MagicMock(side_effect=[
+            _make_stream_response(
+                tool_calls=[_make_tool_call(name="failed_tool", call_id=f"tc_{idx}")]
+            )
+            for idx in range(failure_rounds)
+        ] + [_make_stream_response(content="已换用无需该简历的路径")])
+        events_received: list[dict] = []
+
+        async def callback(event: dict):
+            events_received.append(event)
+
+        with patch("services.react_agent.loop.assemble_system_prompt", new_callable=AsyncMock) as mock_sys, \
+             patch("services.react_agent.loop.check_quota", new_callable=AsyncMock) as mock_quota, \
+             patch("services.react_agent.loop.llm_generate_with_tools", new_callable=AsyncMock), \
+             patch("services.react_agent.loop.llm_generate_with_tools_stream", stream_mock), \
+             patch("services.react_agent.loop.get_tool_by_name", return_value=mock_tool_class), \
+             patch("services.react_agent.loop.get_agent_schemas", return_value=[]), \
+             patch("services.react_agent.loop.manage_l1_context") as mock_l1:
+            mock_sys.return_value = "system"
+            mock_quota.return_value = (True, None)
+            mock_l1.side_effect = lambda msgs, **kw: msgs
+
+            result = await react_loop(
+                db=AsyncMock(), user_id=1, resume_id=1, question="测试",
+                event_callback=callback,
+            )
+
+        error_events = [e for e in events_received if e["type"] == "tool_error"]
+        assert len(error_events) == failure_rounds
+        assert all(e["retryable"] is False for e in error_events)
+        assert result.answer == "已换用无需该简历的路径"
+
 
 # ═══════════════════════════════════════════════════════════════
 # 3. 坏 JSON 参数
