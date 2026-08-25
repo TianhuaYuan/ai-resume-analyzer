@@ -242,6 +242,7 @@ async def react_loop_stream(
     tool_mode: str = "agent",
     conversation_id: int | None = None,
     tool_hint: str | None = None,
+    turn_id: str | None = None,
 ):
     """流式 ReAct 循环 — async generator 产出 SSE 事件。
 
@@ -267,7 +268,7 @@ async def react_loop_stream(
     loop_result: ReactLoopResult | None = None
     loop_error: Exception | None = None
     start_time = time.monotonic()  # Spec: 紧凑摘要含耗时
-    turn_id = uuid.uuid4().hex
+    turn_id = turn_id or uuid.uuid4().hex
     sequence = 0
 
     def envelope(event: dict) -> dict:
@@ -285,8 +286,8 @@ async def react_loop_stream(
         }
 
     async def event_callback(event: dict) -> None:
-        """react_loop 事件回调 — 入队供生成器消费。"""
-        await queue.put(envelope(event))
+        """react_loop 事件回调 — 入队 transport-neutral raw event。"""
+        await queue.put(event)
 
     async def run_loop() -> None:
         """后台运行 react_loop，结束后放入 SENTINEL 标记完成。"""
@@ -379,7 +380,7 @@ async def react_loop_stream(
         # 配额不足 → 不创建占位记录，直接返回
         if first_event.get("type") == "quota_exceeded":
             await cleanup_active_key()
-            yield first_event
+            yield envelope(first_event)
             await queue.get()  # 消费 SENTINEL
             await task
             return
@@ -401,18 +402,37 @@ async def react_loop_stream(
 
         # 转发第一个事件（agent_done 由末尾统一处理）
         if first_event.get("type") != "agent_done":
-            yield _transform_event(first_event)
+            yield envelope(_transform_event(first_event))
 
         # ── 持续转发中间事件（字段映射为 SSE 协议） ──────────
         while True:
             event = await queue.get()
             if event is _SENTINEL:
                 break
+            if event.get("type") == "quota_exceeded":
+                # quota 是 terminal：先发送，再正常 drain 后台 loop，禁止同 turn
+                # 的后续 agent_done/error 成为第二个 terminal。
+                yield envelope(_transform_event(event))
+                while await queue.get() is not _SENTINEL:
+                    pass
+                await task
+                await cleanup_active_key()
+                try:
+                    from services.qa_service import mark_qa_interrupted
+
+                    await mark_qa_interrupted(
+                        db,
+                        qa_id,
+                        answer=event.get("message", "额度不足，生成已终止"),
+                    )
+                except Exception:
+                    logger.warning("标记 quota 终止 QA 记录失败: qa_id=%s", qa_id)
+                return
             # agent_done 从 callback 来的只有 content，
             # 由末尾补充 qa_id + process_trace 后统一 yield
             if event.get("type") == "agent_done":
                 continue
-            yield _transform_event(event)
+            yield envelope(_transform_event(event))
 
         await task
 
@@ -530,9 +550,31 @@ async def react_loop_stream(
         if isinstance(e, GeneratorExit):
             raise
         raise
-    except Exception:
+    except Exception as e:
+        logger.error("agent stream 未处理异常: %s", e, exc_info=True)
         await cleanup_active_key()
-        raise
+        if not task.done():
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
+        if "qa_id" in locals() and qa_id:
+            try:
+                await db.rollback()
+            except Exception:
+                logger.warning("异常 QA 补偿前 rollback 失败: qa_id=%s", qa_id)
+            try:
+                from services.qa_service import mark_qa_interrupted
+
+                await mark_qa_interrupted(
+                    db,
+                    qa_id,
+                    answer="⚠️ Agent 处理失败，请重试",
+                )
+            except Exception:
+                logger.warning("标记异常 QA 记录失败: qa_id=%s", qa_id)
+        yield envelope({"type": "error", "message": "Agent 处理失败，请重试"})
 
 
 def _build_compact_trace(trace: list[dict], duration_ms: int) -> dict:

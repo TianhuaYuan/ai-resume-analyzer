@@ -38,6 +38,14 @@ def _patch_stream():
     }
 
 
+def _terminal_events(events):
+    return [
+        event
+        for event in events
+        if event["type"] in {"agent_done", "quota_exceeded", "error"}
+    ]
+
+
 # ═══════════════════════════════════════════════════════════════
 # 1. agent_start 字段对齐
 # ═══════════════════════════════════════════════════════════════
@@ -72,6 +80,296 @@ async def test_agent_start_has_resume_id_and_tools():
     if starts[0]["tools"]:
         assert "name" in starts[0]["tools"][0]
         assert "description" in starts[0]["tools"][0]
+
+
+@pytest.mark.asyncio
+async def test_stream_sequence_starts_at_one_and_strictly_increases():
+    """agent_start 必须为 1；首个真实事件紧随其后，且同 turn 严格递增。"""
+    from services.react_agent.streaming import react_loop_stream
+
+    async def mock_loop(**kwargs):
+        cb = kwargs["event_callback"]
+        await cb({"type": "agent_thought", "content": "先检查简历"})
+        await cb({"type": "agent_done", "content": "答案"})
+        return _make_result()
+
+    with patch("services.react_agent.streaming.react_loop", side_effect=mock_loop), \
+         patch("services.react_agent.streaming.save_qa_placeholder", new_callable=AsyncMock) as mock_save, \
+         patch("services.react_agent.streaming.update_qa_answer", new_callable=AsyncMock):
+        mock_save.return_value = MagicMock(id=42)
+        events = [
+            event
+            async for event in react_loop_stream(
+                db=AsyncMock(), user_id=1, resume_id=1, question="测试"
+            )
+        ]
+
+    assert [event["type"] for event in events] == [
+        "agent_start",
+        "agent_thought",
+        "agent_done",
+    ]
+    assert [event["sequence"] for event in events] == [1, 2, 3]
+    assert len({event["turn_id"] for event in events}) == 1
+    assert len(_terminal_events(events)) == 1
+
+
+@pytest.mark.asyncio
+async def test_loop_failure_emits_exactly_one_terminal_event():
+    """loop 在首事件前失败时，只发一个 sequence=1 的 error terminal。"""
+    from services.react_agent.streaming import react_loop_stream
+
+    async def mock_loop(**kwargs):
+        raise RuntimeError("boom")
+
+    with patch("services.react_agent.streaming.react_loop", side_effect=mock_loop):
+        events = [
+            event
+            async for event in react_loop_stream(
+                db=AsyncMock(), user_id=1, resume_id=1, question="测试"
+            )
+        ]
+
+    assert [event["type"] for event in events] == ["error"]
+    assert [event["sequence"] for event in events] == [1]
+    assert len(_terminal_events(events)) == 1
+
+
+@pytest.mark.asyncio
+async def test_quota_rejection_emits_exactly_one_terminal_event():
+    """配额拒绝不发 agent_start，只发一个 sequence=1 terminal。"""
+    from services.react_agent.streaming import react_loop_stream
+
+    async def mock_loop(**kwargs):
+        await kwargs["event_callback"](
+            {"type": "quota_exceeded", "message": "今日额度已用完"}
+        )
+        return _make_result()
+
+    with patch("services.react_agent.streaming.react_loop", side_effect=mock_loop):
+        events = [
+            event
+            async for event in react_loop_stream(
+                db=AsyncMock(), user_id=1, resume_id=1, question="测试"
+            )
+        ]
+
+    assert [event["type"] for event in events] == ["quota_exceeded"]
+    assert [event["sequence"] for event in events] == [1]
+    assert len(_terminal_events(events)) == 1
+
+
+@pytest.mark.asyncio
+async def test_post_start_failure_emits_exactly_one_terminal_event():
+    """agent_start 后基础设施异常也必须以单个 error terminal 收口。"""
+    from services.react_agent.streaming import react_loop_stream
+
+    async def mock_loop(**kwargs):
+        await kwargs["event_callback"](
+            {"type": "agent_thought", "content": "先检查简历"}
+        )
+        return _make_result()
+
+    with patch("services.react_agent.streaming.react_loop", side_effect=mock_loop), \
+         patch(
+             "services.react_agent.streaming.save_qa_placeholder",
+             new_callable=AsyncMock,
+             side_effect=RuntimeError("database unavailable"),
+         ):
+        events = []
+        async for event in react_loop_stream(
+            db=AsyncMock(), user_id=1, resume_id=1, question="测试"
+        ):
+            events.append(event)
+
+    assert [event["type"] for event in events] == ["agent_start", "error"]
+    assert [event["sequence"] for event in events] == [1, 2]
+    assert len(_terminal_events(events)) == 1
+
+
+@pytest.mark.asyncio
+async def test_real_event_then_loop_failure_keeps_next_sequence_and_one_terminal():
+    """真实事件入队后 loop 抛错：start=1/event=2/error=3。"""
+    from services.react_agent.streaming import react_loop_stream
+
+    async def mock_loop(**kwargs):
+        await kwargs["event_callback"](
+            {"type": "agent_thought", "content": "先检查简历"}
+        )
+        raise RuntimeError("provider disconnected")
+
+    with patch("services.react_agent.streaming.react_loop", side_effect=mock_loop), \
+         patch("services.react_agent.streaming.save_qa_placeholder", new_callable=AsyncMock) as mock_save, \
+         patch("services.qa_service.mark_qa_interrupted", new_callable=AsyncMock):
+        mock_save.return_value = MagicMock(id=42)
+        events = [
+            event
+            async for event in react_loop_stream(
+                db=AsyncMock(), user_id=1, resume_id=1, question="测试"
+            )
+        ]
+
+    assert [event["type"] for event in events] == [
+        "agent_start",
+        "agent_thought",
+        "error",
+    ]
+    assert [event["sequence"] for event in events] == [1, 2, 3]
+    assert len(_terminal_events(events)) == 1
+
+
+@pytest.mark.asyncio
+async def test_mid_stream_quota_is_only_terminal_and_marks_placeholder_failed():
+    """mid-stream quota 必须 drain loop、标记占位失败，并禁止随后 agent_done。"""
+    from services.react_agent.streaming import react_loop_stream
+
+    loop_finished = False
+
+    async def mock_loop(**kwargs):
+        nonlocal loop_finished
+        cb = kwargs["event_callback"]
+        await cb({"type": "agent_thought", "content": "先检查简历"})
+        await cb({"type": "quota_exceeded", "message": "今日额度已用完"})
+        await cb({"type": "agent_done", "content": "不应发送"})
+        loop_finished = True
+        return _make_result(answer="不应发送")
+
+    with patch("services.react_agent.streaming.react_loop", side_effect=mock_loop), \
+         patch("services.react_agent.streaming.save_qa_placeholder", new_callable=AsyncMock) as mock_save, \
+         patch("services.react_agent.streaming.update_qa_answer", new_callable=AsyncMock) as mock_update, \
+         patch("services.qa_service.mark_qa_interrupted", new_callable=AsyncMock) as mock_mark:
+        mock_save.return_value = MagicMock(id=42)
+        events = [
+            event
+            async for event in react_loop_stream(
+                db=AsyncMock(), user_id=1, resume_id=1, question="测试"
+            )
+        ]
+
+    assert loop_finished is True
+    assert [event["type"] for event in events] == [
+        "agent_start",
+        "agent_thought",
+        "quota_exceeded",
+    ]
+    assert [event["sequence"] for event in events] == [1, 2, 3]
+    assert len(_terminal_events(events)) == 1
+    mock_mark.assert_awaited_once()
+    mock_update.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_transformed_tool_events_keep_stream_metadata():
+    """tool_call/result 字段转换后仍保留同 turn 严格递增 metadata。"""
+    from services.react_agent.streaming import react_loop_stream
+
+    async def mock_loop(**kwargs):
+        cb = kwargs["event_callback"]
+        await cb({
+            "type": "tool_call",
+            "name": "search_resume",
+            "arguments": "{}",
+            "id": "tc_1",
+        })
+        await cb({
+            "type": "tool_result",
+            "name": "search_resume",
+            "result": "结果",
+            "id": "tc_1",
+        })
+        await cb({"type": "agent_done", "content": "答案"})
+        return _make_result()
+
+    with patch("services.react_agent.streaming.react_loop", side_effect=mock_loop), \
+         patch("services.react_agent.streaming.save_qa_placeholder", new_callable=AsyncMock) as mock_save, \
+         patch("services.react_agent.streaming.update_qa_answer", new_callable=AsyncMock):
+        mock_save.return_value = MagicMock(id=42)
+        events = [
+            event
+            async for event in react_loop_stream(
+                db=AsyncMock(), user_id=1, resume_id=1, question="测试"
+            )
+        ]
+
+    assert [event["sequence"] for event in events] == [1, 2, 3, 4]
+    assert len({event["turn_id"] for event in events}) == 1
+    assert all(event["protocol_version"] == "1" for event in events)
+    assert events[1]["event_type"] == "tool_call"
+    assert events[1]["tool_name"] == "search_resume"
+    assert events[2]["event_type"] == "tool_result"
+    assert events[2]["detail"] == "结果"
+
+
+@pytest.mark.asyncio
+async def test_update_failure_marks_placeholder_interrupted_before_error():
+    """占位创建后更新失败，必须先标记中断再发送 error terminal。"""
+    from services.react_agent.streaming import react_loop_stream
+
+    async def mock_loop(**kwargs):
+        await kwargs["event_callback"]({"type": "agent_done", "content": "答案"})
+        return _make_result()
+
+    compensation_order = []
+    mock_db = AsyncMock()
+    mock_db.rollback.side_effect = lambda: compensation_order.append("rollback")
+
+    async def mark_after_rollback(*args, **kwargs):
+        if not compensation_order:
+            raise RuntimeError("session still needs rollback")
+        compensation_order.append("mark")
+
+    with patch("services.react_agent.streaming.react_loop", side_effect=mock_loop), \
+         patch("services.react_agent.streaming.save_qa_placeholder", new_callable=AsyncMock) as mock_save, \
+         patch(
+             "services.react_agent.streaming.update_qa_answer",
+             new_callable=AsyncMock,
+             side_effect=RuntimeError("database unavailable"),
+         ), \
+         patch(
+             "services.qa_service.mark_qa_interrupted",
+             new_callable=AsyncMock,
+             side_effect=mark_after_rollback,
+         ) as mock_mark:
+        mock_save.return_value = MagicMock(id=42)
+        events = [
+            event
+            async for event in react_loop_stream(
+                db=mock_db, user_id=1, resume_id=1, question="测试"
+            )
+        ]
+
+    assert [event["type"] for event in events] == ["agent_start", "error"]
+    assert [event["sequence"] for event in events] == [1, 2]
+    assert compensation_order == ["rollback", "mark"]
+    mock_db.rollback.assert_awaited_once()
+    mock_mark.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_caller_supplied_turn_id_owns_entire_stream():
+    """API 可预分配可信 turn_id；streaming owner 必须原样使用。"""
+    from services.react_agent.streaming import react_loop_stream
+
+    async def mock_loop(**kwargs):
+        await kwargs["event_callback"]({"type": "agent_done", "content": "答案"})
+        return _make_result()
+
+    with patch("services.react_agent.streaming.react_loop", side_effect=mock_loop), \
+         patch("services.react_agent.streaming.save_qa_placeholder", new_callable=AsyncMock) as mock_save, \
+         patch("services.react_agent.streaming.update_qa_answer", new_callable=AsyncMock):
+        mock_save.return_value = MagicMock(id=42)
+        events = [
+            event
+            async for event in react_loop_stream(
+                db=AsyncMock(),
+                user_id=1,
+                resume_id=1,
+                question="测试",
+                turn_id="trusted-turn",
+            )
+        ]
+
+    assert {event["turn_id"] for event in events} == {"trusted-turn"}
 
 
 # ═══════════════════════════════════════════════════════════════

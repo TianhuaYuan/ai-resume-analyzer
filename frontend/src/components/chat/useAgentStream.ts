@@ -3,7 +3,7 @@ import {
   type Dispatch, type SetStateAction, type MutableRefObject,
 } from "react";
 import {
-  askAgentStream, getQuota,
+  askAgentStream, getQuota, shouldAcceptAgentEvent,
   type AgentSSEEvent, type AgentStep, type ConversationItem, type QuotaResponse,
 } from "../../api/qa";
 import { createBuilderResume, getBuilderResume, type ResumeModule } from "../../api/builder";
@@ -676,21 +676,13 @@ export function useAgentStream(getDeps: () => AgentStreamDeps): {
 
     // Versioned stream ownership: tolerate legacy events without metadata,
     // but discard late events from another turn or duplicate/reordered sequence.
-    let streamTurnId: string | undefined;
-    let lastSequence = 0;
+    const eventGate = { turnId: undefined as string | undefined, lastSequence: 0 };
 
     abortRef.current = askAgentStream(
       d.resumeId,
       q,
       (event: AgentSSEEvent) => {
-        if (event.turn_id) {
-          if (streamTurnId && event.turn_id !== streamTurnId) return;
-          streamTurnId = streamTurnId ?? event.turn_id;
-        }
-        if (event.sequence != null) {
-          if (event.sequence <= lastSequence) return;
-          lastSequence = event.sequence;
-        }
+        if (!shouldAcceptAgentEvent(eventGate, event)) return;
         // G1: 按事件类型分派到独立 handler
         //（tool_start→tool_call / tool_done→tool_result|tool_error / content|reasoning→agent_thought|tool_stream
         //  / done→agent_done / error→error|quota_exceeded / approval_request|approval_decision 审批门）

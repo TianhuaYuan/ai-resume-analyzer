@@ -118,6 +118,100 @@ async def test_agent_route_does_not_record_final_usage_again(
 
 
 @pytest.mark.asyncio
+async def test_agent_endpoint_fallback_error_has_next_protocol_sequence(
+    client: AsyncClient, auth_headers: dict
+):
+    """API fallback error 也必须属于原 turn，且使用严格下一 sequence。"""
+
+    allocated_turn_id = None
+
+    async def failing_agent_stream(**kwargs):
+        nonlocal allocated_turn_id
+        allocated_turn_id = kwargs["turn_id"]
+        yield {
+            "type": "agent_start",
+            "protocol_version": "1",
+            "event_type": "agent_start",
+            "turn_id": allocated_turn_id,
+            "sequence": 1,
+            "resume_id": 1,
+            "tools": [],
+        }
+        raise RuntimeError("serializer boundary failure")
+
+    stream_db = AsyncMock()
+    with patch("api.qa.resume_service.get_resume", new_callable=AsyncMock), \
+         patch("api.qa.react_loop_stream", new=failing_agent_stream), \
+         patch("core.database.AsyncSessionLocal", return_value=stream_db):
+        resp = await client.post(
+            "/api/v1/qa/ask/agent",
+            json={"resume_id": 1, "question": "分析我的简历"},
+            headers=auth_headers,
+        )
+
+    events = _parse_sse_events(resp.text)
+    assert [event["type"] for event in events] == ["agent_start", "error"]
+    assert events[1]["protocol_version"] == "1"
+    assert events[1]["event_type"] == "error"
+    assert allocated_turn_id
+    assert events[1]["turn_id"] == allocated_turn_id
+    assert events[1]["sequence"] == 2
+
+
+@pytest.mark.asyncio
+async def test_agent_endpoint_stops_after_first_terminal(
+    client: AsyncClient, auth_headers: dict
+):
+    """API 看到首个 terminal 后立即停止，不转发同 turn 第二 terminal。"""
+
+    upstream_drained = False
+
+    async def double_terminal_stream(**kwargs):
+        nonlocal upstream_drained
+        turn_id = kwargs["turn_id"]
+        yield {
+            "type": "agent_start",
+            "protocol_version": "1",
+            "event_type": "agent_start",
+            "turn_id": turn_id,
+            "sequence": 1,
+            "resume_id": 1,
+            "tools": [],
+        }
+        yield {
+            "type": "error",
+            "message": "failed",
+            "protocol_version": "1",
+            "event_type": "error",
+            "turn_id": turn_id,
+            "sequence": 2,
+        }
+        yield {
+            "type": "agent_done",
+            "answer": "must not escape",
+            "protocol_version": "1",
+            "event_type": "agent_done",
+            "turn_id": turn_id,
+            "sequence": 3,
+        }
+        upstream_drained = True
+
+    stream_db = AsyncMock()
+    with patch("api.qa.resume_service.get_resume", new_callable=AsyncMock), \
+         patch("api.qa.react_loop_stream", new=double_terminal_stream), \
+         patch("core.database.AsyncSessionLocal", return_value=stream_db):
+        resp = await client.post(
+            "/api/v1/qa/ask/agent",
+            json={"resume_id": 1, "question": "分析我的简历"},
+            headers=auth_headers,
+        )
+
+    events = _parse_sse_events(resp.text)
+    assert [event["type"] for event in events] == ["agent_start", "error"]
+    assert upstream_drained is True
+
+
+@pytest.mark.asyncio
 async def test_stream_response_has_sse_headers(client: AsyncClient, auth_headers: dict):
     """SSE 响应应带正确的 media_type 和禁用缓冲的头部。"""
 

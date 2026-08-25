@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
@@ -40,6 +41,7 @@ from services.rag.clients import knowledge_collection_name
 from services.rag.ensure_indexed import ensure_indexed
 from services.rag.pipeline import ask_question_stream as _ask_question_stream
 from services.react_agent.streaming import react_loop_stream
+from services.react_agent.events import PROTOCOL_VERSION
 from services.token_quota import check_quota, record_usage, get_quota_status
 
 
@@ -372,6 +374,9 @@ async def ask_agent(
         from core.database import AsyncSessionLocal
 
         stream_db = AsyncSessionLocal()
+        request_turn_id = uuid.uuid4().hex
+        last_sequence = 0
+        terminal_sent = False
         try:
             async for event in react_loop_stream(
                 db=stream_db,
@@ -381,7 +386,18 @@ async def ask_agent(
                 tool_mode=data.tool_mode or "agent",
                 conversation_id=data.conversation_id,
                 tool_hint=data.tool_hint,
+                turn_id=request_turn_id,
             ):
+                # 首个 terminal 已转发后只 drain，不再处理或输出后续事件。
+                # 让 streaming owner 有机会完成 task await、active key 清理和 DB 补偿。
+                if terminal_sent:
+                    continue
+                event_sequence = event.get("sequence")
+                if (
+                    event.get("turn_id") == request_turn_id
+                    and isinstance(event_sequence, int)
+                ):
+                    last_sequence = max(last_sequence, event_sequence)
                 if event.get("type") == "agent_done":
                     # PII 脱敏（对 agent_done 的 answer）
                     if settings.REDACT_PII_OUTPUT:
@@ -393,7 +409,14 @@ async def ask_agent(
                     # Agent quota 由 react_loop_stream 使用最终聚合 usage 统一记账。
                     # API 层只做事件富化与序列化，避免同一 provider usage 重复扣减。
 
-                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                is_terminal = event.get("type") in {
+                    "agent_done",
+                    "quota_exceeded",
+                    "error",
+                }
+                payload = json.dumps(event, ensure_ascii=False)
+                terminal_sent = terminal_sent or is_terminal
+                yield f"data: {payload}\n\n"
         except asyncio.CancelledError:
             logger.info(
                 "Client disconnected from agent stream: user=%d, resume=%d",
@@ -403,7 +426,16 @@ async def ask_agent(
             raise
         except Exception as e:
             logger.error("Agent stream error: %s", e)
-            yield f"data: {json.dumps({'type': 'error', 'message': 'Agent 处理失败，请重试'}, ensure_ascii=False)}\n\n"
+            if not terminal_sent:
+                fallback_error = {
+                    "type": "error",
+                    "message": "Agent 处理失败，请重试",
+                    "protocol_version": PROTOCOL_VERSION,
+                    "event_type": "error",
+                    "turn_id": request_turn_id,
+                    "sequence": last_sequence + 1,
+                }
+                yield f"data: {json.dumps(fallback_error, ensure_ascii=False)}\n\n"
         finally:
             await stream_db.close()
 

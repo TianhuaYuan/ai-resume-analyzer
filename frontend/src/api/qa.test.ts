@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { askQuestionStream, shouldSkipEvent, getHistory, clearHistory, deleteQa, askAgentStream, type SSEEvent, type AgentSSEEvent } from "./qa";
+import { askQuestionStream, shouldSkipEvent, shouldAcceptAgentEvent, getHistory, clearHistory, deleteQa, askAgentStream, type SSEEvent, type AgentSSEEvent } from "./qa";
 
 // 拦截 client 的刷新，避免真实网络；保留 notifySessionExpired 原实现（只是 dispatch 事件）
 vi.mock("./client", async () => {
@@ -49,6 +49,77 @@ describe("shouldSkipEvent 纯函数 (N5)", () => {
     const e = { id: 5, type: "token" } as SSEEvent;
     expect(shouldSkipEvent(seen, e)).toBe(false);
     expect(shouldSkipEvent(seen, e)).toBe(true);
+  });
+});
+
+describe("shouldAcceptAgentEvent", () => {
+  it("接受 sequence=1 的 agent_start 及紧随的首个真实事件", () => {
+    const state = { turnId: undefined as string | undefined, lastSequence: 0 };
+
+    expect(shouldAcceptAgentEvent(state, {
+      type: "agent_start",
+      turn_id: "turn-1",
+      sequence: 1,
+    })).toBe(true);
+    expect(shouldAcceptAgentEvent(state, {
+      type: "agent_thought",
+      turn_id: "turn-1",
+      sequence: 2,
+      content: "先检查简历",
+    })).toBe(true);
+    expect(state).toEqual({ turnId: "turn-1", lastSequence: 2 });
+  });
+
+  it("拒绝同 turn 的重复或倒序事件", () => {
+    const state = { turnId: "turn-1" as string | undefined, lastSequence: 2 };
+
+    expect(shouldAcceptAgentEvent(state, {
+      type: "agent_thought",
+      turn_id: "turn-1",
+      sequence: 2,
+    })).toBe(false);
+    expect(shouldAcceptAgentEvent(state, {
+      type: "agent_thought",
+      turn_id: "turn-1",
+      sequence: 1,
+    })).toBe(false);
+  });
+
+  it("接受首个 terminal 后拒绝同 turn 后续所有事件", () => {
+    const state = { turnId: "turn-1" as string | undefined, lastSequence: 1 };
+
+    expect(shouldAcceptAgentEvent(state, {
+      type: "error",
+      turn_id: "turn-1",
+      sequence: 2,
+    })).toBe(true);
+    expect(shouldAcceptAgentEvent(state, {
+      type: "agent_done",
+      turn_id: "turn-1",
+      sequence: 3,
+    })).toBe(false);
+  });
+
+  it("拒绝只有 turn_id 或只有 sequence 的半残 metadata", () => {
+    const state = { turnId: undefined as string | undefined, lastSequence: 0 };
+
+    expect(shouldAcceptAgentEvent(state, {
+      type: "agent_thought",
+      turn_id: "turn-1",
+    })).toBe(false);
+    expect(shouldAcceptAgentEvent(state, {
+      type: "agent_thought",
+      sequence: 1,
+    })).toBe(false);
+    expect(state).toEqual({ turnId: undefined, lastSequence: 0 });
+  });
+
+  it("两项 metadata 都缺失时按 legacy 接受，但 terminal 后关闭 gate", () => {
+    const state = { turnId: undefined as string | undefined, lastSequence: 0 };
+
+    expect(shouldAcceptAgentEvent(state, { type: "agent_thought" })).toBe(true);
+    expect(shouldAcceptAgentEvent(state, { type: "agent_done" })).toBe(true);
+    expect(shouldAcceptAgentEvent(state, { type: "agent_thought" })).toBe(false);
   });
 });
 

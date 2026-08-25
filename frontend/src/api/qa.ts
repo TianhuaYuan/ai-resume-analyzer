@@ -300,6 +300,45 @@ export interface AgentSSEEvent {
   round?: number;
 }
 
+export interface AgentEventGateState {
+  turnId?: string;
+  lastSequence: number;
+  terminalSeen?: boolean;
+}
+
+/**
+ * 接受当前 turn 的严格递增事件；兼容未携带 metadata 的旧协议事件。
+ * state 由单次 stream 独占，接受事件后原地推进。
+ */
+export function shouldAcceptAgentEvent(
+  state: AgentEventGateState,
+  event: AgentSSEEvent,
+): boolean {
+  if (state.terminalSeen) return false;
+
+  const hasTurnId = event.turn_id != null;
+  const hasSequence = event.sequence != null;
+  // Versioned metadata must be atomic. Half-present metadata is neither a
+  // valid versioned event nor a legacy event, so reject without advancing.
+  if (hasTurnId !== hasSequence) return false;
+
+  if (event.turn_id != null && event.sequence != null) {
+    if (state.turnId && event.turn_id !== state.turnId) return false;
+    if (event.sequence <= state.lastSequence) return false;
+    state.turnId ??= event.turn_id;
+    state.lastSequence = event.sequence;
+  }
+
+  if (
+    event.type === "agent_done" ||
+    event.type === "quota_exceeded" ||
+    event.type === "error"
+  ) {
+    state.terminalSeen = true;
+  }
+  return true;
+}
+
 /**
  * T18: Agent SSE 流式问答。调用 POST /api/v1/qa/ask/agent。
  *
