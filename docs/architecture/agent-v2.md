@@ -63,14 +63,16 @@ flowchart TD
 
 | 层 | 名称 | 责任 | 禁止承担 |
 |---|---|---|---|
-| L1 | Interface & Transport | FastAPI DTO、鉴权、限流、HTTP/SSE 序列化、断连取消 | 选择工具、拼 prompt、执行业务写入 |
+| L1 | Interface & Transport | FastAPI DTO、鉴权、限流、把 transport-neutral `Event` 投影为 HTTP/SSE、断连取消 | 定义 Event 语义、选择工具、拼 prompt、执行业务写入 |
 | L2 | Use Case & Router | 将用户意图映射为单一路由，创建 `Run`，执行预算与策略 | 直接访问 Chroma、拼 provider payload |
-| L3 | Runtime | 执行 Direct Service、Direct RAG、Agentic RAG、ReAct；只通过端口调用能力 | 持有数据库模型、输出 SSE 字符串 |
+| L3 | Runtime & Contracts | 定义 transport-neutral `Event` contract；执行 Direct Service、Direct RAG、Agentic RAG、ReAct；只通过端口调用能力 | 依赖 FastAPI/StreamingResponse、持有数据库模型、输出 SSE 字符串 |
 | L4 | Capability & Tool | 稳定能力接口、工具注册、参数校验、授权、幂等与 `ToolResult` | 决定全局路由、直接向客户端发事件 |
 | L5 | Artifact, Context & Evidence | Resume Artifact 聚合、版本、作用域、上下文装配、记忆、`Evidence`/`Proposal` | 调用具体 LLM provider、依赖 FastAPI |
 | L6 | Infrastructure & Observability | DB/vector/LLM/provider adapter、队列、缓存、trace、metrics、event sink | 包含产品意图或简历业务决策 |
 
-所有 runtime 共用 L2 的 `Run` 生命周期、L5 的证据语义和 L1 的事件 envelope。差异只在控制流，不在数据含义。
+所有 runtime 共用 L2 的 `Run` 生命周期、L3 的 transport-neutral `Event` contract 与 L5 的证据语义。差异只在控制流，不在数据含义。
+
+Event 依赖规则：canonical Event contract 归 L3，不归 L1。L2 依赖 L3 contract 记录 `route_selected` 等生命周期事实；L3 把 L4 返回的 `ToolResult` 转换为事件；L4 不依赖 Event 或 transport。L1 只消费 L3 Event，并做 HTTP JSON 或 SSE wire projection，可以增加传输头/帧但不能发明、删改业务事件语义。L3 不得 import FastAPI、`StreamingResponse` 或 SSE serializer，runtime 通过 transport-neutral event sink/yield port 输出 Event 对象。
 
 ## 3. 路由矩阵
 
@@ -120,9 +122,9 @@ L2 必须先选一种模式；运行中不得静默升级到成本更高或权�
 
 ### Event
 
-Run 的实时、可持久化观察结果。
+Run 的实时、可持久化观察结果。它是 L3 的 transport-neutral runtime contract，不是 L1/SSE contract。
 
-统一 envelope：`protocol_version`、`event_id`、`event_type`、`run_id`、`turn_id`、`sequence`、`occurred_at`、`payload`。核心事件族：`run_started`、`route_selected`、`retrieval_started`、`evidence_added`、`tool_started`、`tool_finished`、`proposal_created`、`approval_required`、`answer_delta`、`run_completed`、`run_failed`、`run_cancelled`。
+统一 transport-neutral envelope：`protocol_version`、`event_id`、`event_type`、`run_id`、`turn_id`、`sequence`、`occurred_at`、`payload`。核心事件族：`run_started`、`route_selected`、`retrieval_started`、`evidence_added`、`tool_started`、`tool_finished`、`proposal_created`、`approval_required`、`answer_delta`、`run_completed`、`run_failed`、`run_cancelled`。L1 仅将该对象序列化为普通 JSON 或 `data: ...\n\n` SSE frame；wire framing 不是 Event contract 的组成部分。
 
 ### ToolResult
 

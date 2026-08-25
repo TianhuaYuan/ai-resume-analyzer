@@ -180,6 +180,36 @@ def test_event_core_family_is_complete():
     assert all(f"`{event_type}`" in text for event_type in event_types)
 
 
+def test_event_contract_is_transport_neutral_and_owned_below_l1():
+    text = _contract_text()
+    layers = _section(text, "## 2. 目标六层架构", "## 3. 路由矩阵")
+    l1 = next(line for line in layers.splitlines() if line.startswith("| L1 |"))
+    l3 = next(line for line in layers.splitlines() if line.startswith("| L3 |"))
+    l4 = next(line for line in layers.splitlines() if line.startswith("| L4 |"))
+
+    assert "把 transport-neutral `Event` 投影为 HTTP/SSE" in l1
+    assert "定义 Event 语义" in l1
+    assert "定义 transport-neutral `Event` contract" in l3
+    assert "依赖 FastAPI/StreamingResponse" in l3
+    assert "直接向客户端发事件" in l4
+
+    for rule in (
+        "canonical Event contract 归 L3，不归 L1",
+        "L3 把 L4 返回的 `ToolResult` 转换为事件",
+        "L4 不依赖 Event 或 transport",
+        "L1 只消费 L3 Event",
+        "不能发明、删改业务事件语义",
+        "L3 不得 import FastAPI、`StreamingResponse` 或 SSE serializer",
+        "transport-neutral event sink/yield port",
+    ):
+        assert rule in layers
+
+    event = _section(text, "### Event", "### ToolResult")
+    assert "L3 的 transport-neutral runtime contract" in event
+    assert "wire framing 不是 Event contract 的组成部分" in event
+    assert "L1 的事件 envelope" not in text
+
+
 def test_migration_phases_are_complete_and_ordered():
     text = _section(_contract_text(), "## 6. Phase 1-7 迁移顺序", "## 7. 明确非目标")
     phases = [int(value) for value in re.findall(r"^\d+\. \*\*Phase (\d+) —", text, re.MULTILINE)]
