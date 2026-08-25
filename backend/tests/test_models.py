@@ -55,6 +55,7 @@ async def test_resume_has_new_columns():
         assert r.source == "upload"
         assert r.style == {"template_id": "default", "font_family": "sans-serif"}
         assert r.version == 1
+        assert r.module_revision == 0
         assert r.expires_at is None
 
 

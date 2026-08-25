@@ -33,6 +33,9 @@ class Resume(Base):
     source: Mapped[str] = mapped_column(String(20), default="upload", nullable=False)
     style: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    module_revision: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
     # (D2 版本化快照)：content_hash = sha256(规范化内容)；indexed_hash = 上次成功索引时的哈希。
     # content_hash != indexed_hash → 索引过期（脏标记），懒索引触发重建。
     content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)

@@ -239,6 +239,7 @@ def _to_builder_response(
         source=resume.source,
         style=resume.style,
         version=resume.version,
+        module_revision=resume.module_revision,
         created_at=resume.created_at,
         is_indexed=resume.indexed_hash is not None,
         is_stale=bool(resume.content_hash) and resume.content_hash != resume.indexed_hash,
@@ -900,10 +901,20 @@ async def upload_avatar(
     - 413 文件过大
     """
     from services.avatar_service import delete_avatar, save_avatar
-    from services.resume_builder import get_resume_with_modules
+    from services.resume_module_mutation import (
+        ResumeModuleConflictError,
+        load_resume_modules_for_mutation,
+        lock_resume_for_module_mutation,
+    )
 
     # 校验归属
-    resume, modules = await get_resume_with_modules(db, current_user.id, resume_id)
+    try:
+        resume = await lock_resume_for_module_mutation(db, current_user.id, resume_id)
+    except ResumeModuleConflictError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
+    if resume is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="简历不存在或无权访问")
+    modules = await load_resume_modules_for_mutation(db, resume_id)
 
     # 获取旧头像URL（用于删除旧文件）
     old_avatar_url = None

@@ -711,7 +711,9 @@ class RewriteStarTool(Tool):
         target_position = kwargs.get("target_position")
 
         # 改写写的是模块草稿（正是 draft 简历被编辑的目标），不校验 status
-        resume, input_context = await _read_modules_context(self.db, self.user_id, resume_id)
+        resume, input_context, required_module_types = await _read_modules_context(
+            self.db, self.user_id, resume_id
+        )
         if resume is None:
             return "⚠️ 简历不存在或无权访问。"
         if not input_context:
@@ -743,6 +745,8 @@ class RewriteStarTool(Tool):
             emit=self.emit,
             usage_target=self.last_usage,
             tool_name="rewrite_star",
+            required_module_types=required_module_types,
+            expected_module_revision=resume.module_revision,
         )
 
 
@@ -756,7 +760,9 @@ class TranslateTool(Tool):
         resume_id = kwargs.get("resume_id")
         target_lang = kwargs.get("target_lang")
 
-        resume, input_context = await _read_modules_context(self.db, self.user_id, resume_id)
+        resume, input_context, required_module_types = await _read_modules_context(
+            self.db, self.user_id, resume_id
+        )
         if resume is None:
             return "⚠️ 简历不存在或无权访问。"
         if not input_context:
@@ -795,6 +801,8 @@ class TranslateTool(Tool):
             usage_target=self.last_usage,
             tool_name="translate",
             rationale=f"翻译为 {lang_name}",
+            required_module_types=required_module_types,
+            expected_module_revision=resume.module_revision,
         )
 
 
@@ -911,7 +919,9 @@ class CoverLetterTool(Tool):
         jd_text = kwargs.get("jd_text") or ""
         mode = kwargs.get("mode", "letter")
 
-        resume, input_context = await _read_modules_context(self.db, self.user_id, resume_id)
+        resume, input_context, _required_module_types = await _read_modules_context(
+            self.db, self.user_id, resume_id
+        )
         if resume is None:
             return "⚠️ 简历不存在或无权访问。"
         if not input_context:
@@ -1084,9 +1094,10 @@ class _RewrittenModule(BaseModel):
         "给出完整内容，不要留空占位。",
     )
     sort_order: int = Field(..., ge=0, description="模块在简历中的排序位置（从 0 开始）")
-    source: Literal["fact", "inferred", "mixed"] = Field(
-        "fact",
-        description="G 可信度控制：内容来源。fact=简历已有事实；inferred=AI 推断/补充（需用户核对）；mixed=混合",
+    source: Literal["fact", "inferred", "mixed", "unknown"] = Field(
+        "unknown",
+        description="G 可信度控制：内容来源。fact=简历已有事实；inferred=AI 推断/补充（需用户核对）；"
+        "mixed=混合；unknown=模型未标注，不能视为事实",
     )
 
 
@@ -1189,17 +1200,17 @@ def _restore_sensitive_placeholders(
 
 
 async def _read_modules_context(db, user_id: int, resume_id: int):
-    """读简历 + 模块上下文。返回 (resume, input_context)。
+    """读简历 + 模块上下文。返回 (resume, input_context, module_types)。
 
     模块化简历走模块 JSON；上传型简历（无模块）用 parsed_text 兜底。
-    简历不存在/无权访问时返回 (None, "")。
+    简历不存在/无权访问时返回 (None, "", set())。
     """
     try:
         resume, modules = await get_resume_with_modules(db, user_id, resume_id)
     except HTTPException:
-        return None, ""
+        return None, "", set()
     if resume is None:
-        return None, ""
+        return None, "", set()
     if modules:
         # 每模块截断 300 → 2000：原 300 只够 work_experience 等长模块第一个 entry 的
         # 一小部分，LLM 看到的是残缺内容（「工作经历无法正确识别」根因之一）。
@@ -1207,10 +1218,10 @@ async def _read_modules_context(db, user_id: int, resume_id: int):
             f"- {m.module_type}: {_json.dumps(sanitize_resume_module_for_ai(m.module_type, m.content) if isinstance(m.content, dict) else m.content, ensure_ascii=False)[:2000]}"
             for m in modules
         ]
-        return resume, "\n".join(parts)
+        return resume, "\n".join(parts), {module.module_type for module in modules}
     if resume.parsed_text:
-        return resume, f"（无模块，原始文本）\n{resume.parsed_text[:16000]}"
-    return resume, ""
+        return resume, f"（无模块，原始文本）\n{resume.parsed_text[:16000]}", set()
+    return resume, "", set()
 
 
 async def _submit_modules_via_llm(
@@ -1227,6 +1238,8 @@ async def _submit_modules_via_llm(
     complete: bool = False,
     tool_name: str = "",
     rationale: str | None = None,
+    required_module_types: set[str] | None = None,
+    expected_module_revision: int | None = None,
 ) -> str:
     """让 LLM 通过 function calling 提交完整 modules 数组 → 逐模块校验 → 短事务全量替换。
 
@@ -1289,9 +1302,10 @@ async def _submit_modules_via_llm(
         mt_str = raw.get("module_type", "")
         content = raw.get("content", {})
         sort_order = raw.get("sort_order", idx)
-        source = raw.get("source", "fact")
-        if source not in ("fact", "inferred", "mixed"):
-            source = "fact"
+        source = raw.get("source", "unknown")
+        if source not in ("fact", "inferred", "mixed", "unknown"):
+            errors.append(f"模块 {idx} ({mt_str}): source 非法: {source!r}")
+            continue
         try:
             mt = ModuleType(mt_str)
             validate_module_content(mt, content)
@@ -1309,8 +1323,25 @@ async def _submit_modules_via_llm(
             errors.append(f"模块 {idx} ({mt_str}): {e}")
 
     if not validated_modules:
-        # 全部模块校验失败 → A3 回灌自愈（LLM 修正后重试），而非直接失败
-        raise ToolRetryError("重写结果校验失败，无有效模块:\n" + "\n".join(errors))
+        errors.append("modules 不能为空")
+
+    candidate_types = [module["module_type"] for module in validated_modules]
+    duplicate_types = sorted(
+        module_type for module_type in set(candidate_types) if candidate_types.count(module_type) > 1
+    )
+    if duplicate_types:
+        errors.append("module_type 重复: " + ", ".join(duplicate_types))
+
+    expected_types = set(required_module_types or ())
+    expected_types.update(module["module_type"] for module in before_modules)
+    if expected_types:
+        missing_types = sorted(expected_types - set(candidate_types))
+        if missing_types:
+            errors.append("缺少现有模块: " + ", ".join(missing_types))
+
+    if errors:
+        # 全量替换只能整批通过；禁止跳过坏模块后损坏现有简历结构。
+        raise ToolRetryError("重写结果校验失败，未写入任何模块:\n" + "\n".join(errors))
 
     # G 脱敏还原：AI 改写/翻译输入经 sanitize_resume_module_for_ai 脱敏
     # （name→[姓名] 等），LLM 原样回传占位符。落库前用 before 快照还原真实值，
@@ -1319,13 +1350,16 @@ async def _submit_modules_via_llm(
         validated_modules = _restore_sensitive_placeholders(validated_modules, before_modules)
 
     result = await _replace_all_modules_short_txn(
-        user_id, resume_id, validated_modules, complete=complete
+        user_id,
+        resume_id,
+        validated_modules,
+        complete=complete,
+        expected_module_types=expected_types,
+        expected_module_revision=expected_module_revision,
     )
-    if errors:
-        result += f"\n⚠️ {len(errors)} 个模块校验失败被跳过。"
     # G 可信度控制：AI 推断/补充内容（source≠fact）提醒用户核对具体模块
     inferred_modules = [
-        m["module_type"] for m in validated_modules if m.get("source", "fact") != "fact"
+        m["module_type"] for m in validated_modules if m.get("source", "unknown") != "fact"
     ]
     if inferred_modules:
         result += (
@@ -1363,8 +1397,12 @@ async def _update_module_short_txn(
     短事务设计：不在请求 session 中操作，每次独立开 session → flush → commit → close。
     避免长事务锁行 / 请求超时导致回滚。
     """
-    from models.resume import Resume
     from models.resume_module import ResumeModule
+    from services.resume_module_mutation import (
+        ResumeModuleConflictError,
+        load_resume_modules_for_mutation,
+        lock_resume_for_module_mutation,
+    )
     from schemas.resume_module import validate_module_content
 
     # 入口校验 content——失败抛 ToolRetryError 走 A3 回灌自愈：
@@ -1392,21 +1430,16 @@ async def _update_module_short_txn(
             )[0]["content"]
 
         # 校验归属
-        result = await session.execute(
-            select(Resume).where(Resume.id == resume_id, Resume.user_id == user_id)
-        )
-        resume = result.scalar_one_or_none()
+        try:
+            resume = await lock_resume_for_module_mutation(session, user_id, resume_id)
+        except ResumeModuleConflictError as e:
+            raise ToolRetryError(str(e)) from e
         if resume is None:
             return f"⚠️ 简历 {resume_id} 不存在或无权访问。"
 
         # 查现有模块
-        mod_result = await session.execute(
-            select(ResumeModule).where(
-                ResumeModule.resume_id == resume_id,
-                ResumeModule.module_type == module_type,
-            )
-        )
-        module = mod_result.scalar_one_or_none()
+        current_modules = await load_resume_modules_for_mutation(session, resume_id)
+        module = next((m for m in current_modules if m.module_type == module_type), None)
 
         if module:
             # 更新现有模块
@@ -1436,13 +1469,7 @@ async def _update_module_short_txn(
         # 避免 Agent 检索到旧索引内容。
         from services.resume_builder import _merge_modules_to_text
 
-        all_modules = (
-            await session.execute(
-                select(ResumeModule)
-                .where(ResumeModule.resume_id == resume_id)
-                .order_by(ResumeModule.sort_order, ResumeModule.id)
-            )
-        ).scalars().all()
+        all_modules = await load_resume_modules_for_mutation(session, resume_id)
         merged = _merge_modules_to_text(list(all_modules))
         resume.parsed_text = merged
         resume.content_hash = hashlib.sha256(merged.encode("utf-8")).hexdigest()
@@ -1463,6 +1490,8 @@ async def _replace_all_modules_short_txn(
     modules_data: list[dict],
     *,
     complete: bool = False,
+    expected_module_types: set[str] | None = None,
+    expected_module_revision: int | None = None,
 ) -> str:
     """全量替换所有模块（rewrite_star / translate / rewrite_resume 共用）。
 
@@ -1472,14 +1501,41 @@ async def _replace_all_modules_short_txn(
     - complete=False (草稿): 替换模块 + 更新 parsed_text/content_hash，不触发索引、不 bump version
     - complete=True  (完成):  同上 + ensure_indexed + 清 embedding 缓存 + bump version + status=ready
     """
-    from models.resume import Resume
     from models.resume_module import ResumeModule
     from schemas.resume_module import validate_module_content
+    from services.resume_module_mutation import (
+        ResumeModuleConflictError,
+        load_resume_modules_for_mutation,
+        lock_resume_for_module_mutation,
+    )
 
-    # 入口批量校验——失败抛 ToolRetryError 走 A3 回灌自愈（同 _update_module_short_txn）
+    # 入口批量校验——任何错误都发生在打开事务和删除旧模块之前。
     from pydantic import ValidationError
 
+    if not modules_data:
+        raise ToolRetryError("全量替换 modules 不能为空。")
+
+    for idx, mod in enumerate(modules_data):
+        if not isinstance(mod, dict):
+            raise ToolRetryError(f"全量替换模块 {idx} 不是对象。")
+        if not isinstance(mod.get("module_type"), str):
+            raise ToolRetryError(f"全量替换模块 {idx} module_type 必须为字符串。")
+
+    module_types = [mod.get("module_type") for mod in modules_data]
+    duplicate_types = sorted(
+        str(module_type)
+        for module_type in set(module_types)
+        if module_types.count(module_type) > 1
+    )
+    if duplicate_types:
+        raise ToolRetryError("全量替换 module_type 重复: " + ", ".join(duplicate_types))
+
     for mod in modules_data:
+        source = mod.get("source", "unknown")
+        if source not in ("fact", "inferred", "mixed", "unknown"):
+            raise ToolRetryError(
+                f"模块 {mod.get('module_type', '?')} source 非法: {source!r}"
+            )
         try:
             validate_module_content(mod["module_type"], mod["content"])
         except ValidationError as e:
@@ -1493,18 +1549,27 @@ async def _replace_all_modules_short_txn(
 
     async with AsyncSessionLocal() as session:
         # 校验归属
-        result = await session.execute(
-            select(Resume).where(Resume.id == resume_id, Resume.user_id == user_id)
-        )
-        resume = result.scalar_one_or_none()
+        try:
+            resume = await lock_resume_for_module_mutation(
+                session,
+                user_id,
+                resume_id,
+                expected_revision=expected_module_revision,
+            )
+        except ResumeModuleConflictError as e:
+            raise ToolRetryError(str(e)) from e
         if resume is None:
             return f"⚠️ 简历 {resume_id} 不存在或无权访问。"
 
-        # 删旧模块
-        old_result = await session.execute(
-            select(ResumeModule).where(ResumeModule.resume_id == resume_id)
-        )
-        for old_mod in old_result.scalars().all():
+        # 锁内 CAS：校验 LLM 生成期间父记录和模块集合均未变化，再允许删除。
+        old_modules = await load_resume_modules_for_mutation(session, resume_id)
+        if expected_module_types is not None:
+            current_module_types = {module.module_type for module in old_modules}
+            if current_module_types != set(expected_module_types):
+                raise ToolRetryError("简历模块集合已发生并发变化，拒绝覆盖；请基于最新内容重试。")
+
+        # CAS 通过后才删除旧模块。
+        for old_mod in old_modules:
             await session.delete(old_mod)
         await session.flush()
 
@@ -1516,7 +1581,7 @@ async def _replace_all_modules_short_txn(
                 content=mod_data["content"],
                 sort_order=mod_data.get("sort_order", idx),
                 # G 可信度控制：AI 改写内容来源标注（fact/inferred/mixed）
-                source=mod_data.get("source", "fact"),
+                source=mod_data.get("source", "unknown"),
             )
             session.add(module)
 
@@ -1941,6 +2006,8 @@ class RewriteResumeTool(Tool):
             complete=False,
             tool_name="rewrite_resume",
             rationale=("按目标岗位优化整份简历" if mode == "optimize" else "生成整份简历"),
+            required_module_types={module.module_type for module in modules} if modules else None,
+            expected_module_revision=resume.module_revision,
         )
 
 

@@ -499,16 +499,25 @@ async def reject_pending_change(
         )
 
     # 还原字段 → 模块 content
-    from models.resume_module import ResumeModule
     from schemas.resume_module import validate_module_content
-
-    mod_result = await db.execute(
-        select(ResumeModule).where(
-            ResumeModule.resume_id == change.resume_id,
-            ResumeModule.module_type == change.module_type,
-        )
+    from services.resume_module_mutation import (
+        ResumeModuleConflictError,
+        load_resume_modules_for_mutation,
+        lock_resume_for_module_mutation,
     )
-    module = mod_result.scalar_one_or_none()
+
+    try:
+        resume = await lock_resume_for_module_mutation(db, user_id, change.resume_id)
+    except ResumeModuleConflictError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
+    if resume is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="简历不存在或无权访问",
+        )
+
+    current_modules = await load_resume_modules_for_mutation(db, change.resume_id)
+    module = next((m for m in current_modules if m.module_type == change.module_type), None)
 
     if module is not None and change.field_path:
         current = module.content if isinstance(module.content, dict) else {}

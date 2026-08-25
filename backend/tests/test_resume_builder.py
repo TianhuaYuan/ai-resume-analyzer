@@ -167,6 +167,7 @@ class TestCreateBuilderResume:
         assert data["filename"] == "我的简历"
         assert data["source"] == "builder"
         assert data["status"] == "draft"
+        assert data["module_revision"] == 1
         assert data["version"] == 1
         assert data["style"] is None
         # 预置 4 个默认核心模块（基本信息/教育经历/工作经历/专业技能）
@@ -246,6 +247,7 @@ class TestCreateBuilderResume:
         assert "副本" in data["filename"]
         # 多语言版本：language 透传 + family 归属（源无 family → 副本以源为族根）
         assert data["language"] == "en"
+        assert data["module_revision"] == 1
         assert data["family_id"] == src_id
         # 模块完整复制（预置 4 个核心模块）
         assert [m["module_type"] for m in data["modules"]] == [
@@ -350,6 +352,7 @@ class TestCreateBuilderResume:
         assert all(m["source"] == "inferred" for m in data["modules"])
         # 语言标注保留（copy?language= 设置的 en）
         assert data["language"] == "en"
+        assert data["module_revision"] == 2
 
         # 原稿不变（翻译只作用于副本）
         src = await client.get(f"/api/v1/resumes/{src_id}/builder", headers=auth_headers)

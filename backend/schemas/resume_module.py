@@ -840,6 +840,7 @@ class BuilderResumeResponse(BaseModel):
     source: str
     style: dict | None
     version: int
+    module_revision: int = 0
     created_at: datetime
     is_indexed: bool = False
     is_stale: bool = False

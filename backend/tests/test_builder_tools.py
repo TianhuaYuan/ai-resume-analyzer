@@ -190,6 +190,7 @@ class TestShortTransaction:
         from services.react_agent.tools import _update_module_short_txn
 
         resume, _ = await _create_test_resume(db_session, registered_user["id"])
+        resume_id = resume.id
 
         with patch("services.react_agent.tools.AsyncSessionLocal", AsyncSessionTest):
             result = await _update_module_short_txn(
@@ -213,6 +214,8 @@ class TestShortTransaction:
         module = mod_result.scalar_one_or_none()
         assert module is not None
         assert module.content["categories"][0]["name"] == "编程语言"
+        db_session.expire_all()
+        assert (await db_session.get(type(resume), resume_id)).module_revision == 2
 
     async def test_update_module_existing(self, db_session, registered_user):
         """短事务更新现有模块。"""
@@ -287,9 +290,9 @@ class TestShortTransaction:
         resume, _ = await _create_test_resume(db_session, registered_user["id"])
 
         new_modules = [
-            {"module_type": "basic_info", "content": _VALID_BASIC_INFO, "sort_order": 0},
-            {"module_type": "education", "content": _VALID_EDUCATION, "sort_order": 1},
-            {"module_type": "skills", "content": _VALID_SKILLS, "sort_order": 2},
+            {"module_type": "basic_info", "content": _VALID_BASIC_INFO, "sort_order": 0, "source": "fact"},
+            {"module_type": "education", "content": _VALID_EDUCATION, "sort_order": 1, "source": "fact"},
+            {"module_type": "skills", "content": _VALID_SKILLS, "sort_order": 2, "source": "fact"},
         ]
 
         with patch("services.react_agent.tools.AsyncSessionLocal", AsyncSessionTest):
@@ -332,6 +335,82 @@ class TestShortTransaction:
         err = str(exc_info.value)
         assert "校验失败" in err
         assert "name" in err
+
+    @pytest.mark.parametrize(
+        ("bad_modules", "message"),
+        [
+            ([], "不能为空"),
+            (
+                [
+                    {"module_type": "basic_info", "content": _VALID_BASIC_INFO, "source": "fact"},
+                    {"module_type": "basic_info", "content": _VALID_BASIC_INFO, "source": "fact"},
+                ],
+                "重复",
+            ),
+        ],
+    )
+    async def test_replace_all_modules_rejects_empty_or_duplicate_without_db_changes(
+        self, db_session, registered_user, bad_modules, message
+    ):
+        """底层全量替换拒绝空集/重复类型，且旧模块保持不变。"""
+        from models.resume_module import ResumeModule
+        from services.react_agent.tools import _replace_all_modules_short_txn
+        from sqlalchemy import select
+
+        resume, _ = await _create_test_resume(db_session, registered_user["id"])
+        resume_id = resume.id
+        before = (
+            (
+                await db_session.execute(
+                    select(ResumeModule).where(ResumeModule.resume_id == resume_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        before_snapshot = [(m.module_type, m.content, m.source) for m in before]
+
+        with (
+            patch("services.react_agent.tools.AsyncSessionLocal", AsyncSessionTest),
+            pytest.raises(ToolRetryError, match=message),
+        ):
+            await _replace_all_modules_short_txn(registered_user["id"], resume_id, bad_modules)
+
+        db_session.expire_all()
+        after = (
+            (
+                await db_session.execute(
+                    select(ResumeModule).where(ResumeModule.resume_id == resume_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert [(m.module_type, m.content, m.source) for m in after] == before_snapshot
+
+    @pytest.mark.parametrize(
+        "bad_modules",
+        [
+            [None],
+            [
+                {
+                    "module_type": [],
+                    "content": _VALID_BASIC_INFO,
+                    "source": "fact",
+                }
+            ],
+        ],
+    )
+    async def test_replace_all_modules_rejects_malformed_entries_stably(
+        self, registered_user, bad_modules
+    ):
+        """非 dict 或不可哈希 module_type 必须稳定转为 ToolRetryError。"""
+        from services.react_agent.tools import _replace_all_modules_short_txn
+
+        with pytest.raises(ToolRetryError):
+            await _replace_all_modules_short_txn(
+                registered_user["id"], 99999, bad_modules
+            )
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -594,10 +673,10 @@ class TestRewriteResumeTool:
         resume, _ = await _create_test_resume(db_session, registered_user["id"])
 
         modules = [
-            {"module_type": "basic_info", "content": _VALID_BASIC_INFO, "sort_order": 0},
-            {"module_type": "education", "content": _VALID_EDUCATION, "sort_order": 1},
-            {"module_type": "work_experience", "content": _VALID_WORK, "sort_order": 2},
-            {"module_type": "skills", "content": _VALID_SKILLS, "sort_order": 3},
+            {"module_type": "basic_info", "content": _VALID_BASIC_INFO, "sort_order": 0, "source": "fact"},
+            {"module_type": "education", "content": _VALID_EDUCATION, "sort_order": 1, "source": "fact"},
+            {"module_type": "work_experience", "content": _VALID_WORK, "sort_order": 2, "source": "fact"},
+            {"module_type": "skills", "content": _VALID_SKILLS, "sort_order": 3, "source": "fact"},
         ]
 
         tool = RewriteResumeTool(db=db_session, user_id=registered_user["id"])
@@ -624,8 +703,8 @@ class TestRewriteResumeTool:
         resume, _ = await _create_test_resume(db_session, registered_user["id"])
 
         modules = [
-            {"module_type": "basic_info", "content": _VALID_BASIC_INFO, "sort_order": 0},
-            {"module_type": "skills", "content": _VALID_SKILLS, "sort_order": 1},
+            {"module_type": "basic_info", "content": _VALID_BASIC_INFO, "sort_order": 0, "source": "fact"},
+            {"module_type": "skills", "content": _VALID_SKILLS, "sort_order": 1, "source": "fact"},
         ]
 
         tool = RewriteResumeTool(db=db_session, user_id=registered_user["id"])
@@ -688,17 +767,45 @@ class TestRewriteResumeTool:
                 )
         assert "JSON 解析失败" in str(exc_info.value)
 
-    async def test_rewrite_invalid_module_skipped(self, db_session, registered_user):
-        """部分模块校验失败 → 有效模块仍然写入。"""
+    @pytest.mark.parametrize(
+        "modules",
+        [
+            [
+                {"module_type": "basic_info", "content": _VALID_BASIC_INFO, "sort_order": 0, "source": "fact"},
+                {"module_type": "skills", "content": {"items": [{"name": ""}]}, "sort_order": 1, "source": "fact"},
+            ],
+            [
+                {"module_type": "skills", "content": _VALID_SKILLS, "sort_order": 0, "source": "fact"},
+            ],
+            [
+                {"module_type": "basic_info", "content": _VALID_BASIC_INFO, "sort_order": 0, "source": "fact"},
+                {"module_type": "basic_info", "content": _VALID_BASIC_INFO, "sort_order": 1, "source": "fact"},
+            ],
+            [
+                {"module_type": "basic_info", "content": _VALID_BASIC_INFO, "sort_order": 0, "source": "invented"},
+            ],
+        ],
+    )
+    async def test_rewrite_rejects_non_atomic_candidate_without_db_changes(
+        self, db_session, registered_user, modules
+    ):
+        """坏模块、漏模块、重复类型或不可信 source 均拒绝整批，DB 零变化。"""
         from services.react_agent.tools import RewriteResumeTool
+        from models.resume_module import ResumeModule
+        from sqlalchemy import select
 
         resume, _ = await _create_test_resume(db_session, registered_user["id"])
-
-        modules = [
-            {"module_type": "basic_info", "content": _VALID_BASIC_INFO, "sort_order": 0},
-            {"module_type": "basic_info", "content": {"phone": "123"}, "sort_order": 1},  # 缺 name
-            {"module_type": "skills", "content": _VALID_SKILLS, "sort_order": 2},
-        ]
+        resume_id = resume.id
+        before = (
+            (
+                await db_session.execute(
+                    select(ResumeModule).where(ResumeModule.resume_id == resume_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        before_snapshot = [(m.module_type, m.content, m.source) for m in before]
 
         tool = RewriteResumeTool(db=db_session, user_id=registered_user["id"])
         with (
@@ -708,15 +815,178 @@ class TestRewriteResumeTool:
                 return_value=_tool_resp("submit_rewritten_resume", {"modules": modules}),
             ),
             patch("services.react_agent.tools.AsyncSessionLocal", AsyncSessionTest),
+            patch("services.pending_changes.AsyncSessionLocal", AsyncSessionTest),
+            patch(
+                "services.react_agent.tools._replace_all_modules_short_txn",
+                new_callable=AsyncMock,
+            ) as replace_mock,
+        ):
+            with pytest.raises(ToolRetryError):
+                await tool._execute(
+                    resume_id=resume_id,
+                    mode="optimize",
+                    target_position=None,
+                )
+        replace_mock.assert_not_awaited()
+
+        db_session.expire_all()
+        after = (
+            (
+                await db_session.execute(
+                    select(ResumeModule).where(ResumeModule.resume_id == resume_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert [(m.module_type, m.content, m.source) for m in after] == before_snapshot
+
+    async def test_rewrite_missing_source_is_stored_as_unknown(
+        self, db_session, registered_user
+    ):
+        """source 缺失不得冒充 fact，兼容写入时标记 unknown。"""
+        from models.resume_module import ResumeModule
+        from services.react_agent.tools import RewriteResumeTool
+        from sqlalchemy import select
+
+        resume, _ = await _create_test_resume(db_session, registered_user["id"])
+        resume_id = resume.id
+        modules = [
+            {"module_type": "basic_info", "content": _VALID_BASIC_INFO, "sort_order": 0}
+        ]
+        tool = RewriteResumeTool(db=db_session, user_id=registered_user["id"])
+        with (
+            patch(
+                "services.react_agent.tools.llm_generate_with_tools",
+                new_callable=AsyncMock,
+                return_value=_tool_resp("submit_rewritten_resume", {"modules": modules}),
+            ),
+            patch("services.react_agent.tools.AsyncSessionLocal", AsyncSessionTest),
+            patch("services.pending_changes.AsyncSessionLocal", AsyncSessionTest),
         ):
             result = await tool._execute(
-                resume_id=resume.id,
-                mode="generate",
-                target_position=None,
+                resume_id=resume_id, mode="optimize", target_position=None
             )
-        # 应该写入 2 个有效模块（basic_info 和 skills），跳过 1 个无效的
+
         assert "重写" in result
-        assert "校验失败" in result or "跳过" in result
+        db_session.expire_all()
+        stored = (
+            await db_session.execute(
+                select(ResumeModule).where(ResumeModule.resume_id == resume_id)
+            )
+        ).scalar_one()
+        assert stored.source == "unknown"
+
+    async def test_rewrite_unions_initial_types_with_new_snapshot_types(
+        self, db_session, registered_user
+    ):
+        """快照期间新增模块也必须被候选覆盖，不能让首次读取类型遮蔽权威快照。"""
+        from services.react_agent.tools import RewriteResumeTool
+
+        resume, _ = await _create_test_resume(db_session, registered_user["id"])
+        modules = [
+            {
+                "module_type": "basic_info",
+                "content": _VALID_BASIC_INFO,
+                "sort_order": 0,
+                "source": "fact",
+            }
+        ]
+        authoritative_snapshot = [
+            {"module_type": "basic_info", "content": _VALID_BASIC_INFO},
+            {"module_type": "skills", "content": _VALID_SKILLS},
+        ]
+        tool = RewriteResumeTool(db=db_session, user_id=registered_user["id"])
+        with (
+            patch(
+                "services.react_agent.tools.llm_generate_with_tools",
+                new_callable=AsyncMock,
+                return_value=_tool_resp("submit_rewritten_resume", {"modules": modules}),
+            ),
+            patch(
+                "services.pending_changes.snapshot_modules",
+                new_callable=AsyncMock,
+                return_value=authoritative_snapshot,
+            ),
+            patch(
+                "services.react_agent.tools._replace_all_modules_short_txn",
+                new_callable=AsyncMock,
+            ) as replace_mock,
+        ):
+            with pytest.raises(ToolRetryError, match="skills"):
+                await tool._execute(
+                    resume_id=resume.id, mode="optimize", target_position=None
+                )
+
+        replace_mock.assert_not_awaited()
+
+    @pytest.mark.parametrize("intervening_change", ["modify", "add"])
+    async def test_rewrite_rejects_stale_revision_after_intervening_module_change(
+        self, db_session, registered_user, intervening_change
+    ):
+        """LLM 期间插入的模块变更会让旧 revision 失效，双方数据均不丢。"""
+        from models.resume_module import ResumeModule
+        from services.react_agent.tools import RewriteResumeTool, _update_module_short_txn
+        from sqlalchemy import select
+
+        resume, _ = await _create_test_resume(db_session, registered_user["id"])
+        resume_id = resume.id
+        candidate = [
+            {
+                "module_type": "basic_info",
+                "content": {"name": "AI 候选"},
+                "sort_order": 0,
+                "source": "fact",
+            }
+        ]
+
+        async def concurrent_update(**_kwargs):
+            if intervening_change == "modify":
+                await _update_module_short_txn(
+                    registered_user["id"],
+                    resume_id,
+                    "basic_info",
+                    {"name": "并发修改"},
+                )
+            else:
+                await _update_module_short_txn(
+                    registered_user["id"], resume_id, "skills", _VALID_SKILLS
+                )
+            return _tool_resp("submit_rewritten_resume", {"modules": candidate})
+
+        tool = RewriteResumeTool(db=db_session, user_id=registered_user["id"])
+        with (
+            patch(
+                "services.react_agent.tools.llm_generate_with_tools",
+                new_callable=AsyncMock,
+                side_effect=concurrent_update,
+            ),
+            patch("services.react_agent.tools.AsyncSessionLocal", AsyncSessionTest),
+            patch("services.pending_changes.AsyncSessionLocal", AsyncSessionTest),
+        ):
+            with pytest.raises(ToolRetryError, match="并发|冲突|变化"):
+                await tool._execute(
+                    resume_id=resume_id, mode="optimize", target_position=None
+                )
+
+        db_session.expire_all()
+        stored = (
+            (
+                await db_session.execute(
+                    select(ResumeModule)
+                    .where(ResumeModule.resume_id == resume_id)
+                    .order_by(ResumeModule.module_type)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if intervening_change == "modify":
+            assert [(module.module_type, module.content["name"]) for module in stored] == [
+                ("basic_info", "并发修改")
+            ]
+        else:
+            assert [module.module_type for module in stored] == ["basic_info", "skills"]
 
     async def test_rewrite_all_invalid(self, db_session, registered_user):
         """全部模块校验失败 → 报错。"""
@@ -975,15 +1245,18 @@ class TestQAWriteToModules:
         )
         assert len(mods) == 2
 
-    async def test_rewrite_star_skips_overlong_content(self, db_session, registered_user):
-        """content 超长（如 summary>500）→ 该模块跳过并提示。"""
+    async def test_rewrite_star_rejects_overlong_content_atomically(
+        self, db_session, registered_user
+    ):
+        """任一 content 超长时整批拒绝，旧模块不变。"""
         from models.resume_module import ResumeModule
         from sqlalchemy import select
         from services.react_agent.tools import RewriteStarTool
 
         resume, _ = await _create_test_resume(db_session, registered_user["id"])
 
-        # basic_info.summary 超长（>500）→ 校验失败跳过；skills 有效 → 写入
+        resume_id = resume.id
+        # basic_info.summary 超长（>500）；即使 skills 有效也不得部分写入。
         modules = [
             {
                 "module_type": "basic_info",
@@ -1000,17 +1273,74 @@ class TestQAWriteToModules:
                 return_value=_tool_resp("submit_rewritten_resume", {"modules": modules}),
             ),
             patch("services.react_agent.tools.AsyncSessionLocal", AsyncSessionTest),
+            patch("services.pending_changes.AsyncSessionLocal", AsyncSessionTest),
+            patch(
+                "services.react_agent.tools._replace_all_modules_short_txn",
+                new_callable=AsyncMock,
+            ) as replace_mock,
         ):
-            result = await tool._execute(resume_id=resume.id, target_position="后端")
+            with pytest.raises(ToolRetryError):
+                await tool._execute(resume_id=resume_id, target_position="后端")
 
-        assert "校验失败" in result or "跳过" in result
+        replace_mock.assert_not_awaited()
+        db_session.expire_all()
         mods = (
             (
                 await db_session.execute(
-                    select(ResumeModule).where(ResumeModule.resume_id == resume.id)
+                    select(ResumeModule).where(ResumeModule.resume_id == resume_id)
                 )
             )
             .scalars()
             .all()
         )
-        assert len(mods) == 1  # 只有有效的 skills 写入
+        assert [(module.module_type, module.content) for module in mods] == [
+            ("basic_info", _VALID_BASIC_INFO)
+        ]
+
+    async def test_rewrite_star_snapshot_failure_still_rejects_missing_initial_module(
+        self, db_session, registered_user
+    ):
+        """权威快照失败时，首次读取的模块类型仍提供完整性下限。"""
+        from models.resume_module import ResumeModule
+        from services.react_agent.tools import RewriteStarTool
+        from sqlalchemy import select
+
+        resume, _ = await _create_test_resume(db_session, registered_user["id"])
+        resume_id = resume.id
+        modules = [
+            {
+                "module_type": "skills",
+                "content": _VALID_SKILLS,
+                "sort_order": 0,
+                "source": "fact",
+            }
+        ]
+        tool = RewriteStarTool(db=db_session, user_id=registered_user["id"])
+        with (
+            patch(
+                "services.react_agent.tools.llm_generate_with_tools",
+                new_callable=AsyncMock,
+                return_value=_tool_resp("submit_rewritten_resume", {"modules": modules}),
+            ),
+            patch(
+                "services.pending_changes.snapshot_modules",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+            patch(
+                "services.react_agent.tools._replace_all_modules_short_txn",
+                new_callable=AsyncMock,
+            ) as replace_mock,
+        ):
+            with pytest.raises(ToolRetryError, match="basic_info"):
+                await tool._execute(resume_id=resume_id, target_position="后端")
+
+        replace_mock.assert_not_awaited()
+        db_session.expire_all()
+        stored = (
+            await db_session.execute(
+                select(ResumeModule).where(ResumeModule.resume_id == resume_id)
+            )
+        ).scalar_one()
+        assert stored.module_type == "basic_info"
+        assert stored.content == _VALID_BASIC_INFO

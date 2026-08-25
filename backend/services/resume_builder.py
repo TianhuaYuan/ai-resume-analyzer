@@ -39,8 +39,27 @@ from services.rag.asset_source import ASSET_TYPE_RESUME
 from services.rag.clients import knowledge_collection_name
 from services.rag.ensure_indexed import ensure_indexed
 from services.resume_service import set_resume_status
+from services.resume_module_mutation import (
+    ResumeModuleConflictError,
+    load_resume_modules_for_mutation,
+    lock_resume_for_module_mutation,
+)
 
 logger = logging.getLogger(__name__)
+
+
+async def _lock_resume_http(
+    db: AsyncSession, user_id: int, resume_id: int, expected_revision: int | None = None
+) -> Resume:
+    try:
+        resume = await lock_resume_for_module_mutation(
+            db, user_id, resume_id, expected_revision=expected_revision
+        )
+    except ResumeModuleConflictError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
+    if resume is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="简历不存在或无权访问")
+    return resume
 
 
 def _validate_modules(modules: list[ResumeModuleCreate], strict: bool = True) -> None:
@@ -242,6 +261,7 @@ async def create_builder_resume(
         source="builder",
         style=body.style.model_dump() if body.style else None,
         version=1,
+        module_revision=1,
     )
     db.add(resume)
     await db.flush()  # 拿到 resume.id
@@ -309,6 +329,7 @@ async def copy_resume_as_new(
         source="builder",
         style=src.style,
         version=1,
+        module_revision=1,
         language=language or None,
         family_id=src.family_id or src.id,
     )
@@ -405,6 +426,7 @@ async def translate_resume_modules(
     from utils.privacy import sanitize_resume_module_for_ai
 
     resume, modules = await get_resume_with_modules(db, user_id, resume_id)
+    expected_revision = resume.module_revision
     if not modules:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -505,7 +527,9 @@ async def translate_resume_modules(
                 }
             )
 
-    # 删旧插新（source 标注；不合并 parsed_text，等 complete 统一处理）
+    # LLM 返回后锁父行并校验 revision，再删旧插新。
+    resume = await _lock_resume_http(db, user_id, resume_id, expected_revision)
+    modules = await load_resume_modules_for_mutation(db, resume_id)
     for old_mod in modules:
         await db.delete(old_mod)
     await db.flush()
@@ -566,6 +590,7 @@ async def materialize_modules_from_text(
     from services.resume_parser import parse_text_to_modules
 
     resume, modules = await get_resume_with_modules(db, user_id, resume_id)
+    expected_revision = resume.module_revision
 
     # 已物化（builder 简历或有模块）或无文本 → 直接返回
     if resume.source != "upload" or modules or not resume.parsed_text:
@@ -581,12 +606,19 @@ async def materialize_modules_from_text(
         logger.warning("懒物化失败（可降级粘贴导入）resume=%d: %s", resume_id, e)
         return resume, modules, False
 
-    # 并发安全：LLM 调用耗时较长，期间可能有其他请求已物化成功。
-    # 提交前重新检查，避免失败的请求覆盖成功的结果。
-    check_result = await db.execute(
-        select(ResumeModule).where(ResumeModule.resume_id == resume_id).limit(1)
-    )
-    if check_result.scalar_one_or_none() is not None:
+    # 提交前锁父行并校验 revision，避免 LLM 期间发生模块写入。
+    try:
+        resume = await _lock_resume_http(db, user_id, resume_id, expected_revision)
+    except HTTPException as e:
+        if e.status_code != status.HTTP_409_CONFLICT:
+            raise
+        await db.rollback()
+        refreshed, refreshed_mods = await get_resume_with_modules(db, user_id, resume_id)
+        if refreshed_mods:
+            return refreshed, refreshed_mods, True
+        raise
+    current_modules = await load_resume_modules_for_mutation(db, resume_id)
+    if current_modules:
         logger.info("懒物化被其他请求抢先完成，跳过 resume=%d", resume_id)
         await db.rollback()
         refreshed, refreshed_mods = await get_resume_with_modules(db, user_id, resume_id)
@@ -634,7 +666,8 @@ async def update_resume_draft(
     Returns:
         (resume, modules)
     """
-    resume, existing_modules = await get_resume_with_modules(db, user_id, resume_id)
+    resume = await _lock_resume_http(db, user_id, resume_id)
+    existing_modules = await load_resume_modules_for_mutation(db, resume_id)
 
     # 仅 draft / ready 状态可草稿更新（编辑上传/已完成简历时自动保存草稿也应可用）
     if resume.status not in ("draft", "ready"):
@@ -1003,7 +1036,8 @@ async def complete_resume(
         HTTPException 422: version 缺失 / 模块校验失败
         HTTPException 500: 向量化重建失败
     """
-    resume, existing_modules = await get_resume_with_modules(db, user_id, resume_id)
+    resume = await _lock_resume_http(db, user_id, resume_id)
+    existing_modules = await load_resume_modules_for_mutation(db, resume_id)
 
     # 1. 乐观锁校验
     if body.version is None:
