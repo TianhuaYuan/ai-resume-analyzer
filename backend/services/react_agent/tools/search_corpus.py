@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 
 from services.rag.corpus_retrieval import search_public_corpus
 from services.react_agent.tools.base import Tool
+from services.rag.evidence import adapt_evidence_list
 
 logger = logging.getLogger(__name__)
 
@@ -73,16 +74,7 @@ class SearchCorpusTool(Tool):
             )
 
         # 侧信道：结构化来源供 agent_done.sources 聚合（对齐 web_search 用法）
-        self.sources = [
-            {
-                "asset_id": c.get("asset_id"),
-                "asset_type": kind,
-                "section": c.get("section", "正文"),
-                "text": c.get("text", ""),
-                "score": c.get("score", 0),
-            }
-            for c in chunks
-        ]
+        self.sources = adapt_evidence_list(chunks, preserve_extra=True)
 
         lines = [f"在「{label}」中检索到 {len(chunks)} 条相关内容："]
         for i, c in enumerate(chunks, 1):

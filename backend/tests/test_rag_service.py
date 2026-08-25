@@ -362,6 +362,64 @@ class TestMergeResults:
         # 排名应保持输入顺序（同源时 RRF 分数就是 1/(k+rank+1) 递减）
         assert merged[0]["chunk_index"] == 0
 
+    def test_same_chunk_fields_different_asset_type_do_not_merge(self):
+        dense = [
+            {
+                "text": "same",
+                "asset_type": "resume",
+                "asset_id": 3,
+                "version": 1,
+                "chunk_index": 0,
+                "start_char": 0,
+                "end_char": 4,
+                "score": 0.9,
+                "source": "dense",
+            }
+        ]
+        sparse = [
+            {
+                "text": "same",
+                "asset_type": "jd",
+                "asset_id": 3,
+                "version": 1,
+                "chunk_index": 0,
+                "start_char": 0,
+                "end_char": 4,
+                "score": 1.0,
+                "source": "sparse",
+            }
+        ]
+
+        merged = _merge_results(dense, sparse, top_k=5)
+
+        assert len(merged) == 2
+        assert {item["asset_type"] for item in merged} == {"resume", "jd"}
+        assert all(item["version"] == 1 for item in merged)
+        assert all(item["chunk_index"] == 0 for item in merged)
+        assert all(item["start_char"] == 0 and item["end_char"] == 4 for item in merged)
+        assert all(item["score_kind"] == "rrf" for item in merged)
+        assert {item["retrieval_source"] for item in merged} == {"dense", "sparse"}
+
+    def test_unprovenanced_same_chunk_index_falls_back_to_text(self):
+        dense = [{"text": "A", "chunk_index": 0, "score": 0.9, "source": "dense"}]
+        sparse = [{"text": "B", "chunk_index": 0, "score": 0.8, "source": "sparse"}]
+        merged = _merge_results(dense, sparse, top_k=5)
+        assert {item["text"] for item in merged} == {"A", "B"}
+
+    def test_same_provenance_with_different_offsets_does_not_merge(self):
+        dense = [{"text": "same", "asset_type": "resume", "asset_id": 1, "version": 1, "chunk_index": 0, "start_char": 0, "end_char": 4, "score": 0.9}]
+        sparse = [{"text": "same", "asset_type": "resume", "asset_id": 1, "version": 1, "chunk_index": 0, "start_char": 8, "end_char": 12, "score": 0.8}]
+        merged = _merge_results(dense, sparse, top_k=5)
+        assert len(merged) == 2
+
+    def test_single_route_keeps_retrieval_source(self):
+        dense = [{"text": "A", "asset_id": 1, "chunk_index": 0, "score": 0.9, "source": "dense"}]
+        sparse = [{"text": "B", "asset_id": 2, "chunk_index": 0, "score": 0.8, "source": "sparse"}]
+        merged = _merge_results(dense, sparse, top_k=5)
+        by_text = {item["text"]: item for item in merged}
+        assert by_text["A"]["retrieval_source"] == "dense"
+        assert by_text["B"]["retrieval_source"] == "sparse"
+
 
 # ── tokenize ────────────────────────────────────────────
 

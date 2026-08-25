@@ -5,6 +5,7 @@
 """
 
 import asyncio
+import json
 import logging
 from collections import OrderedDict
 from typing import Any
@@ -33,9 +34,11 @@ async def _get_http_client() -> httpx.AsyncClient:
 from core.retry import with_retry
 from services.rag.chunking import tokenize
 from services.rag.clients import get_embedding_client, knowledge_collection_name
+from services.rag.evidence import evidence_identity, normalize_evidence
 from services.rag.metadata import (
     ASSET_TYPE_RESUME,
     META_ASSET_ID,
+    META_ASSET_TYPE,
     META_IS_LATEST,
 )
 from services.vector_store import get_vector_store
@@ -95,17 +98,7 @@ async def _load_bm25_index(
     chunks = []
     for item in items:
         meta = item["metadata"]
-        chunks.append(
-            {
-                "text": item["text"],
-                "chunk_index": meta["chunk_index"],
-                "section": meta["section"],
-                # B3：跨 asset 的公共集合里 chunk_index 会重复，稀疏结果带上
-                # asset_id/version 供复合键（asset_id, chunk_index）去重合并
-                "asset_id": meta.get("asset_id"),
-                "version": meta.get("version"),
-            }
-        )
+        chunks.append({**meta, "text": item["text"]})
     if not chunks:
         return False
     tokenized = [tokenize(c["text"]) for c in chunks]
@@ -143,14 +136,10 @@ async def _keyword_search(
     top_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:top_k]
     return [
         {
-            "text": chunks[i]["text"],
+            **chunks[i],
             "score": float(scores[i]),
-            "chunk_index": chunks[i]["chunk_index"],
-            "section": chunks[i]["section"],
             "source": "sparse",
-            # B3：与稠密结果对齐，供公共集合复合键合并
-            "asset_id": chunks[i].get("asset_id"),
-            "version": chunks[i].get("version"),
+            "retrieval_source": "sparse",
         }
         for i in top_indices
         if scores[i] > 0
@@ -175,13 +164,11 @@ async def _vector_search(
         meta = item["metadata"]
         chunks.append(
             {
+                **meta,
                 "text": item["text"],
                 "score": item["score"],
-                "chunk_index": meta["chunk_index"],
-                "section": meta["section"],
                 "source": "dense",
-                "asset_id": meta.get("asset_id"),
-                "version": meta.get("version"),
+                "retrieval_source": "dense",
             }
         )
     return chunks
@@ -192,22 +179,77 @@ def build_scope_where(scope: dict[str, list[int]]) -> dict[str, Any]:
 
     默认只命中最新版本快照（is_latest=True，D2）；旧版本检索由 T18 版本浏览显式传 version。
     """
-    all_ids = sorted({aid for aids in scope.values() for aid in aids})
-    where: dict[str, Any] = {META_IS_LATEST: True}
-    if len(all_ids) == 1:
-        where[META_ASSET_ID] = all_ids[0]
-    else:
-        where[META_ASSET_ID] = {"$in": all_ids}
-    return where
+    normalized = {
+        asset_type: sorted(set(asset_ids))
+        for asset_type, asset_ids in scope.items()
+        if asset_type and asset_ids
+    }
+    if not normalized:
+        return {META_IS_LATEST: True}
+
+    branches = []
+    for asset_type, asset_ids in sorted(normalized.items()):
+        ids_filter: int | dict[str, list[int]]
+        ids_filter = asset_ids[0] if len(asset_ids) == 1 else {"$in": asset_ids}
+        branches.append(
+            {"$and": [{META_ASSET_TYPE: asset_type}, {META_ASSET_ID: ids_filter}]}
+        )
+    if len(branches) == 1:
+        only = normalized[next(iter(normalized))]
+        return {
+            META_IS_LATEST: True,
+            META_ASSET_TYPE: next(iter(normalized)),
+            META_ASSET_ID: only[0] if len(only) == 1 else {"$in": only},
+        }
+    return {"$and": [{META_IS_LATEST: True}, {"$or": branches}]}
+
+
+def _normalize_scope(scope: dict[str, list[int]]) -> dict[str, list[int]]:
+    """Return deterministic asset-type -> sorted unique ids scope."""
+    return {
+        str(asset_type): sorted({int(asset_id) for asset_id in asset_ids})
+        for asset_type, asset_ids in sorted(scope.items())
+        if asset_type and asset_ids
+    }
+
+
+def _scope_cache_key(namespace: str, scope: dict[str, list[int]]) -> str:
+    payload = json.dumps(
+        _normalize_scope(scope), ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
+    return f"{namespace}:scope:{payload}"
 
 
 def _scope_bm25_key(user_id: int, scope: dict[str, list[int]]) -> str:
-    """BM25 缓存键：按 (user_id, 命中的资产 id 集合) 区分。"""
-    ids = sorted({aid for aids in scope.values() for aid in aids})
-    return f"{user_id}:[{','.join(map(str, ids))}]"
+    """BM25 key includes complete typed scope, stable across dict/list ordering."""
+    return _scope_cache_key(f"user:{user_id}", scope)
 
 
-async def clear_bm25(user_id: int, asset_id: int) -> None:
+def _cache_key_scope(key: str, user_id: int) -> dict[str, list[int]] | None:
+    """Decode current key; accept legacy resume-only keys for one migration window."""
+    prefix = f"user:{user_id}:scope:"
+    if key.startswith(prefix):
+        try:
+            raw = json.loads(key[len(prefix) :])
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return None
+        return raw if isinstance(raw, dict) else None
+    legacy_prefix = f"{user_id}:["
+    if key.startswith(legacy_prefix) and key.endswith("]"):
+        try:
+            ids = [int(value) for value in key[len(legacy_prefix) : -1].split(",") if value]
+        except ValueError:
+            return None
+        return {ASSET_TYPE_RESUME: ids}
+    return None
+
+
+async def clear_bm25(
+    user_id: int,
+    asset_id: int,
+    *,
+    asset_type: str = ASSET_TYPE_RESUME,
+) -> None:
     """清除指定资产的 BM25 缓存（重建/删除后调用，避免旧版本内容污染）。
 
     store_key 有两种形态：
@@ -219,12 +261,11 @@ async def clear_bm25(user_id: int, asset_id: int) -> None:
     只影响 ``{user_id}:[`` 前缀的个人 key，不触碰 ``market:{collection}:[`` 公共 key。
     """
     async with _bm25_lock:
-        prefix = f"{user_id}:["
-        stale = [
-            key
-            for key in _bm25_indexes
-            if key.startswith(prefix) and str(asset_id) in key[len(prefix):-1].split(",")
-        ]
+        stale = []
+        for key in _bm25_indexes:
+            scope = _cache_key_scope(key, user_id)
+            if scope and asset_id in scope.get(asset_type, []):
+                stale.append(key)
         for key in stale:
             _bm25_indexes.pop(key, None)
 
@@ -232,8 +273,7 @@ async def clear_bm25(user_id: int, asset_id: int) -> None:
 async def clear_user_bm25(user_id: int) -> None:
     """清除某用户全部 BM25 缓存（账户删除时调用，释放所有 scope 组合索引）。"""
     async with _bm25_lock:
-        prefix = f"{user_id}:["
-        for key in [k for k in _bm25_indexes if k.startswith(prefix)]:
+        for key in [k for k in _bm25_indexes if _cache_key_scope(k, user_id) is not None]:
             _bm25_indexes.pop(key, None)
 
 
@@ -259,8 +299,7 @@ async def hybrid_search_corpus(
     if collection == knowledge_collection_name(user_id):
         store_key = _scope_bm25_key(user_id, scope)
     else:
-        ids = sorted({aid for aids in scope.values() for aid in aids})
-        store_key = f"market:{collection}:[{','.join(map(str, ids))}]"
+        store_key = _scope_cache_key(f"market:{collection}", scope)
     dense, sparse = await asyncio.gather(
         _vector_search(collection, where, question, top_k=20),
         _keyword_search(collection, where, store_key, question, top_k=20),
@@ -280,6 +319,11 @@ async def hybrid_search(
     )
 
 
+def _rrf_identity(item: dict[str, Any]) -> tuple[Any, ...]:
+    evidence = normalize_evidence(item)
+    return evidence_identity(evidence) if evidence is not None else ("text", item.get("text", ""))
+
+
 def _merge_results(dense: list[dict], sparse: list[dict], top_k: int, k: int = 60) -> list[dict]:
     """RRF 融合：按排名而非分数合并两路结果，同一 chunk 两路都中则累加得分。
 
@@ -289,19 +333,27 @@ def _merge_results(dense: list[dict], sparse: list[dict], top_k: int, k: int = 6
     chunk_index 会碰撞，仅用 chunk_index 会把结果错误叠加/覆盖。corpus_retrieval
     已用复合键规避，这里统一。单资产场景 asset_id 相同，行为不变。
     """
-    scores: dict[tuple[int | None, int], dict] = {}
+    scores: dict[tuple[Any, Any, Any, Any], dict] = {}
     for rank, item in enumerate(dense):
-        key = (item.get("asset_id"), item["chunk_index"])
-        scores[key] = {"item": item, "score": 1.0 / (k + rank + 1)}
+        key = _rrf_identity(item)
+        scores[key] = {
+            "item": {**item, "score_kind": "rrf", "retrieval_source": "dense"},
+            "score": 1.0 / (k + rank + 1),
+        }
     for rank, item in enumerate(sparse):
-        key = (item.get("asset_id"), item["chunk_index"])
+        key = _rrf_identity(item)
         if key in scores:
             scores[key]["score"] += 1.0 / (k + rank + 1)
+            scores[key]["item"]["retrieval_source"] = "hybrid"
+            scores[key]["item"]["source"] = "hybrid"
         else:
-            scores[key] = {"item": item, "score": 1.0 / (k + rank + 1)}
+            scores[key] = {
+                "item": {**item, "score_kind": "rrf", "retrieval_source": "sparse"},
+                "score": 1.0 / (k + rank + 1),
+            }
 
     ranked = sorted(scores.values(), key=lambda x: x["score"], reverse=True)
-    return [x["item"] for x in ranked[:top_k]]
+    return [{**x["item"], "score": x["score"]} for x in ranked[:top_k]]
 
 
 async def rerank(question: str, chunks: list[dict], top_k: int = 5) -> list[dict]:

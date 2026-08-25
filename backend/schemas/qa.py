@@ -75,9 +75,16 @@ class SourceItem(BaseModel):
     """
 
     text: str
+    asset_type: str | None = None
+    asset_id: int | None = None
+    version: int | None = None
+    chunk_index: int | None = None
     section: str | None = None
     start_char: int | None = None
     end_char: int | None = None
+    score: float | None = None
+    score_kind: str | None = None
+    retrieval_source: str | None = None
 
 
 class AnswerResponse(BaseModel):

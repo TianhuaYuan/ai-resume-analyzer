@@ -34,6 +34,7 @@ from services.match_jd_service import match_jd
 from services.rag.asset_source import ASSET_TYPE_RESUME
 from services.rag.clients import knowledge_collection_name
 from services.rag.ensure_indexed import ensure_indexed
+from services.rag.evidence import adapt_evidence_list
 from services.rag.pipeline import (
     LLMToolResponse,
     ToolCall,
@@ -187,14 +188,7 @@ class SearchResumeTool(Tool):
             return "未找到相关内容。"
 
         # 填充结构化来源（ : 用于 agent_done.sources 聚合去重）
-        self.sources = [
-            {
-                "section": chunk.get("section", "未知"),
-                "text": chunk.get("text", ""),
-                "score": chunk.get("rerank_score", chunk.get("score", 0)),
-            }
-            for chunk in reranked
-        ]
+        self.sources = adapt_evidence_list(reranked, preserve_extra=True)
 
         lines = [f"找到 {len(reranked)} 条相关结果：\n"]
         for i, chunk in enumerate(reranked, 1):
@@ -293,17 +287,7 @@ class SearchAssetsTool(Tool):
         if not reranked:
             return "未找到相关内容。"
 
-        self.sources = [
-            {
-                "asset_id": c.get("asset_id"),
-                "asset_type": asset_type,
-                "version": c.get("version"),
-                "section": c.get("section", "未知"),
-                "text": c.get("text", ""),
-                "score": c.get("rerank_score", c.get("score", 0)),
-            }
-            for c in reranked
-        ]
+        self.sources = adapt_evidence_list(reranked, preserve_extra=True)
 
         lines = [f"找到 {len(reranked)} 条相关结果：\n"]
         for i, c in enumerate(reranked, 1):
@@ -343,7 +327,7 @@ class AnswerFromIndexTool(Tool):
         answer = result["answer"]
         if not answer:
             return "未能生成答案，请重试。"
-        self.sources = result["sources"]
+        self.sources = adapt_evidence_list(result["sources"], preserve_extra=True)
         return answer
 
 
@@ -594,14 +578,7 @@ class DiagnoseResumeTool(Tool):
             )
             if chunks:
                 reranked = await rerank("简历完整性与质量诊断依据", chunks, top_k=5)
-                self.sources = [
-                    {
-                        "section": c.get("section", "未知"),
-                        "text": c.get("text", ""),
-                        "score": c.get("rerank_score", c.get("score", 0)),
-                    }
-                    for c in reranked
-                ]
+                self.sources = adapt_evidence_list(reranked, preserve_extra=True)
         except Exception:
             # sources 是增强信息，填充失败不阻断诊断
             pass

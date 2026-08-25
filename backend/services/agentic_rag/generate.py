@@ -7,6 +7,7 @@ from core.config import settings
 from core.retry import with_retry
 from services.agentic_rag.state import AgenticRAGState
 from services.rag.pipeline import llm_generate
+from services.rag.evidence import adapt_evidence_list
 from services.rag.retrieval import reject_if_low_score
 
 logger = logging.getLogger(__name__)
@@ -27,18 +28,8 @@ def _compute_composite(completeness: float, accuracy: float, source_credibility:
 
 def _extract_sources(chunks: list[dict]) -> list[dict]:
     """抽取来源。"""
-    return [
-        {
-            "chunk_index": c.get("chunk_index", i),
-            "text": c.get("text", ""),
-            "section": c.get("section", "未知"),
-            "rerank_score": c.get("rerank_score", 0.0),
-            "asset_id": c.get("asset_id"),
-            "asset_type": c.get("asset_type"),
-            "version": c.get("version"),
-        }
-        for i, c in enumerate(chunks)
-    ]
+    # Keep legacy aliases (notably rerank_score) while adding canonical fields.
+    return adapt_evidence_list(chunks, preserve_extra=True)
 
 
 def _format_failed_tools(tool_errors: list[dict]) -> str:

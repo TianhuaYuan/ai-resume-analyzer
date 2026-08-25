@@ -76,13 +76,13 @@ class TestExtractSources:
         assert sources[0]["rerank_score"] == 0.8
 
     def test_handles_missing_fields(self):
-        """缺失字段应有默认值，不抛异常。"""
+        """缺失字段不抛异常，也不伪造 provenance。"""
         chunks = [{"text": "内容"}]
         sources = _extract_sources(chunks)
         assert len(sources) == 1
-        assert sources[0]["chunk_index"] == 0
-        assert sources[0]["section"] == "未知"
-        assert sources[0]["rerank_score"] == 0.0
+        assert "chunk_index" not in sources[0]
+        assert "section" not in sources[0]
+        assert "rerank_score" not in sources[0]
 
     def test_empty_chunks(self):
         assert _extract_sources([]) == []

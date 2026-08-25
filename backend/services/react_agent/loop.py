@@ -1919,14 +1919,21 @@ async def _execute_tool_call_with_limit(
 
 
 def _deduplicate_sources(sources: list[dict]) -> list[dict]:
-    """按 text 字段去重来源（Spec A#10: 多轮多 search 引用来源去重）。"""
-    seen: set[str] = set()
+    """按真实 provenance 去重；无 provenance 时才退回 text。"""
+    from services.rag.evidence import adapt_evidence, evidence_identity, normalize_evidence
+
+    seen: set[tuple] = set()
     deduped: list[dict] = []
     for s in sources:
-        text = s.get("text", "")
-        if text not in seen:
-            seen.add(text)
-            deduped.append(s)
+        evidence = normalize_evidence(s)
+        if evidence is None:
+            continue
+        identity = evidence_identity(evidence)
+        if identity not in seen:
+            seen.add(identity)
+            public = adapt_evidence(s, preserve_extra=True)
+            if public is not None:
+                deduped.append(public)
     return deduped
 
 

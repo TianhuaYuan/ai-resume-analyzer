@@ -40,6 +40,7 @@ from services.rag.asset_source import ASSET_TYPE_RESUME
 from services.rag.clients import knowledge_collection_name
 from services.rag.ensure_indexed import ensure_indexed
 from services.rag.pipeline import ask_question_stream as _ask_question_stream
+from services.rag.evidence import adapt_evidence, adapt_evidence_list
 from services.react_agent.streaming import react_loop_stream
 from services.react_agent.events import PROTOCOL_VERSION
 from services.token_quota import check_quota, record_usage, get_quota_status
@@ -68,7 +69,7 @@ def _guard_question(question: str) -> None:
             detail="问题含疑似提示注入内容，已拒绝处理",
         )
 
-def _to_source_item(s: dict) -> dict:
+def _to_source_item(s: dict | str) -> dict:
     """E1：把来源 dict 规范化为 {text, section, start_char, end_char}。
 
     - ``text``：保留原字段，前端现有 ``text`` 契约不断。
@@ -77,12 +78,9 @@ def _to_source_item(s: dict) -> dict:
       start_char/end_char 已写入 Chroma metadata 但检索返回时未带出，
       因此通常为 None；上游一旦补透传即可直接命中。
     """
-    return {
-        "text": s.get("text", ""),
-        "section": s.get("section"),
-        "start_char": s.get("start_char"),
-        "end_char": s.get("end_char"),
-    }
+    if isinstance(s, str):
+        return {"text": s}
+    return adapt_evidence(s, preserve_extra=True) or {"text": ""}
 
 
 def _enrich_source(s: dict) -> dict:
@@ -91,11 +89,7 @@ def _enrich_source(s: dict) -> dict:
     用于 agent_done.sources（已有结构化契约 {text, score?, chunk_id?}），
     只新增缺失的 section/start_char/end_char，不丢任何既有字段。
     """
-    out = dict(s)
-    out.setdefault("section", None)
-    out.setdefault("start_char", None)
-    out.setdefault("end_char", None)
-    return out
+    return adapt_evidence(s, preserve_extra=True) or dict(s)
 
 
 async def _run_agentic_rag(user_id: int, resume_id: int, question: str) -> tuple[str, list[dict], list[dict]]:
@@ -147,10 +141,7 @@ async def ask_question(
         data.resume_id,
         data.question,
         answer,
-        [
-            {"chunk_id": s["chunk_index"], "text": s["text"], "section": s["section"]}
-            for s in sources
-        ],
+        adapt_evidence_list(sources),
         conversation_id=data.conversation_id,
     )
     # 问答 → L4 长期记忆回流（内部筛选 + try/except，失败不阻断问答）
@@ -216,14 +207,7 @@ async def ask_question_stream(
             answer = redact_pii(answer)
         degraded = bool(tool_errors)
         source_items = [_to_source_item(s) for s in sources]
-        sources_for_db = [
-            {
-                "chunk_id": s.get("chunk_index", i),
-                "text": s.get("text", ""),
-                "section": s.get("section", ""),
-            }
-            for i, s in enumerate(sources)
-        ]
+        sources_for_db = adapt_evidence_list(sources)
 
         async def agentic_stream():
             from core.database import AsyncSessionLocal
@@ -281,14 +265,7 @@ async def ask_question_stream(
                     elif event["type"] == "done":
                         full_answer = event.get("answer", "")
                         sources_data = event.get("sources", [])
-                        sources_for_db = [
-                            {
-                                "chunk_id": s.get("chunk_index", i),
-                                "text": s["text"],
-                                "section": s.get("section", ""),
-                            }
-                            for i, s in enumerate(sources_data)
-                        ]
+                        sources_for_db = adapt_evidence_list(sources_data)
                         record = await qa_service.save_qa(
                             stream_db,
                             current_user.id,

@@ -196,7 +196,13 @@ export interface AgentStep {
 export interface SourceItem {
   text: string;
   score?: number;
-  chunk_id?: string;
+  score_kind?: "dense_similarity" | "bm25" | "rerank_relevance" | "rrf" | "unknown" | string;
+  retrieval_source?: string;
+  chunk_id?: string | number;
+  chunk_index?: number;
+  asset_type?: string;
+  asset_id?: number;
+  version?: number;
   /** E1 可溯源：来源段落分节/字符区间（后端 sources 透出，缺失时为 undefined） */
   section?: string;
   start_char?: number;

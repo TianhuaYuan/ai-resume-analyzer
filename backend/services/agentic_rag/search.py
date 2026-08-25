@@ -5,6 +5,7 @@ from core.config import settings
 from services.agentic_rag.state import AgenticRAGState
 from services.rag.metadata import ASSET_TYPE_RESUME
 from services.rag.retrieval import hybrid_search_corpus, rerank
+from services.rag.evidence import evidence_identity, normalize_evidence
 
 logger = logging.getLogger(__name__)
 
@@ -14,11 +15,8 @@ def _deduplicate_chunks(chunks: list[dict]) -> list[dict]:
     seen = set()
     unique = []
     for chunk in chunks:
-        key = (
-            chunk.get("asset_id", -1),
-            chunk.get("chunk_index", -1),
-            chunk.get("text", "")[:100],
-        )
+        evidence = normalize_evidence(chunk)
+        key = evidence_identity(evidence) if evidence is not None else ("text", chunk.get("text", ""))
         if key not in seen:
             seen.add(key)
             unique.append(chunk)

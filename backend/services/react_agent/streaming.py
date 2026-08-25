@@ -470,7 +470,11 @@ async def react_loop_stream(
             return
 
         # ── 更新 QA 记录（完整 prompt trace 存 DB） ──────────
-        sources = getattr(loop_result, "sources", [])  # : search_resume 来源聚合
+        from services.rag.evidence import adapt_evidence_list
+
+        sources = adapt_evidence_list(
+            getattr(loop_result, "sources", []), preserve_extra=True
+        )
         await update_qa_answer(
             db=db,
             qa_id=qa_id,

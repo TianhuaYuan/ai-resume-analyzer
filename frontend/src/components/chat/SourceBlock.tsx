@@ -70,11 +70,19 @@ export default function SourceBlock({ sources, title = "来源原文", numbered 
                       片段 {i + 1}
                     </span>
                   )}
-                  {typeof s.score === "number" && (
+                  {typeof s.score === "number" &&
+                    (s.score_kind === "dense_similarity" ||
+                    s.score_kind === "rerank_relevance") &&
+                    s.score >= 0 &&
+                    s.score <= 1 ? (
                     <span className="text-[10px] text-[var(--color-text-muted)]">
                       相关度 {Math.round(s.score * 100)}%
                     </span>
-                  )}
+                    ) : typeof s.score === "number" ? (
+                    <span className="text-[10px] text-[var(--color-text-muted)]">
+                      评分 {s.score.toFixed(2)}
+                    </span>
+                    ) : null}
                   {s.start_char != null && s.end_char != null && (
                     <span className="text-[10px] font-mono text-[var(--color-text-muted)]">
                       字符 {s.start_char}–{s.end_char}

@@ -165,12 +165,27 @@ class TestAgentToolExecution:
              patch("services.react_agent.tools.hybrid_search", new_callable=AsyncMock) as mock_search, \
              patch("services.react_agent.tools.rerank", new_callable=AsyncMock) as mock_rerank:
             mock_search.return_value = [{"text": "Python经验", "section": "技能", "score": 0.9, "chunk_index": 0}]
-            mock_rerank.return_value = [{"text": "Python经验", "section": "技能", "rerank_score": 0.95, "chunk_index": 0}]
+            mock_rerank.return_value = [{
+                "text": "Python经验",
+                "section": "技能",
+                "rerank_score": 0.95,
+                "chunk_index": 0,
+                "asset_type": "resume",
+                "asset_id": 1,
+                "version": 3,
+                "start_char": 12,
+                "end_char": 20,
+                "retrieval_source": "dense",
+            }]
 
-            result, is_error, _, _ = await _execute_tool_call(tc, AsyncMock(), user_id=1)
+            result, is_error, sources, _ = await _execute_tool_call(tc, AsyncMock(), user_id=1)
 
         assert is_error is False
         assert "Python经验" in result
+        assert sources[0]["asset_id"] == 1
+        assert sources[0]["version"] == 3
+        assert sources[0]["start_char"] == 12
+        assert sources[0]["score_kind"] == "rerank_relevance"
 
     @pytest.mark.asyncio
     async def test_jd_match_executes(self):

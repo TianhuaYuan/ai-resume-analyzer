@@ -23,7 +23,7 @@ from typing import Literal
 
 from services.rag.clients import corpus_collection_name
 from services.rag.metadata import META_IS_LATEST
-from services.rag.retrieval import _keyword_search, _vector_search
+from services.rag.retrieval import _keyword_search, _rrf_identity, _scope_cache_key, _vector_search
 
 # 公共语料类型（与 clients.CORPUS_KINDS 对齐）
 CorpusKind = Literal["interview_hub", "interview_qa", "resume_samples"]
@@ -58,7 +58,9 @@ async def search_public_corpus(
     collection = corpus_collection_name(kind)
     where = {META_IS_LATEST: True}
     # BM25 缓存键：corpus 前缀命名空间，与个人集合（{user_id}:[..]）隔离
-    store_key = f"corpus:{collection}:[]"
+    # Collection name isolates corpus kind; explicit scope payload keeps key
+    # shape compatible with typed asset scopes and prevents id collisions.
+    store_key = _scope_cache_key(f"corpus:{collection}", {})
 
     dense, sparse = await asyncio.gather(
         _vector_search(collection, where, question, top_k=_CANDIDATE_K),
@@ -78,22 +80,29 @@ def _rrf_merge_by_asset(
     - 两路都命中的 chunk 得分叠加，source 标记为 hybrid
     - 返回的条目含 text/section/score/source/asset_id/version
     """
-    merged: dict[tuple[int | None, int], dict] = {}
+    merged: dict[tuple[object, object, object, object], dict] = {}
     for route, items in (("dense", dense), ("sparse", sparse)):
         for rank, item in enumerate(items):
-            key = (item.get("asset_id"), item["chunk_index"])
+            key = _rrf_identity(item)
             rrf = 1.0 / (_RRF_K + rank + 1)
             if key in merged:
                 merged[key]["score"] += rrf
                 merged[key]["source"] = "hybrid"
+                merged[key]["retrieval_source"] = "hybrid"
             else:
                 merged[key] = {
                     "text": item["text"],
                     "section": item.get("section", ""),
                     "score": rrf,
                     "source": route,
+                    "score_kind": "rrf",
+                    "retrieval_source": route,
+                    "asset_type": item.get("asset_type"),
                     "asset_id": item.get("asset_id"),
                     "version": item.get("version"),
+                    "chunk_index": item.get("chunk_index"),
+                    "start_char": item.get("start_char"),
+                    "end_char": item.get("end_char"),
                 }
     ranked = sorted(merged.values(), key=lambda x: x["score"], reverse=True)
     return ranked[:top_k]
