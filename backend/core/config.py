@@ -44,6 +44,13 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = "http://localhost:5173,http://localhost:5174"
     LOG_LEVEL: str = "INFO"
 
+    # Optional LangSmith tracing; kept in settings so extra-forbid does not
+    # reject local .env.dev variables. Leave the key empty to stay local-only.
+    LANGCHAIN_API_KEY: str = ""
+    LANGCHAIN_TRACING_V2: bool = False
+    LANGCHAIN_PROJECT: str = "resume-artifact-agent"
+    LANGCHAIN_ENDPOINT: str = "https://api.smith.langchain.com"
+
     UPLOAD_DIR: str = "./uploads"
     MAX_UPLOAD_SIZE_MB: int = 10  # 单文件最大 10MB
 
@@ -91,6 +98,8 @@ class Settings(BaseSettings):
     TOKEN_QUOTA_DAILY_LIMIT: int = 10000
     # 预检查时的最小预留额度（低于此值就拒绝请求）
     TOKEN_QUOTA_MIN_RESERVE: int = 500
+    # Agent 流式请求的默认预留额度；实际用量在结束时结算，避免并发请求只做读检查。
+    TOKEN_QUOTA_RESERVE_ESTIMATE: int = 2000
 
     # ── 本地个人工具开关 ──
     # 注册免邮箱验证码（本地 Docker 默认开；测试走 .env.test 隔离）
@@ -171,6 +180,9 @@ class Settings(BaseSettings):
     # "always": 无论是否 SSE，命中 requires_approval 的工具一律先过审批门（最安全，防 emit=None 绕过）
     # "off": 关闭审批门（不推荐，写库工具将直接执行）
     TOOL_APPROVAL_MODE: str = "sse"
+    # 非交互调用（没有 SSE emit）默认拒绝高风险工具，避免后台任务绕过用户确认。
+    # 仅兼容旧集成时显式设为 allow，不应在 production 使用。
+    TOOL_APPROVAL_HEADLESS_MODE: str = "deny"
     # LLM 上游熔断器参数（连续失败阈值 / OPEN→HALF_OPEN 恢复等待秒数）
     LLM_BREAKER_FAILURE_THRESHOLD: int = 5
     LLM_BREAKER_RECOVERY_SECONDS: float = 30.0
@@ -199,6 +211,13 @@ class Settings(BaseSettings):
     # Provider function-calling strict mode is opt-in because OpenAI-compatible
     # providers reject optional fields unless every property is required/nullable.
     TOOL_CALL_STRICT: bool = False
+    # Agent builder writes go through ProposalCommitService when invoked from
+    # the real SSE runtime.  Direct legacy/test calls keep the compatibility
+    # adapter until their caller has a proposal UI.
+    AGENT_PROPOSAL_COMMIT_ENABLED: bool = True
+    # Real SSE writes wait for an explicit proposal approval by default.
+    # Keep auto-apply only as a temporary compatibility switch.
+    AGENT_PROPOSAL_AUTO_APPLY: bool = False
 
     # ── MinerU 精准解析 API 配置 ──
     MINERU_ENABLED: bool = False

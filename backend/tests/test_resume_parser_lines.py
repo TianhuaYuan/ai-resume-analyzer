@@ -371,6 +371,18 @@ def test_verify_fields_provenance():
     assert by_field["items[0].major"] == "missing"
 
 
+def test_verify_fields_treats_skill_category_as_classification():
+    modules = [
+        {
+            "module_type": "skills",
+            "content": {"items": [{"name": "Python", "category": "后端工程"}]},
+        }
+    ]
+    report = verify_fields_in_original_text(modules, ["Python"])
+    assert [item["field"] for item in report] == ["items[0].name"]
+    assert report[0]["provenance"] == "verified"
+
+
 @pytest.mark.asyncio
 async def test_parse_normalizes_dates_end_to_end():
     """端到端：LLM 输出 '2024年9月' → 校验通过且为 '2024-09'。"""

@@ -1462,7 +1462,7 @@ export default function QAPage() {
         open={Boolean(approvalRequest)}
         title={`确认执行：${getToolLabel(approvalRequest?.toolName ?? "")}`}
         description={approvalRequest
-          ? `系统准备执行“${getToolLabel(approvalRequest.toolName)}”。该操作可能更新当前简历或创建业务记录；确认后才会执行，你也可以暂不执行并继续对话。`
+          ? `${approvalRequest.proposalId ? "系统已生成一份待审阅的简历修改方案。" : "系统准备执行"}“${getToolLabel(approvalRequest.toolName)}”。${approvalRequest.summary || "该操作可能更新当前简历或创建业务记录"}；确认后才会执行，你也可以暂不执行并继续对话。`
           : ""}
         confirmText="确认执行"
         cancelText="暂不执行"

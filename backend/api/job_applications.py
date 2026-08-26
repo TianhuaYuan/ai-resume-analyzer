@@ -222,7 +222,10 @@ async def archive_application(
     - 404 记录不存在或非本人
     - 400 已进垃圾箱 / 无 JD 内容
     """
-    app = await svc.get_application(db, current_user.id, application_id)
+    # Cache the identity before asset indexing may rollback/expire the
+    # request session's User instance.
+    user_id = current_user.id
+    app = await svc.get_application(db, user_id, application_id)
     if app.deleted_at is not None:
         raise AppException(status_code=400, detail="投递记录已在垃圾箱，无法归档")
     if not (app.jd_text or app.jd_scorecard):
@@ -230,12 +233,12 @@ async def archive_application(
 
     asset = await asset_service.upsert_asset_by_source(
         db,
-        current_user.id,
+        user_id,
         source_type=asset_service.SOURCE_JOB_APPLICATION,
         source_id=app.id,
         asset_type="jd",
         title=f"{app.company} {app.position} JD",
         content=asset_service.build_jd_asset_content(app),
     )
-    await write_audit_log(db, user_id=current_user.id, action="job_application_archive", target_type="job_application", target_id=str(application_id), detail={"result": "success", "request_id": request.headers.get("X-Request-ID")}, ip=request.client.host if request.client else None)
+    await write_audit_log(db, user_id=user_id, action="job_application_archive", target_type="job_application", target_id=str(application_id), detail={"result": "success", "request_id": request.headers.get("X-Request-ID")}, ip=request.client.host if request.client else None)
     return AssetResponse.model_validate(asset)

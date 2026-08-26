@@ -69,6 +69,7 @@ async def create_asset(
     - 400 asset_type 非 note（JD / 面试记录走归档）
     - 500 向量化重建失败（ensure_indexed 内部降级，不阻断落库）
     """
+    user_id = current_user.id
     if body.asset_type != "note":
         raise AppException(
             status_code=400,
@@ -77,7 +78,7 @@ async def create_asset(
 
     asset = await asset_service.create_asset(
         db,
-        current_user.id,
+        user_id,
         asset_type=body.asset_type,
         title=body.title,
         content=body.content,
@@ -85,7 +86,7 @@ async def create_asset(
     )
     await write_audit_log(
         db,
-        user_id=current_user.id,
+        user_id=user_id,
         action="asset_create",
         target_type="asset",
         target_id=str(asset.id),
@@ -150,7 +151,8 @@ async def get_asset(
     current_user: User = Depends(get_current_user),
 ):
     """查单个资产详情；非本人 → 404（防枚举）。"""
-    asset = await _get_owned_asset(db, asset_id, current_user.id)
+    user_id = current_user.id
+    asset = await _get_owned_asset(db, asset_id, user_id)
     return AssetResponse.model_validate(asset)
 
 
@@ -172,7 +174,8 @@ async def update_asset(
     - 401 未登录
     - 404 资产不存在或非本人
     """
-    asset = await _get_owned_asset(db, asset_id, current_user.id)
+    user_id = current_user.id
+    asset = await _get_owned_asset(db, asset_id, user_id)
 
     if body.title is not None:
         asset.title = body.title
@@ -190,17 +193,17 @@ async def update_asset(
     if not asset.is_draft:
         await ensure_indexed(
             db,
-            user_id=current_user.id,
+            user_id=user_id,
             asset_id=asset.id,
             asset_type=asset.asset_type,
-            collection=knowledge_collection_name(current_user.id),
+            collection=knowledge_collection_name(user_id),
         )
         # 同 create：ensure_indexed 失败路径会 rollback（expire ORM 对象），重读一次
         await db.refresh(asset)
 
     await write_audit_log(
         db,
-        user_id=current_user.id,
+        user_id=user_id,
         action="asset_update",
         target_type="asset",
         target_id=str(asset.id),

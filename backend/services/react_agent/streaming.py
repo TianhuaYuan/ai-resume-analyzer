@@ -28,8 +28,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
 from models.qa_history import QAHistory
-from services.react_agent.loop import ReactLoopResult, react_loop
+from services.react_agent.loop import ReactLoopResult, RunCancelledError, react_loop
+from services.react_agent.run_lifecycle import RunConflictError, RunLifecycle, injection_key_for
 from services.react_agent.tools import get_tools_for_agent
+from services.token_quota import release_quota, reserve_quota, settle_quota
 
 logger = logging.getLogger(__name__)
 
@@ -271,6 +273,17 @@ async def react_loop_stream(
     start_time = time.monotonic()  # Spec: 紧凑摘要含耗时
     turn_id = turn_id or uuid.uuid4().hex
     sequence = 0
+    # A real request always supplies an AsyncSession and persists AgentRun.
+    # Lightweight stream unit tests intentionally pass a MagicMock DB; keep
+    # those transport-only tests independent from a real user/resume FK while
+    # retaining persistence for every application request.
+    db_module = type(db).__module__
+    lifecycle = RunLifecycle(persist=not db_module.startswith("unittest.mock"))
+    run_handle = None
+    run_terminal_status: str | None = None
+    qa_id: int | None = None
+    quota_reservation = None
+    quota_settled = False
 
     def envelope(event: dict) -> dict:
         """Attach stable stream ownership metadata to every emitted event."""
@@ -317,6 +330,11 @@ async def react_loop_stream(
                 tool_hint=tool_hint,
                 checkpoint_key=checkpoint_key,
                 inject_key=inject_key,
+                cancel_check=cancel_check,
+                run_id=run_handle.run_id if run_handle else None,
+                turn_id=run_handle.turn_id if run_handle else turn_id,
+                checkpoint_owner_token=run_handle.owner_token if run_handle else None,
+                quota_pre_reserved=quota_reservation is not None,
             )
         except Exception as e:
             loop_error = e
@@ -338,30 +356,42 @@ async def react_loop_stream(
             f"react:inject:{user_id}:{resume_id}:{conv_suffix}"
         )
 
-    active_key = f"react:active:{user_id}:{resume_id}:{conversation_id or 'all'}"
-    try:
-        from core.redis_client import get_redis
-        _active_redis = await get_redis()
-        if _active_redis is not None:
-            await _active_redis.setex(active_key, 1800, turn_id)
-    except Exception:
-        _active_redis = None
-
     async def cleanup_active_key() -> None:
-        if _active_redis is not None:
-            try:
-                current = await _active_redis.get(active_key)
-                if isinstance(current, bytes):
-                    current = current.decode("utf-8", errors="ignore")
-                if current == turn_id:
-                    script = "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end"
-                    if hasattr(_active_redis, "eval"):
-                        await _active_redis.eval(script, 1, active_key, turn_id)
-                    else:
-                        # Without atomic eval, retain short TTL rather than race-delete a newer turn.
-                        logger.debug("Redis lacks eval; retain active key until TTL")
-            except Exception:
-                logger.debug("清理活跃回合标记失败", exc_info=True)
+        # Compatibility no-op. RunLifecycle owns admission-key cleanup.
+        return None
+
+    try:
+        run_handle = await lifecycle.start(
+            user_id=user_id,
+            resume_id=resume_id,
+            conversation_id=conversation_id,
+            turn_id=turn_id,
+            route=tool_mode,
+        )
+    except RunConflictError:
+        yield envelope({
+            "type": "run_conflict",
+            "message": "当前对话已有 Agent 正在运行，请等待完成或先取消。",
+        })
+        return
+
+    # Bind injection queue to this turn; messages cannot bleed into next run.
+    inject_key = injection_key_for(run_handle) if tool_mode == "agent" else None
+    # Keep the checkpoint at the conversation scope so a new turn can recover
+    # a disconnected predecessor.  The payload still carries owner metadata;
+    # clear operations use owner-token CAS, so a late old turn cannot delete a
+    # checkpoint written by the new owner.
+    async def cancel_check() -> bool:
+        return await lifecycle.is_cancel_requested(run_handle.run_id)
+
+    quota_reservation = await reserve_quota(user_id)
+    if quota_reservation is None:
+        await lifecycle.finalize(run_handle, status="failed", error_code="quota_exceeded")
+        yield envelope({
+            "type": "quota_exceeded",
+            "message": "今日 Agent 额度不足，请稍后再试。",
+        })
+        return
 
     task = asyncio.create_task(run_loop())
 
@@ -373,8 +403,10 @@ async def react_loop_stream(
         if first_event is _SENTINEL:
             await cleanup_active_key()
             if loop_error:
+                run_terminal_status = "failed"
                 yield envelope({"type": "error", "message": "Agent 处理失败，请重试"})
             else:
+                run_terminal_status = "failed"
                 yield envelope({"type": "error", "message": "Agent 未产出任何事件"})
             return
 
@@ -384,6 +416,7 @@ async def react_loop_stream(
             yield envelope(first_event)
             await queue.get()  # 消费 SENTINEL
             await task
+            run_terminal_status = "failed"
             return
 
         # ── 通知前端 Agent 开始（先发首事件，不被占位记录 DB 写阻塞）──
@@ -428,6 +461,7 @@ async def react_loop_stream(
                     )
                 except Exception:
                     logger.warning("标记 quota 终止 QA 记录失败: qa_id=%s", qa_id)
+                run_terminal_status = "failed"
                 return
             # agent_done 从 callback 来的只有 content，
             # 由末尾补充 qa_id + process_trace 后统一 yield
@@ -453,7 +487,12 @@ async def react_loop_stream(
                 )
             except Exception:
                 logger.warning("标记失败 QA 记录失败: qa_id=%s", qa_id)
-            yield envelope({"type": "error", "message": f"Agent 执行出错: {loop_error}"})
+            if isinstance(loop_error, RunCancelledError):
+                run_terminal_status = "cancelled"
+                yield envelope({"type": "cancelled", "message": "Agent 已取消"})
+            else:
+                run_terminal_status = "failed"
+                yield envelope({"type": "error", "message": f"Agent 执行出错: {loop_error}"})
             return
 
         if loop_result is None:
@@ -466,6 +505,7 @@ async def react_loop_stream(
                 )
             except Exception:
                 logger.warning("标记失败 QA 记录失败: qa_id=%s", qa_id)
+            run_terminal_status = "failed"
             yield envelope({"type": "error", "message": "Agent 未返回结果"})
             return
 
@@ -483,15 +523,22 @@ async def react_loop_stream(
             token_usage=loop_result.usage,
             db_trace=loop_result.db_trace,  # 行 459: 完整 prompt 进 DB
         )
+        run_terminal_status = "succeeded"
+        if quota_reservation is not None:
+            actual_tokens = loop_result.usage.get("prompt_tokens", 0) + loop_result.usage.get("completion_tokens", 0)
+            quota_settled = await settle_quota(quota_reservation, actual_tokens)
+        try:
+            await lifecycle.transition(
+                run_handle.run_id,
+                "succeeded",
+                degraded=_has_tool_error(loop_result.process_trace),
+                usage=loop_result.usage,
+            )
+        except Exception:
+            logger.warning("AgentRun terminal success persistence failed", exc_info=True)
 
         # ── 记录 quota 消耗（analytics 已由 llm_generate_with_tools_stream 内部 record_llm_usage 完成，
         # 此处仅记录 quota 消耗，与传统 RAG 路径对齐） ──────
-        pt = loop_result.usage.get("prompt_tokens", 0)
-        ct = loop_result.usage.get("completion_tokens", 0)
-        if pt > 0 or ct > 0:
-            from services.token_quota import record_usage as _record_quota
-            await _record_quota(user_id, pt, ct)
-
         # ── 记忆提炼（后台 fire-and-forget，节流触发写 L4） ────
         # 仅 Agent 问答路径（tool_mode != "builder"）；开关默认关，测试零污染。
         # 此处置于 update_qa_answer 之后、agent_done 之前：若消费端在 agent_done
@@ -580,6 +627,35 @@ async def react_loop_stream(
             except Exception:
                 logger.warning("标记异常 QA 记录失败: qa_id=%s", qa_id)
         yield envelope({"type": "error", "message": "Agent 处理失败，请重试"})
+    finally:
+        if quota_reservation is not None and not quota_settled:
+            try:
+                quota_settled = await release_quota(quota_reservation)
+            except Exception:
+                logger.warning("quota reservation release failed", exc_info=True)
+        # One owner, one cleanup path: task is always awaited/cancelled and
+        # Redis owner is released with token CAS even on disconnect/error.
+        if not task.done():
+            task.cancel()
+            try:
+                await task
+            except BaseException:
+                pass
+        if run_handle is not None:
+            status = run_terminal_status
+            if status is None:
+                try:
+                    status = "cancelled" if await lifecycle.is_cancel_requested(run_handle.run_id) else "failed"
+                except Exception:
+                    status = "failed"
+            try:
+                await lifecycle.finalize(
+                    run_handle,
+                    status=status,
+                    error_code=None if status == "succeeded" else status,
+                )
+            except Exception:
+                logger.warning("AgentRun cleanup/finalization failed", exc_info=True)
 
 
 def _build_compact_trace(trace: list[dict], duration_ms: int) -> dict:

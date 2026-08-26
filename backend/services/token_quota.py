@@ -5,6 +5,8 @@
 """
 
 import logging
+import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
@@ -12,6 +14,106 @@ from core.config import settings
 from core.redis_client import get_redis
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class QuotaReservation:
+    reservation_id: str
+    user_id: int
+    reserved_tokens: int
+
+
+def _get_reserved_key(user_id: int) -> str:
+    return f"token_quota_reserved:{user_id}:{datetime.now(BEIJING_TZ).strftime('%Y-%m-%d')}"
+
+
+def _get_reservation_key(reservation_id: str) -> str:
+    return f"token_quota_reservation:{reservation_id}"
+
+
+_RESERVE_SCRIPT = """-- QUOTA_RESERVE_V1
+local used = tonumber(redis.call('GET', KEYS[1]) or '0')
+local reserved = tonumber(redis.call('GET', KEYS[2]) or '0')
+local amount = tonumber(ARGV[1])
+local limit = tonumber(ARGV[2])
+if redis.call('EXISTS', KEYS[3]) == 1 then return 1 end
+if used + reserved + amount > limit then return 0 end
+redis.call('INCRBY', KEYS[2], amount)
+redis.call('EXPIRE', KEYS[2], ARGV[3])
+redis.call('SET', KEYS[3], amount, 'EX', ARGV[3])
+return 1
+"""
+
+_SETTLE_SCRIPT = """-- QUOTA_SETTLE_V1
+local amount = tonumber(redis.call('GET', KEYS[3]) or '0')
+if not amount then return 0 end
+local reserved = tonumber(redis.call('GET', KEYS[1]) or '0')
+redis.call('SET', KEYS[1], math.max(0, reserved - amount), 'EX', ARGV[2])
+redis.call('INCRBY', KEYS[2], math.max(0, tonumber(ARGV[1])))
+redis.call('EXPIRE', KEYS[2], ARGV[2])
+redis.call('DEL', KEYS[3])
+local used = tonumber(redis.call('GET', KEYS[2]) or '0')
+local limit = tonumber(ARGV[3])
+return (used <= limit) and 1 or 0
+"""
+
+
+async def reserve_quota(user_id: int, estimated_tokens: int | None = None) -> QuotaReservation | None:
+    """Atomically reserve budget for one Agent run; return None on exhaustion."""
+    if not settings.TOKEN_QUOTA_ENABLED:
+        return QuotaReservation(uuid.uuid4().hex, user_id, 0)
+    amount = max(
+        settings.TOKEN_QUOTA_MIN_RESERVE,
+        int(estimated_tokens or settings.TOKEN_QUOTA_RESERVE_ESTIMATE),
+    )
+    reservation_id = uuid.uuid4().hex
+    redis = await get_redis()
+    if redis is None:
+        return None
+    ttl = max(60, _get_seconds_until_midnight())
+    try:
+        ok = await redis.eval(
+            _RESERVE_SCRIPT,
+            3,
+            _get_today_key(user_id),
+            _get_reserved_key(user_id),
+            _get_reservation_key(reservation_id),
+            str(amount),
+            str(settings.TOKEN_QUOTA_DAILY_LIMIT),
+            str(ttl),
+        )
+        return QuotaReservation(reservation_id, user_id, amount) if ok else None
+    except Exception:
+        logger.exception("原子 token quota reserve 失败")
+        return None
+
+
+async def settle_quota(reservation: QuotaReservation, actual_tokens: int) -> bool:
+    """Release the reservation and commit actual usage exactly once."""
+    if not settings.TOKEN_QUOTA_ENABLED or reservation.reserved_tokens == 0:
+        return True
+    redis = await get_redis()
+    if redis is None:
+        return False
+    ttl = max(60, _get_seconds_until_midnight())
+    try:
+        return bool(await redis.eval(
+            _SETTLE_SCRIPT,
+            3,
+            _get_reserved_key(reservation.user_id),
+            _get_today_key(reservation.user_id),
+            _get_reservation_key(reservation.reservation_id),
+            str(max(0, int(actual_tokens))),
+            str(ttl),
+            str(settings.TOKEN_QUOTA_DAILY_LIMIT),
+        ))
+    except Exception:
+        logger.exception("原子 token quota settle 失败")
+        return False
+
+
+async def release_quota(reservation: QuotaReservation) -> bool:
+    return await settle_quota(reservation, 0)
 
 # 使用北京时间作为时区基准（UTC+8）
 # 不使用 zoneinfo 以避免 Windows 系统缺少时区数据库的问题

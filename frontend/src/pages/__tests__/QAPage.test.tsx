@@ -22,6 +22,7 @@ vi.mock("../../api/qa", () => ({
   createConversation: vi.fn(async () => ({ id: 1, title: "新的对话", updated_at: "", message_count: 0 })),
   deleteConversation: vi.fn(async () => undefined),
   renameConversation: vi.fn(async () => ({ id: 1, title: "新的对话", updated_at: "" })),
+  shouldAcceptAgentEvent: vi.fn(() => true),
 }));
 
 // QAPage 挂载时 listResumes 自动选第一份简历（优先 ready），id 需为 42（测试断言用）

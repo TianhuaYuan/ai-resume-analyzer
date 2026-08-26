@@ -20,6 +20,7 @@ import logging
 from datetime import datetime, timezone
 
 from core import cache as embedding_cache
+from core.config import settings
 from fastapi import HTTPException, status
 from pydantic import ValidationError
 from sqlalchemy import select
@@ -601,6 +602,11 @@ async def materialize_modules_from_text(
             resume.parsed_text,
             user_id=user_id,
             source_filename=resume.filename,
+            # Upload materialization is the highest-value extraction path. Use
+            # the configured reasoning policy instead of silently forcing the
+            # parser's legacy default off; provenance validation still remains
+            # fail-closed if the model invents or rewrites text.
+            thinking_enabled=settings.THINKING_ENABLED,
         )
     except Exception as e:  # noqa: BLE001 LLM/校验失败 → 降级，不抛给用户
         logger.warning("懒物化失败（可降级粘贴导入）resume=%d: %s", resume_id, e)

@@ -196,15 +196,16 @@ async def archive_interview(
     - 401 未登录
     - 404 记录不存在或非本人
     """
-    session = await interview_service.get_interview(db, current_user.id, interview_id)
+    user_id = current_user.id
+    session = await interview_service.get_interview(db, user_id, interview_id)
     asset = await asset_service.upsert_asset_by_source(
         db,
-        current_user.id,
+        user_id,
         source_type=asset_service.SOURCE_INTERVIEW_SESSION,
         source_id=session.id,
         asset_type="interview",
         title=f"{session.company} {session.position} 面试记录",
         content=asset_service.build_interview_asset_content(session),
     )
-    await write_audit_log(db, user_id=current_user.id, action="interview_archive", target_type="interview", target_id=str(interview_id), detail={"result": "success", "request_id": request.headers.get("X-Request-ID")}, ip=request.client.host if request.client else None)
+    await write_audit_log(db, user_id=user_id, action="interview_archive", target_type="interview", target_id=str(interview_id), detail={"result": "success", "request_id": request.headers.get("X-Request-ID")}, ip=request.client.host if request.client else None)
     return AssetResponse.model_validate(asset)

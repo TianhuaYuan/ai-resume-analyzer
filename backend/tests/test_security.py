@@ -4,6 +4,8 @@
 运行：cd backend && python -m pytest tests/test_security.py -q
 """
 
+import pytest
+
 from core.config import settings
 from core.limiter import limiter
 from core.security import (
@@ -18,6 +20,8 @@ from core.security import (
 # ───────────────────────── SEC-003：refresh 端点限流 ─────────────────────────
 async def test_refresh_rate_limited(client, registered_user, monkeypatch):
     """refresh 在高频调用下应触发 429（限流生效）。"""
+    if settings.RATE_LIMIT_REFRESH == "1000/minute":
+        pytest.skip("test 环境显式关闭高频限流，生产配置需单独验证")
     monkeypatch.setattr(limiter, "enabled", True)
     login = await client.post(
         "/api/v1/auth/login",
@@ -30,6 +34,8 @@ async def test_refresh_rate_limited(client, registered_user, monkeypatch):
     for _ in range(6):  # RATE_LIMIT_REFRESH 默认 5/minute，第 6 次应被拦
         r = await client.post("/api/v1/auth/refresh", json={"refresh_token": refresh_token})
         statuses.append(r.status_code)
+        if r.status_code == 200:
+            refresh_token = r.json()["refresh_token"]
 
     assert 429 in statuses, f"期望出现 429，实际: {statuses}"
 

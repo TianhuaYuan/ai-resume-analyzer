@@ -199,6 +199,42 @@ def _join_line_words(words: list[dict]) -> str:
     return "".join(parts)
 
 
+def _looks_corrupted_pdf_text(text: str) -> bool:
+    """Detect font-map/control-character corruption from a PDF extractor."""
+    if not text:
+        return False
+    controls = sum(1 for char in text if ord(char) < 32 and char not in "\n\r\t")
+    return controls >= max(3, len(text) // 200)
+
+
+def _parse_pdf_with_pymupdf(path: str) -> str:
+    """Fallback extractor for PDFs whose font map breaks pdfplumber text.
+
+    Import lazily so existing deployments without the optional fallback keep
+    the pdfplumber/MinerU/Docling/OCR chain and can report a clear warning.
+    """
+    try:
+        import fitz  # PyMuPDF
+    except ImportError:
+        logger.warning("PyMuPDF unavailable; cannot repair corrupted PDF text: %s", path)
+        return ""
+
+    parts: list[str] = []
+    document = fitz.open(path)
+    try:
+        for page in document:
+            page_text = page.get_text("text") or ""
+            if page_text.strip():
+                parts.append(page_text)
+            for link in page.get_links() or []:
+                uri = str(link.get("uri") or "").strip()
+                if uri.lower().startswith(("http://", "https://", "mailto:", "tel:")):
+                    parts.append(f"链接: {uri}")
+    finally:
+        document.close()
+    return "\n".join(parts).strip()
+
+
 def _is_multicolumn(texts: list[dict]) -> bool:
     """启发式双栏检测：同一 y 带内出现 x 大间隙的列断点 ≥ 阈值次数。
 
@@ -247,7 +283,18 @@ def parse_pdf(path: str) -> str:
             if text:
                 link_lines = _extract_link_evidence(getattr(page, "hyperlinks", []), words, text)
                 parts.append("\n".join([text, *link_lines]))
-    return "\n".join(parts).strip()
+    text = "\n".join(parts).strip()
+    if _looks_corrupted_pdf_text(text):
+        repaired = _parse_pdf_with_pymupdf(path)
+        if repaired and len(repaired) >= max(MIN_SCAN_TEXT_LENGTH, int(len(text) * 0.5)):
+            logger.info(
+                "pdfplumber text map corrupted; switched to PyMuPDF: path=%s, old=%d, new=%d",
+                path,
+                len(text),
+                len(repaired),
+            )
+            return repaired
+    return text
 
 
 def parse_docx(path: str) -> str:

@@ -26,6 +26,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
+from core.config import settings
 from schemas.resume_module import (
     ModuleType,
     ResumeModuleCreate,
@@ -653,6 +654,11 @@ def verify_fields_in_original_text(modules: list[dict], original_lines: list[str
                 if not isinstance(item, dict):
                     continue
                 for key in fields:
+                    # Category is a presentation/classification label, not a
+                    # resume fact. Requiring an exact source span here rejects
+                    # valid groupings such as “后端工程” or “AI 核心”.
+                    if key == "category":
+                        continue
                     value = item.get(key)
                     if isinstance(value, list):
                         checks.extend((f"items[{index}].{key}", part) for part in value)
@@ -797,7 +803,8 @@ async def parse_text_to_modules(
         error_feedback = _build_error_feedback(errors_history) if errors_history else None
         user_prompt = _build_user_prompt(indexed_text, error_feedback, source_filename)
 
-        # llm_generate 内部已有一次受控重试；这里仅加 30s 总时限，避免嵌套
+        # llm_generate 内部已有一次受控重试；外层必须使用统一配置，不能
+        # 用过短的硬编码把仍在生成的复杂简历误判为解析失败。
         # retry budget 把一次上传放大到数分钟。temperature=None 兼容推理模型。
         try:
             repair_with_thinking = bool(thinking_enabled)
@@ -812,7 +819,7 @@ async def parse_text_to_modules(
                     thinking_effort="high" if repair_with_thinking else None,
                     scenario="resume_extract",
                 ),
-                timeout=30,
+                timeout=max(60.0, float(settings.LLM_GENERATE_TIMEOUT)),
             )
         except Exception as e:
             logger.exception(

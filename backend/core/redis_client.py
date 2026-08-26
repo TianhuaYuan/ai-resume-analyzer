@@ -121,6 +121,44 @@ class InMemoryRedis:
         修复背景：原实现把所有脚本都当 DEL 执行，导致续期（EXPIRE）时把锁删了，
         后续心跳全部 409。
         """
+        if "USAGE_RECORD_V1" in script and num_keys == 7 and len(args) >= 14:
+            keys = args[:7]
+            prompt, completion, total, calls = (int(args[7]), int(args[8]), int(args[9]), int(args[10]))
+            cost_input, cost_output, ttl = int(args[11]), int(args[12]), int(args[13])
+            self._purge_expired()
+            for key, amount in zip(keys, (prompt, completion, total, calls, cost_input, cost_output, cost_input + cost_output)):
+                self._data[key] = str(int(self._data.get(key, "0") or 0) + amount)
+                self._expire_at[key] = time.time() + ttl
+            return 1
+        if "QUOTA_RESERVE_V1" in script and num_keys == 3 and len(args) >= 6:
+            used_key, reserved_key, reservation_key = args[:3]
+            amount, limit, ttl = (int(args[3]), int(args[4]), int(args[5]))
+            self._purge_expired()
+            if self._is_valid(reservation_key):
+                return 1
+            used = int(self._data.get(used_key, "0") or 0)
+            reserved = int(self._data.get(reserved_key, "0") or 0)
+            if used + reserved + amount > limit:
+                return 0
+            self._data[reserved_key] = str(reserved + amount)
+            self._expire_at[reserved_key] = time.time() + ttl
+            self._data[reservation_key] = str(amount)
+            self._expire_at[reservation_key] = time.time() + ttl
+            return 1
+        if "QUOTA_SETTLE_V1" in script and num_keys == 3 and len(args) >= 6:
+            reserved_key, used_key, reservation_key = args[:3]
+            actual, ttl, limit = int(args[3]), int(args[4]), int(args[5])
+            self._purge_expired()
+            if not self._is_valid(reservation_key):
+                return 0
+            reserved = int(self._data.get(reserved_key, "0") or 0)
+            amount = int(self._data.get(reservation_key, "0") or 0)
+            self._data[reserved_key] = str(max(0, reserved - amount))
+            self._data[used_key] = str(int(self._data.get(used_key, "0") or 0) + max(0, actual))
+            self._expire_at[used_key] = time.time() + ttl
+            self._data.pop(reservation_key, None)
+            self._expire_at.pop(reservation_key, None)
+            return 1 if int(self._data.get(used_key, "0") or 0) <= limit else 0
         if num_keys > 0 and args:
             key = args[0]
             expected = args[1] if len(args) > 1 else None

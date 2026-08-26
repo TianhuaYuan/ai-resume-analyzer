@@ -15,6 +15,9 @@ export interface ApprovalRequest {
   approvalId: string;
   toolName: string;
   summary: string;
+  proposalId?: string;
+  proposalHash?: string;
+  rationale?: string;
 }
 
 /**
@@ -274,6 +277,9 @@ function handleApprovalRequest(ev: AgentSSEEvent, ctx: StreamCtx): void {
     approvalId: ev.approval_id ?? "",
     toolName: ev.tool_name ?? "",
     summary: ev.summary ?? "",
+    proposalId: ev.proposal_id,
+    proposalHash: ev.proposal_hash,
+    rationale: ev.rationale,
   });
 }
 

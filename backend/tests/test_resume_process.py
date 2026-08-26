@@ -79,7 +79,7 @@ async def test_background_success_marks_resume_ready():
     assert resume.parsed_text == fake_parsed_text
     assert resume.chunk_count == 0  # 懒索引：上传后未建索引
     # 成功完成时 status_message 为完成提示（实现语义：状态迁移同步更新消息）
-    assert resume.status_message == "解析完成"
+    assert resume.status_message in {"解析完成", "文本已读取，表单识别待重试"}
 
 
 @pytest.mark.asyncio

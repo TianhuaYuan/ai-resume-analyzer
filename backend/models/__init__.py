@@ -21,6 +21,8 @@ from models.interview_simulation import InterviewSimulation
 from models.job_application import JobApplication
 from models.pending_change import PendingChange
 from models.jd_match_report import JdMatchReport
+from models.agent_run import AgentRun
+from models.agent_proposal import AgentProposal
 
 __all__ = [
     "Base",
@@ -44,4 +46,6 @@ __all__ = [
     "JobApplication",
     "PendingChange",
     "JdMatchReport",
+    "AgentRun",
+    "AgentProposal",
 ]

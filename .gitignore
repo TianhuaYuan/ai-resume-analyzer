@@ -97,3 +97,10 @@ dogfood-output/
 tasks/
 docs/
 third_party/
+面试准备
+
+# ── 本地浏览器/评测环境与含个人简历的评测产物 ──
+.chrome-resume/
+.edge-resume/
+.venv-eval/
+artifacts/

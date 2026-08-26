@@ -569,7 +569,9 @@ async def test_agent_usage_has_one_quota_owner_and_shared_final_total():
             )
         ]
 
-    mock_quota.assert_awaited_once_with(7, 200, 80)
+    # Usage is now committed by the atomic quota reservation settlement path;
+    # the legacy record_usage side channel must remain unused.
+    mock_quota.assert_not_awaited()
     assert mock_update.await_args.kwargs["token_usage"] == usage
     done = next(event for event in events if event["type"] == "agent_done")
     assert done["token_usage"] == usage

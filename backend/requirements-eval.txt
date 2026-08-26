@@ -1,0 +1,4 @@
+# Optional evaluation stack; not required by the runtime API.
+langsmith>=0.3,<1
+deepeval>=2,<3
+ragas>=0.4,<1

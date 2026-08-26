@@ -20,6 +20,7 @@ import hashlib
 import json as _json
 import json as _json_std
 import logging
+import uuid
 from datetime import datetime, timezone
 from typing import Literal
 
@@ -29,6 +30,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import AsyncSessionLocal
+from core.config import settings
 from services.analyze_service import analyze_resume
 from services.match_jd_service import match_jd
 from services.rag.asset_source import ASSET_TYPE_RESUME
@@ -43,7 +45,7 @@ from services.rag.pipeline import (
     llm_generate_with_tools_stream,
 )
 from services.rag.retrieval import hybrid_search, hybrid_search_corpus, rerank
-from services.react_agent.tools.base import Tool, ToolRetryError, format_validation_error
+from services.react_agent.tools.base import Tool, ToolFailed, ToolRetryError, format_validation_error
 from services.react_agent.tools.negotiation_brief import NegotiationBriefTool
 from services.react_agent.tools.search_corpus import SearchCorpusTool
 from services.react_agent.tools.search_jobs_live import SearchJobsLiveTool
@@ -960,6 +962,20 @@ async def _stream_tool_llm(
       从 ``done`` 事件聚合 tool_calls，返回 LLMToolResponse（调用方沿用 ``_extract_tool_args``）
     """
     if emit is None:
+        if tools is None:
+            # Text-only tools should use the cheaper non-tool request path.
+            # Besides avoiding an unnecessary function schema, this keeps
+            # direct/read-only calls independent from tool-call parsing.
+            text = await llm_generate(
+                system=messages[0].get("content", "") if messages else "",
+                user=messages[1].get("content", "") if len(messages) > 1 else "",
+                temperature=temperature,
+                max_tokens=max_tokens,
+                model=model,
+                user_id=user_id,
+                scenario="field_rewrite",
+            )
+            return LLMToolResponse(content=text, usage=getattr(usage_target, "copy", lambda: {})() if usage_target else {})
         return await llm_generate_with_tools(
             messages=messages,
             tools=tools,
@@ -1201,6 +1217,79 @@ async def _read_modules_context(db, user_id: int, resume_id: int):
     return resume, "", set()
 
 
+async def _await_proposal_approval(
+    *,
+    proposal,
+    user_id: int,
+    tool_name: str,
+    emit,
+    rationale: str,
+) -> dict:
+    """Pause a write proposal for the same approval channel used by tools.
+
+    The event exposes only a redacted summary/hash; executable module payloads
+    remain server-side in AgentProposal.
+    """
+    if getattr(settings, "AGENT_PROPOSAL_AUTO_APPLY", False):
+        from services.react_agent.proposal_commit import ProposalCommitService
+
+        service = ProposalCommitService()
+        await service.decide(proposal_id=proposal.proposal_id, user_id=user_id, approved=True)
+        return await service.apply(
+            proposal_id=proposal.proposal_id,
+            user_id=user_id,
+            idempotency_key=proposal.idempotency_key,
+        )
+    if emit is None:
+        raise ToolFailed("写入 Proposal 需要可交互的审批通道")
+
+    from services.react_agent.loop import (
+        drop_approval,
+        register_approval,
+        register_approval_remote,
+        wait_for_approval,
+    )
+
+    approval_id = uuid.uuid4().hex
+    register_approval(approval_id, user_id)
+    summary = f"{tool_name} 将应用一组简历修改（proposal={proposal.proposal_id[:12]}）"
+    await register_approval_remote(
+        approval_id,
+        user_id=user_id,
+        tool_name=tool_name,
+        summary=summary,
+        severity="warning",
+    )
+    try:
+        await emit(
+            {
+                "type": "approval_request",
+                "approval_id": approval_id,
+                "proposal_id": proposal.proposal_id,
+                "proposal_hash": proposal.content_hash,
+                "tool_name": tool_name,
+                "summary": summary,
+                "rationale": rationale[:500],
+                "severity": "warning",
+            }
+        )
+        decision = await wait_for_approval(approval_id)
+    finally:
+        drop_approval(approval_id)
+    from services.react_agent.proposal_commit import ProposalCommitService
+
+    service = ProposalCommitService()
+    approved = decision in {"approved", "allow_always"}
+    await service.decide(proposal_id=proposal.proposal_id, user_id=user_id, approved=approved)
+    if not approved:
+        raise ToolFailed("用户拒绝应用该简历修改 Proposal")
+    return await service.apply(
+        proposal_id=proposal.proposal_id,
+        user_id=user_id,
+        idempotency_key=proposal.idempotency_key,
+    )
+
+
 async def _submit_modules_via_llm(
     user_id: int,
     resume_id: int,
@@ -1326,14 +1415,46 @@ async def _submit_modules_via_llm(
     if before_modules:
         validated_modules = _restore_sensitive_placeholders(validated_modules, before_modules)
 
-    result = await _replace_all_modules_short_txn(
-        user_id,
-        resume_id,
-        validated_modules,
-        complete=complete,
-        expected_module_types=expected_types,
-        expected_module_revision=expected_module_revision,
+    # The SSE runtime has already passed the outer tool approval gate.  Use a
+    # Proposal-Commit transaction for real Agent writes so the mutation is
+    # still represented by an auditable proposal and revision CAS.  Legacy
+    # direct tool calls (including migration/tests) retain the old adapter.
+    proposal_enabled = bool(
+        emit is not None
+        and getattr(settings, "AGENT_PROPOSAL_COMMIT_ENABLED", True)
+        and tool_name
     )
+    if proposal_enabled:
+        from services.react_agent.proposal_commit import ProposalCommitService
+
+        proposal_service = ProposalCommitService()
+        idempotency_key = uuid.uuid4().hex
+        proposal = await proposal_service.create(
+            user_id=user_id,
+            resume_id=resume_id,
+            call_id=f"{tool_name}:{uuid.uuid4().hex}",
+            operations=validated_modules,
+            rationale=rationale or tool_name,
+            evidence=[],
+            idempotency_key=idempotency_key,
+        )
+        await _await_proposal_approval(
+            proposal=proposal,
+            user_id=user_id,
+            tool_name=tool_name,
+            emit=emit,
+            rationale=rationale or tool_name,
+        )
+        result = f"✅ 已通过 Proposal-Commit 应用简历修改（proposal_id={proposal.proposal_id}）"
+    else:
+        result = await _replace_all_modules_short_txn(
+            user_id,
+            resume_id,
+            validated_modules,
+            complete=complete,
+            expected_module_types=expected_types,
+            expected_module_revision=expected_module_revision,
+        )
     # G 可信度控制：AI 推断/补充内容（source≠fact）提醒用户核对具体模块
     inferred_modules = [
         m["module_type"] for m in validated_modules if m.get("source", "unknown") != "fact"
@@ -1737,15 +1858,50 @@ class GenerateModuleTool(Tool):
         except Exception as e:
             return f"⚠️ AI 生成失败：{e}"
 
-        # 短事务写入（内部 validate_module_content 严格校验 + 失败回灌含修复指引）
+        # Real SSE Agent writes use the same Proposal-Commit boundary as the
+        # full-resume tools; direct calls retain the compatibility transaction.
         existing = next((m for m in modules if m.module_type == module_type), None)
-        result = await _update_module_short_txn(
-            self.user_id,
-            resume_id,
-            module_type,
-            content,
-            restore_content=existing.content if existing is not None else None,
-        )
+        if self.emit is not None and getattr(settings, "AGENT_PROPOSAL_COMMIT_ENABLED", True):
+            from services.react_agent.proposal_commit import ProposalCommitService, ProposalError
+
+            operation = {
+                "module_type": module_type,
+                "content": _restore_sensitive_placeholders(
+                    [{"module_type": module_type, "content": content}],
+                    [{"module_type": module_type, "content": existing.content}],
+                )[0]["content"] if existing is not None else content,
+                "sort_order": existing.sort_order if existing is not None else len(modules),
+                "source": getattr(existing, "source", "unknown") if existing is not None else "unknown",
+            }
+            proposal_service = ProposalCommitService()
+            idempotency_key = uuid.uuid4().hex
+            try:
+                proposal = await proposal_service.create(
+                    user_id=self.user_id,
+                    resume_id=resume_id,
+                    call_id=f"generate_module:{uuid.uuid4().hex}",
+                    operations=[operation],
+                    rationale=f"generate_module:{module_type}",
+                    idempotency_key=idempotency_key,
+                )
+                await _await_proposal_approval(
+                    proposal=proposal,
+                    user_id=self.user_id,
+                    tool_name=self.name,
+                    emit=self.emit,
+                    rationale=f"generate_module:{module_type}",
+                )
+                result = f"✅ 已通过 Proposal-Commit 应用模块生成（proposal_id={proposal.proposal_id}）"
+            except ProposalError as exc:
+                raise ToolRetryError(f"Proposal 提交失败: {exc}") from exc
+        else:
+            result = await _update_module_short_txn(
+                self.user_id,
+                resume_id,
+                module_type,
+                content,
+                restore_content=existing.content if existing is not None else None,
+            )
         return result
 
 
@@ -1799,6 +1955,17 @@ class CheckModuleTool(Tool):
         )
         user_msg = f"模块类型: {module_type}\n模块内容:\n{sanitized_str}\n\n请检查以上模块内容。"
 
+        if self.emit is None:
+            # A read-only direct call does not need the tool-calling wrapper;
+            # use the cheaper text path and keep the editor/SSE path streamed.
+            return await llm_generate(
+                system,
+                user_msg,
+                temperature=0,
+                max_tokens=1200,
+                user_id=self.user_id,
+                scenario="field_rewrite",
+            )
         check_resp = await _stream_tool_llm(
             messages=[
                 {"role": "system", "content": system},
@@ -1891,14 +2058,49 @@ class ModifyModuleTool(Tool):
         except Exception as e:
             return f"⚠️ AI 修改失败：{e}"
 
-        # 短事务写入（内部 validate_module_content 严格校验 + 失败回灌含修复指引）
-        result = await _update_module_short_txn(
-            self.user_id,
-            resume_id,
-            module_type,
-            content,
-            restore_content=module.content if module is not None else None,
-        )
+        # Real SSE Agent writes use Proposal-Commit; direct legacy calls keep
+        # the existing short transaction until their caller is migrated.
+        if self.emit is not None and getattr(settings, "AGENT_PROPOSAL_COMMIT_ENABLED", True):
+            from services.react_agent.proposal_commit import ProposalCommitService, ProposalError
+
+            operation = {
+                "module_type": module_type,
+                "content": _restore_sensitive_placeholders(
+                    [{"module_type": module_type, "content": content}],
+                    [{"module_type": module_type, "content": module.content}],
+                )[0]["content"] if module is not None else content,
+                "sort_order": module.sort_order if module is not None else 0,
+                "source": getattr(module, "source", "unknown") if module is not None else "unknown",
+            }
+            proposal_service = ProposalCommitService()
+            idempotency_key = uuid.uuid4().hex
+            try:
+                proposal = await proposal_service.create(
+                    user_id=self.user_id,
+                    resume_id=resume_id,
+                    call_id=f"modify_module:{uuid.uuid4().hex}",
+                    operations=[operation],
+                    rationale=instruction,
+                    idempotency_key=idempotency_key,
+                )
+                await _await_proposal_approval(
+                    proposal=proposal,
+                    user_id=self.user_id,
+                    tool_name=self.name,
+                    emit=self.emit,
+                    rationale=instruction,
+                )
+                result = f"✅ 已通过 Proposal-Commit 应用模块修改（proposal_id={proposal.proposal_id}）"
+            except ProposalError as exc:
+                raise ToolRetryError(f"Proposal 提交失败: {exc}") from exc
+        else:
+            result = await _update_module_short_txn(
+                self.user_id,
+                resume_id,
+                module_type,
+                content,
+                restore_content=module.content if module is not None else None,
+            )
         return result
 
 
@@ -2134,6 +2336,13 @@ def get_tool_by_name(name: str) -> type[Tool] | None:
 def get_agent_schemas(strict: bool | None = None) -> list[dict]:
     """获取 /ask/agent 的 OpenAI function calling schema 列表（unified）。"""
     return [tool_class().to_openai_schema(strict=strict) for tool_class in get_tools_for_agent()]
+
+
+def get_agent_tool_descriptors():
+    """Return runtime policy metadata without changing provider schemas."""
+    from services.react_agent.tool_registry import build_tool_descriptors
+
+    return build_tool_descriptors(get_tools_for_agent())
 
 
 def get_builder_schemas() -> list[dict]:

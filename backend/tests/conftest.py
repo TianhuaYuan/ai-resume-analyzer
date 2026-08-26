@@ -18,6 +18,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from core.database import Base, get_db
 from core.limiter import limiter
 from main import app
+# Explicitly register newly introduced runtime models before create_all.  The
+# application imports these models lazily from the streaming path, while the
+# test database is created earlier during fixture setup.
+import models.agent_proposal  # noqa: F401
+import models.agent_run  # noqa: F401
 
 # SQLite 文件数据库（测试期间共享同一文件，测试后自动清理）
 import tempfile
@@ -34,6 +39,13 @@ engine_test = create_async_engine(
     pool_timeout=60,
 )
 AsyncSessionTest = async_sessionmaker(engine_test, class_=AsyncSession, expire_on_commit=False)
+
+# RunLifecycle resolves its default session factory lazily.  Point it at the
+# same isolated database used by the HTTP fixtures; otherwise a stream test
+# would persist AgentRun rows into the application's separate test database.
+import services.react_agent.run_lifecycle as _run_lifecycle
+
+_run_lifecycle.AsyncSessionLocal = AsyncSessionTest
 
 
 def _cleanup_test_db():
@@ -67,6 +79,21 @@ async def setup_db():
     yield
     async with engine_test.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
+
+
+@pytest.fixture(autouse=True)
+async def reset_global_llm_breakers():
+    """每个用例隔离全局 LLM 熔断器，避免失败用例污染后续 mock 调用。"""
+    from services.rag import clients as rag_clients
+
+    for breaker in (rag_clients.get_chat_breaker(), rag_clients.get_judge_breaker()):
+        if breaker is not None:
+            async with breaker._lock:
+                breaker.state = breaker.CLOSED
+                breaker.failure_count = 0
+                breaker.last_failure_time = None
+                breaker._half_open_calls = 0
+    yield
 
 
 @pytest.fixture(autouse=True)

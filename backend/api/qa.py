@@ -43,6 +43,7 @@ from services.rag.pipeline import ask_question_stream as _ask_question_stream
 from services.rag.evidence import adapt_evidence, adapt_evidence_list
 from services.react_agent.streaming import react_loop_stream
 from services.react_agent.events import PROTOCOL_VERSION
+from services.react_agent.run_lifecycle import RunLifecycle, injection_key_for
 from services.token_quota import check_quota, record_usage, get_quota_status
 
 
@@ -120,24 +121,25 @@ async def ask_question(
     """对简历提问。走 Agentic RAG 图（改写→检索→重排→生成→评估），
     若检索/重排存在失败则置 degraded，让前端提示『答案基于部分信息』。"""
     # 用户问题进模型前先过注入安检
+    user_id = current_user.id
     _guard_question(data.question)
-    await resume_service.get_resume(db, data.resume_id, current_user.id)
+    await resume_service.get_resume(db, data.resume_id, user_id)
     # 懒索引：首次问答触发重建（脏标记 content_hash != indexed_hash）
     await ensure_indexed(
         db,
-        user_id=current_user.id,
+        user_id=user_id,
         asset_id=data.resume_id,
         asset_type=ASSET_TYPE_RESUME,
-        collection=knowledge_collection_name(current_user.id),
+        collection=knowledge_collection_name(user_id),
     )
-    answer, sources, tool_errors = await _run_agentic_rag(current_user.id, data.resume_id, data.question)
+    answer, sources, tool_errors = await _run_agentic_rag(user_id, data.resume_id, data.question)
     # 按配置对 LLM 输出做 PII 脱敏（默认关，避免误伤简历正常内容）
     if settings.REDACT_PII_OUTPUT:
         answer = redact_pii(answer)
     degraded = bool(tool_errors)
     record = await qa_service.save_qa(
         db,
-        current_user.id,
+        user_id,
         data.resume_id,
         data.question,
         answer,
@@ -146,7 +148,7 @@ async def ask_question(
     )
     # 问答 → L4 长期记忆回流（内部筛选 + try/except，失败不阻断问答）
     await qa_service.save_qa_to_memory(
-        user_id=current_user.id,
+        user_id=user_id,
         question=data.question,
         answer=answer,
     )
@@ -179,19 +181,20 @@ async def ask_question_stream(
     mode=agentic：走完整 Agentic RAG 图（改写→检索→重排→生成→评估→反思），
                   完成后一次性推送完整答案。
     """
+    user_id = current_user.id
     _guard_question(data.question)
-    await resume_service.get_resume(db, data.resume_id, current_user.id)
+    await resume_service.get_resume(db, data.resume_id, user_id)
     # 懒索引：首次问答触发重建（脏标记 content_hash != indexed_hash）
     await ensure_indexed(
         db,
-        user_id=current_user.id,
+        user_id=user_id,
         asset_id=data.resume_id,
         asset_type=ASSET_TYPE_RESUME,
-        collection=knowledge_collection_name(current_user.id),
+        collection=knowledge_collection_name(user_id),
     )
 
     # Token 限额预检查
-    allowed, quota_error = await check_quota(current_user.id)
+    allowed, quota_error = await check_quota(user_id)
     if not allowed:
         # 返回友好的限额提示（流式）
         async def quota_exceeded():
@@ -202,7 +205,7 @@ async def ask_question_stream(
         )
 
     if mode == "agentic":
-        answer, sources, tool_errors = await _run_agentic_rag(current_user.id, data.resume_id, data.question)
+        answer, sources, tool_errors = await _run_agentic_rag(user_id, data.resume_id, data.question)
         if settings.REDACT_PII_OUTPUT:
             answer = redact_pii(answer)
         degraded = bool(tool_errors)
@@ -217,7 +220,7 @@ async def ask_question_stream(
                 yield f"data: {json.dumps({'type': 'token', 'content': answer}, ensure_ascii=False)}\n\n"
                 record = await qa_service.save_qa(
                     stream_db,
-                    current_user.id,
+                    user_id,
                     data.resume_id,
                     data.question,
                     answer,
@@ -256,7 +259,7 @@ async def ask_question_stream(
             full_answer = ""
             source_items: list[dict] = []
             try:
-                async for event in _ask_question_stream(data.resume_id, data.question, user_id=current_user.id):
+                async for event in _ask_question_stream(data.resume_id, data.question, user_id=user_id):
                     if event["type"] == "usage":
                         # 捕获 token 使用量
                         prompt_tokens = event.get("prompt_tokens", 0)
@@ -268,7 +271,7 @@ async def ask_question_stream(
                         sources_for_db = adapt_evidence_list(sources_data)
                         record = await qa_service.save_qa(
                             stream_db,
-                            current_user.id,
+                            user_id,
                             data.resume_id,
                             data.question,
                             full_answer,
@@ -277,7 +280,7 @@ async def ask_question_stream(
                         )
                         # 问答 → L4 长期记忆回流（内部筛选 + try/except，失败不阻断问答）
                         await qa_service.save_qa_to_memory(
-                            user_id=current_user.id,
+                            user_id=user_id,
                             question=data.question,
                             answer=full_answer,
                         )
@@ -285,14 +288,14 @@ async def ask_question_stream(
 
                         # 记录 token 消耗
                         if prompt_tokens > 0 or completion_tokens > 0:
-                            await record_usage(current_user.id, prompt_tokens, completion_tokens)
+                            await record_usage(user_id, prompt_tokens, completion_tokens)
 
                         token_total = prompt_tokens + completion_tokens
                         yield f"data: {json.dumps({'type': 'done', 'sources': source_items, 'qa_id': record.id, 'token_usage': {'total': token_total, 'prompt': prompt_tokens, 'completion': completion_tokens}}, ensure_ascii=False)}\n\n"
                     else:
                         yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
             except asyncio.CancelledError:
-                logger.info("Client disconnected, stopping LLM stream for user %d, resume %d", current_user.id, data.resume_id)
+                logger.info("Client disconnected, stopping LLM stream for user %d, resume %d", user_id, data.resume_id)
                 raise
             except Exception as e:
                 logger.error("SSE stream error: %s", e)
@@ -326,8 +329,9 @@ async def ask_agent(
 
     独立限流（RATE_LIMIT_ASK_AGENT=8/min），与普通 /ask/stream 隔离。
     """
+    user_id = current_user.id
     _guard_question(data.question)
-    await resume_service.get_resume(db, data.resume_id, current_user.id)
+    await resume_service.get_resume(db, data.resume_id, user_id)
 
     # 如果带 compare_ids，注入到问题上下文供 Agent 的 compare_resumes 工具使用
     effective_question = data.question
@@ -357,7 +361,7 @@ async def ask_agent(
         try:
             async for event in react_loop_stream(
                 db=stream_db,
-                user_id=current_user.id,
+                user_id=user_id,
                 resume_id=data.resume_id,
                 question=effective_question,
                 tool_mode=data.tool_mode or "agent",
@@ -390,6 +394,8 @@ async def ask_agent(
                     "agent_done",
                     "quota_exceeded",
                     "error",
+                    "cancelled",
+                    "run_conflict",
                 }
                 payload = json.dumps(event, ensure_ascii=False)
                 terminal_sent = terminal_sent or is_terminal
@@ -397,7 +403,7 @@ async def ask_agent(
         except asyncio.CancelledError:
             logger.info(
                 "Client disconnected from agent stream: user=%d, resume=%d",
-                current_user.id,
+                user_id,
                 data.resume_id,
             )
             raise
@@ -451,36 +457,47 @@ async def inject_into_active_turn(
 
     返回 {"injected": true} 表示已写入注入队列。
     """
+    user_id = current_user.id
     _guard_question(data.content)
-    await resume_service.get_resume(db, resume_id, current_user.id)
+    await resume_service.get_resume(db, resume_id, user_id)
 
     from services.react_agent.loop import _enqueue_injection
 
-    conv_suffix = data.conversation_id if data.conversation_id else "all"
-    inject_key = (
-        f"react:inject:{current_user.id}:{resume_id}:{conv_suffix}"
+    lifecycle = RunLifecycle()
+    owner = await lifecycle.active_owner(
+        user_id, resume_id, data.conversation_id
     )
+    if owner is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="当前没有可注入的 Agent 回合",
+        )
+    inject_key = injection_key_for(owner)
     ok = await _enqueue_injection(inject_key, data.content)
     if not ok:
         return {"status": "failed", "injected": False, "turn_id": None}
-    turn_id = None
-    active = False
-    try:
-        from core.redis_client import get_redis
-        redis = await get_redis()
-        active_key = f"react:active:{current_user.id}:{resume_id}:{conv_suffix}"
-        if redis is not None:
-            raw = await redis.get(active_key)
-            if raw:
-                active = True
-                turn_id = str(raw)
-    except Exception:
-        logger.debug("读取活跃回合状态失败", exc_info=True)
+    turn_id = owner.turn_id or None
     return {
-        "status": "restarting" if active else "queued",
+        "status": "restarting",
         "injected": True,
         "turn_id": turn_id,
     }
+
+
+@router.post("/runs/{run_id}/cancel")
+async def cancel_agent_run(
+    run_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Request cooperative cancellation for an owned active Agent run."""
+    lifecycle = RunLifecycle()
+    run = await lifecycle.get(run_id)
+    if run is None or run.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent 回合不存在")
+    if run.status in {"succeeded", "failed", "cancelled"}:
+        return {"run_id": run_id, "status": run.status, "cancelled": False}
+    accepted = await lifecycle.request_cancel(run_id)
+    return {"run_id": run_id, "status": "cancelling" if accepted else run.status, "cancelled": accepted}
 
 
 @router.get("/history/{resume_id}", response_model=QAHistoryResponse)
@@ -605,15 +622,79 @@ async def submit_approval_decision(
             detail="无效的审批决议，仅支持 approved / denied",
         )
     # 延迟导入避免 api 层与 service 层循环依赖
-    from services.react_agent.loop import resolve_approval
+    from services.react_agent.loop import resolve_approval, resolve_approval_remote
 
-    ok = resolve_approval(data.approval_id, current_user.id, data.decision)
+    ok = await resolve_approval_remote(data.approval_id, current_user.id, data.decision)
+    # Same-worker compatibility: older streams may only have the in-process
+    # registry, so preserve the local wake-up path as a fallback.
+    if not ok:
+        ok = resolve_approval(data.approval_id, current_user.id, data.decision)
     if not ok:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="审批请求不存在、已过期或无权访问",
         )
     return {"status": "ok"}
+
+
+class ProposalDecisionRequest(BaseModel):
+    decision: str = Field(..., description="approved / denied")
+
+
+class ProposalApplyRequest(BaseModel):
+    idempotency_key: str = Field(..., min_length=16, max_length=128)
+
+
+@router.post("/proposals/{proposal_id}/decision")
+async def decide_agent_proposal(
+    proposal_id: str,
+    data: ProposalDecisionRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """显式更新 Agent 简历 Proposal 的审批状态。"""
+    if data.decision not in ("approved", "denied"):
+        raise HTTPException(status_code=422, detail="decision 仅支持 approved / denied")
+    from services.react_agent.proposal_commit import ProposalCommitService, ProposalError
+
+    try:
+        draft = await ProposalCommitService().decide(
+            proposal_id=proposal_id,
+            user_id=current_user.id,
+            approved=data.decision == "approved",
+        )
+    except ProposalError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {
+        "proposal_id": draft.proposal_id,
+        "status": draft.status,
+        "resume_id": draft.resume_id,
+        "base_revision": draft.base_revision,
+    }
+
+
+@router.post("/proposals/{proposal_id}/apply")
+async def apply_agent_proposal(
+    proposal_id: str,
+    data: ProposalApplyRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """在批准后以幂等键提交 Proposal；revision 冲突时零写入。"""
+    from services.react_agent.proposal_commit import (
+        ProposalCommitService,
+        ProposalError,
+        ProposalStaleError,
+    )
+
+    try:
+        return await ProposalCommitService().apply(
+            proposal_id=proposal_id,
+            user_id=current_user.id,
+            idempotency_key=data.idempotency_key,
+        )
+    except ProposalStaleError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ProposalError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 # ── 对话会话 CRUD ─────────────────────────────────────────

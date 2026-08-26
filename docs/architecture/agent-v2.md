@@ -1,5 +1,7 @@
 # Resume Artifact Agent v2 架构契约
 
+> 实施快照（2026-08-26）：Phase 0 契约、Evidence 规范化、Run/Event 生命周期、ToolResult 结构化边界及 Builder Proposal/CAS 写入链路已落地并有定向回归；Phase 5 路由统一与 Phase 7 旧侧信道清理仍属于后续迁移，不应在简历中表述为“全部完成”。
+
 状态：Phase 0 / Architecture Contract
 适用范围：简历问答、简历分析与改写、职位匹配、面试准备
 契约版本：`agent-v2/0.1`

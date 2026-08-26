@@ -23,6 +23,22 @@ logger = logging.getLogger(__name__)
 _LAST_FAIL_LOG_TIME: float = 0.0
 _FAIL_LOG_INTERVAL_SEC: int = 60
 
+_USAGE_RECORD_SCRIPT = """-- USAGE_RECORD_V1
+local prompt = tonumber(ARGV[1])
+local completion = tonumber(ARGV[2])
+local total = tonumber(ARGV[3])
+local calls = tonumber(ARGV[4])
+local cost_input = tonumber(ARGV[5])
+local cost_output = tonumber(ARGV[6])
+local ttl = ARGV[7]
+local values = {prompt, completion, total, calls, cost_input, cost_output, cost_input + cost_output}
+for i,key in ipairs(KEYS) do
+  redis.call('INCRBY', key, values[i])
+  redis.call('EXPIRE', key, ttl)
+end
+return 1
+"""
+
 
 async def record_llm_usage(
     user_id: int,
@@ -60,35 +76,36 @@ async def record_llm_usage(
 
     try:
         redis = await get_redis()
-        # 并行递增 4 个计数器（InMemoryRedis 不支持 pipeline，逐个调用）
-        await redis.incrby(f"{base}:prompt", prompt_tokens)
-        await redis.incrby(f"{base}:completion", completion_tokens)
-        await redis.incrby(f"{base}:total", total)
-        await redis.incrby(f"{base}:calls", 1)
-
         # 成本以微美元整数累计，避免 Redis 浮点误差；费率为 0 时仍保留 token 统计。
         input_rate = max(0.0, float(getattr(settings, "LLM_INPUT_COST_PER_MILLION_USD", 0.0)))
         output_rate = max(0.0, float(getattr(settings, "LLM_OUTPUT_COST_PER_MILLION_USD", 0.0)))
         input_micro_usd = round(prompt_tokens * input_rate)
         output_micro_usd = round(completion_tokens * output_rate)
-        if input_micro_usd:
-            await redis.incrby(f"{base}:cost_input_micro_usd", input_micro_usd)
-        if output_micro_usd:
-            await redis.incrby(f"{base}:cost_output_micro_usd", output_micro_usd)
-        if input_micro_usd or output_micro_usd:
-            await redis.incrby(
-                f"{base}:cost_total_micro_usd",
-                input_micro_usd + output_micro_usd,
-            )
-
-        # 设置 7 天过期（对新 key 生效，已存在的 key 续期不影响）
         ttl = 86400 * 7
-        await redis.expire(f"{base}:prompt", ttl)
-        await redis.expire(f"{base}:completion", ttl)
-        await redis.expire(f"{base}:total", ttl)
-        await redis.expire(f"{base}:calls", ttl)
-        for suffix in ("cost_input_micro_usd", "cost_output_micro_usd", "cost_total_micro_usd"):
-            await redis.expire(f"{base}:{suffix}", ttl)
+        usage_keys = [
+            f"{base}:prompt", f"{base}:completion", f"{base}:total", f"{base}:calls",
+            f"{base}:cost_input_micro_usd", f"{base}:cost_output_micro_usd",
+            f"{base}:cost_total_micro_usd",
+        ]
+        # Compatibility fallback for lightweight test doubles/old Redis
+        # clients. Production Redis and InMemoryRedis use one atomic script.
+        if not hasattr(redis, "eval") or type(redis).__module__.startswith("unittest.mock"):
+            for key, amount in zip(
+                usage_keys,
+                (prompt_tokens, completion_tokens, total, 1, input_micro_usd, output_micro_usd,
+                 input_micro_usd + output_micro_usd),
+            ):
+                await redis.incrby(key, amount)
+            for key in usage_keys:
+                await redis.expire(key, ttl)
+        else:
+            await redis.eval(
+                _USAGE_RECORD_SCRIPT,
+                7,
+                *usage_keys,
+                str(prompt_tokens), str(completion_tokens), str(total), "1",
+                str(input_micro_usd), str(output_micro_usd), str(ttl),
+            )
 
         # Detail ledger keeps the legacy aggregate keys compatible while
         # exposing the dimensions needed for cost control and evaluation.

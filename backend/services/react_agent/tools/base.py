@@ -14,6 +14,7 @@ A3 工具契约化（ 的 ModelRetry/ToolFailed 双通道）：
 """
 
 import json
+from datetime import datetime, timezone
 from abc import ABC, abstractmethod
 
 from pydantic import BaseModel, ValidationError
@@ -22,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
 from core.security import detect_prompt_injection
+from services.react_agent.tools.result import ToolResultEnvelope, failure, success
 
 
 def _strict_schema(value):
@@ -249,6 +251,37 @@ class Tool(ABC):
         result = await self._execute(**validated.model_dump())
         return normalize_tool_result(result, tool_name=self.name)
 
+    async def execute_envelope(self, *, call_id: str, **kwargs) -> ToolResultEnvelope | ApprovalRequired:
+        """Structured execution adapter; legacy ``execute`` remains unchanged."""
+        started_at = datetime.now(timezone.utc)
+        try:
+            result = await self.execute(**kwargs)
+            if isinstance(result, ApprovalRequired):
+                return result
+            return success(
+                call_id=call_id,
+                tool_name=self.name,
+                output=result,
+                evidence=self.sources,
+                usage=self.last_usage,
+                started_at=started_at,
+            )
+        except ToolRetryError as exc:
+            return failure(
+                call_id=call_id, tool_name=self.name, code="retryable_tool_error",
+                message=str(exc), retryable=True, category="validation", started_at=started_at,
+            )
+        except ToolFailed as exc:
+            return failure(
+                call_id=call_id, tool_name=self.name, code="business_rejected",
+                message=str(exc), retryable=False, category="business", started_at=started_at,
+            )
+        except Exception:
+            return failure(
+                call_id=call_id, tool_name=self.name, code="internal_error",
+                message="工具执行失败，请稍后重试。", retryable=True, category="internal", started_at=started_at,
+            )
+
     def is_approval_required(self) -> bool:
         """D1: 工具是否需要用户审批。类属性或集中映射命中即返回 True。"""
         return self.requires_approval or bool(_APPROVAL_REQUIRED.get(self.name, False))
@@ -278,7 +311,11 @@ class Tool(ABC):
             return False
         if mode == "always":
             return True
-        return self.emit is not None  # "sse"：需有事件通道才可弹审批
+        if self.emit is not None:
+            return True
+        # Headless/background callers cannot receive an approval event. The
+        # secure default is fail-closed; legacy integrations must opt in.
+        return getattr(settings, "TOOL_APPROVAL_HEADLESS_MODE", "deny").lower() == "allow"
 
     def mark_approval_granted(self) -> None:
         """D1: 用户已批准本次调用——放行 execute()（跳过审批拦截钩子）。

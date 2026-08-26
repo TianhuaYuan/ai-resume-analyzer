@@ -19,6 +19,7 @@ import logging
 import time
 from collections import Counter
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Awaitable, Callable
 from uuid import uuid4
 
@@ -57,6 +58,7 @@ from services.react_agent.tools.base import (
     ToolRetryError,
     normalize_tool_result,
 )
+from services.react_agent.tools.result import ToolResultEnvelope, from_legacy
 from services.token_quota import check_quota
 
 logger = logging.getLogger(__name__)
@@ -262,6 +264,38 @@ class _ApprovalEntry:
 
 
 _approval_registry: dict[str, _ApprovalEntry] = {}
+_APPROVAL_REDIS_TTL_SEC = 10 * 60
+
+
+def _redact_approval_arguments(value, *, _key: str = ""):
+    """Return a bounded, non-executable preview for approval UI.
+
+    Approval events are user-facing audit material, not a second tool
+    execution channel.  Keep enough shape for the user to understand the
+    request while preventing resume/JD text, contact details, and secrets
+    from being copied into Redis/SSE payloads.
+    """
+    key = _key.lower()
+    sensitive = ("email", "phone", "mobile", "token", "secret", "password", "authorization")
+    if any(part in key for part in sensitive):
+        return "[已脱敏]"
+    if isinstance(value, dict):
+        return {str(k): _redact_approval_arguments(v, _key=str(k)) for k, v in list(value.items())[:32]}
+    if isinstance(value, list):
+        return [_redact_approval_arguments(v, _key=key) for v in value[:16]]
+    if isinstance(value, str):
+        return value[:240] + ("…" if len(value) > 240 else "")
+    if isinstance(value, (int, float, bool)) or value is None:
+        return value
+    return str(value)[:240]
+
+
+def _approval_key(approval_id: str) -> str:
+    return f"react:approval-request:{approval_id}"
+
+
+def _approval_decision_key(approval_id: str) -> str:
+    return f"react:approval-decision:{approval_id}"
 
 
 # ── M3 增强：结构化工具调用记录 + 多模式循环检测 ──────────────
@@ -406,6 +440,10 @@ async def _save_react_checkpoint(
     question: str,
     messages: list[dict],
     ttl_seconds: int,
+    *,
+    run_id: str | None = None,
+    turn_id: str | None = None,
+    owner_token: str | None = None,
 ) -> None:
     """存回合 checkpoint 到 Redis（best-effort，失败不影响主流程）。"""
     try:
@@ -414,13 +452,33 @@ async def _save_react_checkpoint(
         redis = await get_redis()
         if redis is None:
             return
+        # Checkpoints are recovery hints, not an unbounded transcript store.
+        # Keep the most recent messages and cap individual content so a large
+        # tool result cannot block Redis or leak an entire document.
+        bounded_messages: list[dict] = []
+        for message in messages[-80:]:
+            if not isinstance(message, dict):
+                continue
+            item = dict(message)
+            content = item.get("content")
+            if isinstance(content, str) and len(content) > 6000:
+                item["content"] = content[:6000] + "…[checkpoint truncated]"
+            bounded_messages.append(item)
         payload = {
+            "schema_version": 3,
+            "saved_at": datetime.now(timezone.utc).isoformat(),
             "question": question,
-            "messages": messages,
+            "messages": bounded_messages,
+            "run_id": run_id,
+            "turn_id": turn_id,
+            "owner_token": owner_token,
         }
-        await redis.setex(
-            key, ttl_seconds, json.dumps(payload, ensure_ascii=False)
-        )
+        encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        if len(encoded.encode("utf-8")) > 512 * 1024:
+            # A second defensive bound for nested tool-call arguments/results.
+            payload["messages"] = bounded_messages[-24:]
+            encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        await redis.setex(key, ttl_seconds, encoded)
     except Exception:
         logger.debug("保存回合 checkpoint 失败（忽略）", exc_info=True)
 
@@ -428,6 +486,10 @@ async def _save_react_checkpoint(
 async def _load_react_checkpoint(
     key: str,
     question: str,
+    *,
+    run_id: str | None = None,
+    turn_id: str | None = None,
+    owner_token: str | None = None,
 ) -> list[dict] | None:
     """读回合 checkpoint；仅当问题与上次一致时返回 messages（best-effort）。"""
     try:
@@ -440,8 +502,17 @@ async def _load_react_checkpoint(
         if not raw:
             return None
         data = json.loads(raw)
+        if data.get("schema_version", 1) not in (1, 2, 3):
+            return None
         if data.get("question") != question:
             return None
+        if data.get("schema_version") == 3:
+            if run_id and data.get("run_id") != run_id:
+                return None
+            if turn_id and data.get("turn_id") != turn_id:
+                return None
+            if owner_token and data.get("owner_token") != owner_token:
+                return None
         messages = data.get("messages")
         if not isinstance(messages, list) or not messages:
             return None
@@ -452,13 +523,34 @@ async def _load_react_checkpoint(
         return None
 
 
-async def _clear_react_checkpoint(key: str) -> None:
+async def _clear_react_checkpoint(
+    key: str,
+    *,
+    run_id: str | None = None,
+    turn_id: str | None = None,
+    owner_token: str | None = None,
+) -> None:
     """回合正常结束清除 checkpoint（best-effort）。"""
     try:
         from core.redis_client import get_redis
 
         redis = await get_redis()
         if redis is None:
+            return
+        if not (run_id or turn_id or owner_token):
+            await redis.delete(key)
+            return
+        raw = await redis.get(key)
+        if not raw:
+            return
+        data = json.loads(raw)
+        if data.get("schema_version") != 3:
+            return
+        if run_id and data.get("run_id") != run_id:
+            return
+        if turn_id and data.get("turn_id") != turn_id:
+            return
+        if owner_token and data.get("owner_token") != owner_token:
             return
         await redis.delete(key)
     except Exception:
@@ -522,6 +614,68 @@ def register_approval(approval_id: str, user_id: int) -> None:
     _approval_registry[approval_id] = _ApprovalEntry(user_id)
 
 
+async def register_approval_remote(
+    approval_id: str,
+    *,
+    user_id: int,
+    tool_name: str,
+    summary: str,
+    severity: str,
+    run_id: str | None = None,
+    turn_id: str | None = None,
+) -> None:
+    """Persist an approval request so another worker can resolve it."""
+    try:
+        from core.redis_client import get_redis
+
+        redis = await get_redis()
+        payload = json.dumps(
+            {
+                "approval_id": approval_id,
+                "user_id": user_id,
+                "tool_name": tool_name,
+                "summary": summary[:1000],
+                "severity": severity,
+                "run_id": run_id,
+                "turn_id": turn_id,
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        await redis.setex(_approval_key(approval_id), _APPROVAL_REDIS_TTL_SEC, payload)
+    except Exception:
+        logger.warning("远程审批请求写入失败，继续使用本地兼容注册表", exc_info=True)
+
+
+async def resolve_approval_remote(
+    approval_id: str, user_id: int, decision: str
+) -> bool:
+    """CAS-like remote decision: Redis NX guarantees one final decision."""
+    if decision not in {"approved", "denied", "allow_always"}:
+        return False
+    try:
+        from core.redis_client import get_redis
+
+        redis = await get_redis()
+        raw = await redis.get(_approval_key(approval_id))
+        if not raw:
+            return False
+        payload = json.loads(raw)
+        if int(payload.get("user_id")) != user_id:
+            return False
+        return bool(
+            await redis.set(
+                _approval_decision_key(approval_id),
+                decision,
+                nx=True,
+                ex=_APPROVAL_REDIS_TTL_SEC,
+            )
+        )
+    except Exception:
+        logger.warning("远程审批决议写入失败", exc_info=True)
+        return False
+
+
 def resolve_approval(approval_id: str, user_id: int, decision: str) -> bool:
     """D1: 决议端点调用——解析审批请求。
 
@@ -550,13 +704,39 @@ async def wait_for_approval(approval_id: str, timeout: float = APPROVAL_TIMEOUT_
     if entry is None:
         return "denied"
     try:
-        await asyncio.wait_for(entry.event.wait(), timeout=timeout)
-        return entry.decision or "denied"
-    except asyncio.TimeoutError:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            try:
+                from core.redis_client import get_redis
+
+                redis = await get_redis()
+                remote_decision = await redis.get(_approval_decision_key(approval_id))
+                if remote_decision in {"approved", "denied", "allow_always"}:
+                    return str(remote_decision)
+            except Exception:
+                logger.debug("读取远程审批决议失败，回退本地事件", exc_info=True)
+            if entry.event.is_set():
+                return entry.decision or "denied"
+            await asyncio.sleep(min(0.25, max(0.01, deadline - time.monotonic())))
         logger.warning("审批超时（%ss），按拒绝处理: approval_id=%s", timeout, approval_id)
         return "denied"
     finally:
         drop_approval(approval_id)
+        try:
+            from core.redis_client import get_redis
+
+            redis = await get_redis()
+            await redis.delete(_approval_key(approval_id), _approval_decision_key(approval_id))
+        except Exception:
+            pass
+
+
+async def _wait_for_cancel(cancel_check: Callable[[], Awaitable[bool]]) -> bool:
+    """Poll cancel intent while approval UI is waiting; bounded, low-cost."""
+    while True:
+        if await cancel_check():
+            return True
+        await asyncio.sleep(0.25)
 
 
 # ── 审批增强──────────────
@@ -614,6 +794,10 @@ _tool_semaphore: asyncio.Semaphore | None = None
 _auth_gate = AuthorizationGate()
 
 
+class RunCancelledError(RuntimeError):
+    """Raised cooperatively when a user cancels an active ReAct run."""
+
+
 def _get_tool_semaphore() -> asyncio.Semaphore:
     """懒加载工具执行 Semaphore（绑定到当前 event loop）。"""
     global _tool_semaphore
@@ -635,6 +819,11 @@ async def react_loop(
     checkpoint_key: str | None = None,
     checkpoint_ttl_seconds: int = 300,
     inject_key: str | None = None,
+    cancel_check: Callable[[], Awaitable[bool]] | None = None,
+    run_id: str | None = None,
+    turn_id: str | None = None,
+    checkpoint_owner_token: str | None = None,
+    quota_pre_reserved: bool = False,
 ) -> ReactLoopResult:
     """ReAct 核心循环。
 
@@ -699,7 +888,7 @@ async def react_loop(
         logger.info("agent_timing tag=%s phases=%s", tag, _phases)
 
     # 1. 配额预检
-    allowed, quota_msg = await check_quota(user_id)
+    allowed, quota_msg = (True, None) if quota_pre_reserved else await check_quota(user_id)
     if not allowed:
         await _emit({"type": "quota_exceeded", "message": quota_msg})
         return ReactLoopResult(
@@ -764,12 +953,14 @@ async def react_loop(
     # 恢复的消息含上次的 system prompt + 历史 + 已执行工具结果。
     restored_from_checkpoint = False
     if checkpoint_key:
-        checkpoint_messages = await _load_react_checkpoint(checkpoint_key, question)
+        checkpoint_messages = await _load_react_checkpoint(
+            checkpoint_key,
+            question,
+        )
         if checkpoint_messages:
             messages = checkpoint_messages
             restored_from_checkpoint = True
             # 恢复后清理（本次续跑若再中断会重新存）
-            await _clear_react_checkpoint(checkpoint_key)
             # 中断消息注入——恢复时 LLM 感知
             # 上一轮被中断、后台进程/工具可能部分执行，避免"当作全新会话"误答。
             # 插入到 system prompt 之后（第 0 条之后）。
@@ -845,7 +1036,15 @@ async def react_loop(
                 emit=_emit,
                 approval_lock=approval_lock,
                 round_no=1,
+                cancel_check=cancel_check,
+                run_id=run_id,
+                turn_id=turn_id,
             )
+            # Builder intent 直达路径也属于一次完整的 LLM/工具回合；不能
+            # 因为跳过 ReAct 主循环就漏掉工具内部产生的 token 记账。
+            if _tool_usage:
+                total_usage["prompt_tokens"] += _tool_usage.get("prompt_tokens", 0)
+                total_usage["completion_tokens"] += _tool_usage.get("completion_tokens", 0)
             direct_db_round = {
                 "round": 1,
                 "model": None,
@@ -876,7 +1075,10 @@ async def react_loop(
             _phases["intent_tool_ms"] = round((time.perf_counter() - _t0) * 1000)
             _log_agent_timing("intent")
             if checkpoint_key:
-                await _clear_react_checkpoint(checkpoint_key)
+                await _clear_react_checkpoint(
+                    checkpoint_key, run_id=run_id, turn_id=turn_id,
+                    owner_token=checkpoint_owner_token,
+                )
             return ReactLoopResult(
                 answer=result,
                 process_trace=process_trace,
@@ -901,6 +1103,10 @@ async def react_loop(
     context_compactor = ContextCompactor(context_window=DEFAULT_CONTEXT_WINDOW)
     while rounds < MAX_ROUNDS:
         rounds += 1
+
+        if cancel_check is not None and await cancel_check():
+            await _emit({"type": "cancelled", "message": "本轮 Agent 已取消"})
+            raise RunCancelledError("run cancellation requested")
 
         # DeepInterview SessionGuard 对照：会话墙钟总时长上限（防模型循环/上游慢失控烧 token）
         if time.perf_counter() - _t0 > settings.REACT_MAX_DURATION_SEC:
@@ -1027,7 +1233,10 @@ async def react_loop(
                     await _emit({"type": "agent_done", "content": msg})
                     _log_agent_timing("empty_converged")
                     if checkpoint_key:
-                        await _clear_react_checkpoint(checkpoint_key)
+                        await _clear_react_checkpoint(
+                            checkpoint_key, run_id=run_id, turn_id=turn_id,
+                            owner_token=checkpoint_owner_token,
+                        )
                     return ReactLoopResult(
                         answer=msg,
                         process_trace=process_trace,
@@ -1063,7 +1272,10 @@ async def react_loop(
             await _emit({"type": "agent_done", "content": content})
             _log_agent_timing("done")
             if checkpoint_key:
-                await _clear_react_checkpoint(checkpoint_key)
+                await _clear_react_checkpoint(
+                    checkpoint_key, run_id=run_id, turn_id=turn_id,
+                    owner_token=checkpoint_owner_token,
+                )
             return ReactLoopResult(
                 answer=content,
                 process_trace=process_trace,
@@ -1101,6 +1313,9 @@ async def react_loop(
                     emit=_emit,
                     approval_lock=approval_lock,
                     round_no=rounds,
+                    cancel_check=cancel_check,
+                    run_id=run_id,
+                    turn_id=turn_id,
                 )
                 for tc in response.tool_calls
             ]
@@ -1126,6 +1341,15 @@ async def react_loop(
         for tc, (tool_result, is_error, tool_sources, tool_usage) in zip(
             response.tool_calls, results
         ):
+            tool_envelope = from_legacy(
+                call_id=tc.id,
+                tool_name=tc.name,
+                output=tool_result,
+                is_error=is_error,
+                evidence=tool_sources,
+                usage=tool_usage,
+                retryable=_is_retryable_tool_error(tool_result, is_error),
+            )
             visible_tool_result = tool_result
             if not is_error and len(response.tool_calls) == 1:
                 direct_answer, visible_tool_result = _extract_direct_answer(tool_result)
@@ -1136,6 +1360,9 @@ async def react_loop(
                         "name": tc.name,
                         "error": tool_result,
                         "retryable": _is_retryable_tool_error(tool_result, is_error),
+                        "status": tool_envelope.status,
+                        "error_code": tool_envelope.error.code if tool_envelope.error else None,
+                        "usage": tool_envelope.usage,
                         "id": tc.id,
                     }
                 )
@@ -1145,6 +1372,9 @@ async def react_loop(
                         "type": "tool_result",
                         "name": tc.name,
                         "result": visible_tool_result,
+                        "status": tool_envelope.status,
+                        "evidence": tool_envelope.evidence,
+                        "usage": tool_envelope.usage,
                         "id": tc.id,
                     }
                 )
@@ -1174,6 +1404,8 @@ async def react_loop(
                     "result": visible_tool_result[:500],
                     "is_error": is_error,
                     "retryable": _is_retryable_tool_error(tool_result, is_error),
+                    "status": tool_envelope.status,
+                    "error_code": tool_envelope.error.code if tool_envelope.error else None,
                 }
             )
 
@@ -1183,7 +1415,13 @@ async def react_loop(
         # 本轮工具执行完成 → 存 checkpoint（中断/断连后可从断点续跑）
         if checkpoint_key:
             await _save_react_checkpoint(
-                checkpoint_key, question, messages, checkpoint_ttl_seconds
+                checkpoint_key,
+                question,
+                messages,
+                checkpoint_ttl_seconds,
+                run_id=run_id,
+                turn_id=turn_id,
+                owner_token=checkpoint_owner_token,
             )
 
         # Grounded specialized tools can provide a deterministic final answer.
@@ -1201,7 +1439,10 @@ async def react_loop(
             await _emit({"type": "agent_done", "content": direct_answer})
             _log_agent_timing("direct_tool_answer")
             if checkpoint_key:
-                await _clear_react_checkpoint(checkpoint_key)
+                await _clear_react_checkpoint(
+                    checkpoint_key, run_id=run_id, turn_id=turn_id,
+                    owner_token=checkpoint_owner_token,
+                )
             return ReactLoopResult(
                 answer=direct_answer,
                 process_trace=process_trace,
@@ -1312,7 +1553,10 @@ async def react_loop(
     await _emit({"type": "agent_done", "content": response.content})
     _log_agent_timing("force")
     if checkpoint_key:
-        await _clear_react_checkpoint(checkpoint_key)
+        await _clear_react_checkpoint(
+            checkpoint_key, run_id=run_id, turn_id=turn_id,
+            owner_token=checkpoint_owner_token,
+        )
     return ReactLoopResult(
         answer=response.content,
         process_trace=process_trace,
@@ -1544,6 +1788,9 @@ async def _execute_tool_call(
     *,
     approval_lock: asyncio.Lock | None = None,
     round_no: int | None = None,
+    cancel_check: Callable[[], Awaitable[bool]] | None = None,
+    run_id: str | None = None,
+    turn_id: str | None = None,
 ) -> tuple[str, bool, list[dict], dict]:
     """执行单个 tool_call。
 
@@ -1593,14 +1840,9 @@ async def _execute_tool_call(
 
     # 3. 实例化并执行（注入 emit 供工具内部 LLM 流式推送）
     tool = tool_class(db=db, user_id=user_id, emit=emit)
-    # D1: 无事件通道（测试/无前端）且审批模式为 "sse" 时无用户可确认，
-    # 审批门退化为直接执行（保持旧行为）。mode="always" 时 emit=None 也拦截审批。
-    if (
-        emit is None
-        and tool.is_approval_required()
-        and getattr(settings, "TOOL_APPROVAL_MODE", "sse") == "sse"
-    ):
-        tool.mark_approval_granted()
+    # Headless approval policy is enforced by Tool._approval_gate_active;
+    # do not mark the tool as granted here, otherwise this executor would
+    # silently bypass the fail-closed policy.
     # 审批增强：用户曾"始终允许"该工具 → 自动放行，跳过审批门（免重复弹窗）。
     # best-effort：Redis 不可用返回 False，退化为正常审批。
     if (
@@ -1634,6 +1876,8 @@ async def _execute_tool_call(
         )
 
     _tool_t0 = time.perf_counter()
+    if cancel_check is not None and await cancel_check():
+        raise RunCancelledError("run cancellation requested before tool execution")
     _timeout = _tool_exec_timeout(tc.name)
     try:
         # 工具执行墙钟超时护栏（外部 API 挂起不卡死）：超时返回降级提示并计入坏调用，
@@ -1652,6 +1896,9 @@ async def _execute_tool_call(
                 round_no=round_no,
                 emit=emit,
                 approval_lock=approval_lock,
+                cancel_check=cancel_check,
+                run_id=run_id,
+                turn_id=turn_id,
             )
             logger.info(
                 "tool_exec: %s 实际执行=%.0fms 审批等待=%.0fms",
@@ -1697,7 +1944,7 @@ async def _execute_tool_call(
     except Exception as e:
         logger.warning("工具执行失败: %s, args=%s, error=%s", tc.name, tc.arguments, e)
         logger.info("tool_exec: %s %.0fms (error)", tc.name, (time.perf_counter() - _tool_t0) * 1000)
-        return f"工具执行失败，请稍后重试或换一种方式。", True, [], {"prompt_tokens": 0, "completion_tokens": 0}
+        return "工具执行失败，请稍后重试或换一种方式。", True, [], {"prompt_tokens": 0, "completion_tokens": 0}
     finally:
         # 释放授权槽（串行化高代价工具：无论成功/失败/超时/异常都释放，防死锁）
         await _auth_gate.release(user_id, tc.name)
@@ -1712,6 +1959,9 @@ async def _handle_tool_approval(
     round_no: int | None = None,
     emit=None,
     approval_lock: asyncio.Lock | None = None,
+    cancel_check: Callable[[], Awaitable[bool]] | None = None,
+    run_id: str | None = None,
+    turn_id: str | None = None,
 ) -> tuple[str, bool, list[dict], dict]:
     """D1 审批门：发射 approval_request → 挂起等用户决议 → 按决议执行/拒绝。
 
@@ -1727,6 +1977,15 @@ async def _handle_tool_approval(
     try:
         approval_id = uuid4().hex
         register_approval(approval_id, user_id)
+        await register_approval_remote(
+            approval_id,
+            user_id=user_id,
+            tool_name=approval.tool_name,
+            summary=approval.summary,
+            severity=getattr(approval, "severity", "warning"),
+            run_id=run_id,
+            turn_id=turn_id,
+        )
         try:
             if emit is not None:
                 await emit(
@@ -1734,15 +1993,35 @@ async def _handle_tool_approval(
                         "type": "approval_request",
                         "approval_id": approval_id,
                         "tool_name": approval.tool_name,
-                        "args": json.dumps(approval.arguments, ensure_ascii=False),
+                        "args": json.dumps(
+                            _redact_approval_arguments(approval.arguments),
+                            ensure_ascii=False,
+                            separators=(",", ":"),
+                        ),
                         "summary": approval.summary,
                         "round": round_no,
                         # 审批增强：info/warning/critical，
                         # 前端据此区分弹窗样式；critical 触发审计日志。
                         "severity": getattr(approval, "severity", "warning"),
+                        "run_id": run_id,
+                        "turn_id": turn_id,
                     }
                 )
-                decision = await wait_for_approval(approval_id)
+                if cancel_check is None:
+                    decision = await wait_for_approval(approval_id)
+                else:
+                    approval_task = asyncio.create_task(wait_for_approval(approval_id))
+                    cancel_task = asyncio.create_task(_wait_for_cancel(cancel_check))
+                    done, pending = await asyncio.wait(
+                        {approval_task, cancel_task},
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                    for task in pending:
+                        task.cancel()
+                    if cancel_task in done and cancel_task.result():
+                        drop_approval(approval_id)
+                        raise RunCancelledError("run cancellation requested while awaiting approval")
+                    decision = approval_task.result()
                 # allow-always：用户选择"始终允许该工具"→ 记入偏好，后续同工具自动放行
                 if decision == "allow_always":
                     await remember_tool_approval(user_id, approval.tool_name)
@@ -1756,8 +2035,13 @@ async def _handle_tool_approval(
                     }
                 )
             else:
-                # 无事件通道（不应到达：_execute_tool_call 已对 emit=None 放行）
-                decision = "approved"
+                # No interactive channel: only an explicit compatibility
+                # opt-in may execute a gated tool. The default is rejection.
+                decision = (
+                    "approved"
+                    if getattr(settings, "TOOL_APPROVAL_HEADLESS_MODE", "deny").lower() == "allow"
+                    else "denied"
+                )
 
             # critical 审计日志（审批增强）：高风险工具放行/拒绝均留痕
             if getattr(approval, "severity", "warning") == "critical":
@@ -1801,8 +2085,8 @@ async def _handle_tool_approval(
                 round_no,
             )
             return (
-                "用户拒绝执行该工具，请换一种方案，或直接基于已有信息回答用户。",
-                False,  # 用户拒绝 ≠ 工具失败：不累计坏调用，LLM 应换路径
+                _ToolFailureText("用户拒绝执行该工具，请换一种方案，或直接基于已有信息回答用户。", retryable=False),
+                True,
                 [],
                 {"prompt_tokens": 0, "completion_tokens": 0},
             )
@@ -1860,6 +2144,9 @@ async def _execute_tool_call_with_limit(
     resume_id: int,
     approval_lock: asyncio.Lock | None = None,
     round_no: int | None = None,
+    cancel_check: Callable[[], Awaitable[bool]] | None = None,
+    run_id: str | None = None,
+    turn_id: str | None = None,
 ) -> tuple[str, bool, list[dict], dict]:
     """带 Semaphore 限流的工具执行（Spec A#32：限单轮工具并发）。
 
@@ -1884,6 +2171,9 @@ async def _execute_tool_call_with_limit(
                     scoped_emit if emit is not None else None,
                     approval_lock=approval_lock,
                     round_no=round_no,
+                    cancel_check=cancel_check,
+                    run_id=run_id,
+                    turn_id=turn_id,
                 )
         if tc.name in _RESUME_WRITE_TOOLS:
             resume_lock = _resume_write_lock(resume_id)
@@ -1916,6 +2206,51 @@ async def _execute_tool_call_with_limit(
             finally:
                 _cleanup_resume_write_lock(resume_id, resume_lock)
         return await run()
+
+
+async def _execute_tool_call_envelope(
+    tc: ToolCall,
+    user_id: int,
+    semaphore: asyncio.Semaphore,
+    emit=None,
+    *,
+    resume_id: int,
+    approval_lock: asyncio.Lock | None = None,
+    round_no: int | None = None,
+    cancel_check: Callable[[], Awaitable[bool]] | None = None,
+    run_id: str | None = None,
+    turn_id: str | None = None,
+) -> ToolResultEnvelope:
+    """Structured execution boundary kept beside the legacy tuple adapter.
+
+    The loop still consumes the tuple API during migration, but new callers
+    can depend on one invariant-rich result instead of inferring failure from
+    strings.  This adapter deliberately delegates to the proven execution
+    path so approval, ownership, locks and timeout policy cannot drift.
+    """
+    started_at = datetime.now(timezone.utc)
+    output, is_error, evidence, usage = await _execute_tool_call_with_limit(
+        tc,
+        user_id,
+        semaphore,
+        emit,
+        resume_id=resume_id,
+        approval_lock=approval_lock,
+        round_no=round_no,
+        cancel_check=cancel_check,
+        run_id=run_id,
+        turn_id=turn_id,
+    )
+    envelope = from_legacy(
+        call_id=tc.id,
+        tool_name=tc.name,
+        output=output,
+        is_error=is_error,
+        evidence=evidence,
+        usage=usage,
+        started_at=started_at,
+    )
+    return envelope
 
 
 def _deduplicate_sources(sources: list[dict]) -> list[dict]:

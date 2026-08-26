@@ -7,6 +7,7 @@ bcrypt==5.0.0
 pydantic[email]==2.13.4
 pydantic-settings==2.14.2
 pdfplumber>=0.11.0
+PyMuPDF>=1.24,<2
 weasyprint>=62,<68
 python-docx==1.2.0
 chromadb==1.5.9
@@ -35,3 +36,4 @@ rapidocr-onnxruntime==1.2.3
 
 # 本地版面解析（MinerU 在线不可用时的兜底；MIT License，模型首次使用自动下载 ~500MB）
 docling>=2.0
+langsmith>=0.3,<1

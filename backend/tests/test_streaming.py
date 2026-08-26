@@ -260,6 +260,7 @@ class TestStreamingQuotaCheck:
 
         with patch("services.react_agent.loop.assemble_system_prompt", new_callable=AsyncMock) as mock_sys, \
              patch("services.react_agent.loop.check_quota", new_callable=AsyncMock) as mock_quota, \
+             patch("services.react_agent.streaming.reserve_quota", new_callable=AsyncMock, return_value=None), \
              patch("services.react_agent.loop.llm_generate_with_tools", new_callable=AsyncMock) as mock_llm, \
              patch("services.react_agent.loop.get_agent_schemas", return_value=[]), \
              patch("services.react_agent.streaming.save_qa_placeholder", new_callable=AsyncMock) as mock_save, \
