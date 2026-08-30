@@ -1,0 +1,13 @@
+{
+  "version": "1.0",
+  "fixed_inputs": {"dataset": "evals/datasets/cases.jsonl", "seed": 20260830, "repetitions": 3},
+  "baselines": [
+    {"id": "prompt_only", "retrieval": false, "rerank": false, "reflection": false, "memory": false, "agent": false},
+    {"id": "dense_only", "retrieval": "dense", "rerank": false, "reflection": false, "memory": false, "agent": false},
+    {"id": "hybrid", "retrieval": "dense+bm25", "rerank": false, "reflection": false, "memory": false, "agent": false},
+    {"id": "hybrid_rerank", "retrieval": "dense+bm25", "rerank": true, "reflection": false, "memory": false, "agent": false},
+    {"id": "agentic_rag", "retrieval": "dense+bm25", "rerank": true, "reflection": true, "memory": true, "agent": true},
+    {"id": "single_agent", "retrieval": "dense+bm25", "rerank": true, "reflection": true, "memory": true, "agent": "single"}
+  ],
+  "ablations": ["no_bm25", "no_rerank", "no_reflection", "no_memory", "no_loop_detection", "no_approval", "no_fallback"]
+}

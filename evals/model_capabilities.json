@@ -1,0 +1,14 @@
+{
+  "version": "1.0",
+  "capabilities": {
+    "main_chat": {"thinking": "always_on", "disabled_baseline": false},
+    "fallback_1": {"thinking": "non_reasoning_probe_passed", "disabled_baseline": true},
+    "judge": {"thinking": "not_used", "disabled_baseline": "not_applicable"}
+  },
+  "policy": "Never compare enabled/disabled thinking on a provider that rejects disabled; use the three-way strategy matrix instead.",
+  "thinking_ab_matrix": [
+    "cheap_non_reasoning",
+    "main_always_on_low",
+    "main_always_on_high"
+  ]
+}

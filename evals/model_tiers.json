@@ -1,0 +1,14 @@
+{
+  "version": "1.0",
+  "tiers": {
+    "all_strong": {"generator": "chat", "judge": "judge", "fallback": "fallback_1"},
+    "all_cheap": {"generator": "fallback_1", "judge": "fallback_1", "fallback": "fallback_1"},
+    "tiered": {"generator": "fallback_1", "judge": "judge", "fallback": "fallback_1", "upgrade_on": ["high_risk", "low_confidence", "conflict"]}
+  },
+  "required_metrics": ["task_success", "high_risk_recall", "p95_latency_ms", "tokens", "cost_cny", "cost_per_success", "upgrade_rate"],
+  "thinking_comparison": {
+    "cheap_non_reasoning": {"thinking": false, "role": "control"},
+    "main_always_on_low": {"thinking": true, "effort": "low", "role": "quality_latency_tradeoff"},
+    "main_always_on_high": {"thinking": true, "effort": "high", "role": "quality_ceiling"}
+  }
+}

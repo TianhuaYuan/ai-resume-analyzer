@@ -1,15 +1,20 @@
 """Create a conservative, review-first annotation table from deterministic parser output."""
 from __future__ import annotations
+import argparse
 import csv
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "artifacts" / "career_eval_20260826_v3" / "resume_quality.csv"
-TARGET = Path(r"C:\Users\Tianhua\Desktop\Resume_Artifact_Agent_19份样本人工标注表.md")
+TARGET = ROOT / "artifacts" / "career_eval_20260826_v3" / "manual_annotation.md"
 
 def main() -> None:
-    rows = list(csv.DictReader(SOURCE.open(encoding="utf-8-sig")))
-    lines = TARGET.read_text(encoding="utf-8").splitlines()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--source", type=Path, default=SOURCE)
+    parser.add_argument("--target", type=Path, default=TARGET)
+    args = parser.parse_args()
+    rows = list(csv.DictReader(args.source.open(encoding="utf-8-sig")))
+    lines = args.target.read_text(encoding="utf-8").splitlines()
     start = next(i for i, line in enumerate(lines) if line.startswith("| resume_"))
     end = start
     while end < len(lines) and lines[end].startswith("| resume_"):
@@ -30,7 +35,7 @@ def main() -> None:
         order = "1" if count else "0"
         note = "用户已审核：模块内容可接受" if count else "解析结果无模块，需确认是否为模型失败或输入边界问题"
         out.append(f"| {row['sample_id']} | {module_value('basic_info')} | {module_value('education')} | {module_value('work_experience')} | {module_value('project_experience')} | {module_value('skills')} | {url} | {email_value} | {phone_value} | {order} | {note} |")
-    TARGET.write_text("\n".join(lines[:start] + out + lines[end:]) + "\n", encoding="utf-8")
+    args.target.write_text("\n".join(lines[:start] + out + lines[end:]) + "\n", encoding="utf-8")
     print(f"已生成 {len(out)} 行保守预标注；模块存在的字段统一标为‘待审核’，未将存在误判为正确。")
 
 if __name__ == "__main__":

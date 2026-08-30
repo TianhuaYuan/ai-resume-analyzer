@@ -1,0 +1,17 @@
+{
+  "version": "1.0",
+  "faults": [
+    {"id": "llm_429", "expected": "retry_then_fallback"},
+    {"id": "llm_5xx", "expected": "retry_then_fallback"},
+    {"id": "llm_timeout", "expected": "bounded_timeout"},
+    {"id": "auth_or_balance_error", "expected": "fast_fail_without_loop"},
+    {"id": "fallback_unavailable", "expected": "degraded_or_fast_fail"},
+    {"id": "reranker_down", "expected": "dense_fallback"},
+    {"id": "redis_down", "expected": "no_cache_degraded"},
+    {"id": "rabbitmq_down", "expected": "sync_or_degraded"},
+    {"id": "invalid_json", "expected": "schema_error_and_safe_retry"},
+    {"id": "client_disconnect", "expected": "cancel_and_no_duplicate_write"},
+    {"id": "duplicate_write", "expected": "idempotent_single_effect"},
+    {"id": "partial_tool_timeout", "expected": "partial_result_with_provenance"}
+  ]
+}

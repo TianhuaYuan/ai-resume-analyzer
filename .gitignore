@@ -104,3 +104,4 @@ third_party/
 .edge-resume/
 .venv-eval/
 artifacts/
+evals/datasets/

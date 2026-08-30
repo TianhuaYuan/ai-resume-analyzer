@@ -1,6 +1,7 @@
 """Export model values beside searchable source excerpts for human review."""
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
 
@@ -8,7 +9,6 @@ import fitz
 
 ROOT = Path(__file__).resolve().parents[1]
 ARTIFACT = ROOT / "artifacts" / "career_eval_20260826_v3"
-OUTPUT = Path(r"C:\Users\Tianhua\Desktop\Resume_Artifact_Agent_人工审核上下文.md")
 
 
 def _compact(value: object, limit: int = 500) -> str:
@@ -30,12 +30,18 @@ def _excerpt(text: str, value: str) -> str:
 
 
 def main() -> None:
-    uploads = json.loads((ARTIFACT / "upload_results.json").read_text(encoding="utf-8"))
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--artifact-dir", type=Path, default=ARTIFACT)
+    parser.add_argument("--output", type=Path)
+    args = parser.parse_args()
+    artifact = args.artifact_dir.resolve()
+    output = (args.output or artifact / "human_gold_review_context.md").resolve()
+    uploads = json.loads((artifact / "upload_results.json").read_text(encoding="utf-8"))
     rows = []
     fields = ("basic_info.name", "basic_info.email", "basic_info.phone", "education", "work_experience", "project_experience", "skills")
     for item in uploads:
         sample = str(item.get("sample_id", ""))
-        pdf = ARTIFACT / "samples" / f"{sample}.pdf"
+        pdf = artifact / "samples" / f"{sample}.pdf"
         if not pdf.exists():
             continue
         modules = {
@@ -65,8 +71,9 @@ def main() -> None:
                 value = "未生成"
             value_text = _compact(value)
             lines += [f"### `{field}`", f"- 模型值：`{value_text or '空'}`", f"- 原文定位：{_excerpt(source, value_text)}", "- 你的判断：`1 / 0 / ? / N/A`", ""]
-    OUTPUT.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    print(OUTPUT)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print(output)
 
 
 if __name__ == "__main__":

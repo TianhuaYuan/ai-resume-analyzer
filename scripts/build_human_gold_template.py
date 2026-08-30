@@ -1,6 +1,7 @@
 """Build a compact human-gold review sheet from the existing evaluation manifest."""
 from __future__ import annotations
 
+import argparse
 import csv
 import json
 from pathlib import Path
@@ -8,7 +9,11 @@ from pathlib import Path
 
 def main() -> None:
     repo = Path(__file__).resolve().parents[1]
-    artifact = repo / "artifacts" / "career_eval_20260826_v3"
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--artifact-dir", type=Path, default=repo / "artifacts" / "career_eval_20260826_v3")
+    parser.add_argument("--output", type=Path)
+    args = parser.parse_args()
+    artifact = args.artifact_dir.resolve()
     rows = list(csv.DictReader((artifact / "resume_quality.csv").open(encoding="utf-8-sig")))
     uploads = json.loads((artifact / "upload_results.json").read_text(encoding="utf-8"))
     model_by_sample = {
@@ -16,7 +21,8 @@ def main() -> None:
         for row in uploads
         if isinstance(row.get("builder_response"), dict)
     }
-    out = Path(r"C:\Users\Tianhua\Desktop\Resume_Artifact_Agent_字段语义与检索金标审核表.md")
+    out = (args.output or artifact / "human_gold_review.md").resolve()
+    out.parent.mkdir(parents=True, exist_ok=True)
     lines = [
         "# Resume Artifact Agent｜字段语义与检索金标审核表",
         "",

@@ -17,14 +17,21 @@ class Settings(BaseSettings):
     CHAT_API_KEY: str
     CHAT_BASE_URL: str
     CHAT_MODEL: str
+    CHAT_INPUT_COST_PER_MILLION_CNY: float = 0.0
+    CHAT_OUTPUT_COST_PER_MILLION_CNY: float = 0.0
 
     EMBEDDING_API_KEY: str
     EMBEDDING_BASE_URL: str
     EMBEDDING_MODEL: str
+    EMBEDDING_INPUT_COST_PER_MILLION_CNY: float = 0.0
+    EMBEDDING_BATCH_FILE_INPUT_COST_PER_MILLION_CNY: float = 0.25
 
     RERANK_API_KEY: str
     RERANK_BASE_URL: str
     RERANK_MODEL: str
+    RERANK_INPUT_COST_PER_MILLION_CNY: float = 0.0
+    RERANK_TEXT_INPUT_COST_PER_MILLION_CNY: float = 0.0
+    RERANK_IMAGE_INPUT_COST_PER_MILLION_CNY: float = 0.0
 
     JUDGE_API_KEY: str = ""
     JUDGE_BASE_URL: str = "https://api.deepseek.com/v1"
@@ -32,6 +39,8 @@ class Settings(BaseSettings):
     JUDGE_TEMPERATURE: float = 0.0
     JUDGE_ENABLED: bool = True
     JUDGE_FALLBACK_TO_CHAT: bool = False
+    JUDGE_INPUT_COST_PER_MILLION_CNY: float = 0.0
+    JUDGE_OUTPUT_COST_PER_MILLION_CNY: float = 0.0
 
     DATABASE_URL: str
     CHROMA_PERSIST_DIR: str = "./chroma_data"
@@ -174,7 +183,12 @@ class Settings(BaseSettings):
     # Chat 主模型失败时的备用模型链（逗号分隔，如 "deepseek-v4,moonshot-v1-32k"）。
     # 主模型欠费/认证/网络失败（可重试类）时逐个尝试备用模型，最后兜底才报错。
     # 注意：备用模型需与 CHAT_BASE_URL/CHAT_API_KEY 兼容（同一 OpenAI 兼容端点）。
-    CHAT_FALLBACK_MODELS: str = ""
+    # 独立 fallback provider（逗号分隔模型名仅为兼容旧配置；优先使用 1..3 组）
+    CHAT_FALLBACK_1_API_KEY: str = ""
+    CHAT_FALLBACK_1_BASE_URL: str = ""
+    CHAT_FALLBACK_1_MODEL: str = ""
+    CHAT_FALLBACK_1_INPUT_COST_PER_MILLION_CNY: float = 0.0
+    CHAT_FALLBACK_1_OUTPUT_COST_PER_MILLION_CNY: float = 0.0
     # 工具审批门模式。
     # "sse"（默认）: 仅存在 SSE 事件通道（emit 非 None）时拦截审批——测试/直接调用放行
     # "always": 无论是否 SSE，命中 requires_approval 的工具一律先过审批门（最安全，防 emit=None 绕过）
@@ -201,9 +215,6 @@ class Settings(BaseSettings):
     # ── Thinking 配置 ──
     THINKING_ENABLED: bool = True
     THINKING_EFFORT: str = "high"
-    # Token 成本（USD / 1M tokens），用于用量看板与预算核算；按供应商实际价目覆盖。
-    LLM_INPUT_COST_PER_MILLION_USD: float = 0.0
-    LLM_OUTPUT_COST_PER_MILLION_USD: float = 0.0
 
     # ── 简历编辑器配置 ──
     TEMPLATE_DIR: str = "backend/templates"

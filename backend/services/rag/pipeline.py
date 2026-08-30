@@ -16,6 +16,8 @@ from services.rag.usage import record_llm_usage
 from services.rag.clients import (
     get_chat_breaker,
     get_chat_client,
+    get_fallback_client,
+    get_fallback_providers,
     get_judge_breaker,
     get_judge_client,
     knowledge_collection_name,
@@ -112,9 +114,8 @@ def _breaker_for_model(model: str | None):
 
 
 def _fallback_model_names() -> list[str]:
-    """ 解析 CHAT_FALLBACK_MODELS（逗号分隔）为备用模型名列表。"""
-    raw = getattr(settings, "CHAT_FALLBACK_MODELS", "") or ""
-    return [m.strip() for m in raw.split(",") if m.strip()]
+    """返回已配置 fallback provider 的模型名。"""
+    return [p.model for p in get_fallback_providers()]
 
 
 def _should_fallback_to_other_model(err: Exception) -> bool:
@@ -133,6 +134,16 @@ def _should_fallback_to_other_model(err: Exception) -> bool:
         ErrorCategory.TIMEOUT,
         ErrorCategory.UNKNOWN,
     )
+
+
+def _usage_kwargs(resolved: dict[str, Any], default_model: str, scenario: str | None) -> dict[str, Any]:
+    """构造记账参数；主模型保持旧调用签名，fallback 才附带独立费率。"""
+    model = resolved.get("model") or default_model
+    data: dict[str, Any] = {"model": model, "scenario": scenario}
+    if model != default_model:
+        data["input_cost_per_million_usd"] = resolved.get("input_cost")
+        data["output_cost_per_million_usd"] = resolved.get("output_cost")
+    return data
 
 
 def _create_coroutine(client, **kwargs):
@@ -154,18 +165,28 @@ async def _call_completion_with_retry(
     kwargs: dict,
     *,
     model: str | None,
+    resolved: dict[str, Any] | None = None,
 ) -> Any:
     """带重试 + 熔断 + 模型 fallback 链的 LLM 完成调用。
 
     1. 主模型经 with_retry（Full Jitter 退避 + 错误分类 + 失败落盘诊断）调用。
     2. 主模型重试耗尽且错误为「可回退类」（欠费/认证/网络/限流/超时/未知）时，
-       逐个尝试 CHAT_FALLBACK_MODELS 备用模型（各带一次重试）。
+       逐个尝试 CHAT_FALLBACK_1..3 独立 provider（各带一次重试）。
     3. 全部失败抛最后一个异常。
 
     熔断器：主模型走对应熔断；备用模型共享 chat 熔断（同一上游端点）。
     judge 模型不参与 fallback 链（JUDGE_FALLBACK_TO_CHAT 已提供单点回退）。
     """
-    if model == "judge" or not _fallback_model_names():
+    providers = get_fallback_providers()
+    if resolved is not None:
+        if model == "judge":
+            input_cost = float(getattr(settings, "JUDGE_INPUT_COST_PER_MILLION_CNY", 0.0))
+            output_cost = float(getattr(settings, "JUDGE_OUTPUT_COST_PER_MILLION_CNY", 0.0))
+        else:
+            input_cost = float(getattr(settings, "CHAT_INPUT_COST_PER_MILLION_CNY", 0.0))
+            output_cost = float(getattr(settings, "CHAT_OUTPUT_COST_PER_MILLION_CNY", 0.0))
+        resolved.update({"model": kwargs.get("model"), "input_cost": input_cost, "output_cost": output_cost})
+    if model == "judge" or not providers:
         breaker = _breaker_for_model(model)
         return await with_retry(
             _create_coroutine(client, **kwargs),
@@ -194,21 +215,24 @@ async def _call_completion_with_retry(
 
     # 备用模型链（每个带一次重试；共享 chat 熔断）
     last_error: Exception | None = None
-    for fb_model in _fallback_model_names():
+    for provider in providers:
         fb_kwargs = dict(kwargs)
-        fb_kwargs["model"] = fb_model
+        fb_kwargs["model"] = provider.model
         try:
-            logger.info("切换到备用模型: %s", fb_model)
-            return await with_retry(
-                _create_coroutine(client, **fb_kwargs),
+            logger.info("切换到备用 provider=%s model=%s", provider.name, provider.model)
+            response = await with_retry(
+                _create_coroutine(get_fallback_client(provider), **fb_kwargs),
                 budget=_llm_retry_budget(),
                 breaker=get_chat_breaker(),
             )
+            if resolved is not None:
+                resolved.update({"model": provider.model, "input_cost": provider.input_cost_cny, "output_cost": provider.output_cost_cny})
+            return response
         except asyncio.CancelledError:
             raise
         except Exception as e:
             last_error = e
-            logger.warning("备用模型 %s 失败: %s", fb_model, type(e).__name__)
+            logger.warning("备用 provider=%s model=%s 失败: %s", provider.name, provider.model, type(e).__name__)
 
     if last_error is not None:
         raise last_error
@@ -332,8 +356,9 @@ async def llm_generate_with_tools(
         scenario=scenario,
         is_judge=(model == "judge"),
     )
+    resolved = {"model": model_name}
     try:
-        response = await _call_completion_with_retry(client, kwargs, model=model)
+        response = await _call_completion_with_retry(client, kwargs, model=model, resolved=resolved)
     except Exception as e:
         # JUDGE_FALLBACK_TO_CHAT（SmartResume backup channel 对照）：
         # judge 客户端失败（配置开启时）退回 chat 客户端重试一次
@@ -341,9 +366,7 @@ async def llm_generate_with_tools(
             logger.warning("judge 客户端调用失败，退回 chat 客户端: %s", e)
             client, model_name = get_chat_client(), settings.CHAT_MODEL
             kwargs["model"] = model_name
-            response = await _call_completion_with_retry(
-                client, kwargs, model=model_name
-            )
+            response = await _call_completion_with_retry(client, kwargs, model=model_name, resolved=resolved)
         else:
             raise
 
@@ -355,7 +378,7 @@ async def llm_generate_with_tools(
         usage["prompt_tokens"] = pt
         usage["completion_tokens"] = ct
         if user_id is not None:
-            await record_llm_usage(user_id, pt, ct, model=model_name, scenario=scenario)
+            await record_llm_usage(user_id, pt, ct, **_usage_kwargs(resolved, model_name, scenario))
 
     message = response.choices[0].message
     content = message.content or "" if hasattr(message, "content") else ""
@@ -403,9 +426,10 @@ async def llm_generate_with_tools_stream(
         stream=True,
         is_judge=(model == "judge"),
     )
+    resolved = {"model": model_name}
     # 流创建阶段接入重试 + 熔断（尚未产出 chunk，重试安全）。
     # 流中途断流由调用方现有墙钟超时/降级兜底。
-    stream = await _call_completion_with_retry(client, kwargs, model=model)
+    stream = await _call_completion_with_retry(client, kwargs, model=model, resolved=resolved)
 
     content_parts: list[str] = []
     # tool_call 累积: {index: {"id": str, "name": str, "arguments": str}}
@@ -417,7 +441,7 @@ async def llm_generate_with_tools_stream(
             pt = getattr(chunk.usage, "prompt_tokens", 0) or 0
             ct = getattr(chunk.usage, "completion_tokens", 0) or 0
             if user_id is not None:
-                await record_llm_usage(user_id, pt, ct, model=model_name, scenario=scenario)
+                await record_llm_usage(user_id, pt, ct, **_usage_kwargs(resolved, model_name, scenario))
             yield {"type": "usage", "prompt_tokens": pt, "completion_tokens": ct}
             continue
 
@@ -543,21 +567,14 @@ async def llm_generate(
     # rewrite_query），外层仍会兜底，不构成有害的双重重试（内层先耗尽）。
     # 注意：必须用 _create_coroutine 包装——SDK bound method 在 Python 3.14 下
     # iscoroutinefunction 误判为 False，直接传会让 with_retry 返回未 await 的 coroutine。
-    response = await with_retry(
-        _create_coroutine(client, **kwargs),
-        budget=RetryBudget(
-            max_retries=1,
-            base_delay=1.0,
-            timeout=getattr(settings, "LLM_GENERATE_TIMEOUT", 60.0),
-        ),
-        breaker=get_chat_breaker(),
-    )
+    resolved = {"model": model_name}
+    response = await _call_completion_with_retry(client, kwargs, model=model, resolved=resolved)
 
     # 统一记账（只记成功）
     if user_id is not None and hasattr(response, "usage") and response.usage:
         pt = getattr(response.usage, "prompt_tokens", 0) or 0
         ct = getattr(response.usage, "completion_tokens", 0) or 0
-        await record_llm_usage(user_id, pt, ct, model=model_name, scenario=scenario)
+        await record_llm_usage(user_id, pt, ct, **_usage_kwargs(resolved, model_name, scenario))
 
     return (response.choices[0].message.content or "").strip()
 
@@ -594,11 +611,8 @@ async def _llm_generate_stream(
         scenario=scenario,
         stream=True,
     )
-    stream = await _call_completion_with_retry(
-        client,
-        kwargs,
-        model=None,
-    )
+    resolved = {"model": settings.CHAT_MODEL}
+    stream = await _call_completion_with_retry(client, kwargs, model=None, resolved=resolved)
     async for chunk in stream:
         # 检查是否有 usage 信息（在最后一个 chunk）
         if hasattr(chunk, "usage") and chunk.usage:
@@ -606,7 +620,7 @@ async def _llm_generate_stream(
             ct = getattr(chunk.usage, "completion_tokens", 0) or 0
             # 流式 usage 记账
             if user_id is not None:
-                await record_llm_usage(user_id, pt, ct, model=settings.CHAT_MODEL, scenario=scenario)
+                await record_llm_usage(user_id, pt, ct, **_usage_kwargs(resolved, settings.CHAT_MODEL, scenario))
             yield {
                 "type": "usage",
                 "prompt_tokens": pt,

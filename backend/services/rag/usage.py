@@ -48,6 +48,8 @@ async def record_llm_usage(
     model: str | None = None,
     scenario: str | None = None,
     turn_id: str | None = None,
+    input_cost_per_million_usd: float | None = None,
+    output_cost_per_million_usd: float | None = None,
 ) -> None:
     """记录 LLM token 使用量到 Redis（日统计）。
 
@@ -77,8 +79,11 @@ async def record_llm_usage(
     try:
         redis = await get_redis()
         # 成本以微美元整数累计，避免 Redis 浮点误差；费率为 0 时仍保留 token 统计。
-        input_rate = max(0.0, float(getattr(settings, "LLM_INPUT_COST_PER_MILLION_USD", 0.0)))
-        output_rate = max(0.0, float(getattr(settings, "LLM_OUTPUT_COST_PER_MILLION_USD", 0.0)))
+        input_rate = max(0.0, float((getattr(settings, "JUDGE_INPUT_COST_PER_MILLION_CNY", 0.0) if model == "judge" else getattr(settings, "CHAT_INPUT_COST_PER_MILLION_CNY", 0.0)) if input_cost_per_million_usd is None else input_cost_per_million_usd))
+        output_rate = max(0.0, float((getattr(settings, "JUDGE_OUTPUT_COST_PER_MILLION_CNY", 0.0) if model == "judge" else getattr(settings, "CHAT_OUTPUT_COST_PER_MILLION_CNY", 0.0)) if output_cost_per_million_usd is None else output_cost_per_million_usd))
+        # Rates are configured in CNY per million tokens.  Keep the legacy
+        # Redis key names for backwards compatibility, while exposing explicit
+        # CNY fields to callers and evaluation artifacts.
         input_micro_usd = round(prompt_tokens * input_rate)
         output_micro_usd = round(completion_tokens * output_rate)
         ttl = 86400 * 7
@@ -165,6 +170,7 @@ async def get_usage_summary(days: int = 7) -> list[dict]:
                 "date": date_str,
                 "total_tokens": 0,
                 "calls": 0,
+                "cost_cny": 0.0,
                 "cost_usd": 0.0,
             },
         )
@@ -180,7 +186,9 @@ async def get_usage_summary(days: int = 7) -> list[dict]:
 
         cost_key = ":".join(parts[:-1] + ["cost_total_micro_usd"])
         try:
-            entry["cost_usd"] += int(await redis.get(cost_key) or 0) / 1_000_000
+            cost = int(await redis.get(cost_key) or 0) / 1_000_000
+            entry["cost_cny"] = entry.get("cost_cny", 0.0) + cost
+            entry["cost_usd"] = entry.get("cost_usd", 0.0) + cost
         except Exception:
             pass
 
@@ -201,12 +209,12 @@ async def get_usage_summary(days: int = 7) -> list[dict]:
             total = 0
         entry = merged.setdefault(
             date_str,
-            {"date": date_str, "total_tokens": 0, "calls": 0, "cost_usd": 0.0},
+            {"date": date_str, "total_tokens": 0, "calls": 0, "cost_cny": 0.0, "cost_usd": 0.0},
         )
         by_scenario = entry.setdefault("by_scenario", {})
         scenario_entry = by_scenario.setdefault(
             scenario,
-            {"total_tokens": 0, "calls": 0, "cost_usd": 0.0, "by_model": {}},
+            {"total_tokens": 0, "calls": 0, "cost_cny": 0.0, "cost_usd": 0.0, "by_model": {}},
         )
         scenario_entry["total_tokens"] += total
         calls_key = ":".join(parts[:-1] + ["calls"])
@@ -219,9 +227,10 @@ async def get_usage_summary(days: int = 7) -> list[dict]:
             cost = int(await redis.get(cost_key) or 0) / 1_000_000
         except Exception:
             cost = 0.0
-        scenario_entry["cost_usd"] += cost
+        scenario_entry["cost_cny"] = scenario_entry.get("cost_cny", 0.0) + cost
+        scenario_entry["cost_usd"] = scenario_entry.get("cost_usd", 0.0) + cost
         model_entry = scenario_entry["by_model"].setdefault(
-            model, {"total_tokens": 0, "calls": 0, "cost_usd": 0.0}
+            model, {"total_tokens": 0, "calls": 0, "cost_cny": 0.0, "cost_usd": 0.0}
         )
         model_entry["total_tokens"] += total
         model_calls_key = ":".join(parts[:-1] + ["calls"])
@@ -229,7 +238,8 @@ async def get_usage_summary(days: int = 7) -> list[dict]:
             model_entry["calls"] += int(await redis.get(model_calls_key) or 0)
         except Exception:
             pass
-        model_entry["cost_usd"] += cost
+        model_entry["cost_cny"] = model_entry.get("cost_cny", 0.0) + cost
+        model_entry["cost_usd"] = model_entry.get("cost_usd", 0.0) + cost
 
     return [merged[d] for d in sorted(merged)]
 

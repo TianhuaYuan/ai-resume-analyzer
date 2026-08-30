@@ -7,6 +7,21 @@ on:
     branches: [main]
 
 jobs:
+  eval-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Validate reproducible evaluation assets
+        run: |
+          python evals/generate_dataset.py
+          python evals/validate_dataset.py
+          python evals/validate_manifests.py
+          python -m pytest evals/test_eval_contracts.py -q
+
   lint:
     runs-on: ubuntu-latest
     steps:

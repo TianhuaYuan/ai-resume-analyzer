@@ -105,7 +105,7 @@ def parse_jds(path: Path) -> list[dict[str, Any]]:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--source-dir", type=Path, default=Path(r"D:\Edge"))
+    parser.add_argument("--source-dir", type=Path, required=True)
     parser.add_argument(
         "--output-dir",
         type=Path,

@@ -9,6 +9,7 @@ import logging
 import os
 import shutil
 import sqlite3
+from dataclasses import dataclass
 
 import chromadb
 from openai import AsyncOpenAI
@@ -78,6 +79,45 @@ _chat_client: AsyncOpenAI | None = None
 _judge_client: AsyncOpenAI | None = None
 _embedding_client: AsyncOpenAI | None = None
 _chroma_client = None
+_fallback_clients: dict[str, AsyncOpenAI] = {}
+
+
+@dataclass(frozen=True)
+class FallbackProvider:
+    name: str
+    api_key: str
+    base_url: str
+    model: str
+    input_cost_cny: float = 0.0
+    output_cost_cny: float = 0.0
+
+
+def get_fallback_providers() -> list[FallbackProvider]:
+    """读取最多 3 个独立 provider；未填完整 key/url/model 的组跳过。"""
+    providers: list[FallbackProvider] = []
+    for index in range(1, 2):
+        prefix = f"CHAT_FALLBACK_{index}_"
+        api_key = (getattr(settings, prefix + "API_KEY", "") or "").strip()
+        base_url = (getattr(settings, prefix + "BASE_URL", "") or "").strip()
+        model = (getattr(settings, prefix + "MODEL", "") or "").strip()
+        if not (api_key and base_url and model):
+            continue
+        providers.append(FallbackProvider(
+            name=f"fallback-{index}", api_key=api_key, base_url=base_url,
+            model=model,
+            input_cost_cny=float(getattr(settings, prefix + "INPUT_COST_PER_MILLION_CNY", 0.0)),
+            output_cost_cny=float(getattr(settings, prefix + "OUTPUT_COST_PER_MILLION_CNY", 0.0)),
+        ))
+    return providers
+
+
+def get_fallback_client(provider: FallbackProvider) -> AsyncOpenAI:
+    """按 provider 配置缓存独立 AsyncOpenAI client。"""
+    client = _fallback_clients.get(provider.name)
+    if client is None:
+        client = AsyncOpenAI(api_key=provider.api_key, base_url=provider.base_url, timeout=_CHAT_TIMEOUT)
+        _fallback_clients[provider.name] = client
+    return client
 
 
 def get_chat_client() -> AsyncOpenAI:

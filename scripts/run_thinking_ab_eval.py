@@ -4,12 +4,17 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
+import sys
 import time
 from pathlib import Path
 from typing import Any
 
 import fitz
 
+BACKEND_ROOT = Path(__file__).resolve().parents[1] / "backend"
+sys.path.insert(0, str(BACKEND_ROOT))
+os.chdir(BACKEND_ROOT)
 from services.resume_parser import parse_text_to_modules
 
 

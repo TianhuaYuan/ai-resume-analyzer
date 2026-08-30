@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_TABLE = Path(r"C:\Users\Tianhua\Desktop\Resume_Artifact_Agent_最终资料\Resume_Artifact_Agent_字段语义与检索金标审核表.md")
+DEFAULT_TABLE = ROOT / "artifacts" / "career_eval_20260826_v3" / "human_gold_review.md"
 LEDGER = ROOT / "artifacts" / "career_eval_20260826_v3" / "resume_ready_metrics.json"
 SCORE = ROOT / "artifacts" / "career_eval_20260826_v3" / "manual_annotation_score.json"
 
